@@ -138,7 +138,7 @@ export default function ApplicationDetailPage() {
             {/* CH2: target.deploymentSettings.properties */}
             {Object.keys(ds.properties || {}).length > 0 && (
               <div>
-                <h3 className="text-white font-semibold mb-3">Application Properties</h3>
+                <h3 className="text-white font-semibold mb-3">Deployment Properties</h3>
                 {Object.entries(ds.properties).map(([k, v]) => (
                   <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
                 ))}
@@ -162,6 +162,15 @@ export default function ApplicationDetailPage() {
                 ))}
               </div>
             )}
+            {/* Extra settings from /settings endpoint */}
+            {app._settings && Object.keys(app._settings).length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold mb-3">App Settings</h3>
+                {Object.entries(app._settings).map(([k, v]) => (
+                  <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
+                ))}
+              </div>
+            )}
             {/* Agent props */}
             {Object.keys(app.application?.configuration?.muleAgentApplicationPropertiesService?.properties || {}).length > 0 && (
               <div>
@@ -174,7 +183,17 @@ export default function ApplicationDetailPage() {
             {!Object.keys(ds.properties || {}).length &&
               !Object.keys(app.properties || {}).length &&
               !Object.keys(ds.environmentVars || {}).length && (
-              <p className="text-gray-500 text-sm py-4">No configuration properties found for this application.</p>
+              <div className="space-y-3">
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-4 py-3 text-sm text-yellow-400">
+                  No deployment-level properties found. This can happen when:
+                  <ul className="list-disc list-inside mt-1.5 space-y-1 text-yellow-400/80">
+                    <li>Properties are defined inside the app's <code className="font-mono text-xs">config.yaml</code> / properties file (not accessible via API)</li>
+                    <li>Properties are secured/encrypted (Anypoint Platform does not return secure property values via API)</li>
+                    <li>No properties were configured at deployment time</li>
+                  </ul>
+                  <p className="mt-2">Check the <strong>Raw</strong> tab to see the full deployment response.</p>
+                </div>
+              </div>
             )}
           </div>
         )}
