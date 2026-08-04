@@ -357,6 +357,7 @@ export default function ApplicationDetailPage() {
               </table>
             ) : <div className="px-5 py-6 text-center text-slate-600 text-sm">No schedulers configured</div>}
           </GlassCard>
+          </div>
 
           {(httpInbound.publicUrl||endpoints.length>0) && (
             <GlassCard icon={Globe} title="HTTP Endpoints" count={endpoints.length} noPad>
