@@ -149,6 +149,8 @@ export default function ApplicationDetailPage() {
   const [cpsMissingCred, setCpsMissingCred] = useState(null);
   const [showCpsSettings, setShowCpsSettings] = useState(false);
   const [cpsSearch, setCpsSearch] = useState('');
+  const [cpsKeyOverride, setCpsKeyOverride] = useState('');
+  const [cpsEnvOverride, setCpsEnvOverride] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -259,21 +261,40 @@ export default function ApplicationDetailPage() {
   const appEnvName = app.environment?.name || '';
   const cpsDepType = isCH1 ? 'ch1' : 'ch2';
 
-  const loadCpsData = async () => {
+  const effectiveCpsKey = cpsKeyOverride || cpsProjectName;
+  const effectiveCpsEnv = cpsEnvOverride || cpsEnv;
+
+  const loadCpsData = async (keyOverride, envOverride) => {
     if (!cpsBaseUrl) return;
+    const useKey = keyOverride || effectiveCpsKey;
+    const useEnv = envOverride || effectiveCpsEnv;
     setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null);
     try {
-      // Use cps.prefix as environment and cps.projectName as keys — both read directly from runtime props
-      const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', environment: cpsEnv, keys: cpsProjectName, deploymentType: cpsDepType, envName: appEnvName } });
-      const nsRaw = nsRes.data;
-      const nsEntry = Array.isArray(nsRaw?.properties) ? (nsRaw.properties.find((p) => p.key === cpsProjectName) || nsRaw.properties[0]) : nsRaw;
+      let nsRaw;
+      try {
+        // Try specific key first
+        const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', environment: useEnv, keys: useKey, deploymentType: cpsDepType, envName: appEnvName } });
+        nsRaw = nsRes.data;
+      } catch (e404) {
+        if (e404.response?.status === 404) {
+          // Fallback: fetch all non-secure properties for this environment
+          const allRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure-all', environment: useEnv, deploymentType: cpsDepType, envName: appEnvName } });
+          nsRaw = allRes.data;
+          // Try to find the matching entry
+          if (Array.isArray(nsRaw?.properties)) {
+            const match = nsRaw.properties.find((p) => p.key === useKey || p.key?.includes(useKey));
+            if (match) nsRaw = { properties: [match] };
+          }
+        } else throw e404;
+      }
+      const nsEntry = Array.isArray(nsRaw?.properties) ? (nsRaw.properties.find((p) => p.key === useKey) || nsRaw.properties[0]) : nsRaw;
       const flatNs = (nsEntry?.properties && typeof nsEntry.properties === 'object' && !Array.isArray(nsEntry.properties)) ? nsEntry.properties : (typeof nsRaw === 'object' && !Array.isArray(nsRaw) ? nsRaw : {});
 
       let secureGroups = [];
       const secureKeys = flatNs['cps.secure.properties'];
       if (secureKeys) {
         try {
-          const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', environment: cpsEnv, keys: secureKeys, deploymentType: cpsDepType, envName: appEnvName } });
+          const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', environment: useEnv, keys: secureKeys, deploymentType: cpsDepType, envName: appEnvName } });
           secureGroups = Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
         } catch {}
       }
@@ -282,7 +303,7 @@ export default function ApplicationDetailPage() {
       const binaryKeys = flatNs['cps.secure.binaries'];
       if (binaryKeys) {
         try {
-          const br = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'binaries', environment: cpsEnv, keys: binaryKeys, deploymentType: cpsDepType, envName: appEnvName } });
+          const br = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'binaries', environment: useEnv, keys: binaryKeys, deploymentType: cpsDepType, envName: appEnvName } });
           binaryList = br.data?.binaries || (Array.isArray(br.data) ? br.data : []);
         } catch {}
       }
@@ -632,10 +653,28 @@ export default function ApplicationDetailPage() {
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${isCH1?'bg-purple-950/50 text-purple-300 border-purple-700/50':'bg-blue-950/50 text-blue-300 border-blue-700/50'}`}>{isCH1?'CH1':'CH2'}</span>
               </div>
               <p className="text-slate-500 text-xs font-mono break-all">{cpsBaseUrl}</p>
-              <p className="text-slate-600 text-[10px]">Project key: <span className="text-slate-400 font-mono">{cpsProjectName}</span></p>
+              {/* Editable key + env overrides */}
+              <div className="flex flex-wrap gap-2 mt-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-600 uppercase tracking-wider">Env:</span>
+                  <input
+                    value={cpsEnvOverride || effectiveCpsEnv}
+                    onChange={(e) => { setCpsEnvOverride(e.target.value); setCpsData(null); setCpsError(''); }}
+                    className="bg-slate-800/60 border border-slate-700/40 rounded-lg px-2 py-1 text-xs text-slate-200 font-mono w-24 focus:outline-none focus:border-blue-600/50"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-600 uppercase tracking-wider">Key:</span>
+                  <input
+                    value={cpsKeyOverride || effectiveCpsKey}
+                    onChange={(e) => { setCpsKeyOverride(e.target.value); setCpsData(null); setCpsError(''); }}
+                    className="bg-slate-800/60 border border-slate-700/40 rounded-lg px-2 py-1 text-xs text-slate-200 font-mono w-56 focus:outline-none focus:border-blue-600/50"
+                  />
+                </div>
+              </div>
             </div>
             <div className="flex items-center gap-2">
-              {cpsData && <button onClick={loadCpsData} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors"><RefreshCw size={11}/> Refresh</button>}
+              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors"><RefreshCw size={11}/> {cpsData ? 'Refresh' : 'Load'}</button>
               <button onClick={() => setShowCpsSettings(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded-lg transition-colors"><Key size={11}/> Configure CPS</button>
             </div>
           </div>
@@ -674,7 +713,8 @@ export default function ApplicationDetailPage() {
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <Key size={32} className="text-slate-700" />
               <p className="text-slate-500 text-sm">Click to load properties from the Config Property Server</p>
-              <button onClick={loadCpsData} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
+              <p className="text-slate-600 text-xs">Will fetch <code className="text-slate-500">{effectiveCpsKey}</code> in <code className="text-slate-500">{effectiveCpsEnv}</code></p>
+              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
                 <Key size={13} /> Load CPS Properties
               </button>
             </div>
