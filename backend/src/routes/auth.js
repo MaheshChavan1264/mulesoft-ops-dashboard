@@ -4,45 +4,37 @@ const router = express.Router();
 
 const ANYPOINT_URL = process.env.ANYPOINT_PLATFORM_URL || 'https://anypoint.mulesoft.com';
 
-// Walk up to the root org via parentId
-async function findRootOrg(token, startOrgId) {
-  let currentId = startOrgId;
-  const visited = new Set();
-  while (currentId) {
-    if (visited.has(currentId)) break;
-    visited.add(currentId);
-    try {
-      const res = await axios.get(`${ANYPOINT_URL}/accounts/api/organizations/${currentId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const org = res.data;
-      if (!org.parentId) return { id: org.id, name: org.name };
-      currentId = org.parentId;
-    } catch (e) {
-      break; // stop if access is denied — use what we have
-    }
-  }
-  return null;
-}
-
 // Helper: fetch user profile and store session
 async function storeSession(req, token) {
   const profileResponse = await axios.get(`${ANYPOINT_URL}/accounts/api/me`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   const user = profileResponse.data.user;
-  const orgId = user.organization.id;
-  const orgName = user.organization.name;
 
-  // Try to find the true root org (in case user.organization is a sub-group)
-  const rootOrg = await findRootOrg(token, orgId);
-  const rootOrgId = rootOrg?.id || orgId;
-  const rootOrgName = rootOrg?.name || orgName;
+  // memberOfOrganizations contains ALL orgs the user has access to
+  const memberOrgs = user.memberOfOrganizations || [];
+
+  // Find root org: the one with no parentId (or parentOrganizationIds empty)
+  const rootOrg = memberOrgs.find((o) => !o.parentId && !o.parentOrganizationIds?.length)
+    || memberOrgs.find((o) => !o.parentId)
+    || user.organization;
+
+  const rootOrgId = rootOrg.id;
+  const rootOrgName = rootOrg.name;
 
   req.session.token = token;
-  req.session.orgId = rootOrgId;       // always store the root org ID
+  req.session.orgId = rootOrgId;
   req.session.orgName = rootOrgName;
   req.session.username = user.username;
+  // Store full member org list so /business-groups can return it without extra API calls
+  req.session.memberOrgs = memberOrgs.map((o) => ({
+    id: o.id,
+    name: o.name,
+    domain: o.domain,
+    type: o.type,
+    parentId: o.parentId || null,
+    subOrganizationIds: o.subOrganizationIds || []
+  }));
   req.session.user = {
     id: user.id,
     username: user.username,
@@ -142,7 +134,8 @@ router.get('/session', (req, res) => {
       authenticated: true,
       user: req.session.user,
       orgId: req.session.orgId,
-      orgName: req.session.orgName
+      orgName: req.session.orgName,
+      memberOrgs: req.session.memberOrgs || []
     });
   } else {
     res.json({ authenticated: false });

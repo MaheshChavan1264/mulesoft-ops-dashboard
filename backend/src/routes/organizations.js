@@ -75,18 +75,36 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// Get all business groups — walks UP to root first, then BFS down
+// Get all business groups — uses memberOrgs from session (set at login) for speed
 router.get('/business-groups', authMiddleware, async (req, res) => {
   try {
+    // Fast path: session already has the full memberOrgs list from /accounts/api/me
+    if (req.memberOrgs && req.memberOrgs.length > 0) {
+      console.log(`Business groups from session: ${req.memberOrgs.length}`);
+      return res.json({ total: req.memberOrgs.length, data: req.memberOrgs });
+    }
+
+    // Fallback: re-fetch from /accounts/api/me
     const client = createClient(req.anypointToken);
+    const profileRes = await client.get('/accounts/api/me');
+    const memberOrgs = (profileRes.data.user?.memberOfOrganizations || []).map((o) => ({
+      id: o.id,
+      name: o.name,
+      domain: o.domain,
+      type: o.type,
+      parentId: o.parentId || null,
+      subOrganizationIds: o.subOrganizationIds || []
+    }));
 
-    // 1. Walk up to find the true root org
+    if (memberOrgs.length > 0) {
+      console.log(`Business groups from /me: ${memberOrgs.length}`);
+      return res.json({ total: memberOrgs.length, data: memberOrgs });
+    }
+
+    // Final fallback: BFS from root
     const rootOrgId = await findRootOrgId(client, req.orgId);
-
-    // 2. BFS down from root
     const allOrgs = await fetchAllOrgs(client, rootOrgId);
-
-    console.log(`Found ${allOrgs.length} business groups (root: ${rootOrgId})`);
+    console.log(`Business groups from BFS: ${allOrgs.length}`);
     res.json({ total: allOrgs.length, data: allOrgs, rootOrgId });
   } catch (error) {
     console.error('Error fetching business groups:', error.response?.data || error.message);
