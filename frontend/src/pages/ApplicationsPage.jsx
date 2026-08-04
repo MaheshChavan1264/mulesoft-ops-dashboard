@@ -146,7 +146,7 @@ export default function ApplicationsPage() {
             className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
         </div>
         <div>
-          <Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="Environment" />
+          <Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="Environment" searchable />
         </div>
         <div>
           <Select value={filterStatus} onChange={setFilterStatus} options={statusOptions} placeholder="Status" />

@@ -82,6 +82,7 @@ export default function ApiManagerPage() {
                 tagColor: e.type === 'production' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
               }))}
               placeholder="Select environment..."
+              searchable
             />
           </div>
           <button onClick={loadApis} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg">
