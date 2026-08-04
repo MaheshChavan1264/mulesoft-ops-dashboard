@@ -7,16 +7,19 @@ const { createClient } = require('../utils/anypointClient');
 router.get('/:orgId', authMiddleware, async (req, res) => {
   const targetOrgId = req.params.orgId;
 
-  // Fast path: use pre-filtered accessible environments from session
-  if (req.accessibleEnvironments && req.accessibleEnvironments[targetOrgId]?.length > 0) {
+  // Build a set of ALL accessible environment IDs across every org in session
+  const allAccessibleIds = new Set(
+    Object.values(req.accessibleEnvironments).flat().map((e) => e.id)
+  );
+
+  // Fast path: session has accessible envs for this specific org
+  if (req.accessibleEnvironments[targetOrgId]?.length > 0) {
     const envs = req.accessibleEnvironments[targetOrgId];
-    console.log(`Environments for ${targetOrgId} from session: ${envs.length}`);
     return res.json({ data: envs, total: envs.length });
   }
 
-  // If targetOrgId is the root org and has no direct envs in session,
-  // return ALL accessible envs across all orgs
-  if (targetOrgId === req.orgId && Object.keys(req.accessibleEnvironments).length > 0) {
+  // If root org or no direct match — return all accessible envs across all orgs
+  if (allAccessibleIds.size > 0) {
     const allEnvs = Object.values(req.accessibleEnvironments).flat();
     const seen = new Set();
     const unique = allEnvs.filter((e) => {
@@ -27,13 +30,18 @@ router.get('/:orgId', authMiddleware, async (req, res) => {
     if (unique.length > 0) return res.json({ data: unique, total: unique.length });
   }
 
-  // Fallback: fetch all environments from API
+  // Last resort fallback: fetch from API and filter against accessible IDs
   try {
     const client = createClient(req.anypointToken);
     const response = await client.get(
       `/accounts/api/organizations/${targetOrgId}/environments`
     );
-    res.json(response.data);
+    const all = response.data.data || [];
+    // If we have an accessible set, filter; otherwise return all (no session data available)
+    const filtered = allAccessibleIds.size > 0
+      ? all.filter((e) => allAccessibleIds.has(e.id))
+      : all;
+    res.json({ data: filtered, total: filtered.length });
   } catch (error) {
     console.error('Error fetching environments:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
@@ -44,10 +52,8 @@ router.get('/:orgId', authMiddleware, async (req, res) => {
 
 // Get environments for the current (root) org — returns ALL accessible envs across all orgs
 router.get('/', authMiddleware, async (req, res) => {
-  // Aggregate all accessible environments across every org in the session
-  if (req.accessibleEnvironments && Object.keys(req.accessibleEnvironments).length > 0) {
+  if (Object.keys(req.accessibleEnvironments).length > 0) {
     const allEnvs = Object.values(req.accessibleEnvironments).flat();
-    // deduplicate by env id
     const seen = new Set();
     const unique = allEnvs.filter((e) => {
       if (seen.has(e.id)) return false;
@@ -57,7 +63,7 @@ router.get('/', authMiddleware, async (req, res) => {
     return res.json({ data: unique, total: unique.length });
   }
 
-  // Fallback: fetch for root org
+  // Fallback: fetch for root org (no session filtering available)
   try {
     const client = createClient(req.anypointToken);
     const response = await client.get(
