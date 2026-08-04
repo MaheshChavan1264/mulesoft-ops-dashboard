@@ -17,6 +17,7 @@ const normalizeStatus = (status) => {
   if (s === 'STARTED') return 'RUNNING';
   if (s === 'DEPLOY_FAILED') return 'FAILED';
   if (s === 'UNDEPLOYED') return 'STOPPED';
+  if (s === 'NOT_RUNNING') return 'STOPPED';
   return s;
 };
 
@@ -150,10 +151,19 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
         );
         const apps = parseCH2Apps(ch2Response.data);
         apps.forEach((app) => {
+          // CH2 has two status fields:
+          // - app.status / app.desiredStatus = deployment status (APPLIED, DEPLOYING, etc.)
+          // - app.application.status = actual runtime status (RUNNING, NOT_RUNNING, STOPPED, etc.)
+          // Use the runtime status when available, fall back to deployment status
+          const runtimeStatus = app.application?.status || app.application?.state;
+          const deploymentStatus = app.status || app.desiredStatus;
+          const effectiveStatus = runtimeStatus || deploymentStatus;
+
           results.push({
             id: app.id,
             name: app.name,
-            status: normalizeStatus(app.status || app.desiredStatus),
+            status: normalizeStatus(effectiveStatus),
+            deploymentStatus: normalizeStatus(deploymentStatus),
             environment: { id: env.id, name: env.name, type: env.type },
             deploymentType: 'CloudHub 2.0',
             lastModifiedDate: app.lastModifiedDate || app.updatedAt,
