@@ -35,6 +35,22 @@ async function storeSession(req, token) {
     parentId: o.parentId || null,
     subOrganizationIds: o.subOrganizationIds || []
   }));
+
+  // Store accessible environments per org (from memberOfOrganizations[].environments)
+  // This is the authoritative list of envs the user actually has access to
+  const accessibleEnvironments = {};
+  for (const org of memberOrgs) {
+    if (org.environments && org.environments.length > 0) {
+      accessibleEnvironments[org.id] = org.environments.map((e) => ({
+        id: e.id,
+        name: e.name,
+        type: e.type,
+        organizationId: e.organizationId || org.id,
+        isProduction: e.isProduction || e.type === 'production'
+      }));
+    }
+  }
+  req.session.accessibleEnvironments = accessibleEnvironments;
   req.session.user = {
     id: user.id,
     username: user.username,
@@ -135,7 +151,8 @@ router.get('/session', (req, res) => {
       user: req.session.user,
       orgId: req.session.orgId,
       orgName: req.session.orgName,
-      memberOrgs: req.session.memberOrgs || []
+      memberOrgs: req.session.memberOrgs || [],
+      accessibleEnvironments: req.session.accessibleEnvironments || {}
     });
   } else {
     res.json({ authenticated: false });
