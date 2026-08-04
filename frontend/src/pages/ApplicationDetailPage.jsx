@@ -50,6 +50,17 @@ export default function ApplicationDetailPage() {
           params: { orgId }
         });
         const ch1 = res2.data;
+
+        // Also fetch CH1 schedules
+        let ch1Schedules = [];
+        try {
+          const schedRes = await api.get(
+            `/applications/cloudhub1/${envId}/${appId}/schedules`,
+            { params: { orgId } }
+          );
+          ch1Schedules = Array.isArray(schedRes.data) ? schedRes.data : (schedRes.data?.schedules || []);
+        } catch { /* schedules not available for this app */ }
+
         // Normalize CH1 response to a consistent shape for the detail page
         setApp({
           _type: 'ch1',
@@ -64,11 +75,11 @@ export default function ApplicationDetailPage() {
           staticIPsEnabled: ch1.staticIPsEnabled,
           loggingCustomLog4JEnabled: ch1.loggingCustomLog4JEnabled,
           monitoringEnabled: ch1.monitoringEnabled,
-          // Workers: flatten for display
           workers: {
             amount: ch1.workers?.amount,
             type: ch1.workers?.type
           },
+          _ch1Schedules: ch1Schedules,
           _raw: ch1
         });
       } catch { setApp(null); }
@@ -110,7 +121,9 @@ export default function ApplicationDetailPage() {
   const schedSvc = appCfg['mule.agent.scheduling.service'] || {};
   const runtimeProps = propsSvc.properties || {};
   const secureProps = propsSvc.secureProperties || {};
-  const schedulers = schedSvc.schedulers || [];
+  const schedulers = isCH1
+    ? (app._ch1Schedules || [])
+    : (schedSvc.schedulers || []);
   const httpInbound = ds.http?.inbound || {};
   const endpoints = httpInbound.endpoints || [];
   const envVars = ds.environmentVariables || ds.environmentVars || {};
@@ -318,7 +331,12 @@ export default function ApplicationDetailPage() {
                       <div className="text-xs space-y-1 text-gray-400">
                         {s.name && s.name !== s.flowName && <div>Name: <span className="text-gray-300 font-mono">{s.name}</span></div>}
                         {s.type && <div>Type: <span className="text-gray-300">{s.type}</span></div>}
+                        {/* CH2 cron */}
                         {s.expression && <div>Expression: <span className="text-cyan-400 font-mono">{s.expression}</span></div>}
+                        {/* CH1 fields */}
+                        {s.cronExpression && <div>Cron: <span className="text-cyan-400 font-mono">{s.cronExpression}</span></div>}
+                        {s.frequency && <div>Frequency: <span className="text-white font-mono">{s.frequency} {s.timeUnit}</span></div>}
+                        {s.startDelay != null && s.startDelay !== '0' && <div>Start Delay: <span className="text-white font-mono">{s.startDelay} {s.timeUnit}</span></div>}
                       </div>
                     </div>
                   ))}

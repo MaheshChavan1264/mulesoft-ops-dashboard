@@ -128,6 +128,29 @@ router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
   }
 });
 
+// Get CloudHub 1.0 app schedules
+router.get('/cloudhub1/:envId/:appName/schedules', authMiddleware, async (req, res) => {
+  try {
+    const client = createClient(req.anypointToken);
+    const orgId = req.query.orgId || req.orgId;
+    const response = await client.get(
+      `/cloudhub/api/applications/${req.params.appName}/schedules`,
+      {
+        headers: {
+          'X-ANYPNT-ENV-ID': req.params.envId,
+          'X-ANYPNT-ORG-ID': orgId
+        }
+      }
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching CH1 schedules:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data?.message || 'Failed to fetch schedules'
+    });
+  }
+});
+
 // Get CloudHub 1.0 app properties
 router.get('/cloudhub1/:envId/:appName/properties', authMiddleware, async (req, res) => {
   try {
