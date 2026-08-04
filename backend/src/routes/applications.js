@@ -3,6 +3,12 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 
+// Helper: parse apps from various CH2 response shapes
+const parseCH2Apps = (data) => {
+  if (Array.isArray(data)) return data;
+  return data.items || data.deployments || data.content || data.data || [];
+};
+
 // Get all applications for an environment (CloudHub 2.0)
 router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
   try {
@@ -41,10 +47,11 @@ router.get('/cloudhub2/:orgId/:envId/:deploymentId', authMiddleware, async (req,
 router.get('/cloudhub1/:envId', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
+    const orgId = req.query.orgId || req.orgId;
     const response = await client.get('/cloudhub/api/applications', {
       headers: {
         'X-ANYPNT-ENV-ID': req.params.envId,
-        'X-ANYPNT-ORG-ID': req.orgId
+        'X-ANYPNT-ORG-ID': orgId
       }
     });
     res.json(response.data);
@@ -60,10 +67,11 @@ router.get('/cloudhub1/:envId', authMiddleware, async (req, res) => {
 router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
+    const orgId = req.query.orgId || req.orgId;
     const response = await client.get(`/cloudhub/api/applications/${req.params.appName}`, {
       headers: {
         'X-ANYPNT-ENV-ID': req.params.envId,
-        'X-ANYPNT-ORG-ID': req.orgId
+        'X-ANYPNT-ORG-ID': orgId
       }
     });
     res.json(response.data);
@@ -79,17 +87,17 @@ router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
 router.get('/cloudhub1/:envId/:appName/properties', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
+    const orgId = req.query.orgId || req.orgId;
     const response = await client.get(`/cloudhub/api/applications/${req.params.appName}`, {
       headers: {
         'X-ANYPNT-ENV-ID': req.params.envId,
-        'X-ANYPNT-ORG-ID': req.orgId
+        'X-ANYPNT-ORG-ID': orgId
       }
     });
     const app = response.data;
-    const properties = app.properties || {};
     res.json({
       appName: req.params.appName,
-      properties,
+      properties: app.properties || {},
       workerType: app.workers?.type,
       workers: app.workers?.amount,
       muleVersion: app.muleVersion?.version,
@@ -107,82 +115,81 @@ router.get('/cloudhub1/:envId/:appName/properties', authMiddleware, async (req, 
   }
 });
 
-// Get Runtime Fabric applications
-router.get('/rtf/:orgId/:envId', authMiddleware, async (req, res) => {
-  try {
-    const client = createClient(req.anypointToken);
-    const response = await client.get(
-      `/runtimefabric/api/organizations/${req.params.orgId}/environments/${req.params.envId}/deployments`
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error fetching RTF apps:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch Runtime Fabric applications'
-    });
-  }
-});
-
-// Summary: get apps across all environments for an org (best effort)
+// Summary: get apps across all environments for an org (accepts orgId param or query)
 router.get('/summary/:orgId', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
+    const targetOrgId = req.params.orgId;
 
-    // Get environments first
+    // Get environments for the target org
     const envResponse = await client.get(
-      `/accounts/api/organizations/${req.params.orgId}/environments`
+      `/accounts/api/organizations/${targetOrgId}/environments`
     );
     const environments = envResponse.data.data || [];
 
     const results = [];
-    for (const env of environments) {
+    const errors = [];
+
+    await Promise.all(environments.map(async (env) => {
+      // Try CloudHub 2.0
       try {
         const ch2Response = await client.get(
-          `/amc/application-manager/api/v2/organizations/${req.params.orgId}/environments/${env.id}/deployments`,
+          `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${env.id}/deployments`,
           { params: { limit: 500 } }
         );
-        const apps = ch2Response.data.items || [];
+        const apps = parseCH2Apps(ch2Response.data);
         apps.forEach((app) => {
           results.push({
             id: app.id,
             name: app.name,
-            status: app.status,
+            status: app.status || app.desiredStatus,
             environment: { id: env.id, name: env.name, type: env.type },
             deploymentType: 'CloudHub 2.0',
-            lastModifiedDate: app.lastModifiedDate,
-            replicas: app.target?.deploymentSettings?.http?.inboundPublicUrl
+            lastModifiedDate: app.lastModifiedDate || app.updatedAt,
+            muleVersion: app.target?.deploymentSettings?.runtimeVersion,
+            replicas: app.target?.deploymentSettings?.resources?.cpu?.reserved
           });
         });
       } catch (e) {
-        // env may not support CH2, skip
+        errors.push(`CH2 ${env.name}: ${e.message}`);
       }
 
+      // Try CloudHub 1.0
       try {
         const ch1Response = await client.get('/cloudhub/api/applications', {
           headers: {
             'X-ANYPNT-ENV-ID': env.id,
-            'X-ANYPNT-ORG-ID': req.params.orgId
+            'X-ANYPNT-ORG-ID': targetOrgId
           }
         });
-        const ch1Apps = ch1Response.data || [];
+        const ch1Apps = Array.isArray(ch1Response.data) ? ch1Response.data : [];
         ch1Apps.forEach((app) => {
-          results.push({
-            id: app.domain,
-            name: app.domain,
-            status: app.status,
-            environment: { id: env.id, name: env.name, type: env.type },
-            deploymentType: 'CloudHub 1.0',
-            lastModifiedDate: app.lastUpdateTime,
-            muleVersion: app.muleVersion?.version,
-            workers: app.workers
-          });
+          // Avoid duplicates if already found via CH2
+          if (!results.find((r) => r.name === app.domain)) {
+            results.push({
+              id: app.domain,
+              name: app.domain,
+              status: app.status,
+              environment: { id: env.id, name: env.name, type: env.type },
+              deploymentType: 'CloudHub 1.0',
+              lastModifiedDate: app.lastUpdateTime ? new Date(app.lastUpdateTime).toISOString() : null,
+              muleVersion: app.muleVersion?.version,
+              workers: app.workers
+            });
+          }
         });
       } catch (e) {
-        // skip
+        errors.push(`CH1 ${env.name}: ${e.message}`);
       }
-    }
+    }));
 
-    res.json({ total: results.length, data: results, environments });
+    res.json({
+      total: results.length,
+      data: results,
+      environments,
+      orgId: targetOrgId,
+      _errors: errors.length > 0 ? errors : undefined
+    });
   } catch (error) {
     console.error('Error fetching app summary:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
