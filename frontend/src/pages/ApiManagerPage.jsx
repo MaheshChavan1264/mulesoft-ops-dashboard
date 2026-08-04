@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { RefreshCw, ShieldCheck, Search } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
+import Select from '../components/Select';
 import api from '../services/api';
 
 export default function ApiManagerPage() {
@@ -68,15 +69,21 @@ export default function ApiManagerPage() {
           <p className="text-gray-400 text-sm mt-1">Managed API instances and policies</p>
         </div>
         <div className="flex items-center gap-3">
-          <select
-            value={selectedEnv}
-            onChange={(e) => setSelectedEnv(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-          >
-            {environments.map((e) => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
-          </select>
+          <div className="w-56">
+            <Select
+              value={selectedEnv}
+              onChange={setSelectedEnv}
+              options={environments.map((e) => ({
+                value: e.id,
+                label: e.name,
+                badge: true,
+                badgeColor: e.type === 'production' ? 'bg-green-400' : e.type === 'sandbox' ? 'bg-yellow-400' : 'bg-gray-400',
+                tag: e.type,
+                tagColor: e.type === 'production' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+              }))}
+              placeholder="Select environment..."
+            />
+          </div>
           <button onClick={loadApis} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg">
             <RefreshCw size={14} /> Refresh
           </button>
