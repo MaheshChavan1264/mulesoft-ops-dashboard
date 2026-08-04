@@ -39,7 +39,7 @@ export default function App() {
           >
             <Route index element={<DashboardPage />} />
             <Route path="applications" element={<ApplicationsPage />} />
-            <Route path="applications/:envId/:appId" element={<ApplicationDetailPage />} />
+            <Route path="applications/:orgId/:envId/:appId" element={<ApplicationDetailPage />} />
             <Route path="environments" element={<EnvironmentsPage />} />
             <Route path="business-groups" element={<BusinessGroupsPage />} />
             <Route path="api-manager" element={<ApiManagerPage />} />

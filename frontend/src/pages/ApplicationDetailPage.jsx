@@ -13,8 +13,10 @@ const PropRow = ({ label, value }) => (
 );
 
 export default function ApplicationDetailPage() {
-  const { orgId } = useAuth();
-  const { envId, appId } = useParams();
+  const { orgId: authOrgId } = useAuth();
+  const { orgId: paramOrgId, envId, appId } = useParams();
+  // Use org from URL if provided (app may belong to a sub-org/BG), fall back to auth org
+  const orgId = paramOrgId || authOrgId;
   const navigate = useNavigate();
   const [app, setApp] = useState(null);
   const [loading, setLoading] = useState(true);
