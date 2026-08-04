@@ -3,22 +3,42 @@ const router = express.Router();
 const axios = require('axios');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// ── Credential key format: {ch}_{env}  e.g.  ch1_prod, ch2_uat ─────────────
-const CRED_KEYS = ['ch1_prod', 'ch2_prod', 'ch1_uat', 'ch2_uat'];
+// ── Legacy key format: {ch}_{env}  e.g.  ch1_prod, ch2_uat ─────────────────
+const LEGACY_KEYS = ['ch1_prod', 'ch2_prod', 'ch1_uat', 'ch2_uat'];
 
 /**
- * Resolve credentials from (in priority order):
- *  1. Session overrides (set via UI modal)
- *  2. Environment variables (CPS_CH1_PROD_CLIENT_ID, etc.)
+ * Normalise a CPS base URL for use as a credential key:
+ *  - strip trailing slash
+ *  - strip /api/v2 suffix (the app may include it in cps.configServerBaseUrl)
  */
-function getCredentials(req, envType, chType) {
-  const key = `${chType}_${envType}`;
-  const sessionCreds = req.session.cpsCreds || {};
+function normaliseUrl(url = '') {
+  return url.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+}
 
-  if (sessionCreds[key]?.clientId && sessionCreds[key]?.clientSecret) {
-    return { clientId: sessionCreds[key].clientId, clientSecret: sessionCreds[key].clientSecret };
+/**
+ * Resolve credentials (priority order):
+ *  1. Session override keyed by exact normalised base URL  ← new, per-server
+ *  2. Session override keyed by legacy ch/env type        ← backwards-compat
+ *  3. Env vars  CPS_CH1_PROD_CLIENT_ID / _SECRET          ← backwards-compat
+ */
+function getCredentials(req, rawBaseUrl, envType, chType) {
+  const sessionCreds = req.session.cpsCreds || {};
+  const normUrl = normaliseUrl(rawBaseUrl);
+
+  // 1. URL-keyed session credential (new format)
+  const byUrl = sessionCreds[normUrl];
+  if (byUrl?.clientId && byUrl?.clientSecret) {
+    return { clientId: byUrl.clientId, clientSecret: byUrl.clientSecret };
   }
 
+  // 2. Legacy ch/env session credential
+  const legacyKey = `${chType}_${envType}`;
+  const byLegacy = sessionCreds[legacyKey];
+  if (byLegacy?.clientId && byLegacy?.clientSecret) {
+    return { clientId: byLegacy.clientId, clientSecret: byLegacy.clientSecret };
+  }
+
+  // 3. Env vars (legacy ch/env format)
   const prefix = `CPS_${chType.toUpperCase()}_${envType.toUpperCase()}`;
   const clientId = process.env[`${prefix}_CLIENT_ID`];
   const clientSecret = process.env[`${prefix}_CLIENT_SECRET`];
@@ -27,10 +47,7 @@ function getCredentials(req, envType, chType) {
   return null;
 }
 
-/**
- * Detect envType (prod | uat) from base URL + environment string + env name.
- * Falls back to 'prod' if ambiguous.
- */
+/** Detect envType (prod | uat) from baseUrl + environment string + env name. */
 function detectEnvType(baseUrl = '', environment = '', envName = '') {
   const s = `${baseUrl} ${environment} ${envName}`.toLowerCase();
   if (/\b(prod|pd)\b/.test(s)) return 'prod';
@@ -38,74 +55,82 @@ function detectEnvType(baseUrl = '', environment = '', envName = '') {
   return 'prod';
 }
 
-/**
- * Normalise deploymentType → 'ch1' | 'ch2'
- */
+/** Normalise deploymentType → 'ch1' | 'ch2' */
 function detectChType(deploymentType = '') {
   return deploymentType.includes('2') || deploymentType === 'ch2' ? 'ch2' : 'ch1';
 }
 
-/* ── GET /api/cps/credentials ──────────────────────────────────────────────
-   Returns config status per credential key (no secrets exposed)
+/* ── GET /api/cps/credentials ────────────────────────────────────────────────
+   Returns credential status:
+   - url-keyed entries (new format, stored in session)
+   - legacy ch/env entries (session + env vars)
 */
 router.get('/credentials', authMiddleware, (req, res) => {
   const sessionCreds = req.session.cpsCreds || {};
-  const status = {};
 
-  CRED_KEYS.forEach((key) => {
+  // Legacy ch/env status
+  const legacy = {};
+  LEGACY_KEYS.forEach((key) => {
     const [chType, envType] = key.split('_');
     const prefix = `CPS_${chType.toUpperCase()}_${envType.toUpperCase()}`;
     const fromEnv = !!(process.env[`${prefix}_CLIENT_ID`]);
     const fromSession = !!(sessionCreds[key]?.clientId);
-    status[key] = {
-      configured: fromEnv || fromSession,
-      source: fromSession ? 'session' : fromEnv ? 'env' : 'none'
-    };
+    legacy[key] = { configured: fromEnv || fromSession, source: fromSession ? 'session' : fromEnv ? 'env' : 'none' };
   });
 
-  res.json({ credentials: status });
+  // URL-keyed entries from session
+  const byUrl = {};
+  Object.entries(sessionCreds).forEach(([key, val]) => {
+    if (!LEGACY_KEYS.includes(key) && val?.clientId) {
+      byUrl[key] = { configured: true, source: 'session', maskedId: val.clientId.substring(0, 8) + '…' };
+    }
+  });
+
+  res.json({ credentials: legacy, byUrl });
 });
 
-/* ── POST /api/cps/credentials ─────────────────────────────────────────────
-   Save credential overrides to session
-   Body: { credentials: { ch1_prod: { clientId, clientSecret }, ... } }
+/* ── POST /api/cps/credentials ───────────────────────────────────────────────
+   Save credential overrides to session.
+   Supports both formats in one call:
+   Body: {
+     credentials: {
+       "ch1_prod": { clientId, clientSecret },              ← legacy format
+       "https://server.com": { clientId, clientSecret }    ← new URL-keyed format
+     }
+   }
 */
 router.post('/credentials', authMiddleware, (req, res) => {
   const { credentials = {} } = req.body;
   if (!req.session.cpsCreds) req.session.cpsCreds = {};
 
   for (const [key, creds] of Object.entries(credentials)) {
-    if (!CRED_KEYS.includes(key)) continue;
-    req.session.cpsCreds[key] = {
+    if (!creds.clientId && !creds.clientSecret) continue;
+    // URL-keyed: normalise the key
+    const storageKey = LEGACY_KEYS.includes(key) ? key : normaliseUrl(key);
+    req.session.cpsCreds[storageKey] = {
       clientId: creds.clientId || '',
       clientSecret: creds.clientSecret || ''
     };
   }
 
-  console.log('CPS credentials updated in session:', Object.keys(credentials));
-  res.json({ success: true, updated: Object.keys(credentials) });
+  console.log('CPS credentials saved:', Object.keys(credentials));
+  res.json({ success: true, saved: Object.keys(credentials) });
 });
 
-/* ── DELETE /api/cps/credentials/:key ──────────────────────────────────────
-   Remove a specific session override (revert to env var)
+/* ── DELETE /api/cps/credentials/:key ────────────────────────────────────────
+   Remove a session credential (key = legacy format OR URL-encoded base URL)
 */
 router.delete('/credentials/:key', authMiddleware, (req, res) => {
-  const { key } = req.params;
+  const key = decodeURIComponent(req.params.key);
   if (req.session.cpsCreds) {
     delete req.session.cpsCreds[key];
+    delete req.session.cpsCreds[normaliseUrl(key)];
   }
   res.json({ success: true, cleared: key });
 });
 
-/* ── GET /api/cps/fetch ────────────────────────────────────────────────────
+/* ── GET /api/cps/fetch ──────────────────────────────────────────────────────
    Proxy a CPS API read request.
-   Query params:
-     baseUrl        — CPS base URL (from cps.configServerBaseUrl)
-     type           — non-secure | secure | non-secure-all | secure-all | binaries | binaries-auth
-     environment    — prod | uat | uap | dr  (passed to CPS as-is)
-     keys           — comma-separated key(s)
-     deploymentType — "CloudHub 1.0" | "CloudHub 2.0" (to pick correct credentials)
-     envName        — Anypoint env name (used for envType detection fallback)
 */
 router.get('/fetch', authMiddleware, async (req, res) => {
   const { baseUrl, type, environment, keys, deploymentType, envName } = req.query;
@@ -116,44 +141,40 @@ router.get('/fetch', authMiddleware, async (req, res) => {
 
   const envType = detectEnvType(baseUrl, environment, envName);
   const chType = detectChType(deploymentType);
-  const creds = getCredentials(req, envType, chType);
+  const creds = getCredentials(req, baseUrl, envType, chType);
 
   if (!creds) {
     return res.status(422).json({
-      error: `CPS credentials not configured for ${chType}_${envType}`,
+      error: `CPS credentials not configured for ${normaliseUrl(baseUrl)}`,
       credKey: `${chType}_${envType}`,
+      cpsUrl: normaliseUrl(baseUrl),
       needsConfig: true
     });
   }
 
   const pathMap = {
-    'non-secure':      '/api/v2/properties/non-secure',
-    'non-secure-all':  '/api/v2/properties/non-secure/all',
-    'secure':          '/api/v2/properties/secure',
-    'secure-all':      '/api/v2/properties/secure/all',
-    'binaries':        '/api/v2/binaries/secure',
-    'binaries-auth':   '/api/v2/binaries/secure/auth'
+    'non-secure':     '/api/v2/properties/non-secure',
+    'non-secure-all': '/api/v2/properties/non-secure/all',
+    'secure':         '/api/v2/properties/secure',
+    'secure-all':     '/api/v2/properties/secure/all',
+    'binaries':       '/api/v2/binaries/secure',
+    'binaries-auth':  '/api/v2/binaries/secure/auth'
   };
 
   const cpsPath = pathMap[type];
-  if (!cpsPath) {
-    return res.status(400).json({ error: `Unknown CPS type: ${type}` });
-  }
+  if (!cpsPath) return res.status(400).json({ error: `Unknown CPS type: ${type}` });
 
   const params = {};
   if (environment) params.environment = environment;
   if (keys) params.keys = keys;
 
-  // Strip trailing slash AND any /api/v2 suffix the app may have included in cps.configServerBaseUrl
-  // (our pathMap already prepends /api/v2/..., so don't double it)
-  const cleanBaseUrl = baseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
-  // Build full URL for debugging
+  const cleanBaseUrl = normaliseUrl(baseUrl);
   const fullUrl = `${cleanBaseUrl}${cpsPath}`;
   const queryStr = new URLSearchParams(params).toString();
-  console.log(`CPS → ${req.method} ${fullUrl}?${queryStr}  [${chType}_${envType}]`);
+  console.log(`CPS → GET ${fullUrl}?${queryStr}  [creds: ${normaliseUrl(baseUrl)}]`);
 
   try {
-    const response = await axios.get(`${cleanBaseUrl}${cpsPath}`, {
+    const response = await axios.get(fullUrl, {
       headers: {
         'client_id': creds.clientId,
         'client_secret': creds.clientSecret,
@@ -163,18 +184,20 @@ router.get('/fetch', authMiddleware, async (req, res) => {
       timeout: 20000
     });
 
-    // For binaries, return metadata only (not raw binary content)
+    // For binaries: return metadata only (not raw file bytes)
     const data = response.data;
     if (type === 'binaries') {
-      const binaryList = Array.isArray(data) ? data : (data.properties || data.binaries || []);
-      const metaOnly = binaryList.map((b) => ({
-        key: b.key || b.name,
-        environment: b.environment,
-        size: b.size,
-        contentType: b.contentType || b.type || 'application/octet-stream',
-        lastModified: b.lastModified || b.updatedAt
-      }));
-      return res.json({ type, binaries: metaOnly, raw: Array.isArray(data) ? undefined : data });
+      const list = Array.isArray(data) ? data : (data.properties || data.binaries || []);
+      return res.json({
+        type,
+        binaries: list.map((b) => ({
+          key: b.key || b.name,
+          environment: b.environment,
+          size: b.size,
+          contentType: b.contentType || b.type || 'application/octet-stream',
+          lastModified: b.lastModified || b.updatedAt
+        }))
+      });
     }
 
     res.json(data);
@@ -186,12 +209,8 @@ router.get('/fetch', authMiddleware, async (req, res) => {
       || (typeof error.response?.data === 'string' ? error.response.data : null)
       || error.message
       || 'CPS request failed';
-    console.error(`CPS fetch [${type}] error (${status}) at ${fullUrl}?${queryStr}:`, msg);
-    res.status(status).json({
-      error: msg,
-      attemptedUrl: `${fullUrl}?${queryStr}`,
-      details: error.response?.data
-    });
+    console.error(`CPS error (${status}) ${fullUrl}?${queryStr}: ${msg}`);
+    res.status(status).json({ error: msg, attemptedUrl: `${fullUrl}?${queryStr}`, details: error.response?.data });
   }
 });
 

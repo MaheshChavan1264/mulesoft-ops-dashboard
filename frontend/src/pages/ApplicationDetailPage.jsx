@@ -348,7 +348,10 @@ export default function ApplicationDetailPage() {
 
   return (
     <div className="space-y-6 min-h-screen">
-      {showCpsSettings && <CpsSettingsModal onClose={() => { setShowCpsSettings(false); if (cpsMissingCred) { setCpsMissingCred(null); loadCpsData(); } }} />}
+      {showCpsSettings && <CpsSettingsModal
+        prefilledUrl={cpsBaseUrl ? cpsBaseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '') : ''}
+        onClose={() => { setShowCpsSettings(false); if (cpsMissingCred) { setCpsMissingCred(null); loadCpsData(); } }}
+      />}
       <AppConfirmModal
         state={confirmState}
         onConfirm={executeAction}
