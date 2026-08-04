@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import api from '../services/api';
+import api, { isDemoMode, enableDemoMode, disableDemoMode, DEMO_MODE_KEY } from '../services/api';
+import { MOCK_USER } from '../services/mockData.js';
 
 const AuthContext = createContext(null);
 
@@ -15,6 +16,13 @@ export const AuthProvider = ({ children }) => {
 
   const checkSession = async () => {
     try {
+      if (isDemoMode()) {
+        setUser(MOCK_USER);
+        setOrgId('demo-org-001');
+        setOrgName('Demo Organization');
+        setLoading(false);
+        return;
+      }
       const res = await api.get('/auth/session');
       if (res.data.authenticated) {
         setUser(res.data.user);
@@ -44,7 +52,15 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  const demoLogin = () => {
+    enableDemoMode();
+    setUser(MOCK_USER);
+    setOrgId('demo-org-001');
+    setOrgName('Demo Organization');
+  };
+
   const logout = async () => {
+    disableDemoMode();
     await api.post('/auth/logout');
     setUser(null);
     setOrgId(null);
@@ -52,7 +68,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, orgId, orgName, loading, login, tokenLogin, logout }}>
+    <AuthContext.Provider value={{ user, orgId, orgName, loading, login, tokenLogin, demoLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );

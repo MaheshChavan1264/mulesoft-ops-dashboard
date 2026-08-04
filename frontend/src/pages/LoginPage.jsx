@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Eye, EyeOff, Key, User } from 'lucide-react';
+import { Eye, EyeOff, Key, User, Zap } from 'lucide-react';
 
 export default function LoginPage() {
-  const { login, tokenLogin } = useAuth();
+  const { login, tokenLogin, demoLogin } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState('credentials'); // 'credentials' | 'token'
+  const [mode, setMode] = useState('credentials');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [token, setToken] = useState('');
@@ -32,6 +32,11 @@ export default function LoginPage() {
     }
   };
 
+  const handleDemoLogin = () => {
+    demoLogin();
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -44,6 +49,21 @@ export default function LoginPage() {
           <p className="text-gray-400 mt-1">Connect to Anypoint Platform</p>
         </div>
 
+        {/* Demo mode banner */}
+        <button
+          onClick={handleDemoLogin}
+          className="w-full mb-4 flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-900/30"
+        >
+          <Zap size={18} />
+          Try Demo Mode — No login required
+        </button>
+
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex-1 h-px bg-gray-800"></div>
+          <span className="text-gray-500 text-xs">or sign in with your account</span>
+          <div className="flex-1 h-px bg-gray-800"></div>
+        </div>
+
         {/* Card */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
           {/* Mode Toggle */}
@@ -52,9 +72,7 @@ export default function LoginPage() {
               type="button"
               onClick={() => setMode('credentials')}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                mode === 'credentials'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-white'
+                mode === 'credentials' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
               Username & Password
@@ -63,9 +81,7 @@ export default function LoginPage() {
               type="button"
               onClick={() => setMode('token')}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                mode === 'token'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-white'
+                mode === 'token' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
               Access Token
@@ -123,7 +139,7 @@ export default function LoginPage() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none font-mono"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Generate a token in Anypoint Platform → Access Management → Your Profile → Access Tokens
+                  Anypoint Platform → Access Management → Your Profile → Access Tokens
                 </p>
               </div>
             )}
