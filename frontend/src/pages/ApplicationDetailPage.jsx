@@ -151,6 +151,7 @@ export default function ApplicationDetailPage() {
   const [cpsSearch, setCpsSearch] = useState('');
   const [cpsKeyOverride, setCpsKeyOverride] = useState('');
   const [cpsEnvOverride, setCpsEnvOverride] = useState('');
+  const [cpsAttemptedUrl, setCpsAttemptedUrl] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -268,7 +269,7 @@ export default function ApplicationDetailPage() {
     if (!cpsBaseUrl) return;
     const useKey = keyOverride || effectiveCpsKey;
     const useEnv = envOverride || effectiveCpsEnv;
-    setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null);
+    setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null); setCpsAttemptedUrl('');
     try {
       let nsRaw;
       try {
@@ -314,6 +315,7 @@ export default function ApplicationDetailPage() {
         setCpsMissingCred(e.response.data.credKey);
       } else {
         setCpsError(e.response?.data?.error || e.message || 'CPS fetch failed');
+        setCpsAttemptedUrl(e.response?.data?.attemptedUrl || '');
       }
     }
     setCpsLoading(false);
@@ -695,8 +697,19 @@ export default function ApplicationDetailPage() {
 
           {/* Error */}
           {cpsError && (
-            <div className="flex items-center gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-5 py-4 text-red-300 text-sm">
-              <AlertTriangle size={14} className="flex-shrink-0" /> {cpsError}
+            <div className="bg-red-950/30 border border-red-800/50 rounded-xl px-5 py-4 space-y-2">
+              <div className="flex items-center gap-3 text-red-300 text-sm">
+                <AlertTriangle size={14} className="flex-shrink-0" /> {cpsError}
+              </div>
+              {cpsAttemptedUrl && (
+                <div className="text-[10px] text-red-500/80 font-mono break-all border-t border-red-900/30 pt-2">
+                  Attempted: {cpsAttemptedUrl}
+                </div>
+              )}
+              <div className="text-[10px] text-red-500/60 pt-0.5">
+                💡 Check the <strong>Env</strong> and <strong>Key</strong> fields above — they must match exactly what's stored in CPS.
+                Check the backend console for the full URL that was called.
+              </div>
             </div>
           )}
 

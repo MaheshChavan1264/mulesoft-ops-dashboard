@@ -144,8 +144,15 @@ router.get('/fetch', authMiddleware, async (req, res) => {
   if (environment) params.environment = environment;
   if (keys) params.keys = keys;
 
+  // Strip trailing slash from baseUrl to avoid double-slashes
+  const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
+  // Build full URL for debugging
+  const fullUrl = `${cleanBaseUrl}${cpsPath}`;
+  const queryStr = new URLSearchParams(params).toString();
+  console.log(`CPS → ${req.method} ${fullUrl}?${queryStr}  [${chType}_${envType}]`);
+
   try {
-    const response = await axios.get(`${baseUrl}${cpsPath}`, {
+    const response = await axios.get(`${cleanBaseUrl}${cpsPath}`, {
       headers: {
         'client_id': creds.clientId,
         'client_secret': creds.clientSecret,
@@ -174,10 +181,16 @@ router.get('/fetch', authMiddleware, async (req, res) => {
     const status = error.response?.status || 500;
     const msg = error.response?.data?.message
       || error.response?.data?.description
+      || error.response?.data?.error
+      || (typeof error.response?.data === 'string' ? error.response.data : null)
       || error.message
       || 'CPS request failed';
-    console.error(`CPS fetch [${type}] error (${status}):`, msg);
-    res.status(status).json({ error: msg, details: error.response?.data });
+    console.error(`CPS fetch [${type}] error (${status}) at ${fullUrl}?${queryStr}:`, msg);
+    res.status(status).json({
+      error: msg,
+      attemptedUrl: `${fullUrl}?${queryStr}`,
+      details: error.response?.data
+    });
   }
 });
 
