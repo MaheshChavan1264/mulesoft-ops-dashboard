@@ -12,6 +12,10 @@ const statusConfig = {
   STARTING:          { label: 'Starting',         color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
   STOPPING:          { label: 'Stopping',         color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
   PARTIALLY_STARTED: { label: 'Partial',          color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
+  PARTIALLY_RUNNING: { label: 'Partial',          color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
+  APPLIED:           { label: 'Applied',          color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' },
+  APPLYING:          { label: 'Applying',         color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' },
+  NOT_RUNNING:       { label: 'Not Running',      color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
   active:            { label: 'Active',           color: 'bg-green-500/20 text-green-400 border-green-500/30' },
   inactive:          { label: 'Inactive',         color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' }
 };

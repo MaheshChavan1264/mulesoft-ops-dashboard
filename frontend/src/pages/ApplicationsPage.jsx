@@ -94,13 +94,16 @@ export default function ApplicationsPage() {
   const statusOptions = [
     { value: '', label: 'All Statuses' },
     { value: 'RUNNING', label: 'Running', badge: true, badgeColor: 'bg-green-400' },
+    { value: 'APPLIED', label: 'Applied', badge: true, badgeColor: 'bg-cyan-400' },
+    { value: 'APPLYING', label: 'Applying', badge: true, badgeColor: 'bg-cyan-300' },
     { value: 'FAILED', label: 'Failed', badge: true, badgeColor: 'bg-red-400' },
     { value: 'STOPPED', label: 'Stopped', badge: true, badgeColor: 'bg-gray-400' },
     { value: 'DEPLOYING', label: 'Deploying', badge: true, badgeColor: 'bg-blue-400' },
     { value: 'UPDATING', label: 'Updating', badge: true, badgeColor: 'bg-purple-400' },
     { value: 'STARTING', label: 'Starting', badge: true, badgeColor: 'bg-blue-300' },
     { value: 'STOPPING', label: 'Stopping', badge: true, badgeColor: 'bg-orange-400' },
-    { value: 'PARTIALLY_STARTED', label: 'Partial', badge: true, badgeColor: 'bg-yellow-400' }
+    { value: 'PARTIALLY_STARTED', label: 'Partial', badge: true, badgeColor: 'bg-yellow-400' },
+    { value: 'PARTIALLY_RUNNING', label: 'Partial', badge: true, badgeColor: 'bg-yellow-400' }
   ];
 
   const typeOptions = [
