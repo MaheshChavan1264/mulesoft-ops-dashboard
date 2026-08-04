@@ -1,22 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Clock, Database, Server, Settings } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Clock, Database, Server, Settings, Globe } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import api from '../services/api';
 
 const PropRow = ({ label, value, mono = true }) => (
   <div className="flex items-start py-2.5 border-b border-gray-800 last:border-0">
-    <span className="text-gray-400 text-sm w-52 flex-shrink-0">{label}</span>
+    <span className="text-gray-400 text-sm w-56 flex-shrink-0">{label}</span>
     <span className={`text-white text-sm break-all ${mono ? 'font-mono' : ''}`}>{value ?? '—'}</span>
   </div>
 );
 
-const Section = ({ icon: Icon, title, children }) => (
-  <div className="bg-gray-800/40 rounded-xl p-4 space-y-0">
+const Section = ({ icon: Icon, title, count, children }) => (
+  <div className="bg-gray-800/40 rounded-xl p-4">
     <div className="flex items-center gap-2 mb-3">
       {Icon && <Icon size={15} className="text-blue-400" />}
       <h4 className="text-white font-semibold text-sm">{title}</h4>
+      {count != null && (
+        <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">{count}</span>
+      )}
     </div>
     {children}
   </div>
@@ -55,7 +58,11 @@ export default function ApplicationDetailPage() {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div></div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      </div>
+    );
   }
 
   if (!app) {
@@ -71,16 +78,33 @@ export default function ApplicationDetailPage() {
     );
   }
 
+  // ── Parse payload paths ──────────────────────────────────────────────────
   const ds = app.target?.deploymentSettings || {};
-  const isOSEnabled = ds.hasPersistentObjectStore ?? ds.persistentObjectStore ?? false;
-  const schedulers = ds.schedulerFrequencies || [];
-  const resources = ds.resources || {};
+  const appCfg = app.application?.configuration || {};
+  const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
+  const schedSvc = appCfg['mule.agent.scheduling.service'] || {};
+  const runtimeProps = propsSvc.properties || {};
+  const secureProps = propsSvc.secureProperties || {};
+  const schedulers = schedSvc.schedulers || [];
+  const httpInbound = ds.http?.inbound || {};
+  const endpoints = httpInbound.endpoints || [];
+  const envVars = ds.environmentVariables || ds.environmentVars || {};
   const isCH1 = app._type === 'ch1';
+  const replicas = app.target?.replicas ?? ds.replicas;
+  const osEnabled = ds.persistentObjectStore ?? ds.hasPersistentObjectStore ?? false;
+  const replicaList = app.replicas || [];
+
+  const hasProperties =
+    Object.keys(runtimeProps).length > 0 ||
+    Object.keys(ds.properties || {}).length > 0 ||
+    Object.keys(envVars).length > 0 ||
+    Object.keys(app.properties || {}).length > 0;
 
   const tabs = ['overview', 'properties', 'infrastructure', 'raw'];
 
   return (
     <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/applications')} className="text-gray-400 hover:text-white">
@@ -88,7 +112,10 @@ export default function ApplicationDetailPage() {
           </button>
           <div>
             <h1 className="text-xl font-bold text-white">{app.name}</h1>
-            <p className="text-gray-400 text-sm">{isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'} · {app.id || appId}</p>
+            <p className="text-gray-400 text-sm">
+              {isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'}
+              {app.application?.ref && ` · ${app.application.ref.artifactId} v${app.application.ref.version}`}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -113,29 +140,67 @@ export default function ApplicationDetailPage() {
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
 
-        {/* OVERVIEW */}
+        {/* ── OVERVIEW ──────────────────────────────────── */}
         {activeTab === 'overview' && (
           <div>
             <h3 className="text-white font-semibold mb-3">General Information</h3>
-            <PropRow label="Application ID" value={app.id || appId} />
+            <PropRow label="Application ID" value={app.id} />
             <PropRow label="Name" value={app.name} mono={false} />
-            <PropRow label="Runtime Status" value={app.application?.status || app.status} />
-            <PropRow label="Desired State" value={app.application?.desiredState || app.desiredStatus} />
-            <PropRow label="Mule Version" value={ds.runtimeVersion || app.muleVersion} />
-            <PropRow label="Deployment Type" value={isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'} />
-            <PropRow label="Region" value={app.target?.region || app.region} />
+            <PropRow label="Runtime Status" value={app.application?.status} />
+            <PropRow label="Desired State" value={app.application?.desiredState} />
+            <PropRow label="Deployment Status" value={app.status} />
+            <PropRow label="Mule Version" value={ds.runtime?.version || ds.runtimeVersion} />
+            <PropRow label="Java" value={ds.runtime?.java ? `Java ${ds.runtime.java}` : undefined} />
+            <PropRow label="Release Channel" value={ds.runtime?.releaseChannel || ds.runtimeReleaseChannel} />
+            <PropRow label="vCores" value={app.application?.vCores != null ? String(app.application.vCores) : undefined} />
+            <PropRow label="Replicas" value={replicas != null ? String(replicas) : undefined} />
+            <PropRow label="Update Strategy" value={typeof ds.updateStrategy === 'string' ? ds.updateStrategy : undefined} />
             <PropRow label="Artifact" value={app.application?.ref ? `${app.application.ref.artifactId} v${app.application.ref.version}` : undefined} />
-            <PropRow label="Replicas" value={ds.updateStrategy?.replicas ?? ds.replicas} />
-            <PropRow label="Workers" value={app.workers?.amount} />
-            <PropRow label="Worker Type" value={app.workers?.type?.name} />
             <PropRow label="Last Modified" value={app.lastModifiedDate ? new Date(app.lastModifiedDate).toLocaleString() : undefined} />
+
+            {replicaList.length > 0 && (
+              <div className="mt-4">
+                <p className="text-gray-400 text-xs uppercase tracking-wider mb-2 font-medium">
+                  Replica Instances ({replicaList.length})
+                </p>
+                <div className="space-y-2">
+                  {replicaList.map((r) => (
+                    <div key={r.id} className="bg-gray-800/50 rounded-lg px-4 py-2.5 flex items-center justify-between gap-3">
+                      <span className="text-gray-300 text-xs font-mono truncate">{r.id}</span>
+                      <StatusBadge status={r.state} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* PROPERTIES */}
+        {/* ── PROPERTIES ────────────────────────────────── */}
         {activeTab === 'properties' && (
           <div className="space-y-6">
-            {/* CH2: target.deploymentSettings.properties */}
+            {Object.keys(runtimeProps).length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold mb-1">Runtime Properties</h3>
+                <p className="text-gray-500 text-xs mb-3 font-mono">
+                  application.configuration["mule.agent.application.properties.service"].properties
+                </p>
+                {Object.entries(runtimeProps).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => (
+                  <PropRow key={k} label={k} value={String(v)} />
+                ))}
+                {Object.keys(secureProps).length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-2 font-medium">
+                      Secure Properties (values redacted by Anypoint)
+                    </p>
+                    {Object.entries(secureProps).map(([k, v]) => (
+                      <PropRow key={k} label={k} value={String(v)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {Object.keys(ds.properties || {}).length > 0 && (
               <div>
                 <h3 className="text-white font-semibold mb-3">Deployment Properties</h3>
@@ -144,168 +209,115 @@ export default function ApplicationDetailPage() {
                 ))}
               </div>
             )}
-            {/* CH1: app.properties */}
+
+            {Object.keys(envVars).length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold mb-3">Environment Variables</h3>
+                {Object.entries(envVars).map(([k, v]) => (
+                  <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
+                ))}
+              </div>
+            )}
+
             {Object.keys(app.properties || {}).length > 0 && (
               <div>
-                <h3 className="text-white font-semibold mb-3">Application Properties</h3>
+                <h3 className="text-white font-semibold mb-3">Application Properties (CH1)</h3>
                 {Object.entries(app.properties).map(([k, v]) => (
                   <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
                 ))}
               </div>
             )}
-            {/* CH2: environmentVars */}
-            {Object.keys(ds.environmentVars || {}).length > 0 && (
-              <div>
-                <h3 className="text-white font-semibold mb-3">Environment Variables</h3>
-                {Object.entries(ds.environmentVars).map(([k, v]) => (
-                  <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
-                ))}
-              </div>
-            )}
-            {/* Extra settings from /settings endpoint */}
-            {app._settings && Object.keys(app._settings).length > 0 && (
-              <div>
-                <h3 className="text-white font-semibold mb-3">App Settings</h3>
-                {Object.entries(app._settings).map(([k, v]) => (
-                  <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
-                ))}
-              </div>
-            )}
-            {/* Runtime properties from mule.agent.application.properties.service */}
-            {(() => {
-              const svc = app.configuration?.['mule.agent.application.properties.service'];
-              const props = svc?.properties || {};
-              const secureProps = svc?.secureProperties || {};
-              const hasProps = Object.keys(props).length > 0;
-              const hasSecure = Object.keys(secureProps).length > 0;
-              if (!hasProps && !hasSecure) return null;
-              return (
-                <div>
-                  <h3 className="text-white font-semibold mb-3">Runtime Properties</h3>
-                  {hasProps && Object.entries(props).map(([k, v]) => (
-                    <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
-                  ))}
-                  {hasSecure && (
-                    <div className="mt-3">
-                      <p className="text-xs text-gray-500 uppercase tracking-wider mb-2 font-medium">Secure Properties (values hidden)</p>
-                      {Object.entries(secureProps).map(([k, v]) => (
-                        <PropRow key={k} label={k} value={String(v)} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-            {!Object.keys(ds.properties || {}).length &&
-              !Object.keys(app.properties || {}).length &&
-              !Object.keys(ds.environmentVars || {}).length &&
-              !Object.keys(app.configuration?.['mule.agent.application.properties.service']?.properties || {}).length && (
-              <div className="space-y-3">
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-4 py-3 text-sm text-yellow-400">
-                  No deployment-level properties found. This can happen when:
-                  <ul className="list-disc list-inside mt-1.5 space-y-1 text-yellow-400/80">
-                    <li>Properties are defined inside the app's <code className="font-mono text-xs">config.yaml</code> / properties file (not accessible via API)</li>
-                    <li>Properties are secured/encrypted (Anypoint Platform does not return secure property values via API)</li>
-                    <li>No properties were configured at deployment time</li>
-                  </ul>
-                  <p className="mt-2">Check the <strong>Raw</strong> tab to see the full deployment response.</p>
-                </div>
+
+            {!hasProperties && (
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-4 py-3 text-sm text-yellow-400">
+                No properties found. Anypoint API does not expose file-based or secure properties.
+                Check the <strong>Raw</strong> tab to inspect the full response.
               </div>
             )}
           </div>
         )}
 
-        {/* INFRASTRUCTURE */}
+        {/* ── INFRASTRUCTURE ────────────────────────────── */}
         {activeTab === 'infrastructure' && (
           <div className="space-y-5">
-
-            {/* Resources */}
             <Section icon={Server} title="Resources">
               {!isCH1 ? (
                 <>
-                  <PropRow label="CPU Reserved" value={resources.cpu?.reserved} />
-                  <PropRow label="CPU Limit" value={resources.cpu?.limit} />
-                  <PropRow label="Memory" value={resources.memory?.reserved} />
-                  <PropRow label="Replicas" value={ds.updateStrategy?.replicas ?? ds.replicas} />
-                  <PropRow label="Update Strategy" value={ds.updateStrategy?.strategy} />
+                  <PropRow label="vCores" value={app.application?.vCores != null ? String(app.application.vCores) : undefined} />
+                  <PropRow label="Replicas" value={replicas != null ? String(replicas) : undefined} />
+                  <PropRow label="Update Strategy" value={typeof ds.updateStrategy === 'string' ? ds.updateStrategy : undefined} />
                   <PropRow label="Clustered" value={ds.clustered != null ? String(ds.clustered) : undefined} />
+                  <PropRow label="Spread Replicas" value={ds.enforceDeployingReplicasAcrossNodes != null ? String(ds.enforceDeployingReplicasAcrossNodes) : undefined} />
+                  <PropRow label="JVM Args" value={ds.jvm?.args || '(none)'} />
+                  <PropRow label="Tracing" value={ds.tracingEnabled != null ? String(ds.tracingEnabled) : undefined} />
+                  <PropRow label="AM Log Forwarding" value={ds.disableAmLogForwarding != null ? String(!ds.disableAmLogForwarding) : undefined} />
                 </>
               ) : (
                 <>
                   <PropRow label="Workers" value={app.workers?.amount} />
                   <PropRow label="Worker Type" value={app.workers?.type?.name} />
                   <PropRow label="Worker Memory" value={app.workers?.type?.memory} />
-                  <PropRow label="Worker vCores" value={app.workers?.type?.cpu} />
                 </>
               )}
             </Section>
 
-            {/* Object Store */}
             <Section icon={Database} title="Object Store">
-              <PropRow label="Persistent Object Store"
-                value={isOSEnabled ? '✅ Enabled' : '❌ Disabled'} mono={false} />
-              {!isCH1 && (
-                <>
-                  <PropRow label="Persistent Queues" value={app.persistentQueues != null ? String(app.persistentQueues) : undefined} />
-                </>
-              )}
-              {isCH1 && (
-                <PropRow label="Persistent Queues" value={app.persistentQueues != null ? String(app.persistentQueues) : undefined} />
-              )}
+              <PropRow label="Persistent Object Store" value={osEnabled ? '✅ Enabled' : '❌ Disabled'} mono={false} />
+              {isCH1 && <PropRow label="Persistent Queues" value={app.persistentQueues != null ? String(app.persistentQueues) : undefined} />}
             </Section>
 
-            {/* Schedulers */}
-            <Section icon={Clock} title={`Schedulers${schedulers.length > 0 ? ` (${schedulers.length})` : ''}`}>
+            <Section icon={Clock} title="Schedulers" count={schedulers.length}>
               {schedulers.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {schedulers.map((s, i) => (
                     <div key={i} className="bg-gray-900 rounded-lg px-4 py-3 border border-gray-700">
-                      <p className="text-white text-sm font-medium mb-2">{s.name || s.schedulerName || `Scheduler ${i + 1}`}</p>
-                      <div className="space-y-1.5 text-xs">
-                        {s.frequency?.expression && (
-                          <div className="flex gap-2">
-                            <span className="text-gray-400 w-24">Expression</span>
-                            <span className="text-cyan-400 font-mono">{s.frequency.expression}</span>
-                          </div>
-                        )}
-                        {s.frequency?.timeUnit && (
-                          <div className="flex gap-2">
-                            <span className="text-gray-400 w-24">Time Unit</span>
-                            <span className="text-white font-mono">{s.frequency.timeUnit}</span>
-                          </div>
-                        )}
-                        {s.frequency?.value && (
-                          <div className="flex gap-2">
-                            <span className="text-gray-400 w-24">Frequency</span>
-                            <span className="text-white font-mono">{s.frequency.value} {s.frequency.timeUnit}</span>
-                          </div>
-                        )}
-                        {s.frequency?.timezone && (
-                          <div className="flex gap-2">
-                            <span className="text-gray-400 w-24">Timezone</span>
-                            <span className="text-white font-mono">{s.frequency.timezone}</span>
-                          </div>
-                        )}
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-white text-sm font-medium font-mono">{s.flowName || s.name}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                          s.enabled !== false ? 'bg-green-500/20 text-green-400' : 'bg-gray-600/30 text-gray-400'
+                        }`}>{s.enabled !== false ? 'Enabled' : 'Disabled'}</span>
+                      </div>
+                      <div className="text-xs space-y-1 text-gray-400">
+                        {s.name && s.name !== s.flowName && <div>Name: <span className="text-gray-300 font-mono">{s.name}</span></div>}
+                        {s.type && <div>Type: <span className="text-gray-300">{s.type}</span></div>}
+                        {s.expression && <div>Expression: <span className="text-cyan-400 font-mono">{s.expression}</span></div>}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-sm">No scheduler overrides configured for this deployment.</p>
+                <p className="text-gray-500 text-sm">No schedulers found for this deployment.</p>
               )}
             </Section>
 
-            {/* HTTP / Network */}
-            {ds.http && (
-              <Section icon={Settings} title="HTTP / Network">
-                <PropRow label="Inbound URL" value={ds.http.inboundPublicUrl} />
-                <PropRow label="Last Mile Security" value={ds.http.lastMileSecurity != null ? String(ds.http.lastMileSecurity) : undefined} />
-                <PropRow label="Forward SSL" value={ds.http.forwardSslSession != null ? String(ds.http.forwardSslSession) : undefined} />
-                <PropRow label="Static IPs" value={app.staticIPsEnabled != null ? String(app.staticIPsEnabled) : undefined} />
+            {(httpInbound.publicUrl || endpoints.length > 0) && (
+              <Section icon={Globe} title="HTTP Endpoints">
+                {httpInbound.publicUrl && (
+                  <PropRow label="Public URL(s)" value={httpInbound.publicUrl} />
+                )}
+                {httpInbound.internalUrl && (
+                  <PropRow label="Internal URL" value={httpInbound.internalUrl} />
+                )}
+                <PropRow label="Last Mile Security" value={httpInbound.lastMileSecurity != null ? String(httpInbound.lastMileSecurity) : undefined} />
+                <PropRow label="Forward SSL" value={httpInbound.forwardSslSession != null ? String(httpInbound.forwardSslSession) : undefined} />
+                {endpoints.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-2 font-medium">Endpoints</p>
+                    {endpoints.map((ep, i) => (
+                      <div key={i} className="py-2 border-b border-gray-700 last:border-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                            ep.access === 'external' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-600/30 text-gray-300'
+                          }`}>{ep.access}</span>
+                          <span className="text-white text-xs font-mono break-all">{ep.url}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </Section>
             )}
 
-            {/* CH1 additional */}
             {isCH1 && (
               <Section icon={Settings} title="CloudHub 1.0 Settings">
                 <PropRow label="Monitoring" value={app.monitoringEnabled != null ? String(app.monitoringEnabled) : undefined} />
@@ -316,7 +328,7 @@ export default function ApplicationDetailPage() {
           </div>
         )}
 
-        {/* RAW JSON */}
+        {/* ── RAW JSON ──────────────────────────────────── */}
         {activeTab === 'raw' && (
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -325,7 +337,7 @@ export default function ApplicationDetailPage() {
                 <Copy size={12} /> {copied ? 'Copied!' : 'Copy'}
               </button>
             </div>
-            <pre className="bg-gray-950 rounded-lg p-4 text-xs text-green-400 overflow-auto max-h-[500px] font-mono">
+            <pre className="bg-gray-950 rounded-lg p-4 text-xs text-green-400 overflow-auto max-h-[600px] font-mono">
               {JSON.stringify(app, null, 2)}
             </pre>
           </div>
