@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Server, CheckCircle, XCircle, StopCircle, Globe } from 'lucide-react';
+import { Server, CheckCircle, XCircle, Globe, SlidersHorizontal } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import Select from '../components/Select';
+import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import api from '../services/api';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
@@ -14,16 +15,17 @@ const PIE_COLORS = ['#22c55e', '#ef4444', '#6b7280', '#3b82f6'];
 export default function DashboardPage() {
   const { orgId } = useAuth();
 
-  const [businessGroups, setBusinessGroups] = useState([]);
+  const [allBusinessGroups, setAllBusinessGroups] = useState([]);
   const [selectedBg, setSelectedBg] = useState('');
   const [bgLoading, setBgLoading] = useState(true);
+  const [showBgFilter, setShowBgFilter] = useState(false);
 
   const [metrics, setMetrics] = useState(null);
   const [environments, setEnvironments] = useState([]);
   const [exchangeSummary, setExchangeSummary] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Step 1: load business groups
+  // Step 1: load all business groups
   useEffect(() => {
     if (orgId) loadBusinessGroups();
   }, [orgId]);
@@ -38,8 +40,11 @@ export default function DashboardPage() {
     try {
       const res = await api.get('/organizations/business-groups');
       const groups = res.data.data || [];
-      setBusinessGroups(groups);
-      const root = groups.find((g) => !g.parentId) || groups[0];
+      setAllBusinessGroups(groups);
+
+      // Apply filter and pick initial selection from filtered list
+      const visible = applyBgFilter(groups);
+      const root = visible.find((g) => !g.parentId) || visible[0];
       setSelectedBg(root?.id || orgId);
     } catch {
       setSelectedBg(orgId);
@@ -49,8 +54,7 @@ export default function DashboardPage() {
 
   const loadData = async (bgId) => {
     setLoading(true);
-    // Exchange assets are scoped to the root org, not individual BGs
-    const rootOrg = businessGroups.find((g) => !g.parentId);
+    const rootOrg = allBusinessGroups.find((g) => !g.parentId);
     const exchangeOrgId = rootOrg?.id || orgId;
     const [metricsRes, envsRes, exchangeRes] = await Promise.allSettled([
       api.get(`/metrics/summary/${bgId}`),
@@ -66,7 +70,10 @@ export default function DashboardPage() {
     setLoading(false);
   };
 
-  const bgOptions = businessGroups.map((g) => ({
+  // Filtered BG list for the dropdown
+  const visibleGroups = applyBgFilter(allBusinessGroups);
+
+  const bgOptions = visibleGroups.map((g) => ({
     value: g.id,
     label: g.name,
     indent: !!g.parentId,
@@ -74,7 +81,7 @@ export default function DashboardPage() {
     tagColor: 'bg-blue-500/20 text-blue-400'
   }));
 
-  const selectedBgName = businessGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
+  const selectedBgName = visibleGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
 
   const statusChartData = metrics
     ? [
@@ -90,8 +97,26 @@ export default function DashboardPage() {
         .map(([type, count]) => ({ type, count }))
     : [];
 
+  const filterActive = applyBgFilter(allBusinessGroups).length < allBusinessGroups.length;
+
   return (
     <div className="space-y-6">
+      {/* BG Filter Modal */}
+      {showBgFilter && (
+        <BgFilterModal
+          businessGroups={allBusinessGroups}
+          onClose={() => setShowBgFilter(false)}
+          onSaved={() => {
+            // Re-apply filter: if current selection is now hidden, switch to first visible
+            const visible = applyBgFilter(allBusinessGroups);
+            if (!visible.find((g) => g.id === selectedBg)) {
+              const root = visible.find((g) => !g.parentId) || visible[0];
+              if (root) setSelectedBg(root.id);
+            }
+          }}
+        />
+      )}
+
       {/* Header + BG selector */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
@@ -100,17 +125,46 @@ export default function DashboardPage() {
             Overview for <span className="text-blue-400">{selectedBgName}</span>
           </p>
         </div>
-        <div className="w-72">
-          <Select
-            value={selectedBg}
-            onChange={setSelectedBg}
-            options={bgOptions}
-            placeholder="Select business group..."
-            searchable={businessGroups.length > 5}
-            disabled={bgLoading}
-          />
+        <div className="flex items-center gap-2">
+          <div className="w-64">
+            <Select
+              value={selectedBg}
+              onChange={setSelectedBg}
+              options={bgOptions}
+              placeholder="Select business group..."
+              searchable={visibleGroups.length > 5}
+              disabled={bgLoading}
+            />
+          </div>
+          <button
+            onClick={() => setShowBgFilter(true)}
+            title="Configure visible business groups"
+            className={`p-2 rounded-lg border transition-all flex-shrink-0 ${
+              filterActive
+                ? 'bg-blue-600/20 border-blue-600/50 text-blue-400 hover:bg-blue-600/30'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white hover:border-gray-600'
+            }`}
+          >
+            <SlidersHorizontal size={15} />
+          </button>
         </div>
       </div>
+
+      {/* Filter active notice */}
+      {filterActive && (
+        <div className="flex items-center justify-between bg-blue-950/30 border border-blue-800/40 rounded-xl px-4 py-2.5 text-xs">
+          <span className="text-blue-300">
+            <SlidersHorizontal size={11} className="inline mr-1.5" />
+            Showing {visibleGroups.length} of {allBusinessGroups.length} business groups
+          </span>
+          <button
+            onClick={() => setShowBgFilter(true)}
+            className="text-blue-400 hover:text-blue-200 underline underline-offset-2"
+          >
+            Manage filter
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
