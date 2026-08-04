@@ -52,10 +52,14 @@ export default function ApplicationDetailPage() {
           ch1Schedules = Array.isArray(sr.data) ? sr.data : (sr.data?.schedules || []);
         } catch {}
         setApp({ _type: 'ch1', id: c.domain, name: c.domain, status: c.status, region: c.region,
-          muleVersion: c.muleVersion?.version, lastModifiedDate: c.lastUpdateTime ? new Date(c.lastUpdateTime).toISOString() : null,
+          // CH1 muleVersion is a plain string like "4.9-java17"
+          muleVersion: typeof c.muleVersion === 'string' ? c.muleVersion : c.muleVersion?.version,
+          lastModifiedDate: c.lastUpdateTime ? new Date(c.lastUpdateTime).toISOString() : null,
           properties: c.properties || {}, persistentQueues: c.persistentQueues, staticIPsEnabled: c.staticIPsEnabled,
-          loggingCustomLog4JEnabled: c.loggingCustomLog4JEnabled, monitoringEnabled: c.monitoringEnabled,
-          workers: { amount: c.workers?.amount, type: c.workers?.type }, _ch1Schedules: ch1Schedules, _raw: c });
+          loggingCustomLog4JEnabled: c.loggingCustomLog4JEnabled, monitoringEnabled: c.monitoringAutoRestart != null ? c.monitoringAutoRestart : c.monitoringEnabled,
+          // CH1 workers: number + workerType: string
+          workers: { amount: typeof c.workers === 'number' ? c.workers : c.workers?.amount, type: c.workerType || c.workers?.type },
+          _ch1Schedules: ch1Schedules, _raw: c });
       } catch { setApp(null); }
     }
     setLoading(false);
@@ -240,39 +244,40 @@ export default function ApplicationDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {schedulers.map((s, i) => (
                   <div key={i} className="bg-gray-900/70 border border-gray-700/50 rounded-xl p-4 hover:border-gray-600/50 transition-colors">
+                    {/* Flow name: CH1="flow", CH2="flowName" */}
                     <div className="flex items-start justify-between mb-3">
-                      <span className="text-white text-sm font-semibold font-mono leading-tight">{s.flowName || s.name}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ml-2 flex-shrink-0 ${s.enabled !== false ? 'bg-green-500/20 text-green-400' : 'bg-gray-600/30 text-gray-400'}`}>
-                        {s.enabled !== false ? 'Enabled' : 'Disabled'}
-                      </span>
+                      <span className="text-white text-sm font-semibold font-mono leading-tight break-all">{s.flow || s.flowName || s.name}</span>
+                      <div className="flex flex-col items-end gap-1 ml-2 flex-shrink-0">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.enabled !== false ? 'bg-green-500/20 text-green-400' : 'bg-gray-600/30 text-gray-400'}`}>
+                          {s.enabled !== false ? 'Enabled' : 'Disabled'}
+                        </span>
+                        {s.status && <span className="text-xs text-gray-500">{s.status}</span>}
+                      </div>
                     </div>
                     <div className="space-y-2 text-xs">
-                      {s.type && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-500 w-24 flex-shrink-0">Type</span>
-                          <span className="text-gray-300 bg-gray-800 px-2 py-0.5 rounded">{s.type}</span>
-                        </div>
-                      )}
-                      {/* Cron expression — CH1 uses "expression", CH2 uses "expression" or "cronExpression" */}
-                      {(s.expression || s.cronExpression) && (
+                      {/* Cron expression: CH1 = s.schedule.cronExpression, CH2 = s.expression or s.cronExpression */}
+                      {(s.schedule?.cronExpression || s.expression || s.cronExpression) && (
                         <div className="flex items-start gap-2">
                           <span className="text-gray-500 w-24 flex-shrink-0 pt-1">Cron</span>
-                          <code className="text-cyan-300 bg-cyan-950/40 border border-cyan-800/30 px-2.5 py-1.5 rounded-lg font-mono text-xs break-all leading-relaxed">
-                            {s.expression || s.cronExpression}
+                          <code className="text-cyan-300 bg-cyan-950/40 border border-cyan-800/30 px-2.5 py-1.5 rounded-lg font-mono text-xs break-all leading-relaxed flex-1">
+                            {s.schedule?.cronExpression || s.expression || s.cronExpression}
                           </code>
                         </div>
                       )}
-                      {/* Fixed frequency (only when no cron expression) */}
-                      {s.frequency && !(s.expression || s.cronExpression) && (
+                      {/* Fixed frequency */}
+                      {(s.frequency || (s.schedule?.period > 0)) && !(s.schedule?.cronExpression || s.expression || s.cronExpression) && (
                         <div className="flex items-center gap-2">
                           <span className="text-gray-500 w-24 flex-shrink-0">Frequency</span>
-                          <span className="text-white font-mono bg-gray-800 px-2 py-0.5 rounded">{s.frequency} {s.timeUnit}</span>
+                          <span className="text-white font-mono bg-gray-800 px-2 py-0.5 rounded">
+                            {s.frequency || s.schedule?.period} {s.timeUnit || s.schedule?.timeUnit}
+                          </span>
                         </div>
                       )}
-                      {s.startDelay && s.startDelay !== '0' && (
+                      {/* Last run */}
+                      {s.lastRun && (
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-500 w-24 flex-shrink-0">Start Delay</span>
-                          <span className="text-white font-mono bg-gray-800 px-2 py-0.5 rounded">{s.startDelay} {s.timeUnit}</span>
+                          <span className="text-gray-500 w-24 flex-shrink-0">Last Run</span>
+                          <span className="text-gray-300">{new Date(s.lastRun).toLocaleString()}</span>
                         </div>
                       )}
                     </div>
