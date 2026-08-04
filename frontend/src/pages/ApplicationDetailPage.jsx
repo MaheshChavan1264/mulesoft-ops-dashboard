@@ -5,13 +5,31 @@ import { ArrowLeft, RefreshCw, Copy, Clock, Database, Server, Settings, Globe } 
 import StatusBadge from '../components/StatusBadge';
 import api from '../services/api';
 
+// Premium table-row for key-value pairs
 const PRow = ({ label, value, mono = true, hi }) => (
-  <div className={`grid grid-cols-[180px_1fr] gap-3 px-4 py-3 rounded-lg mb-0.5 transition-colors ${hi ? 'bg-blue-500/8 border border-blue-500/20' : 'hover:bg-gray-800/50'} border border-transparent`}>
-    <span className="text-gray-500 text-xs font-semibold uppercase tracking-widest pt-0.5 truncate">{label}</span>
-    <span className={`text-gray-100 text-sm break-all leading-relaxed ${mono ? 'font-mono text-xs' : ''}`}>
-      {value != null && value !== '' ? value : <span className="text-gray-700 font-normal">—</span>}
-    </span>
-  </div>
+  <tr className={`border-b border-gray-800/60 ${hi ? 'bg-blue-500/5' : 'hover:bg-gray-800/40'} transition-colors`}>
+    <td className="px-4 py-3 align-top w-[220px]">
+      <span className="text-gray-400 text-xs font-medium break-all leading-relaxed">{label}</span>
+    </td>
+    <td className="px-4 py-3 align-top">
+      <span className={`${mono ? 'font-mono text-xs text-gray-200 bg-gray-900/60 px-2 py-0.5 rounded' : 'text-gray-100 text-sm'} break-all leading-relaxed`}>
+        {value != null && value !== '' ? value : <span className="text-gray-700">—</span>}
+      </span>
+    </td>
+  </tr>
+);
+
+// Premium property table wrapper
+const PropTable = ({ children }) => (
+  <table className="w-full text-sm border-collapse">
+    <thead>
+      <tr className="border-b border-gray-700/60 bg-gray-800/60">
+        <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[220px]">Property</th>
+        <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Value</th>
+      </tr>
+    </thead>
+    <tbody>{children}</tbody>
+  </table>
 );
 
 const Sec = ({ icon: Icon, title, count, accent, children }) => (
@@ -176,29 +194,49 @@ export default function ApplicationDetailPage() {
         <div className="space-y-5">
           {Object.keys(runtimeProps).length > 0 && (
             <Sec icon={Settings} title="Runtime Properties" count={Object.keys(runtimeProps).length} accent>
-              <p className="text-gray-600 text-xs mb-3 font-mono">application.configuration["mule.agent.application.properties.service"]</p>
-              {Object.entries(runtimeProps).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => <PRow key={k} label={k} value={String(v)} />)}
+              <p className="text-gray-600 text-xs mb-3 font-mono px-1">application.configuration["mule.agent.application.properties.service"]</p>
+              <div className="rounded-lg overflow-hidden border border-gray-700/40">
+                <PropTable>
+                  {Object.entries(runtimeProps).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => <PRow key={k} label={k} value={String(v)} />)}
+                </PropTable>
+              </div>
               {Object.keys(secureProps).length > 0 && (
-                <div className="mt-4 pt-4 border-t border-gray-700/50">
-                  <p className="text-xs text-orange-400/80 uppercase tracking-wider mb-3 font-medium">⚠ Secure Properties (redacted)</p>
-                  {Object.entries(secureProps).map(([k, v]) => <PRow key={k} label={k} value={String(v)} />)}
+                <div className="mt-4">
+                  <p className="text-xs text-orange-400/80 uppercase tracking-wider mb-2 font-medium px-1">⚠ Secure Properties (redacted by Anypoint)</p>
+                  <div className="rounded-lg overflow-hidden border border-orange-900/30">
+                    <PropTable>
+                      {Object.entries(secureProps).map(([k, v]) => <PRow key={k} label={k} value={String(v)} />)}
+                    </PropTable>
+                  </div>
                 </div>
               )}
             </Sec>
           )}
           {Object.keys(ds.properties || {}).length > 0 && (
             <Sec icon={Settings} title="Deployment Properties" count={Object.keys(ds.properties).length}>
-              {Object.entries(ds.properties).map(([k, v]) => <PRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+              <div className="rounded-lg overflow-hidden border border-gray-700/40">
+                <PropTable>
+                  {Object.entries(ds.properties).map(([k, v]) => <PRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+                </PropTable>
+              </div>
             </Sec>
           )}
           {Object.keys(envVars).length > 0 && (
             <Sec icon={Settings} title="Environment Variables" count={Object.keys(envVars).length}>
-              {Object.entries(envVars).map(([k, v]) => <PRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+              <div className="rounded-lg overflow-hidden border border-gray-700/40">
+                <PropTable>
+                  {Object.entries(envVars).map(([k, v]) => <PRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+                </PropTable>
+              </div>
             </Sec>
           )}
           {Object.keys(app.properties || {}).length > 0 && (
             <Sec icon={Settings} title="Application Properties" count={Object.keys(app.properties).length}>
-              {Object.entries(app.properties).map(([k, v]) => <PRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+              <div className="rounded-lg overflow-hidden border border-gray-700/40">
+                <PropTable>
+                  {Object.entries(app.properties).map(([k, v]) => <PRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+                </PropTable>
+              </div>
             </Sec>
           )}
           {!hasProps && (
@@ -241,48 +279,52 @@ export default function ApplicationDetailPage() {
           {/* Schedulers */}
           <Sec icon={Clock} title="Schedulers" count={schedulers.length}>
             {schedulers.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {schedulers.map((s, i) => (
-                  <div key={i} className="bg-gray-900/70 border border-gray-700/50 rounded-xl p-4 hover:border-gray-600/50 transition-colors">
-                    {/* Flow name: CH1="flow", CH2="flowName" */}
-                    <div className="flex items-start justify-between mb-3">
-                      <span className="text-white text-sm font-semibold font-mono leading-tight break-all">{s.flow || s.flowName || s.name}</span>
-                      <div className="flex flex-col items-end gap-1 ml-2 flex-shrink-0">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.enabled !== false ? 'bg-green-500/20 text-green-400' : 'bg-gray-600/30 text-gray-400'}`}>
-                          {s.enabled !== false ? 'Enabled' : 'Disabled'}
-                        </span>
-                        {s.status && <span className="text-xs text-gray-500">{s.status}</span>}
-                      </div>
-                    </div>
-                    <div className="space-y-2 text-xs">
-                      {/* Cron expression: CH1 = s.schedule.cronExpression, CH2 = s.expression or s.cronExpression */}
-                      {(s.schedule?.cronExpression || s.expression || s.cronExpression) && (
-                        <div className="flex items-start gap-2">
-                          <span className="text-gray-500 w-24 flex-shrink-0 pt-1">Cron</span>
-                          <code className="text-cyan-300 bg-cyan-950/40 border border-cyan-800/30 px-2.5 py-1.5 rounded-lg font-mono text-xs break-all leading-relaxed flex-1">
-                            {s.schedule?.cronExpression || s.expression || s.cronExpression}
-                          </code>
-                        </div>
-                      )}
-                      {/* Fixed frequency */}
-                      {(s.frequency || (s.schedule?.period > 0)) && !(s.schedule?.cronExpression || s.expression || s.cronExpression) && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-500 w-24 flex-shrink-0">Frequency</span>
-                          <span className="text-white font-mono bg-gray-800 px-2 py-0.5 rounded">
-                            {s.frequency || s.schedule?.period} {s.timeUnit || s.schedule?.timeUnit}
-                          </span>
-                        </div>
-                      )}
-                      {/* Last run */}
-                      {s.lastRun && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-500 w-24 flex-shrink-0">Last Run</span>
-                          <span className="text-gray-300">{new Date(s.lastRun).toLocaleString()}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+              <div className="rounded-lg overflow-hidden border border-gray-700/40">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-gray-800/70 border-b border-gray-700/60">
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Flow</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Cron Expression</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Last Run</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schedulers.map((s, i) => {
+                      const cronExpr = s.schedule?.cronExpression || s.expression || s.cronExpression;
+                      const freq = s.frequency || (s.schedule?.period > 0 ? s.schedule.period : null);
+                      return (
+                        <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/40 transition-colors">
+                          <td className="px-4 py-3 align-top">
+                            <p className="text-white text-xs font-medium font-mono break-all">{s.flow || s.flowName || s.name}</p>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            {cronExpr ? (
+                              <code className="text-cyan-300 bg-cyan-950/30 border border-cyan-800/30 px-2 py-1 rounded font-mono text-xs">{cronExpr}</code>
+                            ) : freq ? (
+                              <span className="text-gray-300 font-mono text-xs bg-gray-800 px-2 py-0.5 rounded">{freq} {s.timeUnit || s.schedule?.timeUnit}</span>
+                            ) : (
+                              <span className="text-gray-600 text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <span className="text-gray-400 text-xs whitespace-nowrap">
+                              {s.lastRun ? new Date(s.lastRun).toLocaleString() : '—'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <div className="flex flex-col gap-1">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-fit ${s.enabled !== false ? 'bg-green-500/20 text-green-400' : 'bg-gray-600/30 text-gray-400'}`}>
+                                {s.enabled !== false ? 'Enabled' : 'Disabled'}
+                              </span>
+                              {s.status && <span className="text-xs text-gray-500">{s.status}</span>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <p className="text-gray-500 text-sm">No schedulers found for this deployment.</p>
