@@ -246,24 +246,24 @@ export default function ApplicationDetailPage() {
   const allProps = { ...runtimeProps, ...ds.properties, ...envVars, ...app.properties };
   const filteredProps = Object.entries(allProps).filter(([k]) => !propSearch || k.toLowerCase().includes(propSearch.toLowerCase()));
 
-  // CPS computed values
+  // CPS computed values — read directly from runtime properties
   const cpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
   const cpsProjectName = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
-  const appEnvName = app.environment?.name || '';
-  const appEnvType = app.environment?.type || '';
-  const deriveCpsEnv = (n = '', t = '') => {
-    const s = `${n} ${t}`.toLowerCase();
+  const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || (() => {
+    // fallback: derive from Anypoint env name if cps.prefix not set
+    const s = `${app.environment?.name || ''} ${app.environment?.type || ''}`.toLowerCase();
     if (/\b(prod|pd)\b/.test(s)) return 'prod';
     if (/\b(uat|ut|stg|stage|sandbox|uap)\b/.test(s)) return 'uat';
-    return t === 'production' ? 'prod' : 'uat';
-  };
-  const cpsEnv = deriveCpsEnv(appEnvName, appEnvType);
+    return app.environment?.type === 'production' ? 'prod' : 'uat';
+  })();
+  const appEnvName = app.environment?.name || '';
   const cpsDepType = isCH1 ? 'ch1' : 'ch2';
 
   const loadCpsData = async () => {
     if (!cpsBaseUrl) return;
     setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null);
     try {
+      // Use cps.prefix as environment and cps.projectName as keys — both read directly from runtime props
       const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', environment: cpsEnv, keys: cpsProjectName, deploymentType: cpsDepType, envName: appEnvName } });
       const nsRaw = nsRes.data;
       const nsEntry = Array.isArray(nsRaw?.properties) ? (nsRaw.properties.find((p) => p.key === cpsProjectName) || nsRaw.properties[0]) : nsRaw;
