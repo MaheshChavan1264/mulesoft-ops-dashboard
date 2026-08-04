@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
+import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import api from '../services/api';
 
 const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
@@ -162,8 +163,9 @@ export default function ApplicationsPage() {
   const { orgId } = useAuth();
   const navigate = useNavigate();
 
-  const [businessGroups, setBusinessGroups] = useState([]);
+  const [allBusinessGroups, setAllBusinessGroups] = useState([]);
   const [selectedBg, setSelectedBg] = useState('');
+  const [showBgFilter, setShowBgFilter] = useState(false);
   const [environments, setEnvironments] = useState([]);
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -194,8 +196,9 @@ export default function ApplicationsPage() {
     try {
       const res = await api.get('/organizations/business-groups');
       const groups = res.data.data || [];
-      setBusinessGroups(groups);
-      const root = groups.find((g) => !g.parentId) || groups[0];
+      setAllBusinessGroups(groups);
+      const visible = applyBgFilter(groups);
+      const root = visible.find((g) => !g.parentId) || visible[0];
       setSelectedBg(root?.id || orgId);
     } catch { setSelectedBg(orgId); }
     setBgLoading(false);
@@ -345,7 +348,11 @@ export default function ApplicationsPage() {
   }, [selectedApps]);
 
   /* ── Select options ────────────────────────────────── */
-  const bgOptions = businessGroups.map((g) => ({
+  // Apply BG filter to the visible list
+  const visibleGroups = applyBgFilter(allBusinessGroups);
+  const filterActive = visibleGroups.length < allBusinessGroups.length;
+
+  const bgOptions = visibleGroups.map((g) => ({
     value: g.id, label: g.name, indent: !!g.parentId,
     tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400'
   }));
@@ -378,11 +385,26 @@ export default function ApplicationsPage() {
     { value: 'CloudHub 1.0', label: 'CloudHub 1.0', tag: 'CH1', tagColor: 'bg-purple-500/20 text-purple-400' }
   ];
 
-  const selectedBgName = businessGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
+  const selectedBgName = visibleGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
 
   return (
     <div className="space-y-5">
       {/* Modals */}
+      {/* BG Filter Modal */}
+      {showBgFilter && (
+        <BgFilterModal
+          businessGroups={allBusinessGroups}
+          onClose={() => setShowBgFilter(false)}
+          onSaved={() => {
+            const visible = applyBgFilter(allBusinessGroups);
+            if (!visible.find((g) => g.id === selectedBg)) {
+              const root = visible.find((g) => !g.parentId) || visible[0];
+              if (root) setSelectedBg(root.id);
+            }
+          }}
+        />
+      )}
+
       <ConfirmModal
         state={confirmState}
         onConfirm={executeAction}
@@ -427,13 +449,27 @@ export default function ApplicationsPage() {
 
       {/* Business Group selector */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2 font-medium">Business Group</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">Business Group</p>
+          <button
+            onClick={() => setShowBgFilter(true)}
+            title="Configure visible business groups"
+            className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border transition-all ${
+              filterActive
+                ? 'bg-blue-600/20 border-blue-600/50 text-blue-400 hover:bg-blue-600/30'
+                : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600'
+            }`}
+          >
+            <SlidersHorizontal size={11} />
+            {filterActive ? `${visibleGroups.length}/${allBusinessGroups.length} shown` : 'Filter BGs'}
+          </button>
+        </div>
         <Select
           value={selectedBg}
           onChange={(v) => { setSelectedBg(v); setSearch(''); setFilterStatus(''); setFilterType(''); }}
           options={bgOptions}
           placeholder="Select business group..."
-          searchable={businessGroups.length > 5}
+          searchable={visibleGroups.length > 5}
           disabled={bgLoading}
         />
       </div>
