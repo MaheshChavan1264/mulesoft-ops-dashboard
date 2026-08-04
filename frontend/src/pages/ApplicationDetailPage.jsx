@@ -121,13 +121,13 @@ export default function ApplicationDetailPage() {
   const schedSvc = appCfg['mule.agent.scheduling.service'] || {};
   const runtimeProps = propsSvc.properties || {};
   const secureProps = propsSvc.secureProperties || {};
+  const isCH1 = app._type === 'ch1';
   const schedulers = isCH1
     ? (app._ch1Schedules || [])
     : (schedSvc.schedulers || []);
   const httpInbound = ds.http?.inbound || {};
   const endpoints = httpInbound.endpoints || [];
   const envVars = ds.environmentVariables || ds.environmentVars || {};
-  const isCH1 = app._type === 'ch1';
   const replicas = app.target?.replicas ?? ds.replicas;
   const osEnabled = ds.persistentObjectStore ?? ds.hasPersistentObjectStore ?? false;
   const replicaList = app.replicas || [];
