@@ -289,8 +289,11 @@ export default function ApplicationDetailPage() {
 
       setCpsData({ nonSecure: flatNs, secureGroups, binaryList });
     } catch (e) {
-      if (e.response?.data?.needsConfig) setCpsMissingCred(e.response.data.credKey);
-      else setCpsError(e.response?.data?.error || e.message || 'CPS fetch failed');
+      if (e.response?.status === 422 || e.response?.data?.needsConfig) {
+        setCpsMissingCred(e.response.data.credKey);
+      } else {
+        setCpsError(e.response?.data?.error || e.message || 'CPS fetch failed');
+      }
     }
     setCpsLoading(false);
   };
