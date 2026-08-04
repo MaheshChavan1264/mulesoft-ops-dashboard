@@ -171,18 +171,35 @@ export default function ApplicationDetailPage() {
                 ))}
               </div>
             )}
-            {/* Agent props */}
-            {Object.keys(app.application?.configuration?.muleAgentApplicationPropertiesService?.properties || {}).length > 0 && (
-              <div>
-                <h3 className="text-white font-semibold mb-3">Agent Properties</h3>
-                {Object.entries(app.application.configuration.muleAgentApplicationPropertiesService.properties).map(([k, v]) => (
-                  <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
-                ))}
-              </div>
-            )}
+            {/* Runtime properties from mule.agent.application.properties.service */}
+            {(() => {
+              const svc = app.configuration?.['mule.agent.application.properties.service'];
+              const props = svc?.properties || {};
+              const secureProps = svc?.secureProperties || {};
+              const hasProps = Object.keys(props).length > 0;
+              const hasSecure = Object.keys(secureProps).length > 0;
+              if (!hasProps && !hasSecure) return null;
+              return (
+                <div>
+                  <h3 className="text-white font-semibold mb-3">Runtime Properties</h3>
+                  {hasProps && Object.entries(props).map(([k, v]) => (
+                    <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
+                  ))}
+                  {hasSecure && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-500 uppercase tracking-wider mb-2 font-medium">Secure Properties (values hidden)</p>
+                      {Object.entries(secureProps).map(([k, v]) => (
+                        <PropRow key={k} label={k} value={String(v)} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {!Object.keys(ds.properties || {}).length &&
               !Object.keys(app.properties || {}).length &&
-              !Object.keys(ds.environmentVars || {}).length && (
+              !Object.keys(ds.environmentVars || {}).length &&
+              !Object.keys(app.configuration?.['mule.agent.application.properties.service']?.properties || {}).length && (
               <div className="space-y-3">
                 <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-4 py-3 text-sm text-yellow-400">
                   No deployment-level properties found. This can happen when:
