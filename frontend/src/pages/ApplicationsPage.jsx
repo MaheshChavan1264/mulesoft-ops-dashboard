@@ -64,7 +64,7 @@ export default function ApplicationsPage() {
   const filtered = apps.filter((a) => {
     const matchSearch = !search || a.name?.toLowerCase().includes(search.toLowerCase());
     const matchEnv = !filterEnv || a.environment?.id === filterEnv;
-    const matchStatus = !filterStatus || (a.status || '').toLowerCase() === filterStatus.toLowerCase();
+    const matchStatus = !filterStatus || (a.status || '').toUpperCase() === filterStatus.toUpperCase();
     const matchType = !filterType || a.deploymentType === filterType;
     return matchSearch && matchEnv && matchStatus && matchType;
   });
@@ -93,11 +93,14 @@ export default function ApplicationsPage() {
 
   const statusOptions = [
     { value: '', label: 'All Statuses' },
-    { value: 'running', label: 'Running', badge: true, badgeColor: 'bg-green-400' },
-    { value: 'failed', label: 'Failed', badge: true, badgeColor: 'bg-red-400' },
-    { value: 'stopped', label: 'Stopped', badge: true, badgeColor: 'bg-gray-400' },
-    { value: 'deploying', label: 'Deploying', badge: true, badgeColor: 'bg-blue-400' },
-    { value: 'started', label: 'Started', badge: true, badgeColor: 'bg-green-400' }
+    { value: 'RUNNING', label: 'Running', badge: true, badgeColor: 'bg-green-400' },
+    { value: 'FAILED', label: 'Failed', badge: true, badgeColor: 'bg-red-400' },
+    { value: 'STOPPED', label: 'Stopped', badge: true, badgeColor: 'bg-gray-400' },
+    { value: 'DEPLOYING', label: 'Deploying', badge: true, badgeColor: 'bg-blue-400' },
+    { value: 'UPDATING', label: 'Updating', badge: true, badgeColor: 'bg-purple-400' },
+    { value: 'STARTING', label: 'Starting', badge: true, badgeColor: 'bg-blue-300' },
+    { value: 'STOPPING', label: 'Stopping', badge: true, badgeColor: 'bg-orange-400' },
+    { value: 'PARTIALLY_STARTED', label: 'Partial', badge: true, badgeColor: 'bg-yellow-400' }
   ];
 
   const typeOptions = [

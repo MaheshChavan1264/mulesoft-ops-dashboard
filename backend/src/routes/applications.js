@@ -9,6 +9,17 @@ const parseCH2Apps = (data) => {
   return data.items || data.deployments || data.content || data.data || [];
 };
 
+// Normalize statuses across CH1 and CH2 so frontend uses one consistent set
+// CH1: STARTED → RUNNING, DEPLOY_FAILED → FAILED, PARTIALLY_STARTED → PARTIALLY_STARTED
+// CH2: RUNNING, FAILED, STOPPED, DEPLOYING, UPDATING, STARTING, STOPPING
+const normalizeStatus = (status) => {
+  const s = (status || '').toUpperCase().trim();
+  if (s === 'STARTED') return 'RUNNING';
+  if (s === 'DEPLOY_FAILED') return 'FAILED';
+  if (s === 'UNDEPLOYED') return 'STOPPED';
+  return s;
+};
+
 // Get all applications for an environment (CloudHub 2.0)
 router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
   try {
@@ -142,7 +153,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
           results.push({
             id: app.id,
             name: app.name,
-            status: app.status || app.desiredStatus,
+            status: normalizeStatus(app.status || app.desiredStatus),
             environment: { id: env.id, name: env.name, type: env.type },
             deploymentType: 'CloudHub 2.0',
             lastModifiedDate: app.lastModifiedDate || app.updatedAt,
@@ -171,7 +182,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
             results.push({
               id: app.domain || app.name,
               name: app.domain || app.name,
-              status: app.status,
+              status: normalizeStatus(app.status),
               environment: { id: env.id, name: env.name, type: env.type },
               deploymentType: 'CloudHub 1.0',
               lastModifiedDate: app.lastUpdateTime ? new Date(app.lastUpdateTime).toISOString() : null,
