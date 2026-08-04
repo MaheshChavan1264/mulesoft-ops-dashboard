@@ -39,14 +39,41 @@ router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
   }
 });
 
-// Get a specific CloudHub 2.0 application
+// Get a specific CloudHub 2.0 application — enriched with properties from separate endpoint
 router.get('/cloudhub2/:orgId/:envId/:deploymentId', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
+    const { orgId, envId, deploymentId } = req.params;
+
+    // Fetch main deployment detail
     const response = await client.get(
-      `/amc/application-manager/api/v2/organizations/${req.params.orgId}/environments/${req.params.envId}/deployments/${req.params.deploymentId}`
+      `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`
     );
-    res.json(response.data);
+    const deployment = response.data;
+
+    // Try to fetch application properties from dedicated endpoint
+    let extraProps = null;
+    try {
+      const propsRes = await client.get(
+        `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/settings`
+      );
+      extraProps = propsRes.data;
+    } catch { /* not all apps have this endpoint */ }
+
+    // Merge extra props into the deployment response if found
+    if (extraProps) {
+      deployment._settings = extraProps;
+    }
+
+    // Log what property paths exist for debugging
+    const ds = deployment.target?.deploymentSettings || {};
+    console.log(`CH2 props for ${deploymentId}:`, {
+      'target.deploymentSettings.properties': Object.keys(ds.properties || {}),
+      'target.deploymentSettings.environmentVars': Object.keys(ds.environmentVars || {}),
+      'application.configuration': !!deployment.application?.configuration
+    });
+
+    res.json(deployment);
   } catch (error) {
     console.error('Error fetching CH2 app:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
