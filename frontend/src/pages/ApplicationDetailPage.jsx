@@ -271,25 +271,26 @@ export default function ApplicationDetailPage() {
     const useEnv = envOverride || effectiveCpsEnv;
     setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null); setCpsAttemptedUrl('');
     try {
-      let nsRaw;
-      try {
-        // Try specific key first
-        const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', environment: useEnv, keys: useKey, deploymentType: cpsDepType, envName: appEnvName } });
-        nsRaw = nsRes.data;
-      } catch (e404) {
-        if (e404.response?.status === 404) {
-          // Fallback: fetch all non-secure properties for this environment
-          const allRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure-all', environment: useEnv, deploymentType: cpsDepType, envName: appEnvName } });
-          nsRaw = allRes.data;
-          // Try to find the matching entry
-          if (Array.isArray(nsRaw?.properties)) {
-            const match = nsRaw.properties.find((p) => p.key === useKey || p.key?.includes(useKey));
-            if (match) nsRaw = { properties: [match] };
-          }
-        } else throw e404;
+      // Use non-secure/all to get all properties for the environment, then find matching entry by key
+      const allRes = await api.get('/cps/fetch', { params: {
+        baseUrl: cpsBaseUrl, type: 'non-secure-all', environment: useEnv,
+        deploymentType: cpsDepType, envName: appEnvName
+      }});
+      const nsRaw = allRes.data;
+
+      // Find the entry that matches the project key (exact or contains match)
+      let nsEntry = null;
+      if (Array.isArray(nsRaw?.properties)) {
+        nsEntry = nsRaw.properties.find((p) => p.key === useKey)
+          || nsRaw.properties.find((p) => p.key?.includes(useKey))
+          || nsRaw.properties[0];
+      } else {
+        nsEntry = nsRaw;
       }
-      const nsEntry = Array.isArray(nsRaw?.properties) ? (nsRaw.properties.find((p) => p.key === useKey) || nsRaw.properties[0]) : nsRaw;
-      const flatNs = (nsEntry?.properties && typeof nsEntry.properties === 'object' && !Array.isArray(nsEntry.properties)) ? nsEntry.properties : (typeof nsRaw === 'object' && !Array.isArray(nsRaw) ? nsRaw : {});
+
+      const flatNs = (nsEntry?.properties && typeof nsEntry.properties === 'object' && !Array.isArray(nsEntry.properties))
+        ? nsEntry.properties
+        : (typeof nsRaw === 'object' && !Array.isArray(nsRaw) ? nsRaw : {});
 
       let secureGroups = [];
       const secureKeys = flatNs['cps.secure.properties'];
