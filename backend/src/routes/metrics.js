@@ -3,6 +3,11 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 
+const parseCH2Apps = (data) => {
+  if (Array.isArray(data)) return data;
+  return data.items || data.deployments || data.content || data.data || [];
+};
+
 // Get application metrics (CloudHub 1.0)
 router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
   try {
@@ -11,104 +16,81 @@ router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
     const response = await client.get(
       `/cloudhub/api/applications/${req.params.appName}/dashboardData`,
       {
-        headers: {
-          'X-ANYPNT-ENV-ID': req.params.envId,
-          'X-ANYPNT-ORG-ID': req.orgId
-        },
+        headers: { 'X-ANYPNT-ENV-ID': req.params.envId, 'X-ANYPNT-ORG-ID': req.orgId },
         params: { duration, period }
       }
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching CH1 metrics:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch application metrics'
-    });
+    res.status(error.response?.status || 500).json({ error: error.message });
   }
 });
 
-// Get application logs (CloudHub 1.0)
-router.get('/cloudhub1/:envId/:appName/logs', authMiddleware, async (req, res) => {
-  try {
-    const client = createClient(req.anypointToken);
-    const { limit = 100, priority = 'INFO', startTime, endTime } = req.query;
-    const params = { limit, priority };
-    if (startTime) params.startTime = startTime;
-    if (endTime) params.endTime = endTime;
-
-    const response = await client.get(
-      `/cloudhub/api/applications/${req.params.appName}/logs`,
-      {
-        headers: {
-          'X-ANYPNT-ENV-ID': req.params.envId,
-          'X-ANYPNT-ORG-ID': req.orgId
-        },
-        params
-      }
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error fetching app logs:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch application logs'
-    });
-  }
-});
-
-// Get API analytics
-router.get('/api/:orgId/:envId/:apiId', authMiddleware, async (req, res) => {
-  try {
-    const client = createClient(req.anypointToken);
-    const { duration = '1d', policy } = req.query;
-    const params = { duration };
-    if (policy) params.policy = policy;
-
-    const response = await client.get(
-      `/analytics/1.0/${req.params.orgId}/environments/${req.params.envId}/events`,
-      { params }
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error fetching API analytics:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API analytics'
-    });
-  }
-});
-
-// Get organization-wide metrics summary
+// Organization-wide metrics summary — aggregates across ALL accessible envs
 router.get('/summary/:orgId', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
 
-    const envResponse = await client.get(
-      `/accounts/api/organizations/${req.params.orgId}/environments`
-    );
-    const environments = envResponse.data.data || [];
+    // Build list of { orgId, env } pairs from ALL accessible environments
+    // This covers root org + all sub-orgs (business groups)
+    let allEnvPairs = [];
 
-    let totalApps = 0;
-    let runningApps = 0;
-    let failedApps = 0;
-    let stoppedApps = 0;
-
-    for (const env of environments) {
+    if (Object.keys(req.accessibleEnvironments).length > 0) {
+      // Use session-cached accessible environments (filtered, fast)
+      for (const [orgId, envs] of Object.entries(req.accessibleEnvironments)) {
+        for (const env of envs) {
+          allEnvPairs.push({ orgId, env });
+        }
+      }
+    } else {
+      // Fallback: fetch environments for the requested org only
       try {
-        const ch2Resp = await client.get(
-          `/amc/application-manager/api/v2/organizations/${req.params.orgId}/environments/${env.id}/deployments`,
-          { params: { limit: 500 } }
+        const envRes = await client.get(
+          `/accounts/api/organizations/${req.params.orgId}/environments`
         );
-        const apps = ch2Resp.data.items || [];
-        totalApps += apps.length;
-        apps.forEach((app) => {
-          const status = (app.status || '').toLowerCase();
-          if (status === 'running') runningApps++;
-          else if (status === 'failed') failedApps++;
-          else stoppedApps++;
-        });
+        const envs = envRes.data.data || [];
+        allEnvPairs = envs.map((env) => ({ orgId: req.params.orgId, env }));
       } catch (e) {
-        // skip
+        allEnvPairs = [];
       }
     }
+
+    let totalApps = 0, runningApps = 0, failedApps = 0, stoppedApps = 0;
+    const environmentsSeen = new Set();
+
+    await Promise.all(allEnvPairs.map(async ({ orgId, env }) => {
+      environmentsSeen.add(env.id);
+      // Try CloudHub 2.0
+      try {
+        const ch2Res = await client.get(
+          `/amc/application-manager/api/v2/organizations/${orgId}/environments/${env.id}/deployments`,
+          { params: { limit: 500 } }
+        );
+        const apps = parseCH2Apps(ch2Res.data);
+        totalApps += apps.length;
+        apps.forEach((app) => {
+          const s = (app.status || app.desiredStatus || '').toLowerCase();
+          if (s === 'running' || s === 'started') runningApps++;
+          else if (s === 'failed') failedApps++;
+          else stoppedApps++;
+        });
+      } catch (e) { /* skip */ }
+
+      // Try CloudHub 1.0
+      try {
+        const ch1Res = await client.get('/cloudhub/api/applications', {
+          headers: { 'X-ANYPNT-ENV-ID': env.id, 'X-ANYPNT-ORG-ID': orgId }
+        });
+        const ch1Apps = Array.isArray(ch1Res.data) ? ch1Res.data : (ch1Res.data.applications || []);
+        ch1Apps.forEach((app) => {
+          totalApps++;
+          const s = (app.status || '').toLowerCase();
+          if (s === 'started' || s === 'running') runningApps++;
+          else if (s === 'failed' || s === 'deploy_failed') failedApps++;
+          else stoppedApps++;
+        });
+      } catch (e) { /* skip */ }
+    }));
 
     res.json({
       orgId: req.params.orgId,
@@ -117,7 +99,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
         running: runningApps,
         failed: failedApps,
         stopped: stoppedApps,
-        environments: environments.length
+        environments: environmentsSeen.size
       }
     });
   } catch (error) {
