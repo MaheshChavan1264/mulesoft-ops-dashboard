@@ -1,0 +1,52 @@
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import Layout from './components/Layout';
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
+import ApplicationsPage from './pages/ApplicationsPage';
+import ApplicationDetailPage from './pages/ApplicationDetailPage';
+import EnvironmentsPage from './pages/EnvironmentsPage';
+import BusinessGroupsPage from './pages/BusinessGroupsPage';
+import ApiManagerPage from './pages/ApiManagerPage';
+import ExchangePage from './pages/ExchangePage';
+
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-950">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+  return user ? children : <Navigate to="/login" replace />;
+};
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Layout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DashboardPage />} />
+            <Route path="applications" element={<ApplicationsPage />} />
+            <Route path="applications/:envId/:appId" element={<ApplicationDetailPage />} />
+            <Route path="environments" element={<EnvironmentsPage />} />
+            <Route path="business-groups" element={<BusinessGroupsPage />} />
+            <Route path="api-manager" element={<ApiManagerPage />} />
+            <Route path="exchange" element={<ExchangePage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}
