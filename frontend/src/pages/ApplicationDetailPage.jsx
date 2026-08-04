@@ -152,6 +152,8 @@ export default function ApplicationDetailPage() {
   const [cpsKeyOverride, setCpsKeyOverride] = useState('');
   const [cpsEnvOverride, setCpsEnvOverride] = useState('');
   const [cpsAttemptedUrl, setCpsAttemptedUrl] = useState('');
+  const [secureLoading, setSecureLoading] = useState(false);
+  const [binaryLoading, setBinaryLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -306,25 +308,15 @@ export default function ApplicationDetailPage() {
         }
       }
 
-      let secureGroups = [];
-      const secureKeys = flatNs['cps.secure.properties'];
-      if (secureKeys) {
-        try {
-          const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', environment: useEnv, keys: secureKeys, deploymentType: cpsDepType, envName: appEnvName } });
-          secureGroups = Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
-        } catch {}
-      }
-
-      let binaryList = [];
-      const binaryKeys = flatNs['cps.secure.binaries'];
-      if (binaryKeys) {
-        try {
-          const br = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'binaries', environment: useEnv, keys: binaryKeys, deploymentType: cpsDepType, envName: appEnvName } });
-          binaryList = br.data?.binaries || (Array.isArray(br.data) ? br.data : []);
-        } catch {}
-      }
-
-      setCpsData({ nonSecure: flatNs, secureGroups, binaryList });
+      // Store secure/binary keys for on-demand fetching; do NOT auto-fetch them
+      setCpsData({
+        nonSecure: flatNs,
+        secureGroups: [],
+        binaryList: [],
+        secureKeys: flatNs['cps.secure.properties'] || '',
+        binaryKeys: flatNs['cps.secure.binaries'] || '',
+        useEnv,  // store for later fetches
+      });
     } catch (e) {
       if (e.response?.status === 422 || e.response?.data?.needsConfig) {
         setCpsMissingCred(e.response.data.credKey);
@@ -818,6 +810,44 @@ export default function ApplicationDetailPage() {
                 );
               })()}
 
+              {/* ── Get Secure Properties button ── */}
+              {cpsData.secureKeys && cpsData.secureGroups.length === 0 && (
+                <div className="flex items-center justify-between bg-purple-950/20 border border-purple-800/40 rounded-2xl px-5 py-4">
+                  <div className="space-y-1">
+                    <p className="text-purple-300 text-sm font-semibold flex items-center gap-2">
+                      <Key size={13} /> Secure Properties
+                    </p>
+                    <p className="text-purple-500/70 text-xs">Keys: {cpsData.secureKeys}</p>
+                  </div>
+                  <button
+                    disabled={secureLoading}
+                    onClick={async () => {
+                      setSecureLoading(true);
+                      try {
+                        const sr = await api.get('/cps/fetch', { params: {
+                          baseUrl: cpsBaseUrl, type: 'secure', environment: cpsData.useEnv,
+                          keys: cpsData.secureKeys, deploymentType: cpsDepType, envName: appEnvName
+                        }});
+                        const raw = sr.data;
+                        const groups = Array.isArray(raw?.responses) ? raw.responses
+                          : Array.isArray(raw?.properties) ? raw.properties
+                          : Array.isArray(raw) ? raw : [];
+                        setCpsData((prev) => ({ ...prev, secureGroups: groups }));
+                      } catch (e) {
+                        // show error in the secure section
+                        setCpsData((prev) => ({ ...prev, secureGroups: [{ key: '__error__', _error: e.response?.data?.error || e.message }] }));
+                      }
+                      setSecureLoading(false);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-xl transition-colors disabled:opacity-50 flex-shrink-0"
+                  >
+                    {secureLoading
+                      ? <><RefreshCw size={12} className="animate-spin" /> Loading…</>
+                      : <><Key size={12} /> Get Secure Properties</>}
+                  </button>
+                </div>
+              )}
+
               {/* Secure property groups */}
               {cpsData.secureGroups.length > 0 && cpsData.secureGroups.map((group) => {
                 const groupProps = group.properties || {};
@@ -842,6 +872,40 @@ export default function ApplicationDetailPage() {
                   </GlassCard>
                 );
               })}
+
+              {/* ── Get Binaries button ── */}
+              {cpsData.binaryKeys && cpsData.binaryList.length === 0 && (
+                <div className="flex items-center justify-between bg-orange-950/20 border border-orange-800/40 rounded-2xl px-5 py-4">
+                  <div className="space-y-1">
+                    <p className="text-orange-300 text-sm font-semibold flex items-center gap-2">
+                      <Package size={13} /> Binary Assets
+                    </p>
+                    <p className="text-orange-500/70 text-xs">Files: {cpsData.binaryKeys}</p>
+                  </div>
+                  <button
+                    disabled={binaryLoading}
+                    onClick={async () => {
+                      setBinaryLoading(true);
+                      try {
+                        const br = await api.get('/cps/fetch', { params: {
+                          baseUrl: cpsBaseUrl, type: 'binaries', environment: cpsData.useEnv,
+                          keys: cpsData.binaryKeys, deploymentType: cpsDepType, envName: appEnvName
+                        }});
+                        const binaries = br.data?.binaries || (Array.isArray(br.data) ? br.data : []);
+                        setCpsData((prev) => ({ ...prev, binaryList: binaries }));
+                      } catch (e) {
+                        setCpsData((prev) => ({ ...prev, binaryList: [{ key: '__error__', _error: e.response?.data?.error || e.message }] }));
+                      }
+                      setBinaryLoading(false);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium rounded-xl transition-colors disabled:opacity-50 flex-shrink-0"
+                  >
+                    {binaryLoading
+                      ? <><RefreshCw size={12} className="animate-spin" /> Loading…</>
+                      : <><Package size={12} /> Get Binaries</>}
+                  </button>
+                </div>
+              )}
 
               {/* Binaries */}
               {cpsData.binaryList.length > 0 && (
