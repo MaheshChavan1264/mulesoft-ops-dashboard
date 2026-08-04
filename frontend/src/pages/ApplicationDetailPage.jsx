@@ -873,64 +873,50 @@ export default function ApplicationDetailPage() {
                 );
               })}
 
-              {/* ── Get Binaries button ── */}
-              {cpsData.binaryKeys && cpsData.binaryList.length === 0 && (
-                <div className="flex items-center justify-between bg-orange-950/20 border border-orange-800/40 rounded-2xl px-5 py-4">
-                  <div className="space-y-1">
-                    <p className="text-orange-300 text-sm font-semibold flex items-center gap-2">
-                      <Package size={13} /> Binary Assets
-                    </p>
-                    <p className="text-orange-500/70 text-xs">Files: {cpsData.binaryKeys}</p>
-                  </div>
-                  <button
-                    disabled={binaryLoading}
-                    onClick={async () => {
-                      setBinaryLoading(true);
-                      try {
-                        const br = await api.get('/cps/fetch', { params: {
-                          baseUrl: cpsBaseUrl, type: 'binaries', environment: cpsData.useEnv,
-                          keys: cpsData.binaryKeys, deploymentType: cpsDepType, envName: appEnvName
-                        }});
-                        const binaries = br.data?.binaries || (Array.isArray(br.data) ? br.data : []);
-                        setCpsData((prev) => ({ ...prev, binaryList: binaries }));
-                      } catch (e) {
-                        setCpsData((prev) => ({ ...prev, binaryList: [{ key: '__error__', _error: e.response?.data?.error || e.message }] }));
-                      }
-                      setBinaryLoading(false);
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium rounded-xl transition-colors disabled:opacity-50 flex-shrink-0"
-                  >
-                    {binaryLoading
-                      ? <><RefreshCw size={12} className="animate-spin" /> Loading…</>
-                      : <><Package size={12} /> Get Binaries</>}
-                  </button>
-                </div>
-              )}
-
-              {/* Binaries */}
-              {cpsData.binaryList.length > 0 && (
-                <GlassCard icon={Package} title="Binary Assets" count={cpsData.binaryList.length} noPad>
-                  <table className="w-full text-sm border-collapse">
-                    <thead><tr className="bg-slate-800/50 border-b border-slate-700/40">
-                      {['File Name', 'Type', 'Size', 'Last Modified'].map((h) => (
-                        <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
-                      ))}
-                    </tr></thead>
-                    <tbody>
-                      {cpsData.binaryList
-                        .filter((b) => !cpsSearch || (b.key||'').toLowerCase().includes(cpsSearch.toLowerCase()))
-                        .map((b, i) => (
-                          <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
-                            <td className="px-5 py-3"><span className="text-slate-200 text-xs font-mono">{b.key}</span></td>
-                            <td className="px-5 py-3"><MetaTag color="gray">{b.contentType || '—'}</MetaTag></td>
-                            <td className="px-5 py-3 text-slate-400 text-xs">{b.size ? `${(b.size/1024).toFixed(1)} KB` : '—'}</td>
-                            <td className="px-5 py-3 text-slate-500 text-xs">{b.lastModified ? new Date(b.lastModified).toLocaleDateString() : '—'}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </GlassCard>
-              )}
+              {/* ── Binary Assets — displayed directly from cps.secure.binaries ── */}
+              {cpsData.binaryKeys && (() => {
+                const binaryFiles = cpsData.binaryKeys.split(',').map((f) => f.trim()).filter(Boolean)
+                  .filter((f) => !cpsSearch || f.toLowerCase().includes(cpsSearch.toLowerCase()));
+                if (binaryFiles.length === 0) return null;
+                return (
+                  <GlassCard icon={Package} title="Binary Assets" count={binaryFiles.length} noPad>
+                    <div className="px-5 py-2 bg-orange-950/20 border-b border-orange-900/20">
+                      <span className="text-[10px] text-orange-400/70">Binary files configured in <code className="text-orange-400">cps.secure.binaries</code></span>
+                    </div>
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">File Name</th>
+                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Extension</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {binaryFiles.map((fileName, i) => {
+                          const ext = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '—';
+                          const extColor = ext === 'jks' ? 'bg-blue-950/30 text-blue-300 border-blue-800/40'
+                            : ext === 'pem' ? 'bg-green-950/30 text-green-300 border-green-800/40'
+                            : ext === 'gpg' || ext === 'pgp' ? 'bg-purple-950/30 text-purple-300 border-purple-800/40'
+                            : ext === 'crt' || ext === 'cer' ? 'bg-cyan-950/30 text-cyan-300 border-cyan-800/40'
+                            : 'bg-slate-800/40 text-slate-400 border-slate-700/40';
+                          return (
+                            <tr key={i} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                              <td className="px-5 py-3">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-slate-200 text-xs font-mono">{fileName}</span>
+                                  <CopyBtn text={fileName} />
+                                </div>
+                              </td>
+                              <td className="px-5 py-3">
+                                <span className={`inline-flex text-[10px] px-2 py-0.5 rounded-md font-mono border uppercase ${extColor}`}>{ext}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </GlassCard>
+                );
+              })()}
             </div>
           )}
         </div>
