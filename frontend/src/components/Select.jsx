@@ -88,7 +88,6 @@ export default function Select({
                   {opt.badge && (
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${opt.badgeColor || 'bg-gray-400'}`} />
                   )}
-                  {opt.indent && <span className="text-gray-600 text-xs mr-1">↳</span>}
                   <span className="flex-1 truncate">{opt.label}</span>
                   {opt.tag && (
                     <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${opt.tagColor || 'bg-gray-700 text-gray-400'}`}>
