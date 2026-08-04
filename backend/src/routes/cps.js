@@ -119,7 +119,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
   const creds = getCredentials(req, envType, chType);
 
   if (!creds) {
-    return res.status(401).json({
+    return res.status(422).json({
       error: `CPS credentials not configured for ${chType}_${envType}`,
       credKey: `${chType}_${envType}`,
       needsConfig: true
