@@ -125,24 +125,74 @@ export default function ApplicationDetailPage() {
         )}
 
         {activeTab === 'properties' && (
-          <div>
-            <h3 className="text-white font-semibold mb-3">Configuration Properties</h3>
-            {app.properties && Object.keys(app.properties).length > 0 ? (
-              <div>
-                {Object.entries(app.properties).map(([key, val]) => (
-                  <PropRow key={key} label={key} value={String(val)} />
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-500 text-sm py-4">No properties configured or accessible.</p>
-            )}
-            {app.target?.deploymentSettings?.environmentVars && (
-              <div className="mt-4">
-                <h4 className="text-gray-300 font-medium mb-2 text-sm">Environment Variables</h4>
-                {Object.entries(app.target.deploymentSettings.environmentVars).map(([key, val]) => (
-                  <PropRow key={key} label={key} value={String(val)} />
-                ))}
-              </div>
+          <div className="space-y-6">
+            {/* CH2: target.deploymentSettings.properties */}
+            {(() => {
+              const ch2Props = app.target?.deploymentSettings?.properties;
+              const entries = ch2Props ? Object.entries(ch2Props) : [];
+              if (entries.length === 0) return null;
+              return (
+                <div>
+                  <h3 className="text-white font-semibold mb-3">Application Properties</h3>
+                  {entries.map(([key, val]) => (
+                    <PropRow key={key} label={key} value={typeof val === 'object' ? JSON.stringify(val) : String(val)} />
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* CH1: app.properties */}
+            {(() => {
+              const ch1Props = app.properties;
+              const entries = ch1Props ? Object.entries(ch1Props) : [];
+              if (entries.length === 0) return null;
+              return (
+                <div>
+                  <h3 className="text-white font-semibold mb-3">Application Properties</h3>
+                  {entries.map(([key, val]) => (
+                    <PropRow key={key} label={key} value={typeof val === 'object' ? JSON.stringify(val) : String(val)} />
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* CH2: target.deploymentSettings.environmentVars */}
+            {(() => {
+              const envVars = app.target?.deploymentSettings?.environmentVars;
+              const entries = envVars ? Object.entries(envVars) : [];
+              if (entries.length === 0) return null;
+              return (
+                <div>
+                  <h3 className="text-white font-semibold mb-3">Environment Variables</h3>
+                  {entries.map(([key, val]) => (
+                    <PropRow key={key} label={key} value={typeof val === 'object' ? JSON.stringify(val) : String(val)} />
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* CH2: application.configuration (Mule agent properties) */}
+            {(() => {
+              const agentProps = app.application?.configuration?.muleAgentApplicationPropertiesService?.properties;
+              const entries = agentProps ? Object.entries(agentProps) : [];
+              if (entries.length === 0) return null;
+              return (
+                <div>
+                  <h3 className="text-white font-semibold mb-3">Agent Properties</h3>
+                  {entries.map(([key, val]) => (
+                    <PropRow key={key} label={key} value={typeof val === 'object' ? JSON.stringify(val) : String(val)} />
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Nothing found */}
+            {!app.properties?.length &&
+              !Object.keys(app.properties || {}).length &&
+              !Object.keys(app.target?.deploymentSettings?.properties || {}).length &&
+              !Object.keys(app.target?.deploymentSettings?.environmentVars || {}).length &&
+              !Object.keys(app.application?.configuration?.muleAgentApplicationPropertiesService?.properties || {}).length && (
+                <p className="text-gray-500 text-sm py-4">No configuration properties found for this application.</p>
             )}
           </div>
         )}
