@@ -188,7 +188,7 @@ export default function ApplicationsPage() {
               {filtered.map((app, idx) => (
                 <tr key={`${app.id}-${idx}`}
                   className="border-t border-gray-800 hover:bg-gray-800/30 cursor-pointer"
-                  onClick={() => navigate(`/applications/${app.environment?.id}/${app.id}`)}>
+                  onClick={() => navigate(`/applications/${selectedBg}/${app.environment?.id}/${app.id}`)}>
                   <td className="px-5 py-3 text-white font-medium">{app.name}</td>
                   <td className="px-5 py-3"><StatusBadge status={app.status} /></td>
                   <td className="px-5 py-3">
