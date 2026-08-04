@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, Layers } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
+import Select from '../components/Select';
 import api from '../services/api';
+
+const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
+const ENV_TAG_COLOR = {
+  production: 'bg-green-500/20 text-green-400',
+  sandbox: 'bg-yellow-500/20 text-yellow-400'
+};
 
 export default function ApplicationsPage() {
   const { orgId } = useAuth();
@@ -21,13 +28,8 @@ export default function ApplicationsPage() {
   const [filterType, setFilterType] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (orgId) loadBusinessGroups();
-  }, [orgId]);
-
-  useEffect(() => {
-    if (selectedBg) loadApps(selectedBg);
-  }, [selectedBg]);
+  useEffect(() => { if (orgId) loadBusinessGroups(); }, [orgId]);
+  useEffect(() => { if (selectedBg) loadApps(selectedBg); }, [selectedBg]);
 
   const loadBusinessGroups = async () => {
     setBgLoading(true);
@@ -35,11 +37,9 @@ export default function ApplicationsPage() {
       const res = await api.get('/organizations/business-groups');
       const groups = res.data.data || [];
       setBusinessGroups(groups);
-      const rootOrg = groups.find((g) => !g.parentId) || groups[0];
-      setSelectedBg(rootOrg?.id || orgId);
-    } catch {
-      setSelectedBg(orgId);
-    }
+      const root = groups.find((g) => !g.parentId) || groups[0];
+      setSelectedBg(root?.id || orgId);
+    } catch { setSelectedBg(orgId); }
     setBgLoading(false);
   };
 
@@ -54,21 +54,11 @@ export default function ApplicationsPage() {
       ]);
       setApps(appsRes.data.data || []);
       setEnvironments(envsRes.data.data || []);
-      if (appsRes.data._errors?.length) {
-        console.warn('Some envs could not be queried:', appsRes.data._errors);
-      }
     } catch (e) {
       setError(e.response?.data?.error || 'Failed to load applications.');
       setApps([]);
     }
     setLoading(false);
-  };
-
-  const handleBgChange = (e) => {
-    setSelectedBg(e.target.value);
-    setSearch('');
-    setFilterStatus('');
-    setFilterType('');
   };
 
   const filtered = apps.filter((a) => {
@@ -79,11 +69,47 @@ export default function ApplicationsPage() {
     return matchSearch && matchEnv && matchStatus && matchType;
   });
 
+  // Build BG select options with hierarchy indent
+  const bgOptions = businessGroups.map((g) => ({
+    value: g.id,
+    label: g.name,
+    indent: !!g.parentId,
+    tag: !g.parentId ? 'Root' : undefined,
+    tagColor: 'bg-blue-500/20 text-blue-400'
+  }));
+
+  // Build env select options with colored badges
+  const envOptions = [
+    { value: '', label: 'All Environments' },
+    ...environments.map((e) => ({
+      value: e.id,
+      label: e.name,
+      badge: true,
+      badgeColor: ENV_BADGE[e.type] || 'bg-gray-400',
+      tag: e.type,
+      tagColor: ENV_TAG_COLOR[e.type] || 'bg-gray-700 text-gray-400'
+    }))
+  ];
+
+  const statusOptions = [
+    { value: '', label: 'All Statuses' },
+    { value: 'running', label: 'Running', badge: true, badgeColor: 'bg-green-400' },
+    { value: 'failed', label: 'Failed', badge: true, badgeColor: 'bg-red-400' },
+    { value: 'stopped', label: 'Stopped', badge: true, badgeColor: 'bg-gray-400' },
+    { value: 'deploying', label: 'Deploying', badge: true, badgeColor: 'bg-blue-400' },
+    { value: 'started', label: 'Started', badge: true, badgeColor: 'bg-green-400' }
+  ];
+
+  const typeOptions = [
+    { value: '', label: 'All Deployment Types' },
+    { value: 'CloudHub 2.0', label: 'CloudHub 2.0', tag: 'CH2', tagColor: 'bg-blue-500/20 text-blue-400' },
+    { value: 'CloudHub 1.0', label: 'CloudHub 1.0', tag: 'CH1', tagColor: 'bg-purple-500/20 text-purple-400' }
+  ];
+
   const selectedBgName = businessGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-white">Applications</h1>
@@ -91,89 +117,47 @@ export default function ApplicationsPage() {
             {loading ? 'Loading...' : `${apps.length} integrations in ${selectedBgName}`}
           </p>
         </div>
-        <button
-          onClick={() => loadApps(selectedBg)}
-          disabled={loading || bgLoading}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg disabled:opacity-50"
-        >
+        <button onClick={() => loadApps(selectedBg)} disabled={loading || bgLoading}
+          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg disabled:opacity-50">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
 
       {/* Business Group selector */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 flex items-center gap-4 flex-wrap">
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <Layers size={16} className="text-blue-400" />
-          <span className="text-sm font-medium text-gray-300">Business Group</span>
-        </div>
-        <select
+      <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2 font-medium">Business Group</p>
+        <Select
           value={selectedBg}
-          onChange={handleBgChange}
+          onChange={(v) => { setSelectedBg(v); setSearch(''); setFilterStatus(''); setFilterType(''); }}
+          options={bgOptions}
+          placeholder="Select business group..."
+          searchable={businessGroups.length > 5}
           disabled={bgLoading}
-          className="flex-1 min-w-48 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
-        >
-          {businessGroups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.parentId ? `  ↳ ${g.name}` : `${g.name} (Root)`}
-            </option>
-          ))}
-          {businessGroups.length === 0 && (
-            <option value={orgId}>Default Organization</option>
-          )}
-        </select>
-        {selectedBg && (
-          <span className="text-xs text-gray-600 font-mono hidden lg:block">{selectedBg}</span>
-        )}
+        />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-48">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+      {/* Filters row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Search */}
+        <div className="relative sm:col-span-2 lg:col-span-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search applications..."
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-          />
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
         </div>
-        <select
-          value={filterEnv}
-          onChange={(e) => setFilterEnv(e.target.value)}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-        >
-          <option value="">All Environments</option>
-          {environments.map((e) => (
-            <option key={e.id} value={e.id}>{e.name}</option>
-          ))}
-        </select>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-        >
-          <option value="">All Statuses</option>
-          <option value="running">Running</option>
-          <option value="failed">Failed</option>
-          <option value="stopped">Stopped</option>
-          <option value="deploying">Deploying</option>
-          <option value="started">Started</option>
-        </select>
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-        >
-          <option value="">All Types</option>
-          <option value="CloudHub 2.0">CloudHub 2.0</option>
-          <option value="CloudHub 1.0">CloudHub 1.0</option>
-        </select>
+        <div>
+          <Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="Environment" />
+        </div>
+        <div>
+          <Select value={filterStatus} onChange={setFilterStatus} options={statusOptions} placeholder="Status" />
+        </div>
+        <div>
+          <Select value={filterType} onChange={setFilterType} options={typeOptions} placeholder="Type" />
+        </div>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
-          {error}
-        </div>
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">{error}</div>
       )}
 
       {loading ? (
@@ -196,28 +180,20 @@ export default function ApplicationsPage() {
             </thead>
             <tbody>
               {filtered.map((app, idx) => (
-                <tr
-                  key={`${app.id}-${idx}`}
+                <tr key={`${app.id}-${idx}`}
                   className="border-t border-gray-800 hover:bg-gray-800/30 cursor-pointer"
-                  onClick={() => navigate(`/applications/${app.environment?.id}/${app.id}`)}
-                >
+                  onClick={() => navigate(`/applications/${app.environment?.id}/${app.id}`)}>
                   <td className="px-5 py-3 text-white font-medium">{app.name}</td>
                   <td className="px-5 py-3"><StatusBadge status={app.status} /></td>
                   <td className="px-5 py-3">
-                    <span className="text-gray-300">{app.environment?.name}</span>
-                    {app.environment?.type && (
-                      <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${
-                        app.environment.type === 'production'
-                          ? 'bg-green-500/20 text-green-400'
-                          : 'bg-gray-700 text-gray-400'
-                      }`}>{app.environment.type}</span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_BADGE[app.environment?.type] || 'bg-gray-400'}`} />
+                      <span className="text-gray-300">{app.environment?.name}</span>
+                    </div>
                   </td>
                   <td className="px-5 py-3">
                     <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                      app.deploymentType === 'CloudHub 2.0'
-                        ? 'bg-blue-500/20 text-blue-400'
-                        : 'bg-purple-500/20 text-purple-400'
+                      app.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
                     }`}>{app.deploymentType}</span>
                   </td>
                   <td className="px-5 py-3 text-gray-400 font-mono text-xs">{app.muleVersion || '—'}</td>
@@ -227,24 +203,17 @@ export default function ApplicationsPage() {
                   <td className="px-5 py-3 text-gray-600"><ChevronRight size={14} /></td>
                 </tr>
               ))}
-              {filtered.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-gray-500">
-                    {apps.length === 0
-                      ? `No applications found in ${selectedBgName}. Try a different business group.`
-                      : 'No applications match your filters.'}
-                  </td>
-                </tr>
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} className="px-5 py-12 text-center text-gray-500">
+                  {apps.length === 0 ? `No applications found in ${selectedBgName}.` : 'No applications match your filters.'}
+                </td></tr>
               )}
             </tbody>
           </table>
         </div>
       )}
-
       {filtered.length > 0 && (
-        <p className="text-xs text-gray-600 text-right">
-          Showing {filtered.length} of {apps.length} applications
-        </p>
+        <p className="text-xs text-gray-600 text-right">Showing {filtered.length} of {apps.length}</p>
       )}
     </div>
   );
