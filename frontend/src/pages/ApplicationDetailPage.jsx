@@ -305,15 +305,16 @@ export default function ApplicationDetailPage() {
       {/* ── INFRA & CONFIG ───────────────────────────── */}
       {tab==='infrastructure' && (
         <div className="space-y-5">
-          <GlassCard icon={Database} title="Object Store & Settings">
-            <KVRow label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
-            {isCH1 && <KVRow label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
-            {isCH1 && <KVRow label="Monitoring" value={app.monitoringEnabled!=null?String(app.monitoringEnabled):undefined} />}
-            {isCH1 && <KVRow label="Custom Log4j" value={app.loggingCustomLog4JEnabled!=null?String(app.loggingCustomLog4JEnabled):undefined} />}
-            {!isCH1 && <KVRow label="AM Log Forwarding" value={ds.disableAmLogForwarding!=null?String(!ds.disableAmLogForwarding):undefined} />}
-          </GlassCard>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <GlassCard icon={Database} title="Object Store & Settings">
+              <KVRow label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
+              {isCH1 && <KVRow label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
+              {isCH1 && <KVRow label="Monitoring" value={app.monitoringEnabled!=null?String(app.monitoringEnabled):undefined} />}
+              {isCH1 && <KVRow label="Custom Log4j" value={app.loggingCustomLog4JEnabled!=null?String(app.loggingCustomLog4JEnabled):undefined} />}
+              {!isCH1 && <KVRow label="AM Log Forwarding" value={ds.disableAmLogForwarding!=null?String(!ds.disableAmLogForwarding):undefined} />}
+            </GlassCard>
 
-          <GlassCard icon={Clock} title="Schedulers" count={schedulers.length} accent="purple" noPad>
+            <GlassCard icon={Clock} title="Schedulers" count={schedulers.length} accent="purple" noPad>
             {schedulers.length>0 ? (
               <table className="w-full text-sm border-collapse">
                 <thead>
