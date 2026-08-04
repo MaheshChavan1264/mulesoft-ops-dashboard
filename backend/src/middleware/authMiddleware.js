@@ -5,6 +5,7 @@ const authMiddleware = (req, res, next) => {
   req.anypointToken = req.session.token;
   req.orgId = req.session.orgId;
   req.memberOrgs = req.session.memberOrgs || [];
+  req.accessibleEnvironments = req.session.accessibleEnvironments || {};
   next();
 };
 
