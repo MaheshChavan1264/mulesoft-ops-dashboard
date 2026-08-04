@@ -278,14 +278,30 @@ export default function ApplicationDetailPage() {
       }});
       const nsRaw = nsRes.data;
 
-      // Response is { properties: [{ key, environment, properties: {...} }] }
-      const nsEntry = Array.isArray(nsRaw?.properties)
-        ? (nsRaw.properties.find((p) => p.key === useKey) || nsRaw.properties[0])
-        : nsRaw;
+      // CPS response can be one of several shapes:
+      // 1. { properties: [{ key, environment, properties: { k:v } }] }
+      // 2. [{ key, environment, properties: { k:v } }]
+      // 3. { k:v } (flat map directly)
+      let flatNs = {};
+      const propsArray = Array.isArray(nsRaw)
+        ? nsRaw
+        : Array.isArray(nsRaw?.properties) ? nsRaw.properties : null;
 
-      const flatNs = (nsEntry?.properties && typeof nsEntry.properties === 'object' && !Array.isArray(nsEntry.properties))
-        ? nsEntry.properties
-        : (typeof nsRaw === 'object' && !Array.isArray(nsRaw) ? nsRaw : {});
+      if (propsArray) {
+        const match = propsArray.find((p) => p.key === useKey) || propsArray[0];
+        const inner = match?.properties || match;
+        flatNs = (inner && typeof inner === 'object' && !Array.isArray(inner)) ? inner : {};
+      } else if (nsRaw && typeof nsRaw === 'object') {
+        // Flat map or top-level object
+        // If values are objects themselves, try to unwrap by key
+        const firstVal = Object.values(nsRaw)[0];
+        if (firstVal && typeof firstVal === 'object' && !Array.isArray(firstVal)) {
+          // Values are nested objects — try to find entry by key
+          flatNs = nsRaw[useKey] || firstVal;
+        } else {
+          flatNs = nsRaw;
+        }
+      }
 
       let secureGroups = [];
       const secureKeys = flatNs['cps.secure.properties'];
@@ -751,12 +767,17 @@ export default function ApplicationDetailPage() {
                       {Object.entries(cpsData.nonSecure)
                         .filter(([k, v]) => !cpsSearch || k.toLowerCase().includes(cpsSearch.toLowerCase()) || String(v).toLowerCase().includes(cpsSearch.toLowerCase()))
                         .sort(([a], [b]) => a.localeCompare(b))
-                        .map(([k, v]) => (
-                          <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
-                            <td className="px-5 py-3 align-top"><div className="flex items-center gap-1.5"><span className="text-slate-400 text-xs font-mono break-all">{k}</span><CopyBtn text={k}/></div></td>
-                            <td className="px-5 py-3 align-top"><div className="flex items-start gap-1.5"><span className="text-slate-200 text-xs font-mono break-all">{String(v)}</span><CopyBtn text={String(v)}/></div></td>
-                          </tr>
-                        ))}
+                        .map(([k, v]) => {
+                          const display = v === null || v === undefined ? '—'
+                            : typeof v === 'object' ? JSON.stringify(v)
+                            : String(v);
+                          return (
+                            <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                              <td className="px-5 py-3 align-top"><div className="flex items-center gap-1.5"><span className="text-slate-400 text-xs font-mono break-all">{k}</span><CopyBtn text={k}/></div></td>
+                              <td className="px-5 py-3 align-top"><div className="flex items-start gap-1.5"><span className="text-slate-200 text-xs font-mono break-all">{display}</span><CopyBtn text={display}/></div></td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 </GlassCard>
