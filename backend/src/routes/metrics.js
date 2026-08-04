@@ -3,6 +3,12 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 
+// Skip environments containing dev or qa
+const isProductionEnv = (env) => {
+  const name = (env.name || '').toLowerCase();
+  return !name.includes('qa') && !name.includes('dev');
+};
+
 const parseCH2Apps = (data) => {
   if (Array.isArray(data)) return data;
   return data.items || data.deployments || data.content || data.data || [];
@@ -36,19 +42,19 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     let allEnvPairs = [];
 
     if (Object.keys(req.accessibleEnvironments).length > 0) {
-      // Use session-cached accessible environments (filtered, fast)
+      // Use session-cached accessible environments — skip dev/qa
       for (const [orgId, envs] of Object.entries(req.accessibleEnvironments)) {
         for (const env of envs) {
-          allEnvPairs.push({ orgId, env });
+          if (isProductionEnv(env)) allEnvPairs.push({ orgId, env });
         }
       }
     } else {
-      // Fallback: fetch environments for the requested org only
+      // Fallback: fetch environments for the requested org only — skip dev/qa
       try {
         const envRes = await client.get(
           `/accounts/api/organizations/${req.params.orgId}/environments`
         );
-        const envs = envRes.data.data || [];
+        const envs = (envRes.data.data || []).filter(isProductionEnv);
         allEnvPairs = envs.map((env) => ({ orgId: req.params.orgId, env }));
       } catch (e) {
         allEnvPairs = [];

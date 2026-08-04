@@ -3,6 +3,12 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 
+// Skip environments containing dev or qa in their name
+const isProductionEnv = (env) => {
+  const name = (env.name || '').toLowerCase();
+  return !name.includes('qa') && !name.includes('dev');
+};
+
 // Helper: parse apps from various CH2 response shapes
 const parseCH2Apps = (data) => {
   if (Array.isArray(data)) return data;
@@ -164,7 +170,9 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     const envResponse = await client.get(
       `/accounts/api/organizations/${targetOrgId}/environments`
     );
-    const environments = envResponse.data.data || [];
+    const allEnvironments = envResponse.data.data || [];
+    // Skip dev/qa environments entirely — no API calls made to them
+    const environments = allEnvironments.filter(isProductionEnv);
 
     const results = [];
     const errors = [];
