@@ -144,8 +144,9 @@ router.get('/fetch', authMiddleware, async (req, res) => {
   if (environment) params.environment = environment;
   if (keys) params.keys = keys;
 
-  // Strip trailing slash from baseUrl to avoid double-slashes
-  const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
+  // Strip trailing slash AND any /api/v2 suffix the app may have included in cps.configServerBaseUrl
+  // (our pathMap already prepends /api/v2/..., so don't double it)
+  const cleanBaseUrl = baseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
   // Build full URL for debugging
   const fullUrl = `${cleanBaseUrl}${cpsPath}`;
   const queryStr = new URLSearchParams(params).toString();
