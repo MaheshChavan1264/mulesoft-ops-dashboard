@@ -183,6 +183,79 @@ router.get('/cloudhub1/:envId/:appName/properties', authMiddleware, async (req, 
   }
 });
 
+// Control action for CloudHub 1.0 (start / stop / restart)
+router.post('/cloudhub1/:envId/:appName/action', authMiddleware, async (req, res) => {
+  const { envId, appName } = req.params;
+  const { action } = req.body; // 'start' | 'stop' | 'restart'
+  if (!['start', 'stop', 'restart'].includes(action)) {
+    return res.status(400).json({ error: `Invalid action: ${action}` });
+  }
+  const orgId = req.query.orgId || req.orgId;
+  const client = createClient(req.anypointToken);
+  const headers = { 'X-ANYPNT-ENV-ID': envId, 'X-ANYPNT-ORG-ID': orgId };
+
+  try {
+    // CH1 action endpoints
+    const response = await client.post(
+      `/cloudhub/api/applications/${appName}/${action}`, {}, { headers }
+    );
+    return res.json({ success: true, action, appName, data: response.data });
+  } catch (e1) {
+    // Fallback: PUT with desiredStatus (some CH1 versions use this)
+    try {
+      if (action === 'restart') {
+        await client.post(`/cloudhub/api/applications/${appName}/stop`, {}, { headers });
+        await new Promise((r) => setTimeout(r, 3000));
+        await client.post(`/cloudhub/api/applications/${appName}/start`, {}, { headers });
+        return res.json({ success: true, action, appName });
+      }
+      const statusMap = { start: 'Started', stop: 'Stopped' };
+      const response = await client.put(
+        `/cloudhub/api/applications/${appName}`,
+        { desiredStatus: statusMap[action] },
+        { headers }
+      );
+      return res.json({ success: true, action, appName, data: response.data });
+    } catch (e2) {
+      console.error(`CH1 action ${action} failed for ${appName}:`, e2.response?.data || e2.message);
+      return res.status(e2.response?.status || 500).json({
+        error: e2.response?.data?.message || `Failed to ${action} application`
+      });
+    }
+  }
+});
+
+// Control action for CloudHub 2.0 (start / stop / restart)
+router.post('/cloudhub2/:orgId/:envId/:deploymentId/action', authMiddleware, async (req, res) => {
+  const { orgId, envId, deploymentId } = req.params;
+  const { action } = req.body; // 'start' | 'stop' | 'restart'
+  if (!['start', 'stop', 'restart'].includes(action)) {
+    return res.status(400).json({ error: `Invalid action: ${action}` });
+  }
+  const client = createClient(req.anypointToken);
+  const base = `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`;
+
+  try {
+    // Try dedicated action endpoint first
+    const response = await client.post(`${base}/${action}`);
+    return res.json({ success: true, action, deploymentId, data: response.data });
+  } catch (e1) {
+    // Fallback: PATCH desiredState
+    try {
+      const stateMap = { start: 'STARTED', stop: 'STOPPED', restart: 'RESTARTED' };
+      const response = await client.patch(base, {
+        application: { desiredState: stateMap[action] }
+      });
+      return res.json({ success: true, action, deploymentId, data: response.data });
+    } catch (e2) {
+      console.error(`CH2 action ${action} failed for ${deploymentId}:`, e2.response?.data || e2.message);
+      return res.status(e2.response?.status || 500).json({
+        error: e2.response?.data?.message || `Failed to ${action} deployment`
+      });
+    }
+  }
+});
+
 // Summary: get apps across all environments for an org (accepts orgId param or query)
 router.get('/summary/:orgId', authMiddleware, async (req, res) => {
   try {

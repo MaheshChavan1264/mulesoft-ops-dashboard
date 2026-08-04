@@ -10,6 +10,7 @@ const applicationsRoutes = require('./routes/applications');
 const apisRoutes = require('./routes/apis');
 const exchangeRoutes = require('./routes/exchange');
 const metricsRoutes = require('./routes/metrics');
+const cpsRoutes = require('./routes/cps');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -35,6 +36,7 @@ app.use('/api/applications', applicationsRoutes);
 app.use('/api/apis', apisRoutes);
 app.use('/api/exchange', exchangeRoutes);
 app.use('/api/metrics', metricsRoutes);
+app.use('/api/cps', cpsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
