@@ -6,9 +6,11 @@ import StatusBadge from '../components/StatusBadge';
 import api from '../services/api';
 
 const PRow = ({ label, value, mono = true, hi }) => (
-  <div className={`flex items-start px-4 py-2.5 rounded-lg mb-1 transition-colors ${hi ? 'bg-blue-500/5 border border-blue-500/15' : 'bg-gray-800/30 hover:bg-gray-800/60'}`}>
-    <span className="text-gray-400 text-xs uppercase tracking-wider w-48 flex-shrink-0 pt-0.5 font-medium">{label}</span>
-    <span className={`text-white text-sm break-all ${mono ? 'font-mono' : ''}`}>{value ?? <span className="text-gray-600">—</span>}</span>
+  <div className={`grid grid-cols-[180px_1fr] gap-3 px-4 py-3 rounded-lg mb-0.5 transition-colors ${hi ? 'bg-blue-500/8 border border-blue-500/20' : 'hover:bg-gray-800/50'} border border-transparent`}>
+    <span className="text-gray-500 text-xs font-semibold uppercase tracking-widest pt-0.5 truncate">{label}</span>
+    <span className={`text-gray-100 text-sm break-all leading-relaxed ${mono ? 'font-mono text-xs' : ''}`}>
+      {value != null && value !== '' ? value : <span className="text-gray-700 font-normal">—</span>}
+    </span>
   </div>
 );
 
@@ -247,35 +249,30 @@ export default function ApplicationDetailPage() {
                     <div className="space-y-2 text-xs">
                       {s.type && (
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-500 w-20 flex-shrink-0">Type</span>
+                          <span className="text-gray-500 w-24 flex-shrink-0">Type</span>
                           <span className="text-gray-300 bg-gray-800 px-2 py-0.5 rounded">{s.type}</span>
                         </div>
                       )}
-                      {/* CH1 cron */}
-                      {s.cronExpression && (
+                      {/* Cron expression — CH1 uses "expression", CH2 uses "expression" or "cronExpression" */}
+                      {(s.expression || s.cronExpression) && (
                         <div className="flex items-start gap-2">
-                          <span className="text-gray-500 w-20 flex-shrink-0 pt-0.5">Cron</span>
-                          <code className="text-cyan-400 bg-cyan-900/20 border border-cyan-900/30 px-2 py-1 rounded font-mono text-xs break-all">{s.cronExpression}</code>
+                          <span className="text-gray-500 w-24 flex-shrink-0 pt-1">Cron</span>
+                          <code className="text-cyan-300 bg-cyan-950/40 border border-cyan-800/30 px-2.5 py-1.5 rounded-lg font-mono text-xs break-all leading-relaxed">
+                            {s.expression || s.cronExpression}
+                          </code>
                         </div>
                       )}
-                      {/* CH1 fixed frequency */}
-                      {s.frequency && !s.cronExpression && (
+                      {/* Fixed frequency (only when no cron expression) */}
+                      {s.frequency && !(s.expression || s.cronExpression) && (
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-500 w-20 flex-shrink-0">Frequency</span>
+                          <span className="text-gray-500 w-24 flex-shrink-0">Frequency</span>
                           <span className="text-white font-mono bg-gray-800 px-2 py-0.5 rounded">{s.frequency} {s.timeUnit}</span>
                         </div>
                       )}
                       {s.startDelay && s.startDelay !== '0' && (
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-500 w-20 flex-shrink-0">Start Delay</span>
+                          <span className="text-gray-500 w-24 flex-shrink-0">Start Delay</span>
                           <span className="text-white font-mono bg-gray-800 px-2 py-0.5 rounded">{s.startDelay} {s.timeUnit}</span>
-                        </div>
-                      )}
-                      {/* CH2 expression */}
-                      {s.expression && (
-                        <div className="flex items-start gap-2">
-                          <span className="text-gray-500 w-20 flex-shrink-0 pt-0.5">Cron</span>
-                          <code className="text-cyan-400 bg-cyan-900/20 border border-cyan-900/30 px-2 py-1 rounded font-mono text-xs break-all">{s.expression}</code>
                         </div>
                       )}
                     </div>
