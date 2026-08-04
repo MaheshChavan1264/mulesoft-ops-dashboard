@@ -755,103 +755,63 @@ export default function ApplicationDetailPage() {
                   className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50" />
               </div>
 
-              {/* Non-secure properties — grouped by prefix */}
+              {/* Non-secure properties — flat table from the properties object */}
               {Object.keys(cpsData.nonSecure).length > 0 && (() => {
-                const entries = Object.entries(cpsData.nonSecure);
-                const searchLo = cpsSearch.toLowerCase();
-
-                // Special comma-list keys rendered as chips
                 const CHIP_KEYS = new Set(['cps.secure.properties', 'cps.secure.binaries']);
-
-                // Group by first prefix segment (before first '.')
-                const groups = {};
-                entries.forEach(([k, v]) => {
-                  const prefix = k.includes('.') ? k.split('.')[0] : '_other';
-                  if (!groups[prefix]) groups[prefix] = [];
-                  groups[prefix].push([k, v]);
-                });
-
-                // Sort: cps first, then alphabetical
-                const sortedPrefixes = Object.keys(groups).sort((a, b) =>
-                  a === 'cps' ? -1 : b === 'cps' ? 1 : a.localeCompare(b)
-                );
-
-                const totalVisible = entries.filter(([k, v]) =>
-                  !searchLo || k.toLowerCase().includes(searchLo) || String(v).toLowerCase().includes(searchLo)
-                ).length;
+                const searchLo = cpsSearch.toLowerCase();
+                const visibleEntries = Object.entries(cpsData.nonSecure)
+                  .filter(([k, v]) => !searchLo || k.toLowerCase().includes(searchLo) || String(v).toLowerCase().includes(searchLo))
+                  .sort(([a], [b]) => a.localeCompare(b));
 
                 return (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between px-1">
-                      <span className="text-slate-500 text-xs">{totalVisible} properties in {sortedPrefixes.length} groups</span>
-                    </div>
-                    {sortedPrefixes.map((prefix) => {
-                      const groupEntries = groups[prefix]
-                        .filter(([k, v]) => !searchLo || k.toLowerCase().includes(searchLo) || String(v).toLowerCase().includes(searchLo))
-                        .sort(([a], [b]) => a.localeCompare(b));
-                      if (groupEntries.length === 0) return null;
-
-                      const isCpsGroup = prefix === 'cps';
-                      return (
-                        <div key={prefix} className={`rounded-xl border overflow-hidden ${isCpsGroup ? 'border-blue-800/50 bg-blue-950/10' : 'border-slate-800/60 bg-slate-900/40'}`}>
-                          {/* Group header */}
-                          <div className={`flex items-center justify-between px-4 py-2.5 border-b ${isCpsGroup ? 'border-blue-800/30 bg-blue-950/20' : 'border-slate-800/40 bg-slate-800/20'}`}>
-                            <div className="flex items-center gap-2">
-                              <span className={`font-mono text-xs font-bold ${isCpsGroup ? 'text-blue-400' : 'text-slate-400'}`}>{prefix}.*</span>
-                              <span className="text-[10px] text-slate-600">{groupEntries.length} prop{groupEntries.length !== 1 ? 's' : ''}</span>
-                            </div>
-                          </div>
-                          {/* Group rows */}
-                          <div className="divide-y divide-slate-800/30">
-                            {groupEntries.map(([k, v]) => {
-                              const isChipKey = CHIP_KEYS.has(k);
-                              const isNum = typeof v === 'number';
-                              const display = v === null || v === undefined ? '—'
-                                : typeof v === 'object' ? JSON.stringify(v)
-                                : String(v);
-                              const shortKey = k.includes('.') ? k.substring(k.indexOf('.') + 1) : k;
-
-                              return (
-                                <div key={k} className="group flex items-start gap-3 px-4 py-2.5 hover:bg-slate-800/30 transition-colors">
-                                  <div className="flex-shrink-0 w-[45%] min-w-0">
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[10px] text-slate-600 font-mono">{prefix}.</span>
-                                      <span className="text-xs text-slate-300 font-mono break-all">{shortKey}</span>
-                                      <CopyBtn text={k} />
-                                    </div>
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    {isChipKey ? (
-                                      <div className="flex flex-wrap gap-1">
-                                        {display.split(',').map((item) => item.trim()).filter(Boolean).map((item) => (
-                                          <span key={item} className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded-md font-mono border ${
-                                            k === 'cps.secure.binaries'
-                                              ? 'bg-orange-950/30 text-orange-300 border-orange-800/40'
-                                              : 'bg-purple-950/30 text-purple-300 border-purple-800/40'
-                                          }`}>{item}</span>
-                                        ))}
-                                        <CopyBtn text={display} />
-                                      </div>
-                                    ) : isNum ? (
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-xs text-cyan-300 font-mono">{display}</span>
-                                        <CopyBtn text={display} />
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-start gap-1">
-                                        <span className="text-xs text-slate-200 font-mono break-all leading-relaxed">{display}</span>
-                                        <CopyBtn text={display} />
-                                      </div>
-                                    )}
-                                  </div>
+                  <GlassCard icon={Settings} title="Non-Secure Properties" count={visibleEntries.length} noPad>
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase w-[42%]">Property Key</th>
+                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleEntries.map(([k, v]) => {
+                          const isChip = CHIP_KEYS.has(k);
+                          const isNum = typeof v === 'number';
+                          const display = v === null || v === undefined ? '—'
+                            : typeof v === 'object' ? JSON.stringify(v)
+                            : String(v);
+                          return (
+                            <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                              <td className="px-5 py-3 align-top">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-slate-400 text-xs font-mono break-all">{k}</span>
+                                  <CopyBtn text={k} />
                                 </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                              </td>
+                              <td className="px-5 py-3 align-top">
+                                {isChip ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {display.split(',').map((item) => item.trim()).filter(Boolean).map((item) => (
+                                      <span key={item} className={`inline-flex text-[10px] px-2 py-0.5 rounded-md font-mono border ${
+                                        k === 'cps.secure.binaries'
+                                          ? 'bg-orange-950/30 text-orange-300 border-orange-800/40'
+                                          : 'bg-purple-950/30 text-purple-300 border-purple-800/40'
+                                      }`}>{item}</span>
+                                    ))}
+                                    <CopyBtn text={display} />
+                                  </div>
+                                ) : (
+                                  <div className="flex items-start gap-1.5">
+                                    <span className={`text-xs font-mono break-all ${isNum ? 'text-cyan-300' : 'text-slate-200'}`}>{display}</span>
+                                    <CopyBtn text={display} />
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </GlassCard>
                 );
               })()}
 
