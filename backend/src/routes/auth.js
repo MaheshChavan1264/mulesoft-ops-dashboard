@@ -36,12 +36,26 @@ async function storeSession(req, token) {
     subOrganizationIds: o.subOrganizationIds || []
   }));
 
-  // Store accessible environments per org (from memberOfOrganizations[].environments)
-  // This is the authoritative list of envs the user actually has access to
+  // Build the set of environment IDs the user has an explicit role in
+  // user.roles[].contextParams.envId is the authoritative source
+  const roles = user.roles || [];
+  const roleEnvIds = new Set(
+    roles
+      .map((r) => r.contextParams?.envId || r.contextParams?.environment)
+      .filter(Boolean)
+  );
+
+  // Build accessible environments map per org
+  // If role-based env IDs exist, filter to only those; otherwise use all member envs
   const accessibleEnvironments = {};
   for (const org of memberOrgs) {
-    if (org.environments && org.environments.length > 0) {
-      accessibleEnvironments[org.id] = org.environments.map((e) => ({
+    const envs = org.environments || [];
+    const filtered = roleEnvIds.size > 0
+      ? envs.filter((e) => roleEnvIds.has(e.id))
+      : envs;
+
+    if (filtered.length > 0) {
+      accessibleEnvironments[org.id] = filtered.map((e) => ({
         id: e.id,
         name: e.name,
         type: e.type,
@@ -50,6 +64,11 @@ async function storeSession(req, token) {
       }));
     }
   }
+
+  // Log for debugging
+  const totalEnvs = Object.values(accessibleEnvironments).flat().length;
+  console.log(`Session: ${memberOrgs.length} orgs, ${roleEnvIds.size} role-scoped envs, ${totalEnvs} accessible envs`);
+
   req.session.accessibleEnvironments = accessibleEnvironments;
   req.session.user = {
     id: user.id,
