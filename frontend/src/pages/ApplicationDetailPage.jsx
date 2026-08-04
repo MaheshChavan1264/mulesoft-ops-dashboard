@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, Play, Square, RotateCcw, AlertTriangle, X, Key, Package } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, Play, Square, RotateCcw, AlertTriangle, X, Key, Package, ChevronDown } from 'lucide-react';
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 
@@ -154,6 +154,7 @@ export default function ApplicationDetailPage() {
   const [cpsAttemptedUrl, setCpsAttemptedUrl] = useState('');
   const [secureLoading, setSecureLoading] = useState(false);
   const [binaryLoading, setBinaryLoading] = useState(false);
+  const [cpsOpen, setCpsOpen] = useState({ ns: true, sec: false, bin: false });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -760,6 +761,7 @@ export default function ApplicationDetailPage() {
 
                 return (
                   <GlassCard icon={Settings} title="Non-Secure Properties" count={visibleEntries.length} noPad>
+                    <div className="max-h-80 overflow-y-auto">
                     <table className="w-full text-sm border-collapse">
                       <thead>
                         <tr className="bg-slate-800/50 border-b border-slate-700/40">
@@ -806,6 +808,7 @@ export default function ApplicationDetailPage() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </GlassCard>
                 );
               })()}
@@ -859,6 +862,7 @@ export default function ApplicationDetailPage() {
                     <div className="px-5 py-2 bg-orange-950/20 border-b border-orange-900/20">
                       <span className="text-[10px] text-orange-400/70">Secure property group — treat values as sensitive</span>
                     </div>
+                    <div className="max-h-64 overflow-y-auto">
                     <table className="w-full text-sm border-collapse">
                       <tbody>
                         {(cpsSearch ? filtered : Object.entries(groupProps).sort(([a],[b])=>a.localeCompare(b))).map(([k, v]) => (
@@ -869,6 +873,7 @@ export default function ApplicationDetailPage() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </GlassCard>
                 );
               })}
