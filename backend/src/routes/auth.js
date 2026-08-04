@@ -4,6 +4,27 @@ const router = express.Router();
 
 const ANYPOINT_URL = process.env.ANYPOINT_PLATFORM_URL || 'https://anypoint.mulesoft.com';
 
+// Walk up to the root org via parentId
+async function findRootOrg(token, startOrgId) {
+  let currentId = startOrgId;
+  const visited = new Set();
+  while (currentId) {
+    if (visited.has(currentId)) break;
+    visited.add(currentId);
+    try {
+      const res = await axios.get(`${ANYPOINT_URL}/accounts/api/organizations/${currentId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const org = res.data;
+      if (!org.parentId) return { id: org.id, name: org.name };
+      currentId = org.parentId;
+    } catch (e) {
+      break; // stop if access is denied — use what we have
+    }
+  }
+  return null;
+}
+
 // Helper: fetch user profile and store session
 async function storeSession(req, token) {
   const profileResponse = await axios.get(`${ANYPOINT_URL}/accounts/api/me`, {
@@ -13,9 +34,14 @@ async function storeSession(req, token) {
   const orgId = user.organization.id;
   const orgName = user.organization.name;
 
+  // Try to find the true root org (in case user.organization is a sub-group)
+  const rootOrg = await findRootOrg(token, orgId);
+  const rootOrgId = rootOrg?.id || orgId;
+  const rootOrgName = rootOrg?.name || orgName;
+
   req.session.token = token;
-  req.session.orgId = orgId;
-  req.session.orgName = orgName;
+  req.session.orgId = rootOrgId;       // always store the root org ID
+  req.session.orgName = rootOrgName;
   req.session.username = user.username;
   req.session.user = {
     id: user.id,
@@ -23,9 +49,9 @@ async function storeSession(req, token) {
     firstName: user.firstName,
     lastName: user.lastName,
     email: user.email,
-    organization: { id: orgId, name: orgName }
+    organization: { id: rootOrgId, name: rootOrgName }
   };
-  return { user: req.session.user, orgId, orgName };
+  return { user: req.session.user, orgId: rootOrgId, orgName: rootOrgName };
 }
 
 // ── Username / Password ──────────────────────────────────────────────────────
