@@ -1,21 +1,30 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Clock, Database, Server, Settings } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import api from '../services/api';
 
-const PropRow = ({ label, value }) => (
+const PropRow = ({ label, value, mono = true }) => (
   <div className="flex items-start py-2.5 border-b border-gray-800 last:border-0">
-    <span className="text-gray-400 text-sm w-48 flex-shrink-0">{label}</span>
-    <span className="text-white text-sm font-mono break-all">{value ?? '—'}</span>
+    <span className="text-gray-400 text-sm w-52 flex-shrink-0">{label}</span>
+    <span className={`text-white text-sm break-all ${mono ? 'font-mono' : ''}`}>{value ?? '—'}</span>
+  </div>
+);
+
+const Section = ({ icon: Icon, title, children }) => (
+  <div className="bg-gray-800/40 rounded-xl p-4 space-y-0">
+    <div className="flex items-center gap-2 mb-3">
+      {Icon && <Icon size={15} className="text-blue-400" />}
+      <h4 className="text-white font-semibold text-sm">{title}</h4>
+    </div>
+    {children}
   </div>
 );
 
 export default function ApplicationDetailPage() {
   const { orgId: authOrgId } = useAuth();
   const { orgId: paramOrgId, envId, appId } = useParams();
-  // Use org from URL if provided (app may belong to a sub-org/BG), fall back to auth org
   const orgId = paramOrgId || authOrgId;
   const navigate = useNavigate();
   const [app, setApp] = useState(null);
@@ -23,22 +32,18 @@ export default function ApplicationDetailPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (orgId && envId && appId) load();
-  }, [orgId, envId, appId]);
+  useEffect(() => { if (orgId && envId && appId) load(); }, [orgId, envId, appId]);
 
   const load = async () => {
     setLoading(true);
     try {
       const res = await api.get(`/applications/cloudhub2/${orgId}/${envId}/${appId}`);
       setApp(res.data);
-    } catch (e) {
+    } catch {
       try {
         const res2 = await api.get(`/applications/cloudhub1/${envId}/${appId}/properties`);
         setApp({ name: res2.data.appName, ...res2.data, _type: 'ch1' });
-      } catch {
-        setApp(null);
-      }
+      } catch { setApp(null); }
     }
     setLoading(false);
   };
@@ -50,11 +55,7 @@ export default function ApplicationDetailPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-      </div>
-    );
+    return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div></div>;
   }
 
   if (!app) {
@@ -70,22 +71,28 @@ export default function ApplicationDetailPage() {
     );
   }
 
-  const tabs = ['overview', 'properties', 'raw'];
+  const ds = app.target?.deploymentSettings || {};
+  const isOSEnabled = ds.hasPersistentObjectStore ?? ds.persistentObjectStore ?? false;
+  const schedulers = ds.schedulerFrequencies || [];
+  const resources = ds.resources || {};
+  const isCH1 = app._type === 'ch1';
+
+  const tabs = ['overview', 'properties', 'infrastructure', 'raw'];
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/applications')} className="text-gray-400 hover:text-white">
             <ArrowLeft size={18} />
           </button>
           <div>
             <h1 className="text-xl font-bold text-white">{app.name}</h1>
-            <p className="text-gray-400 text-sm">Application Details</p>
+            <p className="text-gray-400 text-sm">{isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'} · {app.id || appId}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <StatusBadge status={app.status} />
+          <StatusBadge status={app.application?.status || app.status} />
           <button onClick={load} className="text-gray-400 hover:text-white bg-gray-800 p-2 rounded-lg">
             <RefreshCw size={14} />
           </button>
@@ -95,108 +102,185 @@ export default function ApplicationDetailPage() {
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-800 p-1 rounded-lg w-fit">
         {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => setActiveTab(t)}
+          <button key={t} onClick={() => setActiveTab(t)}
             className={`px-4 py-1.5 rounded-md text-sm font-medium capitalize transition-colors ${
               activeTab === t ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            {t}
+            }`}>
+            {t === 'infrastructure' ? 'Infra & Config' : t}
           </button>
         ))}
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+
+        {/* OVERVIEW */}
         {activeTab === 'overview' && (
           <div>
             <h3 className="text-white font-semibold mb-3">General Information</h3>
             <PropRow label="Application ID" value={app.id || appId} />
-            <PropRow label="Name" value={app.name} />
-            <PropRow label="Status" value={app.status} />
-            <PropRow label="Mule Version" value={app.target?.deploymentSettings?.runtimeVersion || app.muleVersion} />
-            <PropRow label="Deployment Type" value={app._type === 'ch1' ? 'CloudHub 1.0' : 'CloudHub 2.0'} />
+            <PropRow label="Name" value={app.name} mono={false} />
+            <PropRow label="Runtime Status" value={app.application?.status || app.status} />
+            <PropRow label="Desired State" value={app.application?.desiredState || app.desiredStatus} />
+            <PropRow label="Mule Version" value={ds.runtimeVersion || app.muleVersion} />
+            <PropRow label="Deployment Type" value={isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'} />
             <PropRow label="Region" value={app.target?.region || app.region} />
-            <PropRow label="Replicas" value={app.target?.deploymentSettings?.updateStrategy?.replicas} />
+            <PropRow label="Artifact" value={app.application?.ref ? `${app.application.ref.artifactId} v${app.application.ref.version}` : undefined} />
+            <PropRow label="Replicas" value={ds.updateStrategy?.replicas ?? ds.replicas} />
             <PropRow label="Workers" value={app.workers?.amount} />
             <PropRow label="Worker Type" value={app.workers?.type?.name} />
             <PropRow label="Last Modified" value={app.lastModifiedDate ? new Date(app.lastModifiedDate).toLocaleString() : undefined} />
           </div>
         )}
 
+        {/* PROPERTIES */}
         {activeTab === 'properties' && (
           <div className="space-y-6">
             {/* CH2: target.deploymentSettings.properties */}
-            {(() => {
-              const ch2Props = app.target?.deploymentSettings?.properties;
-              const entries = ch2Props ? Object.entries(ch2Props) : [];
-              if (entries.length === 0) return null;
-              return (
-                <div>
-                  <h3 className="text-white font-semibold mb-3">Application Properties</h3>
-                  {entries.map(([key, val]) => (
-                    <PropRow key={key} label={key} value={typeof val === 'object' ? JSON.stringify(val) : String(val)} />
-                  ))}
-                </div>
-              );
-            })()}
-
+            {Object.keys(ds.properties || {}).length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold mb-3">Application Properties</h3>
+                {Object.entries(ds.properties).map(([k, v]) => (
+                  <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
+                ))}
+              </div>
+            )}
             {/* CH1: app.properties */}
-            {(() => {
-              const ch1Props = app.properties;
-              const entries = ch1Props ? Object.entries(ch1Props) : [];
-              if (entries.length === 0) return null;
-              return (
-                <div>
-                  <h3 className="text-white font-semibold mb-3">Application Properties</h3>
-                  {entries.map(([key, val]) => (
-                    <PropRow key={key} label={key} value={typeof val === 'object' ? JSON.stringify(val) : String(val)} />
-                  ))}
-                </div>
-              );
-            })()}
-
-            {/* CH2: target.deploymentSettings.environmentVars */}
-            {(() => {
-              const envVars = app.target?.deploymentSettings?.environmentVars;
-              const entries = envVars ? Object.entries(envVars) : [];
-              if (entries.length === 0) return null;
-              return (
-                <div>
-                  <h3 className="text-white font-semibold mb-3">Environment Variables</h3>
-                  {entries.map(([key, val]) => (
-                    <PropRow key={key} label={key} value={typeof val === 'object' ? JSON.stringify(val) : String(val)} />
-                  ))}
-                </div>
-              );
-            })()}
-
-            {/* CH2: application.configuration (Mule agent properties) */}
-            {(() => {
-              const agentProps = app.application?.configuration?.muleAgentApplicationPropertiesService?.properties;
-              const entries = agentProps ? Object.entries(agentProps) : [];
-              if (entries.length === 0) return null;
-              return (
-                <div>
-                  <h3 className="text-white font-semibold mb-3">Agent Properties</h3>
-                  {entries.map(([key, val]) => (
-                    <PropRow key={key} label={key} value={typeof val === 'object' ? JSON.stringify(val) : String(val)} />
-                  ))}
-                </div>
-              );
-            })()}
-
-            {/* Nothing found */}
-            {!app.properties?.length &&
+            {Object.keys(app.properties || {}).length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold mb-3">Application Properties</h3>
+                {Object.entries(app.properties).map(([k, v]) => (
+                  <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
+                ))}
+              </div>
+            )}
+            {/* CH2: environmentVars */}
+            {Object.keys(ds.environmentVars || {}).length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold mb-3">Environment Variables</h3>
+                {Object.entries(ds.environmentVars).map(([k, v]) => (
+                  <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
+                ))}
+              </div>
+            )}
+            {/* Agent props */}
+            {Object.keys(app.application?.configuration?.muleAgentApplicationPropertiesService?.properties || {}).length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold mb-3">Agent Properties</h3>
+                {Object.entries(app.application.configuration.muleAgentApplicationPropertiesService.properties).map(([k, v]) => (
+                  <PropRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
+                ))}
+              </div>
+            )}
+            {!Object.keys(ds.properties || {}).length &&
               !Object.keys(app.properties || {}).length &&
-              !Object.keys(app.target?.deploymentSettings?.properties || {}).length &&
-              !Object.keys(app.target?.deploymentSettings?.environmentVars || {}).length &&
-              !Object.keys(app.application?.configuration?.muleAgentApplicationPropertiesService?.properties || {}).length && (
-                <p className="text-gray-500 text-sm py-4">No configuration properties found for this application.</p>
+              !Object.keys(ds.environmentVars || {}).length && (
+              <p className="text-gray-500 text-sm py-4">No configuration properties found for this application.</p>
             )}
           </div>
         )}
 
+        {/* INFRASTRUCTURE */}
+        {activeTab === 'infrastructure' && (
+          <div className="space-y-5">
+
+            {/* Resources */}
+            <Section icon={Server} title="Resources">
+              {!isCH1 ? (
+                <>
+                  <PropRow label="CPU Reserved" value={resources.cpu?.reserved} />
+                  <PropRow label="CPU Limit" value={resources.cpu?.limit} />
+                  <PropRow label="Memory" value={resources.memory?.reserved} />
+                  <PropRow label="Replicas" value={ds.updateStrategy?.replicas ?? ds.replicas} />
+                  <PropRow label="Update Strategy" value={ds.updateStrategy?.strategy} />
+                  <PropRow label="Clustered" value={ds.clustered != null ? String(ds.clustered) : undefined} />
+                </>
+              ) : (
+                <>
+                  <PropRow label="Workers" value={app.workers?.amount} />
+                  <PropRow label="Worker Type" value={app.workers?.type?.name} />
+                  <PropRow label="Worker Memory" value={app.workers?.type?.memory} />
+                  <PropRow label="Worker vCores" value={app.workers?.type?.cpu} />
+                </>
+              )}
+            </Section>
+
+            {/* Object Store */}
+            <Section icon={Database} title="Object Store">
+              <PropRow label="Persistent Object Store"
+                value={isOSEnabled ? '✅ Enabled' : '❌ Disabled'} mono={false} />
+              {!isCH1 && (
+                <>
+                  <PropRow label="Persistent Queues" value={app.persistentQueues != null ? String(app.persistentQueues) : undefined} />
+                </>
+              )}
+              {isCH1 && (
+                <PropRow label="Persistent Queues" value={app.persistentQueues != null ? String(app.persistentQueues) : undefined} />
+              )}
+            </Section>
+
+            {/* Schedulers */}
+            <Section icon={Clock} title={`Schedulers${schedulers.length > 0 ? ` (${schedulers.length})` : ''}`}>
+              {schedulers.length > 0 ? (
+                <div className="space-y-3">
+                  {schedulers.map((s, i) => (
+                    <div key={i} className="bg-gray-900 rounded-lg px-4 py-3 border border-gray-700">
+                      <p className="text-white text-sm font-medium mb-2">{s.name || s.schedulerName || `Scheduler ${i + 1}`}</p>
+                      <div className="space-y-1.5 text-xs">
+                        {s.frequency?.expression && (
+                          <div className="flex gap-2">
+                            <span className="text-gray-400 w-24">Expression</span>
+                            <span className="text-cyan-400 font-mono">{s.frequency.expression}</span>
+                          </div>
+                        )}
+                        {s.frequency?.timeUnit && (
+                          <div className="flex gap-2">
+                            <span className="text-gray-400 w-24">Time Unit</span>
+                            <span className="text-white font-mono">{s.frequency.timeUnit}</span>
+                          </div>
+                        )}
+                        {s.frequency?.value && (
+                          <div className="flex gap-2">
+                            <span className="text-gray-400 w-24">Frequency</span>
+                            <span className="text-white font-mono">{s.frequency.value} {s.frequency.timeUnit}</span>
+                          </div>
+                        )}
+                        {s.frequency?.timezone && (
+                          <div className="flex gap-2">
+                            <span className="text-gray-400 w-24">Timezone</span>
+                            <span className="text-white font-mono">{s.frequency.timezone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">No scheduler overrides configured for this deployment.</p>
+              )}
+            </Section>
+
+            {/* HTTP / Network */}
+            {ds.http && (
+              <Section icon={Settings} title="HTTP / Network">
+                <PropRow label="Inbound URL" value={ds.http.inboundPublicUrl} />
+                <PropRow label="Last Mile Security" value={ds.http.lastMileSecurity != null ? String(ds.http.lastMileSecurity) : undefined} />
+                <PropRow label="Forward SSL" value={ds.http.forwardSslSession != null ? String(ds.http.forwardSslSession) : undefined} />
+                <PropRow label="Static IPs" value={app.staticIPsEnabled != null ? String(app.staticIPsEnabled) : undefined} />
+              </Section>
+            )}
+
+            {/* CH1 additional */}
+            {isCH1 && (
+              <Section icon={Settings} title="CloudHub 1.0 Settings">
+                <PropRow label="Monitoring" value={app.monitoringEnabled != null ? String(app.monitoringEnabled) : undefined} />
+                <PropRow label="Custom Log4j" value={app.loggingCustomLog4JEnabled != null ? String(app.loggingCustomLog4JEnabled) : undefined} />
+                <PropRow label="Static IPs" value={app.staticIPsEnabled != null ? String(app.staticIPsEnabled) : undefined} />
+              </Section>
+            )}
+          </div>
+        )}
+
+        {/* RAW JSON */}
         {activeTab === 'raw' && (
           <div>
             <div className="flex items-center justify-between mb-3">
