@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import api, { isDemoMode, enableDemoMode, disableDemoMode, DEMO_MODE_KEY } from '../services/api';
+import api, { isDemoMode, enableDemoMode, disableDemoMode } from '../services/api';
 import { MOCK_USER } from '../services/mockData.js';
 
 const AuthContext = createContext(null);
@@ -36,19 +36,27 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const applyResult = (data) => {
+    setUser(data.user);
+    setOrgId(data.orgId);
+    setOrgName(data.orgName);
+  };
+
   const login = async (username, password) => {
     const res = await api.post('/auth/login', { username, password });
-    setUser(res.data.user);
-    setOrgId(res.data.orgId);
-    setOrgName(res.data.orgName);
+    applyResult(res.data);
     return res.data;
   };
 
   const tokenLogin = async (token) => {
     const res = await api.post('/auth/token-login', { token });
-    setUser(res.data.user);
-    setOrgId(res.data.orgId);
-    setOrgName(res.data.orgName);
+    applyResult(res.data);
+    return res.data;
+  };
+
+  const connectedAppLogin = async (clientId, clientSecret) => {
+    const res = await api.post('/auth/connected-app-login', { clientId, clientSecret });
+    applyResult(res.data);
     return res.data;
   };
 
@@ -68,7 +76,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, orgId, orgName, loading, login, tokenLogin, demoLogin, logout }}>
+    <AuthContext.Provider
+      value={{ user, orgId, orgName, loading, login, tokenLogin, connectedAppLogin, demoLogin, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );
