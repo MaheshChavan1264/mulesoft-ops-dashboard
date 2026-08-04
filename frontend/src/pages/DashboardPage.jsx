@@ -49,10 +49,13 @@ export default function DashboardPage() {
 
   const loadData = async (bgId) => {
     setLoading(true);
+    // Exchange assets are scoped to the root org, not individual BGs
+    const rootOrg = businessGroups.find((g) => !g.parentId);
+    const exchangeOrgId = rootOrg?.id || orgId;
     const [metricsRes, envsRes, exchangeRes] = await Promise.allSettled([
       api.get(`/metrics/summary/${bgId}`),
       api.get(`/environments/${bgId}`),
-      api.get(`/exchange/org/${bgId}/summary`)
+      api.get(`/exchange/org/${exchangeOrgId}/summary`)
     ]);
     if (metricsRes.status === 'fulfilled') setMetrics(metricsRes.value.data.summary);
     else setMetrics(null);
