@@ -1,44 +1,78 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Clock, Database, Server, Settings, Globe, Search } from 'lucide-react';
-import StatusBadge from '../components/StatusBadge';
+import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap } from 'lucide-react';
 import api from '../services/api';
 
-const card = 'rounded-2xl border border-gray-700/40 bg-gray-900/60 overflow-hidden';
+/* ── Micro components ──────────────────────────────────── */
 
-const KV = ({ label, value, mono }) => (
-  <div className="flex items-start justify-between gap-4 py-3 border-b border-gray-800/50 last:border-0">
-    <span className="text-gray-500 text-xs font-semibold uppercase tracking-wider flex-shrink-0 pt-0.5">{label}</span>
-    <span className={`${mono ? 'font-mono text-xs' : 'text-sm'} text-gray-200 break-all text-right leading-relaxed`}>
-      {value != null && value !== '' ? value : <span className="text-gray-700">—</span>}
+const CopyBtn = ({ text }) => {
+  const [done, setDone] = useState(false);
+  const copy = () => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); };
+  return (
+    <button onClick={copy} className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/60 transition-all flex-shrink-0">
+      {done ? <Check size={10} className="text-emerald-400"/> : <Copy size={10}/>}
+    </button>
+  );
+};
+
+const SecretVal = ({ value }) => {
+  const [show, setShow] = useState(false);
+  const isSecret = /^\*+$/.test(String(value));
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="font-mono text-xs text-slate-200 break-all">{show || !isSecret ? String(value) : '••••••••••••'}</span>
+      {isSecret && (
+        <button onClick={() => setShow(!show)} className="text-slate-500 hover:text-slate-300 flex-shrink-0">
+          {show ? <EyeOff size={11}/> : <Eye size={11}/>}
+        </button>
+      )}
     </span>
-  </div>
+  );
+};
+
+const MetaTag = ({ children, color = 'cyan' }) => {
+  const c = { cyan:'text-cyan-400 border-cyan-800/40 bg-cyan-950/30', blue:'text-blue-400 border-blue-800/40 bg-blue-950/30',
+    purple:'text-purple-400 border-purple-800/40 bg-purple-950/30', green:'text-emerald-400 border-emerald-800/40 bg-emerald-950/30',
+    red:'text-red-400 border-red-800/40 bg-red-950/30', gray:'text-slate-400 border-slate-700/40 bg-slate-800/40' }[color];
+  return <span className={`font-mono text-[11px] px-2 py-0.5 rounded-md border ${c} leading-none`}>{children}</span>;
+};
+
+const PulseDot = ({ active }) => (
+  <span className="relative flex h-2 w-2 flex-shrink-0">
+    {active && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"/>}
+    <span className={`relative inline-flex rounded-full h-2 w-2 ${active ? 'bg-emerald-400' : 'bg-slate-600'}`}/>
+  </span>
 );
 
-const TR = ({ k, v }) => (
-  <tr className="border-b border-gray-800/40 hover:bg-gray-800/30 transition-colors">
-    <td className="px-5 py-3 align-top w-[42%]">
-      <span className="text-gray-400 text-xs font-mono break-all leading-relaxed">{k}</span>
-    </td>
-    <td className="px-5 py-3 align-top">
-      <span className="text-gray-200 text-xs font-mono break-all bg-gray-800/60 px-2 py-0.5 rounded leading-relaxed">{v}</span>
-    </td>
-  </tr>
-);
-
-const Card = ({ icon: Icon, title, count, color = 'blue', noPad, children }) => (
-  <div className={card}>
-    <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-700/40 bg-gray-800/40">
-      <div className={`p-1.5 rounded-lg ${color==='blue'?'bg-blue-500/15':color==='purple'?'bg-purple-500/15':'bg-gray-500/15'}`}>
-        {Icon && <Icon size={14} className={color==='blue'?'text-blue-400':color==='purple'?'text-purple-400':'text-gray-400'} />}
-      </div>
-      <h3 className="text-white font-semibold text-sm">{title}</h3>
-      {count != null && <span className="ml-auto text-xs px-2.5 py-0.5 rounded-full bg-gray-700/60 text-gray-400 font-medium">{count}</span>}
+const KVRow = ({ label, value, mono, secret }) => (
+  <div className="group flex items-start gap-3 py-2.5 px-4 rounded-lg hover:bg-slate-800/50 transition-colors -mx-4">
+    <span className="text-[10px] font-bold tracking-wider text-slate-500 uppercase flex-shrink-0 w-40 pt-0.5">{label}</span>
+    <div className="flex items-start gap-1.5 flex-1 min-w-0">
+      {secret ? <SecretVal value={value}/> :
+        <span className={`${mono?'font-mono text-xs text-slate-200':'text-sm text-slate-200'} break-all leading-relaxed`}>
+          {value != null && value !== '' ? value : <span className="text-slate-700">—</span>}
+        </span>
+      }
+      {value && <CopyBtn text={String(value)}/>}
     </div>
-    <div className={noPad ? '' : 'px-6 py-4'}>{children}</div>
   </div>
 );
+
+const GlassCard = ({ icon: Icon, title, count, accent, children, noPad }) => (
+  <div className={`rounded-2xl border bg-slate-900/50 backdrop-blur-md transition-all overflow-hidden ${accent==='blue'?'border-blue-800/50 shadow-blue-900/20':accent==='purple'?'border-purple-800/50 shadow-purple-900/20':'border-slate-800/80 hover:border-slate-700/60'} shadow-xl`}>
+    <div className={`flex items-center gap-3 px-5 py-4 border-b ${accent==='blue'?'border-blue-800/30 bg-blue-900/10':accent==='purple'?'border-purple-800/30 bg-purple-900/10':'border-slate-800/60 bg-slate-800/20'}`}>
+      {Icon && <div className={`p-1.5 rounded-lg ${accent==='blue'?'bg-blue-500/15':accent==='purple'?'bg-purple-500/15':'bg-slate-700/60'}`}>
+        <Icon size={13} className={accent==='blue'?'text-blue-400':accent==='purple'?'text-purple-400':'text-slate-400'}/>
+      </div>}
+      <span className="text-slate-100 font-semibold text-sm">{title}</span>
+      {count != null && <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-500 font-medium border border-slate-700/40">{count}</span>}
+    </div>
+    <div className={noPad?'':'px-5 py-4'}>{children}</div>
+  </div>
+);
+
+/* ── Main component ────────────────────────────────────── */
 
 export default function ApplicationDetailPage() {
   const { orgId: authOrgId } = useAuth();
@@ -48,12 +82,9 @@ export default function ApplicationDetailPage() {
   const [app, setApp] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
-  const [copied, setCopied] = useState(false);
   const [propSearch, setPropSearch] = useState('');
 
-  useEffect(() => { if (orgId && envId && appId) load(); }, [orgId, envId, appId]);
-
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get(`/applications/cloudhub2/${orgId}/${envId}/${appId}`);
@@ -68,8 +99,8 @@ export default function ApplicationDetailPage() {
           sch = Array.isArray(sr.data) ? sr.data : (sr.data?.schedules || []);
         } catch {}
         setApp({ _type:'ch1', id:c.domain, name:c.domain, status:c.status, region:c.region,
-          muleVersion: typeof c.muleVersion==='string'?c.muleVersion:c.muleVersion?.version,
-          lastModifiedDate: c.lastUpdateTime?new Date(c.lastUpdateTime).toISOString():null,
+          muleVersion:typeof c.muleVersion==='string'?c.muleVersion:c.muleVersion?.version,
+          lastModifiedDate:c.lastUpdateTime?new Date(c.lastUpdateTime).toISOString():null,
           properties:c.properties||{}, persistentQueues:c.persistentQueues,
           staticIPsEnabled:c.staticIPsEnabled, loggingCustomLog4JEnabled:c.loggingCustomLog4JEnabled,
           monitoringEnabled:c.monitoringAutoRestart??c.monitoringEnabled,
@@ -78,16 +109,15 @@ export default function ApplicationDetailPage() {
       } catch { setApp(null); }
     }
     setLoading(false);
-  };
+  }, [orgId, envId, appId]);
 
-  const copyJson = () => { navigator.clipboard.writeText(JSON.stringify(app,null,2)); setCopied(true); setTimeout(()=>setCopied(false),2000); };
+  useEffect(() => { if (orgId && envId && appId) load(); }, [load]);
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"/></div>;
-
   if (!app) return (
     <div className="space-y-4">
-      <button onClick={()=>navigate('/applications')} className="flex items-center gap-2 text-gray-400 hover:text-white text-sm"><ArrowLeft size={16}/> Back</button>
-      <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-10 text-center text-red-400">Application not found or access denied.</div>
+      <button onClick={()=>navigate('/applications')} className="flex items-center gap-2 text-slate-400 hover:text-white text-sm"><ArrowLeft size={16}/> Back</button>
+      <div className="bg-red-950/30 border border-red-800/50 rounded-2xl p-10 text-center text-red-400">Application not found or access denied.</div>
     </div>
   );
 
@@ -107,10 +137,15 @@ export default function ApplicationDetailPage() {
   const replicaList = app.replicas || [];
   const allProps = { ...runtimeProps, ...ds.properties, ...envVars, ...app.properties };
   const filteredProps = Object.entries(allProps).filter(([k]) => !propSearch || k.toLowerCase().includes(propSearch.toLowerCase()));
-  const rStatus = app.application?.status || app.status || '';
-  const sc = { RUNNING:'bg-green-500/15 text-green-300 border-green-500/25', STARTED:'bg-green-500/15 text-green-300 border-green-500/25',
-    FAILED:'bg-red-500/15 text-red-300 border-red-500/25', STOPPED:'bg-gray-500/15 text-gray-300 border-gray-500/25',
-    DEPLOYING:'bg-blue-500/15 text-blue-300 border-blue-500/25' }[rStatus] || 'bg-gray-500/15 text-gray-300 border-gray-500/25';
+  const rStatus = (app.application?.status || app.status || '').toUpperCase();
+  const isRunning = rStatus === 'RUNNING' || rStatus === 'STARTED';
+
+  const statusStyle = { RUNNING:'text-emerald-300 bg-emerald-950/50 border-emerald-700/50 shadow-emerald-900/30',
+    STARTED:'text-emerald-300 bg-emerald-950/50 border-emerald-700/50 shadow-emerald-900/30',
+    FAILED:'text-red-300 bg-red-950/50 border-red-700/50 shadow-red-900/30',
+    STOPPED:'text-slate-400 bg-slate-800/50 border-slate-700/50',
+    DEPLOYING:'text-blue-300 bg-blue-950/50 border-blue-700/50 shadow-blue-900/30',
+    APPLIED:'text-cyan-300 bg-cyan-950/50 border-cyan-700/50' }[rStatus] || 'text-slate-400 bg-slate-800/50 border-slate-700/50';
 
   const tabs = [
     { id:'overview', label:'Overview' },
@@ -120,241 +155,283 @@ export default function ApplicationDetailPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="relative rounded-2xl border border-gray-700/40 bg-gradient-to-br from-gray-900 via-gray-900 to-blue-950/20 p-6 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/4 via-transparent to-purple-500/4 pointer-events-none"/>
-        <div className="relative flex items-start justify-between flex-wrap gap-4">
+    <div className="space-y-6 min-h-screen">
+      {/* ── Hero Header ─────────────────────────────── */}
+      <div className="relative rounded-2xl border border-slate-800/60 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-[#0B0F17] to-blue-950/20"/>
+        <div className="absolute inset-0" style={{background:'radial-gradient(ellipse at 70% 50%, rgba(59,130,246,0.06) 0%, transparent 60%)'}}/>
+        {isRunning && <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/3 rounded-full blur-3xl pointer-events-none"/>}
+        <div className="relative p-6 flex items-start justify-between flex-wrap gap-4">
           <div className="flex items-start gap-4">
-            <button onClick={()=>navigate('/applications')} className="mt-1 p-2 rounded-xl text-gray-500 hover:text-white hover:bg-gray-800 transition-all flex-shrink-0">
+            <button onClick={()=>navigate('/applications')} className="mt-0.5 p-2 rounded-xl text-slate-500 hover:text-white hover:bg-slate-800/80 border border-transparent hover:border-slate-700/50 transition-all">
               <ArrowLeft size={16}/>
             </button>
             <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-2xl font-bold text-white tracking-tight">{app.name}</h1>
-                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${isCH1?'bg-purple-500/15 text-purple-300 border-purple-500/25':'bg-blue-500/15 text-blue-300 border-blue-500/25'}`}>
+              <div className="flex items-center gap-3 flex-wrap mb-2">
+                <h1 className="text-xl font-bold text-white tracking-tight">{app.name}</h1>
+                <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border shadow-lg ${statusStyle}`}>
+                  <PulseDot active={isRunning}/> {rStatus || 'Unknown'}
+                </span>
+                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${isCH1?'bg-purple-950/50 text-purple-300 border-purple-700/50':'bg-blue-950/50 text-blue-300 border-blue-700/50'}`}>
                   {isCH1?'CloudHub 1.0':'CloudHub 2.0'}
                 </span>
-                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${sc}`}>{rStatus||'Unknown'}</span>
               </div>
-              <p className="text-gray-500 text-xs mt-1.5 font-mono">{app.id}</p>
-              {app.application?.ref && <p className="text-gray-400 text-xs mt-1">{app.application.ref.artifactId} <span className="text-gray-600">v{app.application.ref.version}</span></p>}
+              <div className="flex items-center gap-2 flex-wrap">
+                <MetaTag color="gray">{app.id}</MetaTag>
+                {app.application?.ref && <MetaTag color="blue">{app.application.ref.artifactId} v{app.application.ref.version}</MetaTag>}
+                {(app.region||ds.runtime?.version) && <MetaTag color="cyan">{ds.runtime?.version||ds.runtimeVersion||app.muleVersion}</MetaTag>}
+              </div>
             </div>
           </div>
-          <button onClick={load} className="p-2.5 rounded-xl text-gray-500 hover:text-white bg-gray-800/60 border border-gray-700/40 hover:bg-gray-700 transition-all">
-            <RefreshCw size={15}/>
+          <button onClick={load} className="p-2.5 rounded-xl text-slate-500 hover:text-white bg-slate-800/60 border border-slate-700/40 hover:bg-slate-700/60 transition-all">
+            <RefreshCw size={14}/>
           </button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-gray-800/40 border border-gray-700/30 p-1 rounded-xl w-fit">
+      {/* ── Segmented Tabs ──────────────────────────── */}
+      <div className="bg-slate-900 p-1 rounded-xl border border-slate-800 w-fit flex gap-0.5">
         {tabs.map(t => (
           <button key={t.id} onClick={()=>setTab(t.id)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.id?'bg-blue-600 text-white shadow-lg shadow-blue-900/40':'text-gray-400 hover:text-white hover:bg-gray-700/50'}`}>
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.id?'bg-slate-700/80 text-white shadow-md':'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'}`}>
             {t.label}
-            {t.badge>0 && <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${tab===t.id?'bg-blue-400/30 text-white':'bg-gray-700 text-gray-400'}`}>{t.badge}</span>}
+            {t.badge>0 && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${tab===t.id?'bg-blue-500/30 text-blue-300':'bg-slate-800 text-slate-500'}`}>{t.badge}</span>}
           </button>
         ))}
       </div>
 
-      {/* OVERVIEW */}
+      {/* ── OVERVIEW ────────────────────────────────── */}
       {tab==='overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <Card icon={Server} title="General Information" color="blue">
+          <GlassCard icon={Server} title="General Information" accent="blue">
             {isCH1 ? (<>
-              <KV label="App ID" value={app.id} mono />
-              <KV label="Status" value={app.status} />
-              <KV label="Mule Version" value={app.muleVersion} mono />
-              <KV label="Region" value={app.region} />
-              <KV label="Workers" value={app.workers?.amount!=null?String(app.workers.amount):undefined} />
-              <KV label="Worker Type" value={typeof app.workers?.type==='string'?app.workers.type:app.workers?.type?.name} />
-              <KV label="Last Modified" value={app.lastModifiedDate?new Date(app.lastModifiedDate).toLocaleString():undefined} />
+              <KVRow label="App ID" value={app.id} mono />
+              <KVRow label="Status" value={app.status} />
+              <KVRow label="Mule Version" value={app.muleVersion} mono />
+              <KVRow label="Region" value={app.region} mono />
+              <KVRow label="Workers" value={app.workers?.amount!=null?String(app.workers.amount):undefined} />
+              <KVRow label="Worker Type" value={typeof app.workers?.type==='string'?app.workers.type:app.workers?.type?.name} />
+              <KVRow label="Last Modified" value={app.lastModifiedDate?new Date(app.lastModifiedDate).toLocaleString():undefined} />
             </>) : (<>
-              <KV label="Runtime Status" value={app.application?.status} />
-              <KV label="Desired State" value={app.application?.desiredState} />
-              <KV label="Deployment Status" value={app.status} />
-              <KV label="Mule Version" value={ds.runtime?.version||ds.runtimeVersion} mono />
-              <KV label="Java" value={ds.runtime?.java?`Java ${ds.runtime.java}`:undefined} />
-              <KV label="Release Channel" value={ds.runtime?.releaseChannel} />
-              <KV label="vCores" value={app.application?.vCores!=null?String(app.application.vCores):undefined} />
-              <KV label="Replicas" value={replicas!=null?String(replicas):undefined} />
-              <KV label="Update Strategy" value={typeof ds.updateStrategy==='string'?ds.updateStrategy:undefined} />
-              <KV label="Artifact" value={app.application?.ref?`${app.application.ref.artifactId} v${app.application.ref.version}`:undefined} />
-              <KV label="Last Modified" value={app.lastModifiedDate?new Date(app.lastModifiedDate).toLocaleString():undefined} />
+              <KVRow label="Runtime Status" value={app.application?.status} />
+              <KVRow label="Desired State" value={app.application?.desiredState} />
+              <KVRow label="Deployment Status" value={app.status} />
+              <KVRow label="Mule Version" value={ds.runtime?.version||ds.runtimeVersion} mono />
+              <KVRow label="Java" value={ds.runtime?.java?`Java ${ds.runtime.java}`:undefined} mono />
+              <KVRow label="Release Channel" value={ds.runtime?.releaseChannel} />
+              <KVRow label="vCores" value={app.application?.vCores!=null?String(app.application.vCores):undefined} />
+              <KVRow label="Replicas" value={replicas!=null?String(replicas):undefined} />
+              <KVRow label="Update Strategy" value={typeof ds.updateStrategy==='string'?ds.updateStrategy:undefined} />
+              <KVRow label="Artifact" value={app.application?.ref?`${app.application.ref.artifactId} v${app.application.ref.version}`:undefined} />
+              <KVRow label="Last Modified" value={app.lastModifiedDate?new Date(app.lastModifiedDate).toLocaleString():undefined} />
             </>)}
-          </Card>
+          </GlassCard>
 
           {replicaList.length>0 ? (
-            <Card icon={Server} title="Replica Instances" count={replicaList.length} color="gray">
+            <GlassCard icon={Server} title="Replica Instances" count={replicaList.length}>
               <div className="space-y-2">
                 {replicaList.map(r => (
-                  <div key={r.id} className="flex items-center justify-between bg-gray-800/40 border border-gray-700/30 rounded-xl px-4 py-3 gap-3">
-                    <span className="text-gray-300 text-xs font-mono truncate">{r.id}</span>
-                    <StatusBadge status={r.state}/>
+                  <div key={r.id} className="flex items-center justify-between bg-slate-800/40 border border-slate-700/30 rounded-xl px-4 py-3 gap-3">
+                    <span className="text-slate-300 text-xs font-mono truncate">{r.id}</span>
+                    <MetaTag color={r.state==='STARTED'||r.state==='RUNNING'?'green':'gray'}>{r.state}</MetaTag>
                   </div>
                 ))}
               </div>
-            </Card>
+            </GlassCard>
           ) : schedulers.length>0 ? (
-            <Card icon={Clock} title="Schedulers Preview" count={schedulers.length} color="purple">
+            <GlassCard icon={Clock} title="Schedulers Preview" count={schedulers.length} accent="purple">
               <div className="space-y-2">
                 {schedulers.slice(0,4).map((s,i) => (
-                  <div key={i} className="bg-gray-800/40 border border-gray-700/30 rounded-xl px-4 py-3">
-                    <p className="text-white text-xs font-mono font-medium mb-1">{s.flow||s.flowName||s.name}</p>
-                    {(s.schedule?.cronExpression||s.expression) && <code className="text-cyan-400 text-xs font-mono">{s.schedule?.cronExpression||s.expression}</code>}
+                  <div key={i} className="bg-slate-800/40 border border-slate-700/30 rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <PulseDot active={s.enabled!==false}/>
+                      <span className="text-white text-xs font-mono font-medium truncate">{s.flow||s.flowName||s.name}</span>
+                    </div>
+                    {(s.schedule?.cronExpression||s.expression) && (
+                      <MetaTag color="cyan">{s.schedule?.cronExpression||s.expression}</MetaTag>
+                    )}
                   </div>
                 ))}
-                {schedulers.length>4 && <p className="text-gray-500 text-xs text-center">+{schedulers.length-4} more in Infra tab</p>}
+                {schedulers.length>4 && <p className="text-slate-600 text-xs text-center pt-1">+{schedulers.length-4} more in Infra tab</p>}
               </div>
-            </Card>
+            </GlassCard>
           ) : null}
         </div>
       )}
 
-      {/* PROPERTIES */}
+      {/* ── PROPERTIES ──────────────────────────────── */}
       {tab==='properties' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           <div className="relative">
-            <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
-            <input value={propSearch} onChange={e=>setPropSearch(e.target.value)} placeholder="Search properties…"
-              className="w-full bg-gray-900/60 border border-gray-700/40 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/50"/>
+            <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
+            <input value={propSearch} onChange={e=>setPropSearch(e.target.value)} placeholder="Filter properties by key…"
+              className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50 focus:bg-slate-900"/>
           </div>
-          <Card icon={Settings} title="All Properties" count={filteredProps.length} noPad>
+
+          <GlassCard icon={Settings} title="Properties" count={filteredProps.length} noPad>
             {filteredProps.length>0 ? (
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-gray-800/60 border-b border-gray-700/40">
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[42%]">Property</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Value</th>
+                  <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                    <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase w-[42%]">Property Key</th>
+                    <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Value</th>
                   </tr>
                 </thead>
-                <tbody>{filteredProps.sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=><TR key={k} k={k} v={String(v)}/>)}</tbody>
+                <tbody>
+                  {filteredProps.sort(([a],[b])=>a.localeCompare(b)).map(([k,v]) => (
+                    <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                      <td className="px-5 py-3 align-top">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-400 text-xs font-mono break-all leading-relaxed">{k}</span>
+                          <CopyBtn text={k}/>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 align-top">
+                        <div className="flex items-start gap-1.5">
+                          <SecretVal value={String(v)}/>
+                          <CopyBtn text={String(v)}/>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
-            ) : <div className="px-5 py-8 text-center text-gray-500 text-sm">{propSearch?`No properties matching "${propSearch}"`:'No properties found'}</div>}
-          </Card>
+            ) : <div className="px-5 py-8 text-center text-slate-600 text-sm">{propSearch?`No matches for "${propSearch}"`:'No properties found'}</div>}
+          </GlassCard>
+
           {Object.keys(secureProps).length>0 && (
-            <Card icon={Settings} title="Secure Properties" count={Object.keys(secureProps).length} color="gray" noPad>
-              <div className="px-5 py-2.5 bg-orange-950/20 border-b border-orange-900/20 text-xs text-orange-400/70">
-                ⚠ Values are redacted by Anypoint Platform and cannot be retrieved via API
+            <GlassCard icon={Settings} title="Secure Properties" count={Object.keys(secureProps).length} noPad>
+              <div className="px-5 py-2.5 bg-orange-950/20 border-b border-orange-900/20">
+                <span className="text-xs text-orange-400/70">⚠ Values are redacted by Anypoint Platform</span>
               </div>
               <table className="w-full text-sm border-collapse">
-                <tbody>{Object.entries(secureProps).map(([k,v])=><TR key={k} k={k} v={String(v)}/>)}</tbody>
+                <tbody>
+                  {Object.entries(secureProps).map(([k,v]) => (
+                    <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                      <td className="px-5 py-3 w-[42%]"><span className="text-slate-400 text-xs font-mono">{k}</span></td>
+                      <td className="px-5 py-3"><SecretVal value={String(v)}/></td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
-            </Card>
+            </GlassCard>
           )}
         </div>
       )}
 
-      {/* INFRA & CONFIG */}
+      {/* ── INFRA & CONFIG ───────────────────────────── */}
       {tab==='infrastructure' && (
         <div className="space-y-5">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <Card icon={Server} title="Resources" color="blue">
+            <GlassCard icon={Server} title="Resources" accent="blue">
               {!isCH1 ? (<>
-                <KV label="vCores" value={app.application?.vCores!=null?String(app.application.vCores):undefined} />
-                <KV label="Replicas" value={replicas!=null?String(replicas):undefined} />
-                <KV label="Update Strategy" value={typeof ds.updateStrategy==='string'?ds.updateStrategy:undefined} />
-                <KV label="Clustered" value={ds.clustered!=null?String(ds.clustered):undefined} />
-                <KV label="Spread Replicas" value={ds.enforceDeployingReplicasAcrossNodes!=null?String(ds.enforceDeployingReplicasAcrossNodes):undefined} />
-                <KV label="JVM Args" value={ds.jvm?.args||'(none)'} mono />
-                <KV label="Tracing" value={ds.tracingEnabled!=null?String(ds.tracingEnabled):undefined} />
+                <KVRow label="vCores" value={app.application?.vCores!=null?String(app.application.vCores):undefined} />
+                <KVRow label="Replicas" value={replicas!=null?String(replicas):undefined} />
+                <KVRow label="Update Strategy" value={typeof ds.updateStrategy==='string'?ds.updateStrategy:undefined} />
+                <KVRow label="Clustered" value={ds.clustered!=null?String(ds.clustered):undefined} />
+                <KVRow label="Spread Replicas" value={ds.enforceDeployingReplicasAcrossNodes!=null?String(ds.enforceDeployingReplicasAcrossNodes):undefined} />
+                <KVRow label="JVM Args" value={ds.jvm?.args||'(none)'} mono />
+                <KVRow label="Tracing" value={ds.tracingEnabled!=null?String(ds.tracingEnabled):undefined} />
               </>) : (<>
-                <KV label="Workers" value={app.workers?.amount!=null?String(app.workers.amount):undefined} />
-                <KV label="Worker Type" value={typeof app.workers?.type==='string'?app.workers.type:app.workers?.type?.name} />
-                <KV label="Region" value={app.region} />
+                <KVRow label="Workers" value={app.workers?.amount!=null?String(app.workers.amount):undefined} />
+                <KVRow label="Worker Type" value={typeof app.workers?.type==='string'?app.workers.type:app.workers?.type?.name} />
+                <KVRow label="Region" value={app.region} mono />
               </>)}
-            </Card>
-            <Card icon={Database} title="Object Store & Settings" color="gray">
-              <KV label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
-              {isCH1 && <KV label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
-              {isCH1 && <KV label="Monitoring" value={app.monitoringEnabled!=null?String(app.monitoringEnabled):undefined} />}
-              {isCH1 && <KV label="Custom Log4j" value={app.loggingCustomLog4JEnabled!=null?String(app.loggingCustomLog4JEnabled):undefined} />}
-              {isCH1 && <KV label="Static IPs" value={app.staticIPsEnabled!=null?String(app.staticIPsEnabled):undefined} />}
-              {!isCH1 && <KV label="AM Log Forwarding" value={ds.disableAmLogForwarding!=null?String(!ds.disableAmLogForwarding):undefined} />}
-            </Card>
+            </GlassCard>
+            <GlassCard icon={Database} title="Object Store & Settings">
+              <KVRow label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
+              {isCH1 && <KVRow label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
+              {isCH1 && <KVRow label="Monitoring" value={app.monitoringEnabled!=null?String(app.monitoringEnabled):undefined} />}
+              {isCH1 && <KVRow label="Custom Log4j" value={app.loggingCustomLog4JEnabled!=null?String(app.loggingCustomLog4JEnabled):undefined} />}
+              {!isCH1 && <KVRow label="AM Log Forwarding" value={ds.disableAmLogForwarding!=null?String(!ds.disableAmLogForwarding):undefined} />}
+            </GlassCard>
           </div>
 
-          <Card icon={Clock} title="Schedulers" count={schedulers.length} color="purple" noPad>
+          <GlassCard icon={Clock} title="Schedulers" count={schedulers.length} accent="purple" noPad>
             {schedulers.length>0 ? (
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-gray-800/60 border-b border-gray-700/40">
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Flow Name</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Cron Expression</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Last Run</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">State</th>
+                  <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                    {['Flow Name','Cron Expression','Last Run','State'].map(h=>(
+                      <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {schedulers.map((s,i) => {
                     const cron = s.schedule?.cronExpression||s.expression||s.cronExpression;
                     const freq = s.frequency||(s.schedule?.period>0?s.schedule.period:null);
+                    const active = s.enabled!==false;
                     return (
-                      <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/30 transition-colors">
-                        <td className="px-5 py-3.5 align-top">
-                          <span className="text-white text-xs font-mono font-medium break-all">{s.flow||s.flowName||s.name}</span>
+                      <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                        <td className="px-5 py-4 align-top">
+                          <div className="flex items-center gap-2">
+                            <PulseDot active={active}/>
+                            <span className="text-slate-200 text-xs font-mono font-medium break-all">{s.flow||s.flowName||s.name}</span>
+                          </div>
                         </td>
-                        <td className="px-5 py-3.5 align-top">
-                          {cron ? <code className="text-cyan-300 bg-cyan-950/30 border border-cyan-800/25 px-2 py-1 rounded-lg font-mono text-xs">{cron}</code>
-                            : freq ? <span className="text-gray-300 font-mono text-xs bg-gray-800 px-2 py-0.5 rounded">{freq} {s.timeUnit||s.schedule?.timeUnit}</span>
-                            : <span className="text-gray-700 text-xs">—</span>}
+                        <td className="px-5 py-4 align-top">
+                          {cron ? <MetaTag color="cyan">{cron}</MetaTag>
+                            : freq ? <MetaTag color="blue">{freq} {s.timeUnit||s.schedule?.timeUnit}</MetaTag>
+                            : <span className="text-slate-700 text-xs">—</span>}
                         </td>
-                        <td className="px-5 py-3.5 align-top">
-                          <span className="text-gray-500 text-xs">{s.lastRun?new Date(s.lastRun).toLocaleString():'—'}</span>
+                        <td className="px-5 py-4 align-top">
+                          <span className="text-slate-500 text-xs">{s.lastRun?new Date(s.lastRun).toLocaleString():'—'}</span>
                         </td>
-                        <td className="px-5 py-3.5 align-top">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${s.enabled!==false?'bg-green-500/15 text-green-400 border-green-500/20':'bg-gray-600/20 text-gray-400 border-gray-600/20'}`}>
-                            {s.enabled!==false?'Enabled':'Disabled'}
+                        <td className="px-5 py-4 align-top">
+                          <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${active?'bg-emerald-950/50 text-emerald-300 border-emerald-700/50':'bg-slate-800/60 text-slate-500 border-slate-700/50'}`}>
+                            {active?'Enabled':'Disabled'}
                           </span>
-                          {s.status && <p className="text-xs text-gray-600 mt-0.5">{s.status}</p>}
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-            ) : <div className="px-5 py-6 text-center text-gray-500 text-sm">No schedulers configured</div>}
-          </Card>
+            ) : <div className="px-5 py-6 text-center text-slate-600 text-sm">No schedulers configured</div>}
+          </GlassCard>
 
           {(httpInbound.publicUrl||endpoints.length>0) && (
-            <Card icon={Globe} title="HTTP Endpoints" count={endpoints.length} color="gray" noPad>
-              <div className="px-6 py-4 border-b border-gray-700/30">
-                {httpInbound.publicUrl && <KV label="Public URL" value={httpInbound.publicUrl} mono />}
-                {httpInbound.internalUrl && <KV label="Internal URL" value={httpInbound.internalUrl} mono />}
-                <KV label="Last Mile Security" value={httpInbound.lastMileSecurity!=null?String(httpInbound.lastMileSecurity):undefined} />
-                <KV label="Forward SSL" value={httpInbound.forwardSslSession!=null?String(httpInbound.forwardSslSession):undefined} />
+            <GlassCard icon={Globe} title="HTTP Endpoints" count={endpoints.length} noPad>
+              <div className="px-5 py-4 border-b border-slate-800/40 space-y-1">
+                {httpInbound.publicUrl && <KVRow label="Public URL" value={httpInbound.publicUrl} mono />}
+                {httpInbound.internalUrl && <KVRow label="Internal URL" value={httpInbound.internalUrl} mono />}
+                <KVRow label="Last Mile Security" value={httpInbound.lastMileSecurity!=null?String(httpInbound.lastMileSecurity):undefined} />
+                <KVRow label="Forward SSL" value={httpInbound.forwardSslSession!=null?String(httpInbound.forwardSslSession):undefined} />
               </div>
               {endpoints.length>0 && (
                 <table className="w-full text-sm border-collapse">
-                  <thead><tr className="bg-gray-800/50"><th className="px-5 py-2 text-left text-xs text-gray-500 font-medium uppercase tracking-wider">Access</th><th className="px-5 py-2 text-left text-xs text-gray-500 font-medium uppercase tracking-wider">URL</th></tr></thead>
+                  <thead><tr className="bg-slate-800/40"><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Access</th><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">URL</th></tr></thead>
                   <tbody>
                     {endpoints.map((ep,i)=>(
-                      <tr key={i} className="border-t border-gray-800/40 hover:bg-gray-800/30">
-                        <td className="px-5 py-3"><span className={`text-xs px-2 py-0.5 rounded font-medium ${ep.access==='external'?'bg-blue-500/15 text-blue-400':'bg-gray-600/20 text-gray-400'}`}>{ep.access}</span></td>
-                        <td className="px-5 py-3"><span className="text-white text-xs font-mono break-all">{ep.url}</span></td>
+                      <tr key={i} className="border-t border-slate-800/40 hover:bg-slate-800/30 group">
+                        <td className="px-5 py-3"><MetaTag color={ep.access==='external'?'blue':'gray'}>{ep.access}</MetaTag></td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-300 text-xs font-mono break-all">{ep.url}</span>
+                            <CopyBtn text={ep.url}/>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               )}
-            </Card>
+            </GlassCard>
           )}
         </div>
       )}
 
-      {/* RAW JSON */}
+      {/* ── RAW JSON ────────────────────────────────── */}
       {tab==='raw' && (
-        <Card icon={Copy} title="Raw JSON" color="gray">
+        <GlassCard icon={Copy} title="Raw JSON">
           <div className="flex justify-end mb-3">
-            <button onClick={copyJson} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg border border-gray-700/40 transition-all">
-              <Copy size={12}/> {copied?'Copied!':'Copy JSON'}
-            </button>
+            <CopyBtn text={JSON.stringify(app,null,2)}/>
           </div>
-          <pre className="bg-gray-950/80 rounded-xl p-5 text-xs text-green-400 overflow-auto max-h-[600px] font-mono leading-relaxed border border-gray-800/40">
+          <pre className="bg-[#0B0F17] rounded-xl p-5 text-xs text-emerald-400/90 overflow-auto max-h-[600px] font-mono leading-relaxed border border-slate-800/60">
             {JSON.stringify(app,null,2)}
           </pre>
-        </Card>
+        </GlassCard>
       )}
     </div>
   );
