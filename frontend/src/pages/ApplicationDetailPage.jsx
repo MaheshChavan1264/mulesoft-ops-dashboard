@@ -44,7 +44,10 @@ export default function ApplicationDetailPage() {
       setApp(res.data);
     } catch {
       try {
-        const res2 = await api.get(`/applications/cloudhub1/${envId}/${appId}/properties`);
+        // Pass orgId as query param so the backend uses the correct BG org, not root org
+        const res2 = await api.get(`/applications/cloudhub1/${envId}/${appId}/properties`, {
+          params: { orgId }
+        });
         setApp({ name: res2.data.appName, ...res2.data, _type: 'ch1' });
       } catch { setApp(null); }
     }
