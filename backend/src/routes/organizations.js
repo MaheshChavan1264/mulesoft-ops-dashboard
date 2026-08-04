@@ -3,47 +3,85 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 
-// Get current organization and sub-organizations (business groups)
+// Recursively fetch an org and all its sub-organizations by ID
+async function fetchOrgTree(client, orgId, visited = new Set()) {
+  if (visited.has(orgId)) return null; // prevent cycles
+  visited.add(orgId);
+
+  try {
+    const res = await client.get(`/accounts/api/organizations/${orgId}`);
+    const org = res.data;
+
+    const node = {
+      id: org.id,
+      name: org.name,
+      domain: org.domain,
+      type: org.type,
+      parentId: org.parentId || null,
+      ownerId: org.ownerId,
+      createdAt: org.createdAt,
+      updatedAt: org.updatedAt,
+      subOrganizationIds: org.subOrganizationIds || []
+    };
+
+    return node;
+  } catch (e) {
+    console.error(`Failed to fetch org ${orgId}:`, e.response?.status, e.message);
+    return null;
+  }
+}
+
+async function fetchAllOrgs(client, rootOrgId) {
+  const visited = new Set();
+  const allOrgs = [];
+  const queue = [rootOrgId];
+
+  while (queue.length > 0) {
+    const orgId = queue.shift();
+    if (visited.has(orgId)) continue;
+
+    const org = await fetchOrgTree(client, orgId, visited);
+    if (org) {
+      allOrgs.push(org);
+      // Add children to the queue
+      for (const childId of org.subOrganizationIds) {
+        if (!visited.has(childId)) {
+          queue.push(childId);
+        }
+      }
+    }
+  }
+
+  return allOrgs;
+}
+
+// Get current organization
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
-    const response = await client.get(`/accounts/api/organizations/${req.orgId}/`);
+    const response = await client.get(`/accounts/api/organizations/${req.orgId}`);
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching organizations:', error.response?.data || error.message);
+    console.error('Error fetching organization:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch organizations'
+      error: error.response?.data?.message || 'Failed to fetch organization'
     });
   }
 });
 
-// Get all business groups (sub-organizations)
+// Get all business groups (full hierarchy, flattened)
 router.get('/business-groups', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
-    // Get the hierarchy of organizations
-    const response = await client.get(`/accounts/api/organizations/${req.orgId}/`);
-    const org = response.data;
 
-    // Build a flat list of all orgs
-    const allOrgs = [];
-    const flatten = (o) => {
-      allOrgs.push({
-        id: o.id,
-        name: o.name,
-        domain: o.domain,
-        type: o.type,
-        parentId: o.parentId,
-        ownerId: o.ownerId,
-        createdAt: o.createdAt,
-        updatedAt: o.updatedAt,
-        subOrganizationIds: o.subOrganizationIds || []
-      });
-      if (o.subOrganizations) {
-        o.subOrganizations.forEach(flatten);
-      }
-    };
-    flatten(org);
+    // First get the root org to find all subOrganizationIds
+    const rootRes = await client.get(`/accounts/api/organizations/${req.orgId}`);
+    const rootOrg = rootRes.data;
+
+    // Build full flat list by BFS through the ID tree
+    const allOrgs = await fetchAllOrgs(client, req.orgId);
+
+    console.log(`Found ${allOrgs.length} business groups for org ${req.orgId}`);
 
     res.json({ total: allOrgs.length, data: allOrgs });
   } catch (error) {
