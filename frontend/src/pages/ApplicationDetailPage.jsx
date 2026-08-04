@@ -227,7 +227,7 @@ export default function ApplicationDetailPage() {
             </>)}
           </GlassCard>
 
-          {replicaList.length>0 ? (
+          {replicaList.length>0 && (
             <GlassCard icon={Server} title="Replica Instances" count={replicaList.length}>
               <div className="space-y-2">
                 {replicaList.map(r => (
@@ -238,24 +238,7 @@ export default function ApplicationDetailPage() {
                 ))}
               </div>
             </GlassCard>
-          ) : schedulers.length>0 ? (
-            <GlassCard icon={Clock} title="Schedulers Preview" count={schedulers.length} accent="purple">
-              <div className="space-y-2">
-                {schedulers.slice(0,4).map((s,i) => (
-                  <div key={i} className="bg-slate-800/40 border border-slate-700/30 rounded-xl px-4 py-3">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <PulseDot active={s.enabled!==false}/>
-                      <span className="text-white text-xs font-mono font-medium truncate">{s.flow||s.flowName||s.name}</span>
-                    </div>
-                    {(s.schedule?.cronExpression||s.expression) && (
-                      <MetaTag color="cyan">{s.schedule?.cronExpression||s.expression}</MetaTag>
-                    )}
-                  </div>
-                ))}
-                {schedulers.length>4 && <p className="text-slate-600 text-xs text-center pt-1">+{schedulers.length-4} more in Infra tab</p>}
-              </div>
-            </GlassCard>
-          ) : null}
+          )}
         </div>
       )}
 
@@ -322,30 +305,13 @@ export default function ApplicationDetailPage() {
       {/* ── INFRA & CONFIG ───────────────────────────── */}
       {tab==='infrastructure' && (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <GlassCard icon={Server} title="Resources" accent="blue">
-              {!isCH1 ? (<>
-                <KVRow label="vCores" value={app.application?.vCores!=null?String(app.application.vCores):undefined} />
-                <KVRow label="Replicas" value={replicas!=null?String(replicas):undefined} />
-                <KVRow label="Update Strategy" value={typeof ds.updateStrategy==='string'?ds.updateStrategy:undefined} />
-                <KVRow label="Clustered" value={ds.clustered!=null?String(ds.clustered):undefined} />
-                <KVRow label="Spread Replicas" value={ds.enforceDeployingReplicasAcrossNodes!=null?String(ds.enforceDeployingReplicasAcrossNodes):undefined} />
-                <KVRow label="JVM Args" value={ds.jvm?.args||'(none)'} mono />
-                <KVRow label="Tracing" value={ds.tracingEnabled!=null?String(ds.tracingEnabled):undefined} />
-              </>) : (<>
-                <KVRow label="Workers" value={app.workers?.amount!=null?String(app.workers.amount):undefined} />
-                <KVRow label="Worker Type" value={typeof app.workers?.type==='string'?app.workers.type:app.workers?.type?.name} />
-                <KVRow label="Region" value={app.region} mono />
-              </>)}
-            </GlassCard>
-            <GlassCard icon={Database} title="Object Store & Settings">
-              <KVRow label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
-              {isCH1 && <KVRow label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
-              {isCH1 && <KVRow label="Monitoring" value={app.monitoringEnabled!=null?String(app.monitoringEnabled):undefined} />}
-              {isCH1 && <KVRow label="Custom Log4j" value={app.loggingCustomLog4JEnabled!=null?String(app.loggingCustomLog4JEnabled):undefined} />}
-              {!isCH1 && <KVRow label="AM Log Forwarding" value={ds.disableAmLogForwarding!=null?String(!ds.disableAmLogForwarding):undefined} />}
-            </GlassCard>
-          </div>
+          <GlassCard icon={Database} title="Object Store & Settings">
+            <KVRow label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
+            {isCH1 && <KVRow label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
+            {isCH1 && <KVRow label="Monitoring" value={app.monitoringEnabled!=null?String(app.monitoringEnabled):undefined} />}
+            {isCH1 && <KVRow label="Custom Log4j" value={app.loggingCustomLog4JEnabled!=null?String(app.loggingCustomLog4JEnabled):undefined} />}
+            {!isCH1 && <KVRow label="AM Log Forwarding" value={ds.disableAmLogForwarding!=null?String(!ds.disableAmLogForwarding):undefined} />}
+          </GlassCard>
 
           <GlassCard icon={Clock} title="Schedulers" count={schedulers.length} accent="purple" noPad>
             {schedulers.length>0 ? (
