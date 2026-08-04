@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, Play, Square, RotateCcw, AlertTriangle, X, Key, Package } from 'lucide-react';
 import api from '../services/api';
+import CpsSettingsModal from '../components/CpsSettingsModal';
 
 /* ── Micro components ──────────────────────────────────── */
 
@@ -72,6 +73,60 @@ const GlassCard = ({ icon: Icon, title, count, accent, children, noPad }) => (
   </div>
 );
 
+/* ── Action helpers ────────────────────────────────────── */
+const availableActions = (status) => {
+  const s = (status || '').toUpperCase();
+  if (['RUNNING', 'STARTED', 'PARTIALLY_STARTED', 'PARTIALLY_RUNNING'].includes(s)) return ['stop', 'restart'];
+  if (['STOPPED', 'FAILED', 'DEPLOY_FAILED', 'UNDEPLOYED', 'NOT_RUNNING'].includes(s)) return ['start'];
+  return [];
+};
+
+const ACTION_CONFIG = {
+  start:   { label: 'Start',   Icon: Play,      cls: 'text-emerald-400 border-emerald-800/50 hover:bg-emerald-950/60 hover:text-emerald-300' },
+  stop:    { label: 'Stop',    Icon: Square,    cls: 'text-red-400    border-red-800/50    hover:bg-red-950/60    hover:text-red-300' },
+  restart: { label: 'Restart', Icon: RotateCcw, cls: 'text-blue-400   border-blue-800/50   hover:bg-blue-950/60   hover:text-blue-300' }
+};
+
+function AppConfirmModal({ state, onConfirm, onCancel, loading }) {
+  if (!state) return null;
+  const { action, appName } = state;
+  const cfg = ACTION_CONFIG[action];
+  const { Icon } = cfg;
+  const dangerous = action === 'stop';
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+        <div className="flex items-start gap-4">
+          <div className={`p-2.5 rounded-xl flex-shrink-0 border ${dangerous ? 'bg-red-950/60 border-red-800/40' : 'bg-blue-950/60 border-blue-800/40'}`}>
+            <AlertTriangle size={18} className={dangerous ? 'text-red-400' : 'text-blue-400'} />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-white font-semibold text-base mb-1">{cfg.label} Application?</h3>
+            <p className="text-slate-400 text-sm">
+              Are you sure you want to <span className="text-white font-medium">{cfg.label.toLowerCase()}</span>{' '}
+              <span className="font-mono text-blue-300 text-xs bg-blue-950/40 px-1.5 py-0.5 rounded">{appName}</span>?
+            </p>
+            {dangerous && <p className="text-red-400/80 text-xs mt-2">⚠ This will stop all running flows and connections.</p>}
+          </div>
+          <button onClick={onCancel} className="text-slate-600 hover:text-slate-300"><X size={16} /></button>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={onCancel} disabled={loading}
+            className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg disabled:opacity-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={loading}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${dangerous ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>
+            {loading
+              ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
+              : <><Icon size={13} /> Confirm {cfg.label}</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main component ────────────────────────────────────── */
 
 export default function ApplicationDetailPage() {
@@ -83,6 +138,17 @@ export default function ApplicationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
   const [propSearch, setPropSearch] = useState('');
+  const [schedulerSearch, setSchedulerSearch] = useState('');
+  const [actionLoading, setActionLoading] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
+  const [actionResult, setActionResult] = useState(null);
+  // CPS state
+  const [cpsLoading, setCpsLoading] = useState(false);
+  const [cpsData, setCpsData] = useState(null);
+  const [cpsError, setCpsError] = useState('');
+  const [cpsMissingCred, setCpsMissingCred] = useState(null);
+  const [showCpsSettings, setShowCpsSettings] = useState(false);
+  const [cpsSearch, setCpsSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,6 +179,38 @@ export default function ApplicationDetailPage() {
 
   useEffect(() => { if (orgId && envId && appId) load(); }, [load]);
 
+  const requestAction = (action) => {
+    setActionResult(null);
+    setConfirmState({ action, appName: app?.name });
+  };
+
+  const executeAction = async () => {
+    if (!confirmState || !app) return;
+    const { action } = confirmState;
+    setActionLoading(action);
+    try {
+      if (app._type === 'ch1') {
+        await api.post(`/applications/cloudhub1/${envId}/${appId}/action?orgId=${orgId}`, { action });
+      } else {
+        await api.post(`/applications/cloudhub2/${orgId}/${envId}/${appId}/action`, { action });
+      }
+      const nextStatus = action === 'start' ? 'RUNNING' : action === 'stop' ? 'STOPPED' : 'DEPLOYING';
+      setApp((prev) => prev ? { ...prev,
+        status: nextStatus,
+        application: prev.application ? { ...prev.application, status: nextStatus } : prev.application
+      } : prev);
+      setActionResult({ success: true, message: `✓ ${app.name}: ${action} initiated successfully` });
+    } catch (e) {
+      setActionResult({ success: false, message: `✗ Failed to ${action}: ${e.response?.data?.error || e.message}` });
+    } finally {
+      setActionLoading(null);
+      setConfirmState(null);
+      setTimeout(() => setActionResult(null), 6000);
+    }
+  };
+
+  const isCH1 = app?._type === 'ch1';
+
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"/></div>;
   if (!app) return (
     <div className="space-y-4">
@@ -121,14 +219,24 @@ export default function ApplicationDetailPage() {
     </div>
   );
 
+  const actions = availableActions(app.application?.status || app.status);
+
   const ds = app.target?.deploymentSettings || {};
   const appCfg = app.application?.configuration || {};
   const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
   const schedSvc = appCfg['mule.agent.scheduling.service'] || {};
   const runtimeProps = propsSvc.properties || {};
   const secureProps = propsSvc.secureProperties || {};
-  const isCH1 = app._type === 'ch1';
-  const schedulers = isCH1?(app._ch1Schedules||[]):(schedSvc.schedulers||[]);
+  const allSchedulers = isCH1?(app._ch1Schedules||[]):(schedSvc.schedulers||[]);
+  const schedulers = schedulerSearch
+    ? allSchedulers.filter((s) => {
+        const q = schedulerSearch.toLowerCase();
+        const flow = (s.flow || s.flowName || s.name || '').toLowerCase();
+        const cron = (s.schedule?.cronExpression || s.expression || s.cronExpression || '').toLowerCase();
+        const freq = String(s.frequency || s.schedule?.period || '').toLowerCase();
+        return flow.includes(q) || cron.includes(q) || freq.includes(q);
+      })
+    : allSchedulers;
   const httpInbound = ds.http?.inbound || {};
   const endpoints = httpInbound.endpoints || [];
   const envVars = ds.environmentVariables || ds.environmentVars || {};
@@ -137,6 +245,55 @@ export default function ApplicationDetailPage() {
   const replicaList = app.replicas || [];
   const allProps = { ...runtimeProps, ...ds.properties, ...envVars, ...app.properties };
   const filteredProps = Object.entries(allProps).filter(([k]) => !propSearch || k.toLowerCase().includes(propSearch.toLowerCase()));
+
+  // CPS computed values
+  const cpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
+  const cpsProjectName = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
+  const appEnvName = app.environment?.name || '';
+  const appEnvType = app.environment?.type || '';
+  const deriveCpsEnv = (n = '', t = '') => {
+    const s = `${n} ${t}`.toLowerCase();
+    if (/\b(prod|pd)\b/.test(s)) return 'prod';
+    if (/\b(uat|ut|stg|stage|sandbox|uap)\b/.test(s)) return 'uat';
+    return t === 'production' ? 'prod' : 'uat';
+  };
+  const cpsEnv = deriveCpsEnv(appEnvName, appEnvType);
+  const cpsDepType = isCH1 ? 'ch1' : 'ch2';
+
+  const loadCpsData = async () => {
+    if (!cpsBaseUrl) return;
+    setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null);
+    try {
+      const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', environment: cpsEnv, keys: cpsProjectName, deploymentType: cpsDepType, envName: appEnvName } });
+      const nsRaw = nsRes.data;
+      const nsEntry = Array.isArray(nsRaw?.properties) ? (nsRaw.properties.find((p) => p.key === cpsProjectName) || nsRaw.properties[0]) : nsRaw;
+      const flatNs = (nsEntry?.properties && typeof nsEntry.properties === 'object' && !Array.isArray(nsEntry.properties)) ? nsEntry.properties : (typeof nsRaw === 'object' && !Array.isArray(nsRaw) ? nsRaw : {});
+
+      let secureGroups = [];
+      const secureKeys = flatNs['cps.secure.properties'];
+      if (secureKeys) {
+        try {
+          const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', environment: cpsEnv, keys: secureKeys, deploymentType: cpsDepType, envName: appEnvName } });
+          secureGroups = Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
+        } catch {}
+      }
+
+      let binaryList = [];
+      const binaryKeys = flatNs['cps.secure.binaries'];
+      if (binaryKeys) {
+        try {
+          const br = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'binaries', environment: cpsEnv, keys: binaryKeys, deploymentType: cpsDepType, envName: appEnvName } });
+          binaryList = br.data?.binaries || (Array.isArray(br.data) ? br.data : []);
+        } catch {}
+      }
+
+      setCpsData({ nonSecure: flatNs, secureGroups, binaryList });
+    } catch (e) {
+      if (e.response?.data?.needsConfig) setCpsMissingCred(e.response.data.credKey);
+      else setCpsError(e.response?.data?.error || e.message || 'CPS fetch failed');
+    }
+    setCpsLoading(false);
+  };
   const rStatus = (app.application?.status || app.status || '').toUpperCase();
   const isRunning = rStatus === 'RUNNING' || rStatus === 'STARTED';
 
@@ -151,11 +308,32 @@ export default function ApplicationDetailPage() {
     { id:'overview', label:'Overview' },
     { id:'properties', label:'Properties', badge:Object.keys(allProps).length },
     { id:'infrastructure', label:'Infra & Config' },
+    ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config' }] : []),
     { id:'raw', label:'Raw JSON' },
   ];
 
   return (
     <div className="space-y-6 min-h-screen">
+      {showCpsSettings && <CpsSettingsModal onClose={() => { setShowCpsSettings(false); if (cpsMissingCred) { setCpsMissingCred(null); loadCpsData(); } }} />}
+      <AppConfirmModal
+        state={confirmState}
+        onConfirm={executeAction}
+        onCancel={() => setConfirmState(null)}
+        loading={!!actionLoading}
+      />
+
+      {/* Action toast */}
+      {actionResult && (
+        <div className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm ${
+          actionResult.success
+            ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
+            : 'bg-red-950/40 border-red-800/50 text-red-300'
+        }`}>
+          <span>{actionResult.message}</span>
+          <button onClick={() => setActionResult(null)} className="ml-4 opacity-60 hover:opacity-100"><X size={14} /></button>
+        </div>
+      )}
+
       {/* ── Hero Header ─────────────────────────────── */}
       <div className="relative rounded-2xl border border-slate-800/60 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-[#0B0F17] to-blue-950/20"/>
@@ -183,17 +361,40 @@ export default function ApplicationDetailPage() {
               </div>
             </div>
           </div>
-          <button onClick={load} className="p-2.5 rounded-xl text-slate-500 hover:text-white bg-slate-800/60 border border-slate-700/40 hover:bg-slate-700/60 transition-all">
-            <RefreshCw size={14}/>
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Action buttons */}
+            {actions.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                {actionLoading ? (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700/40">
+                    <span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-blue-400" />
+                    <span className="text-slate-400 text-xs">Working…</span>
+                  </div>
+                ) : actions.map((action) => {
+                  const { Icon, label, cls } = ACTION_CONFIG[action];
+                  return (
+                    <button key={action} title={label} onClick={() => requestAction(action)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 transition-all ${cls}`}>
+                      <Icon size={13} /> {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <button onClick={load} className="p-2.5 rounded-xl text-slate-500 hover:text-white bg-slate-800/60 border border-slate-700/40 hover:bg-slate-700/60 transition-all">
+              <RefreshCw size={14}/>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ── Segmented Tabs ──────────────────────────── */}
       <div className="bg-slate-900 p-1 rounded-xl border border-slate-800 w-fit flex gap-0.5">
         {tabs.map(t => (
-          <button key={t.id} onClick={()=>setTab(t.id)}
+          <button key={t.id}
+            onClick={() => { setTab(t.id); if (t.id === 'cps' && !cpsData && !cpsLoading) loadCpsData(); }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.id?'bg-slate-700/80 text-white shadow-md':'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'}`}>
+            {t.id === 'cps' && <Key size={11} />}
             {t.label}
             {t.badge>0 && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${tab===t.id?'bg-blue-500/30 text-blue-300':'bg-slate-800 text-slate-500'}`}>{t.badge}</span>}
           </button>
@@ -305,7 +506,7 @@ export default function ApplicationDetailPage() {
       {/* ── INFRA & CONFIG ───────────────────────────── */}
       {tab==='infrastructure' && (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
             <GlassCard icon={Database} title="Object Store & Settings">
               <KVRow label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
               {isCH1 && <KVRow label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
@@ -314,8 +515,29 @@ export default function ApplicationDetailPage() {
               {!isCH1 && <KVRow label="AM Log Forwarding" value={ds.disableAmLogForwarding!=null?String(!ds.disableAmLogForwarding):undefined} />}
             </GlassCard>
 
-            <GlassCard icon={Clock} title="Schedulers" count={schedulers.length} accent="purple" noPad>
-            {schedulers.length>0 ? (
+            <GlassCard icon={Clock} title="Schedulers" count={allSchedulers.length} accent="purple" noPad>
+            {allSchedulers.length>0 && (
+              <div className="px-5 pt-4 pb-3 border-b border-slate-800/40">
+                <div className="relative">
+                  <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
+                  <input
+                    value={schedulerSearch}
+                    onChange={(e) => setSchedulerSearch(e.target.value)}
+                    placeholder="Filter by flow name or cron…"
+                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg pl-8 pr-4 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-purple-600/50 focus:bg-slate-800"
+                  />
+                  {schedulerSearch && (
+                    <button onClick={() => setSchedulerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs">✕</button>
+                  )}
+                </div>
+                {schedulerSearch && (
+                  <p className="text-[10px] text-slate-600 mt-1.5">
+                    Showing {schedulers.length} of {allSchedulers.length} scheduler{allSchedulers.length !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            )}
+            {allSchedulers.length>0 ? (
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-slate-800/50 border-b border-slate-700/40">
@@ -355,7 +577,11 @@ export default function ApplicationDetailPage() {
                   })}
                 </tbody>
               </table>
-            ) : <div className="px-5 py-6 text-center text-slate-600 text-sm">No schedulers configured</div>}
+            ) : schedulerSearch ? (
+              <div className="px-5 py-6 text-center text-slate-500 text-sm">No schedulers match <span className="text-slate-400 font-mono">"{schedulerSearch}"</span></div>
+            ) : (
+              <div className="px-5 py-6 text-center text-slate-600 text-sm">No schedulers configured</div>
+            )}
           </GlassCard>
           </div>
 
@@ -386,6 +612,154 @@ export default function ApplicationDetailPage() {
                 </table>
               )}
             </GlassCard>
+          )}
+        </div>
+      )}
+
+      {/* ── CPS CONFIG ──────────────────────────────── */}
+      {tab==='cps' && cpsBaseUrl && (
+        <div className="space-y-5">
+          {/* Info bar */}
+          <div className="flex items-center justify-between flex-wrap gap-3 bg-slate-900/60 border border-slate-800/60 rounded-2xl px-5 py-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Key size={13} className="text-blue-400" />
+                <span className="text-white text-sm font-semibold">Config Property Server</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${cpsEnv==='prod'?'bg-emerald-950/50 text-emerald-300 border-emerald-700/50':'bg-yellow-950/50 text-yellow-300 border-yellow-700/50'}`}>{cpsEnv.toUpperCase()}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${isCH1?'bg-purple-950/50 text-purple-300 border-purple-700/50':'bg-blue-950/50 text-blue-300 border-blue-700/50'}`}>{isCH1?'CH1':'CH2'}</span>
+              </div>
+              <p className="text-slate-500 text-xs font-mono break-all">{cpsBaseUrl}</p>
+              <p className="text-slate-600 text-[10px]">Project key: <span className="text-slate-400 font-mono">{cpsProjectName}</span></p>
+            </div>
+            <div className="flex items-center gap-2">
+              {cpsData && <button onClick={loadCpsData} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors"><RefreshCw size={11}/> Refresh</button>}
+              <button onClick={() => setShowCpsSettings(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded-lg transition-colors"><Key size={11}/> Configure CPS</button>
+            </div>
+          </div>
+
+          {/* Missing credentials warning */}
+          {cpsMissingCred && (
+            <div className="flex items-center justify-between gap-4 bg-yellow-950/30 border border-yellow-800/50 rounded-xl px-5 py-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle size={16} className="text-yellow-400 flex-shrink-0" />
+                <div>
+                  <p className="text-yellow-300 text-sm font-medium">CPS credentials not configured</p>
+                  <p className="text-yellow-500/80 text-xs mt-0.5">Missing <code className="bg-yellow-950/60 px-1 rounded">{cpsMissingCred}</code> credentials. Click "Configure CPS" to add them.</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCpsSettings(true)} className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg transition-colors">Configure</button>
+            </div>
+          )}
+
+          {/* Error */}
+          {cpsError && (
+            <div className="flex items-center gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-5 py-4 text-red-300 text-sm">
+              <AlertTriangle size={14} className="flex-shrink-0" /> {cpsError}
+            </div>
+          )}
+
+          {/* Loading */}
+          {cpsLoading && (
+            <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
+              <RefreshCw size={18} className="animate-spin" />
+              <span className="text-sm">Loading CPS properties…</span>
+            </div>
+          )}
+
+          {/* Not loaded yet */}
+          {!cpsLoading && !cpsData && !cpsError && !cpsMissingCred && (
+            <div className="flex flex-col items-center justify-center py-16 gap-4">
+              <Key size={32} className="text-slate-700" />
+              <p className="text-slate-500 text-sm">Click to load properties from the Config Property Server</p>
+              <button onClick={loadCpsData} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
+                <Key size={13} /> Load CPS Properties
+              </button>
+            </div>
+          )}
+
+          {/* CPS data loaded */}
+          {cpsData && (
+            <div className="space-y-5">
+              {/* Search */}
+              <div className="relative">
+                <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                <input value={cpsSearch} onChange={(e) => setCpsSearch(e.target.value)} placeholder="Filter CPS properties by key or value…"
+                  className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50" />
+              </div>
+
+              {/* Non-secure properties */}
+              {Object.keys(cpsData.nonSecure).length > 0 && (
+                <GlassCard icon={Settings} title="Non-Secure Properties" count={Object.keys(cpsData.nonSecure).length} noPad>
+                  <table className="w-full text-sm border-collapse">
+                    <thead><tr className="bg-slate-800/50 border-b border-slate-700/40">
+                      <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase w-[42%]">Key</th>
+                      <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Value</th>
+                    </tr></thead>
+                    <tbody>
+                      {Object.entries(cpsData.nonSecure)
+                        .filter(([k, v]) => !cpsSearch || k.toLowerCase().includes(cpsSearch.toLowerCase()) || String(v).toLowerCase().includes(cpsSearch.toLowerCase()))
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([k, v]) => (
+                          <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                            <td className="px-5 py-3 align-top"><div className="flex items-center gap-1.5"><span className="text-slate-400 text-xs font-mono break-all">{k}</span><CopyBtn text={k}/></div></td>
+                            <td className="px-5 py-3 align-top"><div className="flex items-start gap-1.5"><span className="text-slate-200 text-xs font-mono break-all">{String(v)}</span><CopyBtn text={String(v)}/></div></td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </GlassCard>
+              )}
+
+              {/* Secure property groups */}
+              {cpsData.secureGroups.length > 0 && cpsData.secureGroups.map((group) => {
+                const groupProps = group.properties || {};
+                const filtered = Object.entries(groupProps).filter(([k, v]) =>
+                  !cpsSearch || k.toLowerCase().includes(cpsSearch.toLowerCase()) || String(v).toLowerCase().includes(cpsSearch.toLowerCase()));
+                if (filtered.length === 0 && cpsSearch) return null;
+                return (
+                  <GlassCard key={group.key} icon={Key} title={`🔒 ${group.key}`} count={Object.keys(groupProps).length} noPad>
+                    <div className="px-5 py-2 bg-orange-950/20 border-b border-orange-900/20">
+                      <span className="text-[10px] text-orange-400/70">Secure property group — treat values as sensitive</span>
+                    </div>
+                    <table className="w-full text-sm border-collapse">
+                      <tbody>
+                        {(cpsSearch ? filtered : Object.entries(groupProps).sort(([a],[b])=>a.localeCompare(b))).map(([k, v]) => (
+                          <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                            <td className="px-5 py-3 w-[42%]"><span className="text-slate-400 text-xs font-mono break-all">{k}</span></td>
+                            <td className="px-5 py-3"><SecretVal value={String(v)} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </GlassCard>
+                );
+              })}
+
+              {/* Binaries */}
+              {cpsData.binaryList.length > 0 && (
+                <GlassCard icon={Package} title="Binary Assets" count={cpsData.binaryList.length} noPad>
+                  <table className="w-full text-sm border-collapse">
+                    <thead><tr className="bg-slate-800/50 border-b border-slate-700/40">
+                      {['File Name', 'Type', 'Size', 'Last Modified'].map((h) => (
+                        <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {cpsData.binaryList
+                        .filter((b) => !cpsSearch || (b.key||'').toLowerCase().includes(cpsSearch.toLowerCase()))
+                        .map((b, i) => (
+                          <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                            <td className="px-5 py-3"><span className="text-slate-200 text-xs font-mono">{b.key}</span></td>
+                            <td className="px-5 py-3"><MetaTag color="gray">{b.contentType || '—'}</MetaTag></td>
+                            <td className="px-5 py-3 text-slate-400 text-xs">{b.size ? `${(b.size/1024).toFixed(1)} KB` : '—'}</td>
+                            <td className="px-5 py-3 text-slate-500 text-xs">{b.lastModified ? new Date(b.lastModified).toLocaleDateString() : '—'}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </GlassCard>
+              )}
+            </div>
           )}
         </div>
       )}

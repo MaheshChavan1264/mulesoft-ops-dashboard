@@ -58,6 +58,14 @@ const mockHandler = async (url, params) => {
     return { assets: mock.MOCK_APIS, total: mock.MOCK_APIS.length };
   }
 
+  // CPS credentials
+  if (url === '/cps/credentials') {
+    return { credentials: { ch1_prod: { configured: false, source: 'none' }, ch2_prod: { configured: false, source: 'none' }, ch1_uat: { configured: false, source: 'none' }, ch2_uat: { configured: false, source: 'none' } } };
+  }
+  if (url.startsWith('/cps/fetch')) {
+    return { properties: [{ key: 'demo-app', environment: 'prod', properties: { 'cps.projectName': 'demo-app', 'version': '1.0.0', 'api.base': '/api' } }] };
+  }
+
   // Exchange
   if (url.startsWith('/exchange/org') && url.includes('/summary')) {
     return { assetCounts: mock.MOCK_EXCHANGE_SUMMARY };
@@ -109,6 +117,10 @@ const api = {
       return { data: { success: true } };
     }
     return axiosClient.post(url, data, config);
+  },
+  delete: async (url, config = {}) => {
+    if (isDemoMode()) return { data: { success: true } };
+    return axiosClient.delete(url, config);
   }
 };
 
