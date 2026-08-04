@@ -1,11 +1,13 @@
 import React from 'react';
-import { Menu, LogOut, User, RefreshCw } from 'lucide-react';
+import { Menu, LogOut, User, RefreshCw, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { isDemoMode } from '../services/api';
 
 export default function Header({ onToggleSidebar }) {
   const { user, orgName, logout } = useAuth();
   const navigate = useNavigate();
+  const demo = isDemoMode();
 
   const handleLogout = async () => {
     await logout();
@@ -21,11 +23,18 @@ export default function Header({ onToggleSidebar }) {
         >
           <Menu size={20} />
         </button>
-        <div>
-          <h2 className="text-sm font-semibold text-white">
-            {orgName || 'MuleSoft Dashboard'}
-          </h2>
-          <p className="text-xs text-gray-500">Anypoint Platform</p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-white">
+              {orgName || 'MuleSoft Dashboard'}
+            </h2>
+            <p className="text-xs text-gray-500">Anypoint Platform</p>
+          </div>
+          {demo && (
+            <span className="flex items-center gap-1 text-xs font-semibold bg-purple-600/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full">
+              <Zap size={10} /> DEMO
+            </span>
+          )}
         </div>
       </div>
 
@@ -52,7 +61,7 @@ export default function Header({ onToggleSidebar }) {
           className="flex items-center gap-2 text-sm text-gray-400 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-800"
         >
           <LogOut size={15} />
-          <span>Logout</span>
+          <span>{demo ? 'Exit Demo' : 'Logout'}</span>
         </button>
       </div>
     </header>
