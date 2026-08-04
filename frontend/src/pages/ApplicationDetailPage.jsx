@@ -40,15 +40,37 @@ export default function ApplicationDetailPage() {
   const load = async () => {
     setLoading(true);
     try {
+      // Try CH2 first
       const res = await api.get(`/applications/cloudhub2/${orgId}/${envId}/${appId}`);
       setApp(res.data);
     } catch {
       try {
-        // Pass orgId as query param so the backend uses the correct BG org, not root org
-        const res2 = await api.get(`/applications/cloudhub1/${envId}/${appId}/properties`, {
+        // Fetch full CH1 app (not just /properties subset)
+        const res2 = await api.get(`/applications/cloudhub1/${envId}/${appId}`, {
           params: { orgId }
         });
-        setApp({ name: res2.data.appName, ...res2.data, _type: 'ch1' });
+        const ch1 = res2.data;
+        // Normalize CH1 response to a consistent shape for the detail page
+        setApp({
+          _type: 'ch1',
+          id: ch1.domain,
+          name: ch1.domain,
+          status: ch1.status,
+          region: ch1.region,
+          muleVersion: ch1.muleVersion?.version,
+          lastModifiedDate: ch1.lastUpdateTime ? new Date(ch1.lastUpdateTime).toISOString() : null,
+          properties: ch1.properties || {},
+          persistentQueues: ch1.persistentQueues,
+          staticIPsEnabled: ch1.staticIPsEnabled,
+          loggingCustomLog4JEnabled: ch1.loggingCustomLog4JEnabled,
+          monitoringEnabled: ch1.monitoringEnabled,
+          // Workers: flatten for display
+          workers: {
+            amount: ch1.workers?.amount,
+            type: ch1.workers?.type
+          },
+          _raw: ch1
+        });
       } catch { setApp(null); }
     }
     setLoading(false);
@@ -149,17 +171,30 @@ export default function ApplicationDetailPage() {
             <h3 className="text-white font-semibold mb-3">General Information</h3>
             <PropRow label="Application ID" value={app.id} />
             <PropRow label="Name" value={app.name} mono={false} />
-            <PropRow label="Runtime Status" value={app.application?.status} />
-            <PropRow label="Desired State" value={app.application?.desiredState} />
-            <PropRow label="Deployment Status" value={app.status} />
-            <PropRow label="Mule Version" value={ds.runtime?.version || ds.runtimeVersion} />
-            <PropRow label="Java" value={ds.runtime?.java ? `Java ${ds.runtime.java}` : undefined} />
-            <PropRow label="Release Channel" value={ds.runtime?.releaseChannel || ds.runtimeReleaseChannel} />
-            <PropRow label="vCores" value={app.application?.vCores != null ? String(app.application.vCores) : undefined} />
-            <PropRow label="Replicas" value={replicas != null ? String(replicas) : undefined} />
-            <PropRow label="Update Strategy" value={typeof ds.updateStrategy === 'string' ? ds.updateStrategy : undefined} />
-            <PropRow label="Artifact" value={app.application?.ref ? `${app.application.ref.artifactId} v${app.application.ref.version}` : undefined} />
-            <PropRow label="Last Modified" value={app.lastModifiedDate ? new Date(app.lastModifiedDate).toLocaleString() : undefined} />
+            {isCH1 ? (
+              <>
+                <PropRow label="Status" value={app.status} />
+                <PropRow label="Mule Version" value={app.muleVersion} />
+                <PropRow label="Region" value={app.region} />
+                <PropRow label="Workers" value={app.workers?.amount != null ? String(app.workers.amount) : undefined} />
+                <PropRow label="Worker Type" value={app.workers?.type?.name || app.workers?.type} />
+                <PropRow label="Last Modified" value={app.lastModifiedDate ? new Date(app.lastModifiedDate).toLocaleString() : undefined} />
+              </>
+            ) : (
+              <>
+                <PropRow label="Runtime Status" value={app.application?.status} />
+                <PropRow label="Desired State" value={app.application?.desiredState} />
+                <PropRow label="Deployment Status" value={app.status} />
+                <PropRow label="Mule Version" value={ds.runtime?.version || ds.runtimeVersion} />
+                <PropRow label="Java" value={ds.runtime?.java ? `Java ${ds.runtime.java}` : undefined} />
+                <PropRow label="Release Channel" value={ds.runtime?.releaseChannel || ds.runtimeReleaseChannel} />
+                <PropRow label="vCores" value={app.application?.vCores != null ? String(app.application.vCores) : undefined} />
+                <PropRow label="Replicas" value={replicas != null ? String(replicas) : undefined} />
+                <PropRow label="Update Strategy" value={typeof ds.updateStrategy === 'string' ? ds.updateStrategy : undefined} />
+                <PropRow label="Artifact" value={app.application?.ref ? `${app.application.ref.artifactId} v${app.application.ref.version}` : undefined} />
+                <PropRow label="Last Modified" value={app.lastModifiedDate ? new Date(app.lastModifiedDate).toLocaleString() : undefined} />
+              </>
+            )}
 
             {replicaList.length > 0 && (
               <div className="mt-4">
