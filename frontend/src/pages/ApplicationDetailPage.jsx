@@ -279,24 +279,27 @@ export default function ApplicationDetailPage() {
       const nsRaw = nsRes.data;
 
       // CPS response can be one of several shapes:
-      // 1. { properties: [{ key, environment, properties: { k:v } }] }
+      // 1. { responses: [{ key, environment, properties: { k:v } }] }   ← actual API response
       // 2. [{ key, environment, properties: { k:v } }]
-      // 3. { k:v } (flat map directly)
+      // 3. { properties: [{ key, environment, properties: { k:v } }] }
+      // 4. { k:v } (flat map directly)
       let flatNs = {};
-      const propsArray = Array.isArray(nsRaw)
-        ? nsRaw
-        : Array.isArray(nsRaw?.properties) ? nsRaw.properties : null;
+
+      // Normalise: extract the array of property entries regardless of wrapper key
+      const propsArray =
+        Array.isArray(nsRaw) ? nsRaw
+        : Array.isArray(nsRaw?.responses) ? nsRaw.responses
+        : Array.isArray(nsRaw?.properties) ? nsRaw.properties
+        : null;
 
       if (propsArray) {
         const match = propsArray.find((p) => p.key === useKey) || propsArray[0];
         const inner = match?.properties || match;
         flatNs = (inner && typeof inner === 'object' && !Array.isArray(inner)) ? inner : {};
       } else if (nsRaw && typeof nsRaw === 'object') {
-        // Flat map or top-level object
-        // If values are objects themselves, try to unwrap by key
+        // Flat map or top-level object — if the first value is an object, try to unwrap
         const firstVal = Object.values(nsRaw)[0];
         if (firstVal && typeof firstVal === 'object' && !Array.isArray(firstVal)) {
-          // Values are nested objects — try to find entry by key
           flatNs = nsRaw[useKey] || firstVal;
         } else {
           flatNs = nsRaw;
