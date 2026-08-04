@@ -3,6 +3,13 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 
+// Filter out non-production environments (qa, dev, etc.)
+const filterEnvs = (envs) =>
+  envs.filter((e) => {
+    const name = (e.name || '').toLowerCase();
+    return !name.includes('qa') && !name.includes('dev');
+  });
+
 // Get environments for a specific org — filtered to only those the user has access to
 router.get('/:orgId', authMiddleware, async (req, res) => {
   const targetOrgId = req.params.orgId;
@@ -14,7 +21,7 @@ router.get('/:orgId', authMiddleware, async (req, res) => {
 
   // Fast path: session has accessible envs for this specific org
   if (req.accessibleEnvironments[targetOrgId]?.length > 0) {
-    const envs = req.accessibleEnvironments[targetOrgId];
+    const envs = filterEnvs(req.accessibleEnvironments[targetOrgId]);
     return res.json({ data: envs, total: envs.length });
   }
 
@@ -22,11 +29,11 @@ router.get('/:orgId', authMiddleware, async (req, res) => {
   if (allAccessibleIds.size > 0) {
     const allEnvs = Object.values(req.accessibleEnvironments).flat();
     const seen = new Set();
-    const unique = allEnvs.filter((e) => {
+    const unique = filterEnvs(allEnvs.filter((e) => {
       if (seen.has(e.id)) return false;
       seen.add(e.id);
       return true;
-    });
+    }));
     if (unique.length > 0) return res.json({ data: unique, total: unique.length });
   }
 
@@ -37,10 +44,9 @@ router.get('/:orgId', authMiddleware, async (req, res) => {
       `/accounts/api/organizations/${targetOrgId}/environments`
     );
     const all = response.data.data || [];
-    // If we have an accessible set, filter; otherwise return all (no session data available)
-    const filtered = allAccessibleIds.size > 0
-      ? all.filter((e) => allAccessibleIds.has(e.id))
-      : all;
+    const filtered = filterEnvs(
+      allAccessibleIds.size > 0 ? all.filter((e) => allAccessibleIds.has(e.id)) : all
+    );
     res.json({ data: filtered, total: filtered.length });
   } catch (error) {
     console.error('Error fetching environments:', error.response?.data || error.message);
@@ -55,11 +61,11 @@ router.get('/', authMiddleware, async (req, res) => {
   if (Object.keys(req.accessibleEnvironments).length > 0) {
     const allEnvs = Object.values(req.accessibleEnvironments).flat();
     const seen = new Set();
-    const unique = allEnvs.filter((e) => {
+    const unique = filterEnvs(allEnvs.filter((e) => {
       if (seen.has(e.id)) return false;
       seen.add(e.id);
       return true;
-    });
+    }));
     return res.json({ data: unique, total: unique.length });
   }
 
