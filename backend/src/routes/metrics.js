@@ -41,11 +41,23 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     // This covers root org + all sub-orgs (business groups)
     let allEnvPairs = [];
 
+    const targetOrgId = req.params.orgId;
+
     if (Object.keys(req.accessibleEnvironments).length > 0) {
-      // Use session-cached accessible environments — skip dev/qa
-      for (const [orgId, envs] of Object.entries(req.accessibleEnvironments)) {
-        for (const env of envs) {
-          if (isProductionEnv(env)) allEnvPairs.push({ orgId, env });
+      // If the requested orgId has its own environments in the session, use only those
+      // Otherwise aggregate across all accessible environments (root org case)
+      const targetEnvs = req.accessibleEnvironments[targetOrgId];
+      if (targetEnvs?.length > 0) {
+        // Specific BG selected — use only that BG's environments
+        for (const env of targetEnvs) {
+          if (isProductionEnv(env)) allEnvPairs.push({ orgId: targetOrgId, env });
+        }
+      } else {
+        // Root org or BG with no direct environments — aggregate all accessible
+        for (const [orgId, envs] of Object.entries(req.accessibleEnvironments)) {
+          for (const env of envs) {
+            if (isProductionEnv(env)) allEnvPairs.push({ orgId, env });
+          }
         }
       }
     } else {
@@ -75,9 +87,10 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
         const apps = parseCH2Apps(ch2Res.data);
         totalApps += apps.length;
         apps.forEach((app) => {
-          const s = (app.status || app.desiredStatus || '').toLowerCase();
-          if (s === 'running' || s === 'started') runningApps++;
-          else if (s === 'failed') failedApps++;
+          // Use app.application.status (runtime) not app.status (deployment spec e.g. APPLIED)
+          const s = (app.application?.status || app.application?.state || app.status || app.desiredStatus || '').toUpperCase();
+          if (s === 'RUNNING' || s === 'STARTED') runningApps++;
+          else if (s === 'FAILED') failedApps++;
           else stoppedApps++;
         });
       } catch (e) { /* skip */ }
@@ -90,9 +103,9 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
         const ch1Apps = Array.isArray(ch1Res.data) ? ch1Res.data : (ch1Res.data.applications || []);
         ch1Apps.forEach((app) => {
           totalApps++;
-          const s = (app.status || '').toLowerCase();
-          if (s === 'started' || s === 'running') runningApps++;
-          else if (s === 'failed' || s === 'deploy_failed') failedApps++;
+          const s = (app.status || '').toUpperCase();
+          if (s === 'STARTED' || s === 'RUNNING') runningApps++;
+          else if (s === 'FAILED' || s === 'DEPLOY_FAILED') failedApps++;
           else stoppedApps++;
         });
       } catch (e) { /* skip */ }
