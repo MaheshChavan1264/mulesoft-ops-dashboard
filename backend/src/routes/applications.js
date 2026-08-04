@@ -162,13 +162,15 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
             'X-ANYPNT-ORG-ID': targetOrgId
           }
         });
-        const ch1Apps = Array.isArray(ch1Response.data) ? ch1Response.data : [];
+        // CH1 can return array or { applications: [...] }
+        const raw = ch1Response.data;
+        const ch1Apps = Array.isArray(raw) ? raw : (raw.applications || raw.data || []);
         ch1Apps.forEach((app) => {
           // Avoid duplicates if already found via CH2
-          if (!results.find((r) => r.name === app.domain)) {
+          if (!results.find((r) => r.name === (app.domain || app.name))) {
             results.push({
-              id: app.domain,
-              name: app.domain,
+              id: app.domain || app.name,
+              name: app.domain || app.name,
               status: app.status,
               environment: { id: env.id, name: env.name, type: env.type },
               deploymentType: 'CloudHub 1.0',
@@ -179,7 +181,9 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
           }
         });
       } catch (e) {
-        errors.push(`CH1 ${env.name}: ${e.message}`);
+        const ch1Status = e.response?.status;
+        console.error(`CH1 ${env.name} (${ch1Status}):`, e.response?.data || e.message);
+        errors.push(`CH1 ${env.name} (${ch1Status || 'ERR'}): ${e.response?.data?.message || e.message}`);
       }
     }));
 

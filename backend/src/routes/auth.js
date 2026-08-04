@@ -54,11 +54,18 @@ router.post('/token-login', async (req, res) => {
     return res.status(400).json({ error: 'Access token is required' });
   }
   try {
-    const result = await storeSession(req, token.trim());
+    // Strip "Bearer " prefix if user accidentally included it, and trim whitespace/newlines
+    let cleanToken = token.trim().replace(/^Bearer\s+/i, '').trim();
+    const result = await storeSession(req, cleanToken);
     res.json({ success: true, ...result });
   } catch (error) {
     console.error('Token login error:', error.response?.data || error.message);
-    res.status(401).json({ error: 'Invalid or expired access token.' });
+    const status = error.response?.status || 401;
+    let msg = 'Invalid or expired access token.';
+    if (status === 400) msg = 'Token format is invalid. Make sure you copied only the token value (not "Bearer <token>").';
+    if (status === 401) msg = 'Token is expired or invalid. Please grab a fresh token from DevTools.';
+    if (status === 403) msg = 'Token does not have sufficient permissions.';
+    res.status(status).json({ error: msg });
   }
 });
 

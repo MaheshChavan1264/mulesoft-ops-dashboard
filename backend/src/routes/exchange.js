@@ -17,14 +17,8 @@ router.get('/search', authMiddleware, async (req, res) => {
       ascending = false
     } = req.query;
 
-    const params = {
-      search,
-      offset,
-      limit,
-      sortBy,
-      ascending
-    };
-
+    const params = { offset, limit, sortBy, ascending };
+    if (search) params.search = search;
     if (type) params.type = type;
     if (organizationId) params.organizationId = organizationId;
 
@@ -38,39 +32,7 @@ router.get('/search', authMiddleware, async (req, res) => {
   }
 });
 
-// Get a specific Exchange asset
-router.get('/:groupId/:assetId/:version', authMiddleware, async (req, res) => {
-  try {
-    const client = createClient(req.anypointToken);
-    const response = await client.get(
-      `/exchange/api/v2/assets/${req.params.groupId}/${req.params.assetId}/${req.params.version}`
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error fetching Exchange asset:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch Exchange asset'
-    });
-  }
-});
-
-// Get asset versions
-router.get('/:groupId/:assetId/versions', authMiddleware, async (req, res) => {
-  try {
-    const client = createClient(req.anypointToken);
-    const response = await client.get(
-      `/exchange/api/v2/assets/${req.params.groupId}/${req.params.assetId}`
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error fetching asset versions:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch asset versions'
-    });
-  }
-});
-
-// Get organization assets summary
+// Organization assets summary
 router.get('/org/:orgId/summary', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
@@ -95,6 +57,38 @@ router.get('/org/:orgId/summary', authMiddleware, async (req, res) => {
     console.error('Error fetching Exchange summary:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: error.response?.data?.message || 'Failed to fetch Exchange summary'
+    });
+  }
+});
+
+// Get asset versions list — MUST be before /:groupId/:assetId/:version to avoid collision
+router.get('/:groupId/:assetId/versions', authMiddleware, async (req, res) => {
+  try {
+    const client = createClient(req.anypointToken);
+    const response = await client.get(
+      `/exchange/api/v2/assets/${req.params.groupId}/${req.params.assetId}`
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching asset versions:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data?.message || 'Failed to fetch asset versions'
+    });
+  }
+});
+
+// Get a specific Exchange asset by version — keep AFTER /versions route
+router.get('/:groupId/:assetId/:version', authMiddleware, async (req, res) => {
+  try {
+    const client = createClient(req.anypointToken);
+    const response = await client.get(
+      `/exchange/api/v2/assets/${req.params.groupId}/${req.params.assetId}/${req.params.version}`
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching Exchange asset:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data?.message || 'Failed to fetch Exchange asset'
     });
   }
 });
