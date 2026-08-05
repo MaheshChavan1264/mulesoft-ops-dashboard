@@ -152,7 +152,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
     } catch { /* secure fetch failed */ }
   }
 
-  return { flatNs, secureGroups, cpsEnv, cpsKey, schedulers };
+  return { flatNs, secureGroups, cpsEnv, cpsKey, schedulers, allProps };
 }
 
 /**
@@ -179,15 +179,19 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
     onProgress?.(i + 1, total, app.name);
 
     try {
-      const { flatNs, secureGroups, schedulers: fetchedSchedulers } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride);
+      const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride);
       const maskedNs = maskSecrets(flatNs);
       const hostsNonSecure = extractHosts(flatNs);
 
-      // Resolve a property placeholder "${some.key}" from flatNs (CPS non-secure props)
+      // Resolve a property placeholder "${some.key}":
+      // Check CPS non-secure props first, then Anypoint runtime props
       const resolveProp = (val) => {
         if (!val) return val;
         const match = String(val).match(/^\$\{(.+)\}$/);
-        if (match) return flatNs[match[1]] || val; // resolve from CPS non-secure props
+        if (match) {
+          const key = match[1];
+          return flatNs[key] || (fetchedAllProps && fetchedAllProps[key]) || val;
+        }
         return val;
       };
 
