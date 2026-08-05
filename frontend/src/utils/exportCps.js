@@ -67,16 +67,37 @@ function normalisePropsArray(raw, appKey) {
  * Returns { nonSecure, secureGroups } or throws.
  */
 async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
-  const allProps = { ...(app.runtimeProps || {}), ...(app.properties || {}) };
-  // Use env override from modal first, then runtime props, then fallback
+  const isCh2 = app.deploymentType === 'CloudHub 2.0';
+  const depType = isCh2 ? 'ch2' : 'ch1';
+
+  // Step 1: Fetch full app details from Anypoint to get runtime properties (cps.projectName, cps.prefix)
+  let runtimeProps = {};
+  try {
+    const envId = app.environment?.id;
+    if (isCh2) {
+      const res = await api.get(`/applications/cloudhub2/${bgOrgId}/${envId}/${app.id}`);
+      const cfg = res.data?.application?.configuration || {};
+      const propsSvc = cfg['mule.agent.application.properties.service'] || {};
+      const ds = res.data?.target?.deploymentSettings || {};
+      runtimeProps = {
+        ...propsSvc.properties,
+        ...ds.properties,
+        ...ds.environmentVariables,
+        ...ds.environmentVars,
+        ...res.data?.properties
+      };
+    } else {
+      const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: bgOrgId } });
+      runtimeProps = res.data?.properties || {};
+    }
+  } catch { /* fall back to summary data */ }
+
+  const allProps = { ...runtimeProps, ...(app.runtimeProps || {}), ...(app.properties || {}) };
+
+  // Use env override from modal first, then runtime props (cps.prefix), then fallback
   const cpsEnv = cpsEnvOverride || allProps['cps.prefix'] || allProps['cps.environment'] || 'prod';
-  // For CH1, app.id IS the domain name (e.g. "job-coupa-capad-purchasing-v1-uw2-ut")
-  // For CH2, app.name is the deployment name which typically matches the CPS key
-  const isCh1 = app.deploymentType !== 'CloudHub 2.0';
-  const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name']
-    || (isCh1 ? app.id : app.name)
-    || app.name;
-  const depType = app.deploymentType === 'CloudHub 2.0' ? 'ch2' : 'ch1';
+  // cps.projectName is the authoritative CPS key — NOT the app name or app.id
+  const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
 
   // Fetch non-secure — throw on error so the caller can record it in the export
   const nsRes = await api.get('/cps/fetch', { params: {
