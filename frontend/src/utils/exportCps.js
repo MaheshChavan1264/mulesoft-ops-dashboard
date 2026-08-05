@@ -180,16 +180,28 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
       const maskedNs = maskSecrets(flatNs);
       const hostsNonSecure = extractHosts(flatNs);
 
+      // Resolve a property placeholder "${some.key}" from flatNs (CPS non-secure props)
+      const resolveProp = (val) => {
+        if (!val) return val;
+        const match = String(val).match(/^\$\{(.+)\}$/);
+        if (match) return flatNs[match[1]] || val; // resolve from CPS non-secure props
+        return val;
+      };
+
       // Add scheduler rows inside try so fetchedSchedulers is in scope
       for (const s of (fetchedSchedulers || [])) {
+        // For cronscheduler type, expression may be a property placeholder
+        const rawCron = s.schedule?.cronExpression || s.expression || s.cronExpression || '';
+        const resolvedCron = resolveProp(rawCron);
+
         scheduleRows.push({
           apiDomainName: app.name,
           scheduleName: s.flow || s.flowName || s.name || '',
           enabled: s.enabled !== false ? 'true' : 'false',
-          scheduleCronExpression: s.schedule?.cronExpression || s.expression || s.cronExpression || '',
-          scheduleTimeZone: s.schedule?.timeZone || s.timeZone || '',
+          scheduleCronExpression: resolvedCron,
+          scheduleTimeZone: resolveProp(s.schedule?.timeZone || s.timeZone || ''),
           scheduleTimeUnit: s.timeUnit || s.schedule?.timeUnit || '',
-          schedulePeriod: String(s.frequency || s.schedule?.period || '')
+          schedulePeriod: String(resolveProp(s.frequency || s.schedule?.period || ''))
         });
       }
 
