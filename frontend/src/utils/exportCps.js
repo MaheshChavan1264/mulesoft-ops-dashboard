@@ -32,8 +32,9 @@ function extractHosts(props) {
 function extractApiUsers(props) {
   const userPairs = [];
   for (const [k, v] of Object.entries(props || {})) {
-    if (/\.(username|user|login|email)$/i.test(k) && !isSecretKey(v)) {
-      userPairs.push(`${k}:${v}`);
+    // Match keys that end in username/user/login/email with or without dot prefix
+    if (/(^|\.)username$/i.test(k) || /(^|\.)user$/i.test(k) || /(^|\.)login$/i.test(k) || /(^|\.)email$/i.test(k)) {
+      if (!isSecretKey(String(v))) userPairs.push(`${k}:${v}`);
     }
   }
   return userPairs.join(',');
@@ -42,7 +43,9 @@ function extractApiUsers(props) {
 function extractHostsSecure(props) {
   const hostPairs = [];
   for (const [k, v] of Object.entries(props || {})) {
-    if (/\.(host|endpoint|url|domain)$/i.test(k) && typeof v === 'string' && !isSecretKey(v)) {
+    if (typeof v !== 'string' || !v || isSecretKey(k)) continue;
+    // Match host, endpoint, url, domain, servers, server, address
+    if (/(^|\.)+(host|endpoint|url|domain|servers|server|address|bootstrap\.servers)$/i.test(k)) {
       hostPairs.push(`${k}:${v}`);
     }
   }
@@ -70,14 +73,16 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
   const isCh2 = app.deploymentType === 'CloudHub 2.0';
   const depType = isCh2 ? 'ch2' : 'ch1';
 
-  // Step 1: Fetch full app details from Anypoint to get runtime properties (cps.projectName, cps.prefix)
+  // Step 1: Fetch full app details — get runtime properties AND schedulers in one call
   let runtimeProps = {};
+  let schedulers = [];
   try {
     const envId = app.environment?.id;
     if (isCh2) {
       const res = await api.get(`/applications/cloudhub2/${bgOrgId}/${envId}/${app.id}`);
       const cfg = res.data?.application?.configuration || {};
       const propsSvc = cfg['mule.agent.application.properties.service'] || {};
+      const schedSvc = cfg['mule.agent.scheduling.service'] || {};
       const ds = res.data?.target?.deploymentSettings || {};
       runtimeProps = {
         ...propsSvc.properties,
@@ -86,9 +91,15 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
         ...ds.environmentVars,
         ...res.data?.properties
       };
+      schedulers = schedSvc.schedulers || [];
     } else {
       const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: bgOrgId } });
       runtimeProps = res.data?.properties || {};
+      // CH1 schedulers from dedicated endpoint
+      try {
+        const schedRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/schedules`, { params: { orgId: bgOrgId } });
+        schedulers = Array.isArray(schedRes.data) ? schedRes.data : (schedRes.data?.schedules || []);
+      } catch { /* no schedulers */ }
     }
   } catch { /* fall back to summary data */ }
 
@@ -138,7 +149,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
     } catch { /* secure fetch failed */ }
   }
 
-  return { flatNs, secureGroups, cpsEnv, cpsKey };
+  return { flatNs, secureGroups, cpsEnv, cpsKey, schedulers };
 }
 
 /**
@@ -165,9 +176,22 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
     onProgress?.(i + 1, total, app.name);
 
     try {
-      const { flatNs, secureGroups } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride);
+      const { flatNs, secureGroups, schedulers: fetchedSchedulers } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride);
       const maskedNs = maskSecrets(flatNs);
       const hostsNonSecure = extractHosts(flatNs);
+
+      // Add scheduler rows inside try so fetchedSchedulers is in scope
+      for (const s of (fetchedSchedulers || [])) {
+        scheduleRows.push({
+          apiDomainName: app.name,
+          scheduleName: s.flow || s.flowName || s.name || '',
+          enabled: s.enabled !== false ? 'true' : 'false',
+          scheduleCronExpression: s.schedule?.cronExpression || s.expression || s.cronExpression || '',
+          scheduleTimeZone: s.schedule?.timeZone || s.timeZone || '',
+          scheduleTimeUnit: s.timeUnit || s.schedule?.timeUnit || '',
+          schedulePeriod: String(s.frequency || s.schedule?.period || '')
+        });
+      }
 
       if (secureGroups.length === 0) {
         // No secure groups — one row with empty cpsSecureKey and empty properties
@@ -223,19 +247,6 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
       });
     }
 
-    // Add scheduler rows (from app summary data which already has schedulers)
-    const schedulers = app.schedulers || [];
-    for (const s of schedulers) {
-      scheduleRows.push({
-        apiDomainName: app.name,
-        scheduleName: s.flow || s.flowName || s.name || '',
-        enabled: s.enabled !== false ? 'true' : 'false',
-        scheduleCronExpression: s.schedule?.cronExpression || s.expression || s.cronExpression || '',
-        scheduleTimeZone: s.schedule?.timeZone || s.timeZone || '',
-        scheduleTimeUnit: s.timeUnit || s.schedule?.timeUnit || '',
-        schedulePeriod: String(s.frequency || s.schedule?.period || '')
-      });
-    }
   }
 
   // Build XLSX workbook
