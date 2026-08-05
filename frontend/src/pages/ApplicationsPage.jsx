@@ -424,9 +424,15 @@ export default function ApplicationsPage() {
       {/* CPS Export Modal */}
       {showExport && (
         <CpsExportModal
-          apps={apps}
+          apps={filtered}
           bgOrgId={selectedBg}
           bgName={selectedBgName}
+          filterSummary={[
+            filterEnv ? `Env: ${environments.find(e=>e.id===filterEnv)?.name || filterEnv}` : null,
+            filterStatus ? `Status: ${filterStatus}` : null,
+            filterType ? `Type: ${filterType}` : null,
+            search ? `Search: "${search}"` : null
+          ].filter(Boolean).join(' · ')}
           onClose={() => setShowExport(false)}
         />
       )}
