@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, Play, Square, RotateCcw, AlertTriangle, X, Key, Package, ChevronDown } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, Play, Square, RotateCcw, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink } from 'lucide-react';
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 
@@ -420,6 +420,20 @@ export default function ApplicationDetailPage() {
                 })}
               </div>
             )}
+            {/* Open in Exchange button */}
+            {(() => {
+              const ref = app.application?.ref;
+              const exchangeUrl = ref
+                ? `https://anypoint.mulesoft.com/exchange/${ref.groupId}/${ref.artifactId}/${ref.version}/`
+                : `https://anypoint.mulesoft.com/exchange/?search=${encodeURIComponent(app.name)}`;
+              return (
+                <a href={exchangeUrl} target="_blank" rel="noopener noreferrer"
+                  title="Open in Anypoint Exchange"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 text-slate-400 hover:text-emerald-300 border-slate-700/40 hover:border-emerald-700/50 hover:bg-emerald-950/30 transition-all">
+                  <ExternalLink size={13} /> Exchange
+                </a>
+              );
+            })()}
             <button onClick={load} className="p-2.5 rounded-xl text-slate-500 hover:text-white bg-slate-800/60 border border-slate-700/40 hover:bg-slate-700/60 transition-all">
               <RefreshCw size={14}/>
             </button>
