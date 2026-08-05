@@ -189,30 +189,44 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
       };
 
       // Add scheduler rows inside try so fetchedSchedulers is in scope
+      if (fetchedSchedulers?.length > 0) {
+        // Log first scheduler to console for debugging structure
+        console.log(`[CPS Scheduler] app="${app.name}" first scheduler:`, JSON.stringify(fetchedSchedulers[0], null, 2));
+      }
       for (const s of (fetchedSchedulers || [])) {
-        // Scheduler structure can be:
-        // CH1: { name, enabled, schedulers: [{ type, expression, timeUnit, startDelay }] }
-        //   OR { flow, enabled, schedule: { cronExpression, timeZone } }
-        // CH2: { name, enabled, schedulers: [{ type, expression, ... }] }
+        // Scheduler can be nested differently per version — probe all known paths
         const innerSchedulers = Array.isArray(s.schedulers) ? s.schedulers : [];
-        const cronSched = innerSchedulers.find(x => x.type === 'cron' || x.type === 'cronscheduler') || innerSchedulers[0];
-        const fixedSched = innerSchedulers.find(x => x.type === 'fixedfrequency' || x.type === 'fixed-frequency') || null;
+        const cronSched = innerSchedulers.find(x => /cron/i.test(x.type || '')) || innerSchedulers[0];
+        const fixedSched = innerSchedulers.find(x => /fixed/i.test(x.type || '')) || null;
 
-        // Cron expression: nested schedulers[0].expression → s.schedule.cronExpression → s.expression
-        const rawCron = cronSched?.expression || s.schedule?.cronExpression || s.expression || s.cronExpression || '';
-        const resolvedCron = resolveProp(rawCron);
+        // Exhaustively probe all known cron expression paths
+        const rawCron =
+          cronSched?.expression ||
+          s.schedule?.cronExpression || s.schedule?.expression ||
+          s.cronExpression || s.expression ||
+          s.schedulerConfig?.cronExpression || s.schedulerConfig?.expression || '';
 
-        // Fixed frequency: period + timeUnit
-        const rawPeriod = fixedSched?.period || s.schedule?.period || s.frequency || '';
-        const rawTimeUnit = fixedSched?.timeUnit || s.schedule?.timeUnit || s.timeUnit || '';
+        // Exhaustively probe all known period/timeUnit paths
+        const rawPeriod =
+          fixedSched?.period || fixedSched?.frequency ||
+          s.schedule?.period || s.schedule?.frequency ||
+          s.frequency || s.period || '';
+
+        const rawTimeUnit =
+          fixedSched?.timeUnit ||
+          s.schedule?.timeUnit || s.timeUnit || '';
+
+        const rawTimeZone =
+          cronSched?.timeZone ||
+          s.schedule?.timeZone || s.timeZone || '';
 
         scheduleRows.push({
           apiDomainName: app.name,
-          scheduleName: s.flow || s.flowName || s.name || '',
+          scheduleName: s.flow || s.flowName || s.name || s.schedulerName || '',
           enabled: s.enabled !== false ? 'true' : 'false',
-          scheduleCronExpression: resolvedCron,
-          scheduleTimeZone: resolveProp(cronSched?.timeZone || s.schedule?.timeZone || s.timeZone || ''),
-          scheduleTimeUnit: rawTimeUnit,
+          scheduleCronExpression: resolveProp(rawCron),
+          scheduleTimeZone: resolveProp(rawTimeZone),
+          scheduleTimeUnit: resolveProp(rawTimeUnit),
           schedulePeriod: String(resolveProp(String(rawPeriod)))
         });
       }
