@@ -329,7 +329,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
   const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   const bgPart = safeName(bgName);
   const envPart = safeName(envName);
-  const filename = ['CPS-Properties', bgPart, envPart, date].filter(Boolean).join('-') + '.xlsx';
+  const filename = ['CPS-Properties', envPart, date].filter(Boolean).join('-') + '.xlsx';
   XLSX.writeFile(wb, filename);
   onComplete?.();
 }

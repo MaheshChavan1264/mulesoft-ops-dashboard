@@ -427,6 +427,7 @@ export default function ApplicationsPage() {
           apps={filtered}
           bgOrgId={selectedBg}
           bgName={selectedBgName}
+          selectedEnvId={filterEnv || ''}
           envName={filterEnv ? (environments.find(e=>e.id===filterEnv)?.name || '') : (filtered[0]?.environment?.name || '')}
           filterSummary={[
             filterEnv ? `Env: ${environments.find(e=>e.id===filterEnv)?.name || filterEnv}` : null,
