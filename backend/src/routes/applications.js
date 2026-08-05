@@ -88,6 +88,23 @@ router.get('/cloudhub2/:orgId/:envId/:deploymentId', authMiddleware, async (req,
   }
 });
 
+// Get CloudHub 2.0 app schedulers
+router.get('/cloudhub2/:orgId/:envId/:deploymentId/schedulers', authMiddleware, async (req, res) => {
+  try {
+    const client = createClient(req.anypointToken);
+    const { orgId, envId, deploymentId } = req.params;
+    const response = await client.get(
+      `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/schedulers`
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching CH2 schedulers:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data?.message || 'Failed to fetch schedulers'
+    });
+  }
+});
+
 // Get all CloudHub 1.0 applications
 router.get('/cloudhub1/:envId', authMiddleware, async (req, res) => {
   try {
