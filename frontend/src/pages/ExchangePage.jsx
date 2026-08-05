@@ -28,7 +28,7 @@ const typeColor = (type) => {
   return map[type] || 'bg-gray-500/20 text-gray-400';
 };
 
-const LIMIT = 20;
+const LIMIT = 100;
 
 export default function ExchangePage() {
   const { orgId } = useAuth();
