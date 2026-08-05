@@ -170,12 +170,12 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
       const hostsNonSecure = extractHosts(flatNs);
 
       if (secureGroups.length === 0) {
-        // App has CPS but no secure groups returned — one row with non-secure props only
+        // No secure groups — one row with empty cpsSecureKey and empty properties
         allPropsRows.push({
           apiName: app.name,
           hostsNonSecure,
           cpsSecureKey: flatNs['cps.secure.properties'] || '',
-          properties: propsToString(maskedNs)
+          properties: ''
         });
         hostApiRows.push({
           apiName: app.name,
@@ -186,16 +186,14 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
           notAccessible: ''
         });
       } else {
-        // One row per secure group
+        // One row per secure group — properties column = ONLY that secure key's properties
         for (const group of secureGroups) {
           const maskedSec = maskSecrets(group.properties);
-          // Combine non-secure + this secure group props
-          const combined = { ...maskedNs, ...maskedSec };
           allPropsRows.push({
             apiName: app.name,
             hostsNonSecure,
             cpsSecureKey: group.key,
-            properties: propsToString(combined)
+            properties: propsToString(maskedSec)  // only this secure group's props
           });
           hostApiRows.push({
             apiName: app.name,
