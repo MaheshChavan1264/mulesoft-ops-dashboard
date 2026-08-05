@@ -84,10 +84,19 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
     keys: cpsKey, deploymentType: depType, bgOrgId
   }});
   const nsRaw = nsRes.data;
+
+  // Debug: log raw response to console
+  console.log(`[CPS Export] app="${app.name}" key="${cpsKey}" env="${cpsEnv}" rawResponse:`, JSON.stringify(nsRaw).substring(0, 500));
+
   const arr = normalisePropsArray(nsRaw, cpsKey);
   const match = arr.find(p => p.key === cpsKey) || arr[0];
   const inner = match?.properties || match;
   let flatNs = (inner && typeof inner === 'object' && !Array.isArray(inner)) ? inner : {};
+
+  // If flatNs is still empty, the response structure is unexpected — store raw response for debugging
+  if (Object.keys(flatNs).length === 0) {
+    throw new Error(`Empty properties for "${cpsKey}". Raw response: ${JSON.stringify(nsRaw).substring(0, 300)}`);
+  }
 
   const secureKeyStr = flatNs['cps.secure.properties'] || '';
   const secureKeys = secureKeyStr.split(',').map(s => s.trim()).filter(Boolean);
