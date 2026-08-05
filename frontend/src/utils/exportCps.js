@@ -66,9 +66,11 @@ function normalisePropsArray(raw, appKey) {
  * Fetch CPS data for a single app.
  * Returns { nonSecure, secureGroups } or throws.
  */
-async function fetchAppCps(app, cpsBaseUrl, bgOrgId) {
+async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
   const allProps = { ...(app.runtimeProps || {}), ...(app.properties || {}) };
-  const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || 'prod';
+  // Use env override from modal first, then runtime props, then fallback
+  const cpsEnv = cpsEnvOverride || allProps['cps.prefix'] || allProps['cps.environment'] || 'prod';
+  // Use app name as CPS key (the app domain = CPS project key in most cases)
   const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
   const depType = app.deploymentType === 'CloudHub 2.0' ? 'ch2' : 'ch1';
 
@@ -112,32 +114,27 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId) {
  * Main export function.
  * @param {Array} apps - list of apps from /applications/summary
  * @param {string} bgOrgId - selected BG org ID
+ * @param {string} cpsBaseUrl - CPS server base URL (user-specified in modal)
+ * @param {string} cpsEnvOverride - CPS environment override (e.g. 'prod', 'uat')
  * @param {Function} onProgress - callback(current, total, appName)
  * @param {Function} onComplete - callback()
  * @param {Function} onError - callback(msg)
  */
-export async function exportCpsProperties({ apps, bgOrgId, onProgress, onComplete, onError }) {
+export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOverride, onProgress, onComplete, onError }) {
   const allPropsRows = [];
   const hostApiRows = [];
   const scheduleRows = [];
 
-  // Only process apps that have CPS configured
-  const cpsApps = apps.filter(app => {
-    const allP = { ...(app.runtimeProps || {}), ...(app.properties || {}) };
-    return allP['cps.configServerBaseUrl'] || allP['config.server.base.url'];
-  });
+  // Process all apps — use the user-specified CPS base URL
+  const total = apps.length;
 
-  const total = cpsApps.length;
-
-  for (let i = 0; i < cpsApps.length; i++) {
-    const app = cpsApps[i];
-    const allP = { ...(app.runtimeProps || {}), ...(app.properties || {}) };
-    const cpsBaseUrl = allP['cps.configServerBaseUrl'] || allP['config.server.base.url'];
+  for (let i = 0; i < apps.length; i++) {
+    const app = apps[i];
 
     onProgress?.(i + 1, total, app.name);
 
     try {
-      const { flatNs, secureGroups } = await fetchAppCps(app, cpsBaseUrl, bgOrgId);
+      const { flatNs, secureGroups } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride);
       const maskedNs = maskSecrets(flatNs);
       const hostsNonSecure = extractHosts(flatNs);
 

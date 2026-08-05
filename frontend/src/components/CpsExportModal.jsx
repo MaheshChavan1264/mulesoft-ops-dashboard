@@ -1,17 +1,37 @@
-import React, { useState, useRef } from 'react';
-import { X, Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, ChevronRight } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, ChevronRight, Globe } from 'lucide-react';
 import { exportCpsProperties } from '../utils/exportCps';
+import api from '../services/api';
 
 export default function CpsExportModal({ apps, bgOrgId, bgName, onClose }) {
   const [status, setStatus] = useState('idle'); // idle | running | done | error
   const [progress, setProgress] = useState({ current: 0, total: 0, appName: '' });
   const [errorMsg, setErrorMsg] = useState('');
+  const [cpsBaseUrl, setCpsBaseUrl] = useState('');
+  const [cpsEnv, setCpsEnv] = useState('');
   const cancelledRef = useRef(false);
 
-  const appsWithCps = apps.filter(app => {
-    const p = { ...(app.runtimeProps || {}), ...(app.properties || {}) };
-    return p['cps.configServerBaseUrl'] || p['config.server.base.url'];
-  });
+  // Try to pre-populate CPS URL from stored credentials
+  useEffect(() => {
+    api.get('/cps/credentials').then(res => {
+      const byUrlBg = res.data?.byUrlBg || {};
+      const byUrl = res.data?.byUrl || {};
+      // Find a URL that matches this BG
+      const bgMatch = Object.keys(byUrlBg).find(k => k.includes(`::${bgOrgId}`));
+      if (bgMatch) {
+        const url = bgMatch.split('::')[0];
+        setCpsBaseUrl(url);
+        setCpsEnv(url.includes('ut') || url.includes('stage') ? 'uat' : 'prod');
+      } else if (Object.keys(byUrl).length > 0) {
+        const url = Object.keys(byUrl)[0];
+        setCpsBaseUrl(url);
+        setCpsEnv(url.includes('ut') || url.includes('stage') ? 'uat' : 'prod');
+      }
+    }).catch(() => {});
+  }, [bgOrgId]);
+
+  // All apps are candidates — CPS URL is user-specified
+  const appsWithCps = apps;
 
   const handleExport = async () => {
     cancelledRef.current = false;
@@ -19,10 +39,18 @@ export default function CpsExportModal({ apps, bgOrgId, bgName, onClose }) {
     setProgress({ current: 0, total: appsWithCps.length, appName: '' });
     setErrorMsg('');
 
+    if (!cpsBaseUrl.trim()) {
+      setErrorMsg('Please enter the CPS Base URL before exporting.');
+      setStatus('error');
+      return;
+    }
+
     try {
       await exportCpsProperties({
         apps,
         bgOrgId,
+        cpsBaseUrl: cpsBaseUrl.trim(),
+        cpsEnvOverride: cpsEnv.trim(),
         onProgress: (current, total, appName) => {
           setProgress({ current, total, appName });
         },
@@ -82,6 +110,40 @@ export default function CpsExportModal({ apps, bgOrgId, bgName, onClose }) {
               <p className="text-gray-500 text-xs mt-0.5">No CPS</p>
             </div>
           </div>
+
+          {/* CPS URL + Env inputs — always visible in idle/error state */}
+          {(status === 'idle' || status === 'error') && (
+            <div className="space-y-3 bg-gray-800/30 border border-gray-700/40 rounded-xl p-4">
+              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                <Globe size={11} /> CPS Server Configuration
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Base URL</label>
+                  <input
+                    value={cpsBaseUrl}
+                    onChange={(e) => setCpsBaseUrl(e.target.value)}
+                    placeholder="https://sapi-config-property-pd.bt-integration.api.sfdcbt.net"
+                    className="w-full bg-gray-900/80 border border-gray-700/60 rounded-lg px-3 py-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-600/50 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Environment</label>
+                  <input
+                    value={cpsEnv}
+                    onChange={(e) => setCpsEnv(e.target.value)}
+                    placeholder="prod / uat"
+                    className="w-full bg-gray-900/80 border border-gray-700/60 rounded-lg px-3 py-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-600/50 font-mono"
+                  />
+                </div>
+              </div>
+              {!cpsBaseUrl && (
+                <p className="text-yellow-500/80 text-[10px]">
+                  ⚠ Enter the CPS server URL (matches <code className="text-yellow-400">cps.configServerBaseUrl</code> in runtime properties)
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Output format info */}
           {status === 'idle' && (
