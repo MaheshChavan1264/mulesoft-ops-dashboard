@@ -277,7 +277,7 @@ export default function ApplicationDetailPage() {
       // Fetch non-secure properties for this specific project key
       const nsRes = await api.get('/cps/fetch', { params: {
         baseUrl: cpsBaseUrl, type: 'non-secure', environment: useEnv,
-        keys: useKey, deploymentType: cpsDepType, envName: appEnvName
+        keys: useKey, deploymentType: cpsDepType, envName: appEnvName, bgOrgId: orgId
       }});
       const nsRaw = nsRes.data;
 
@@ -350,6 +350,8 @@ export default function ApplicationDetailPage() {
     <div className="space-y-6 min-h-screen">
       {showCpsSettings && <CpsSettingsModal
         prefilledUrl={cpsBaseUrl ? cpsBaseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '') : ''}
+        prefilledBgId={orgId}
+        prefilledBgName={app.environment?.organizationId === orgId ? '' : ''}
         onClose={() => { setShowCpsSettings(false); if (cpsMissingCred) { setCpsMissingCred(null); loadCpsData(); } }}
       />}
       <AppConfirmModal
@@ -832,7 +834,7 @@ export default function ApplicationDetailPage() {
                       try {
                         const sr = await api.get('/cps/fetch', { params: {
                           baseUrl: cpsBaseUrl, type: 'secure', environment: cpsData.useEnv,
-                          keys: cpsData.secureKeys, deploymentType: cpsDepType, envName: appEnvName
+                          keys: cpsData.secureKeys, deploymentType: cpsDepType, envName: appEnvName, bgOrgId: orgId
                         }});
                         const raw = sr.data;
                         const groups = Array.isArray(raw?.responses) ? raw.responses

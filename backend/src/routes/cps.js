@@ -3,42 +3,46 @@ const router = express.Router();
 const axios = require('axios');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// ── Legacy key format: {ch}_{env}  e.g.  ch1_prod, ch2_uat ─────────────────
 const LEGACY_KEYS = ['ch1_prod', 'ch2_prod', 'ch1_uat', 'ch2_uat'];
 
-/**
- * Normalise a CPS base URL for use as a credential key:
- *  - strip trailing slash
- *  - strip /api/v2 suffix (the app may include it in cps.configServerBaseUrl)
- */
+/** Strip trailing slash and /api/v2 suffix from a CPS base URL */
 function normaliseUrl(url = '') {
   return url.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
 }
 
+/** Build compound key: "{normalised-url}::{bgOrgId}" */
+function urlBgKey(rawUrl, bgOrgId) {
+  return `${normaliseUrl(rawUrl)}::${bgOrgId}`;
+}
+
 /**
- * Resolve credentials (priority order):
- *  1. Session override keyed by exact normalised base URL  ← new, per-server
- *  2. Session override keyed by legacy ch/env type        ← backwards-compat
- *  3. Env vars  CPS_CH1_PROD_CLIENT_ID / _SECRET          ← backwards-compat
+ * Credential resolution — priority order:
+ *  1. Session keyed by "{url}::{bgOrgId}"  ← per-server × per-BG
+ *  2. Session keyed by "{url}" only         ← per-server fallback
+ *  3. Session keyed by legacy "ch1_prod"    ← backwards-compat
+ *  4. Env vars  CPS_CH1_PROD_CLIENT_ID/SECRET
  */
-function getCredentials(req, rawBaseUrl, envType, chType) {
+function getCredentials(req, rawBaseUrl, bgOrgId, envType, chType) {
   const sessionCreds = req.session.cpsCreds || {};
   const normUrl = normaliseUrl(rawBaseUrl);
 
-  // 1. URL-keyed session credential (new format)
-  const byUrl = sessionCreds[normUrl];
-  if (byUrl?.clientId && byUrl?.clientSecret) {
-    return { clientId: byUrl.clientId, clientSecret: byUrl.clientSecret };
+  // 1. URL + BG composite key
+  if (bgOrgId) {
+    const key = `${normUrl}::${bgOrgId}`;
+    const c = sessionCreds[key];
+    if (c?.clientId && c?.clientSecret) return { clientId: c.clientId, clientSecret: c.clientSecret };
   }
 
-  // 2. Legacy ch/env session credential
+  // 2. URL-only key (shared across BGs for that server)
+  const byUrl = sessionCreds[normUrl];
+  if (byUrl?.clientId && byUrl?.clientSecret) return { clientId: byUrl.clientId, clientSecret: byUrl.clientSecret };
+
+  // 3. Legacy ch/env key
   const legacyKey = `${chType}_${envType}`;
   const byLegacy = sessionCreds[legacyKey];
-  if (byLegacy?.clientId && byLegacy?.clientSecret) {
-    return { clientId: byLegacy.clientId, clientSecret: byLegacy.clientSecret };
-  }
+  if (byLegacy?.clientId && byLegacy?.clientSecret) return { clientId: byLegacy.clientId, clientSecret: byLegacy.clientSecret };
 
-  // 3. Env vars (legacy ch/env format)
+  // 4. Env vars
   const prefix = `CPS_${chType.toUpperCase()}_${envType.toUpperCase()}`;
   const clientId = process.env[`${prefix}_CLIENT_ID`];
   const clientSecret = process.env[`${prefix}_CLIENT_SECRET`];
@@ -47,7 +51,6 @@ function getCredentials(req, rawBaseUrl, envType, chType) {
   return null;
 }
 
-/** Detect envType (prod | uat) from baseUrl + environment string + env name. */
 function detectEnvType(baseUrl = '', environment = '', envName = '') {
   const s = `${baseUrl} ${environment} ${envName}`.toLowerCase();
   if (/\b(prod|pd)\b/.test(s)) return 'prod';
@@ -55,20 +58,20 @@ function detectEnvType(baseUrl = '', environment = '', envName = '') {
   return 'prod';
 }
 
-/** Normalise deploymentType → 'ch1' | 'ch2' */
 function detectChType(deploymentType = '') {
   return deploymentType.includes('2') || deploymentType === 'ch2' ? 'ch2' : 'ch1';
 }
 
 /* ── GET /api/cps/credentials ────────────────────────────────────────────────
-   Returns credential status:
-   - url-keyed entries (new format, stored in session)
-   - legacy ch/env entries (session + env vars)
+   Returns:
+   - byUrlBg: URL×BG entries (new format)
+   - byUrl: URL-only entries (per-server fallback)
+   - legacy: ch/env entries + env-var status
 */
 router.get('/credentials', authMiddleware, (req, res) => {
   const sessionCreds = req.session.cpsCreds || {};
 
-  // Legacy ch/env status
+  // Legacy
   const legacy = {};
   LEGACY_KEYS.forEach((key) => {
     const [chType, envType] = key.split('_');
@@ -78,26 +81,26 @@ router.get('/credentials', authMiddleware, (req, res) => {
     legacy[key] = { configured: fromEnv || fromSession, source: fromSession ? 'session' : fromEnv ? 'env' : 'none' };
   });
 
-  // URL-keyed entries from session
+  // URL+BG and URL-only from session
+  const byUrlBg = {};
   const byUrl = {};
   Object.entries(sessionCreds).forEach(([key, val]) => {
-    if (!LEGACY_KEYS.includes(key) && val?.clientId) {
+    if (LEGACY_KEYS.includes(key) || !val?.clientId) return;
+    if (key.includes('::')) {
+      byUrlBg[key] = { configured: true, source: 'session', maskedId: val.clientId.substring(0, 8) + '…' };
+    } else {
       byUrl[key] = { configured: true, source: 'session', maskedId: val.clientId.substring(0, 8) + '…' };
     }
   });
 
-  res.json({ credentials: legacy, byUrl });
+  res.json({ credentials: legacy, byUrl, byUrlBg });
 });
 
 /* ── POST /api/cps/credentials ───────────────────────────────────────────────
-   Save credential overrides to session.
-   Supports both formats in one call:
-   Body: {
-     credentials: {
-       "ch1_prod": { clientId, clientSecret },              ← legacy format
-       "https://server.com": { clientId, clientSecret }    ← new URL-keyed format
-     }
-   }
+   Accepts mixed key formats:
+   - "ch1_prod"                                   → legacy
+   - "https://server.com"                         → URL-only (shared across BGs)
+   - "https://server.com::org-id-here"           → URL+BG (per-server × per-BG) ← primary
 */
 router.post('/credentials', authMiddleware, (req, res) => {
   const { credentials = {} } = req.body;
@@ -105,49 +108,53 @@ router.post('/credentials', authMiddleware, (req, res) => {
 
   for (const [key, creds] of Object.entries(credentials)) {
     if (!creds.clientId && !creds.clientSecret) continue;
-    // URL-keyed: normalise the key
-    const storageKey = LEGACY_KEYS.includes(key) ? key : normaliseUrl(key);
-    req.session.cpsCreds[storageKey] = {
-      clientId: creds.clientId || '',
-      clientSecret: creds.clientSecret || ''
-    };
+    let storageKey;
+    if (LEGACY_KEYS.includes(key)) {
+      storageKey = key;
+    } else if (key.includes('::')) {
+      // URL::bgId — normalise just the URL part
+      const [rawUrl, bgId] = key.split('::');
+      storageKey = `${normaliseUrl(rawUrl)}::${bgId}`;
+    } else {
+      storageKey = normaliseUrl(key);
+    }
+    req.session.cpsCreds[storageKey] = { clientId: creds.clientId || '', clientSecret: creds.clientSecret || '' };
   }
 
   console.log('CPS credentials saved:', Object.keys(credentials));
-  res.json({ success: true, saved: Object.keys(credentials) });
+  res.json({ success: true });
 });
 
-/* ── DELETE /api/cps/credentials/:key ────────────────────────────────────────
-   Remove a session credential (key = legacy format OR URL-encoded base URL)
+/* ── DELETE /api/cps/credentials/:key ───────────────────────────────────────
+   key is URI-encoded; can be legacy, URL-only, or URL::bgId
 */
 router.delete('/credentials/:key', authMiddleware, (req, res) => {
   const key = decodeURIComponent(req.params.key);
   if (req.session.cpsCreds) {
     delete req.session.cpsCreds[key];
-    delete req.session.cpsCreds[normaliseUrl(key)];
   }
   res.json({ success: true, cleared: key });
 });
 
 /* ── GET /api/cps/fetch ──────────────────────────────────────────────────────
-   Proxy a CPS API read request.
+   Additional query param: bgOrgId (the BG org ID — used for credential lookup)
 */
 router.get('/fetch', authMiddleware, async (req, res) => {
-  const { baseUrl, type, environment, keys, deploymentType, envName } = req.query;
+  const { baseUrl, type, environment, keys, deploymentType, envName, bgOrgId } = req.query;
 
-  if (!baseUrl || !type) {
-    return res.status(400).json({ error: 'baseUrl and type are required' });
-  }
+  if (!baseUrl || !type) return res.status(400).json({ error: 'baseUrl and type are required' });
 
   const envType = detectEnvType(baseUrl, environment, envName);
   const chType = detectChType(deploymentType);
-  const creds = getCredentials(req, baseUrl, envType, chType);
+  const creds = getCredentials(req, baseUrl, bgOrgId, envType, chType);
 
   if (!creds) {
     return res.status(422).json({
-      error: `CPS credentials not configured for ${normaliseUrl(baseUrl)}`,
+      error: `CPS credentials not configured for this server / BG combination`,
       credKey: `${chType}_${envType}`,
       cpsUrl: normaliseUrl(baseUrl),
+      bgOrgId: bgOrgId || null,
+      suggestedKey: bgOrgId ? `${normaliseUrl(baseUrl)}::${bgOrgId}` : normaliseUrl(baseUrl),
       needsConfig: true
     });
   }
@@ -171,7 +178,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
   const cleanBaseUrl = normaliseUrl(baseUrl);
   const fullUrl = `${cleanBaseUrl}${cpsPath}`;
   const queryStr = new URLSearchParams(params).toString();
-  console.log(`CPS → GET ${fullUrl}?${queryStr}  [creds: ${normaliseUrl(baseUrl)}]`);
+  console.log(`CPS → GET ${fullUrl}?${queryStr}  [bg: ${bgOrgId || 'none'}]`);
 
   try {
     const response = await axios.get(fullUrl, {
@@ -184,7 +191,6 @@ router.get('/fetch', authMiddleware, async (req, res) => {
       timeout: 20000
     });
 
-    // For binaries: return metadata only (not raw file bytes)
     const data = response.data;
     if (type === 'binaries') {
       const list = Array.isArray(data) ? data : (data.properties || data.binaries || []);
