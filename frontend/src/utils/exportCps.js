@@ -165,7 +165,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
  * @param {Function} onComplete - callback()
  * @param {Function} onError - callback(msg)
  */
-export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOverride, onProgress, onComplete, onError }) {
+export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsBaseUrl, cpsEnvOverride, onProgress, onComplete, onError }) {
   const allPropsRows = [];
   const hostApiRows = [];
   const scheduleRows = [];
@@ -324,8 +324,12 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
   });
   XLSX.utils.book_append_sheet(wb, ws3, 'ScheduleCatalog');
 
-  // Download
+  // Build filename: CPS-Properties-{BGName}-{EnvName}-{Date}.xlsx
   const date = new Date().toISOString().split('T')[0];
-  XLSX.writeFile(wb, `CPS-Properties-Export-${date}.xlsx`);
+  const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  const bgPart = safeName(bgName);
+  const envPart = safeName(envName);
+  const filename = ['CPS-Properties', bgPart, envPart, date].filter(Boolean).join('-') + '.xlsx';
+  XLSX.writeFile(wb, filename);
   onComplete?.();
 }
