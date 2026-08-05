@@ -420,18 +420,23 @@ export default function ApplicationDetailPage() {
                 })}
               </div>
             )}
-            {/* Open in Exchange button */}
+            {/* Open in Exchange button — navigates to our Exchange page and auto-selects the asset */}
             {(() => {
               const ref = app.application?.ref;
-              const exchangeUrl = ref
-                ? `https://anypoint.mulesoft.com/exchange/${ref.groupId}/${ref.artifactId}/${ref.version}/`
-                : `https://anypoint.mulesoft.com/exchange/?search=${encodeURIComponent(app.name)}`;
               return (
-                <a href={exchangeUrl} target="_blank" rel="noopener noreferrer"
-                  title="Open in Anypoint Exchange"
+                <button
+                  onClick={() => navigate('/exchange', {
+                    state: {
+                      assetId: ref?.artifactId || app.name,
+                      groupId: ref?.groupId || null,
+                      version: ref?.version || null,
+                      name: app.name
+                    }
+                  })}
+                  title="View in Exchange Assets"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 text-slate-400 hover:text-emerald-300 border-slate-700/40 hover:border-emerald-700/50 hover:bg-emerald-950/30 transition-all">
                   <ExternalLink size={13} /> Exchange
-                </a>
+                </button>
               );
             })()}
             <button onClick={load} className="p-2.5 rounded-xl text-slate-500 hover:text-white bg-slate-800/60 border border-slate-700/40 hover:bg-slate-700/60 transition-all">

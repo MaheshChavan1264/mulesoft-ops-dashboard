@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useLocation } from 'react-router-dom';
 import { Search, Package, RefreshCw, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../services/api';
 
@@ -31,6 +32,8 @@ const LIMIT = 20;
 
 export default function ExchangePage() {
   const { orgId } = useAuth();
+  const location = useLocation();
+
   const [assets, setAssets] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -38,6 +41,19 @@ export default function ExchangePage() {
   const [assetType, setAssetType] = useState('');
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState(null);
+  // Pending auto-select from navigation state
+  const [pendingAssetId, setPendingAssetId] = useState(null);
+  const [pendingGroupId, setPendingGroupId] = useState(null);
+
+  // On mount: check if navigated from app detail with a specific asset
+  useEffect(() => {
+    const state = location.state;
+    if (state?.assetId) {
+      setPendingAssetId(state.assetId);
+      setPendingGroupId(state.groupId || null);
+      setSearch(state.assetId); // pre-populate search
+    }
+  }, []);
 
   useEffect(() => {
     setOffset(0);
@@ -57,8 +73,21 @@ export default function ExchangePage() {
         }
       });
       const data = res.data;
-      setAssets(Array.isArray(data) ? data : (data.assets || data.data || []));
-      setTotal(data.total || (Array.isArray(data) ? data.length : 0));
+      const list = Array.isArray(data) ? data : (data.assets || data.data || []);
+      setAssets(list);
+      setTotal(data.total || list.length);
+
+      // Auto-select matching asset if navigated from app detail
+      if (pendingAssetId && off === 0) {
+        const match = list.find(a =>
+          a.assetId === pendingAssetId && (!pendingGroupId || a.groupId === pendingGroupId)
+        ) || list.find(a => a.assetId === pendingAssetId)
+          || (list.length === 1 ? list[0] : null);
+        if (match) {
+          setSelected(match);
+          setPendingAssetId(null); // clear after auto-select
+        }
+      }
     } catch {
       setAssets([]);
       setTotal(0);
@@ -192,7 +221,7 @@ export default function ExchangePage() {
                     target="_blank"
                     rel="noreferrer"
                     className="text-blue-400 hover:text-blue-300 flex-shrink-0"
-                    title="Open in Exchange"
+                    title="Open in Anypoint Exchange"
                   >
                     <ExternalLink size={16} />
                   </a>
