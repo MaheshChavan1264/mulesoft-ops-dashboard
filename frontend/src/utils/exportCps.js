@@ -183,14 +183,23 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
       const maskedNs = maskSecrets(flatNs);
       const hostsNonSecure = extractHosts(flatNs);
 
+      // Flatten all secure groups' properties into one lookup map
+      const flatSecure = {};
+      for (const g of secureGroups) {
+        Object.assign(flatSecure, g.properties || {});
+      }
+
       // Resolve a property placeholder "${some.key}":
-      // Check CPS non-secure props first, then Anypoint runtime props
+      // Check CPS non-secure → CPS secure → Anypoint runtime props
       const resolveProp = (val) => {
         if (!val) return val;
         const match = String(val).match(/^\$\{(.+)\}$/);
         if (match) {
           const key = match[1];
-          return flatNs[key] || (fetchedAllProps && fetchedAllProps[key]) || val;
+          return flatNs[key]
+            || flatSecure[key]
+            || (fetchedAllProps && fetchedAllProps[key])
+            || val;
         }
         return val;
       };
