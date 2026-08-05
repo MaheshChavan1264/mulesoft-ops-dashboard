@@ -3,7 +3,7 @@ import { X, Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, Ch
 import { exportCpsProperties } from '../utils/exportCps';
 import api from '../services/api';
 
-export default function CpsExportModal({ apps, bgOrgId, bgName, filterSummary, onClose }) {
+export default function CpsExportModal({ apps, bgOrgId, bgName, envName, filterSummary, onClose }) {
   const [status, setStatus] = useState('idle'); // idle | running | done | error
   const [progress, setProgress] = useState({ current: 0, total: 0, appName: '' });
   const [errorMsg, setErrorMsg] = useState('');
@@ -49,6 +49,8 @@ export default function CpsExportModal({ apps, bgOrgId, bgName, filterSummary, o
       await exportCpsProperties({
         apps,
         bgOrgId,
+        bgName,
+        envName,
         cpsBaseUrl: cpsBaseUrl.trim(),
         cpsEnvOverride: cpsEnv.trim(),
         onProgress: (current, total, appName) => {
