@@ -253,13 +253,21 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/action', authMiddleware, asy
   const base = `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`;
 
   try {
-    // Try dedicated action endpoint first
+    // Try dedicated action endpoint first (POST .../start, .../stop, .../restart)
     const response = await client.post(`${base}/${action}`);
     return res.json({ success: true, action, deploymentId, data: response.data });
   } catch (e1) {
-    // Fallback: PATCH desiredState
+    // Fallback for start/stop: PATCH desiredState
+    // Fallback for restart: stop then start (RESTARTED is not a valid desiredState)
     try {
-      const stateMap = { start: 'STARTED', stop: 'STOPPED', restart: 'RESTARTED' };
+      if (action === 'restart') {
+        // CH2 restart = stop → wait → start
+        await client.patch(base, { application: { desiredState: 'STOPPED' } });
+        await new Promise(r => setTimeout(r, 3000));
+        await client.patch(base, { application: { desiredState: 'STARTED' } });
+        return res.json({ success: true, action, deploymentId });
+      }
+      const stateMap = { start: 'STARTED', stop: 'STOPPED' };
       const response = await client.patch(base, {
         application: { desiredState: stateMap[action] }
       });
