@@ -3,7 +3,7 @@ import { X, Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, Ch
 import { exportCpsProperties } from '../utils/exportCps';
 import api from '../services/api';
 
-export default function CpsExportModal({ apps, bgOrgId, bgName, onClose }) {
+export default function CpsExportModal({ apps, bgOrgId, bgName, filterSummary, onClose }) {
   const [status, setStatus] = useState('idle'); // idle | running | done | error
   const [progress, setProgress] = useState({ current: 0, total: 0, appName: '' });
   const [errorMsg, setErrorMsg] = useState('');
@@ -83,7 +83,8 @@ export default function CpsExportModal({ apps, bgOrgId, bgName, onClose }) {
             <div>
               <h2 className="text-white font-semibold text-base">Export CPS Properties</h2>
               <p className="text-gray-500 text-xs mt-0.5">
-                Business Group: <span className="text-gray-300">{bgName}</span>
+                BG: <span className="text-gray-300">{bgName}</span>
+                {filterSummary && <span className="text-gray-600"> · {filterSummary}</span>}
               </p>
             </div>
           </div>

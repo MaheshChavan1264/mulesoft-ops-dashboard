@@ -70,23 +70,24 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
   const allProps = { ...(app.runtimeProps || {}), ...(app.properties || {}) };
   // Use env override from modal first, then runtime props, then fallback
   const cpsEnv = cpsEnvOverride || allProps['cps.prefix'] || allProps['cps.environment'] || 'prod';
-  // Use app name as CPS key (the app domain = CPS project key in most cases)
-  const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
+  // For CH1, app.id IS the domain name (e.g. "job-coupa-capad-purchasing-v1-uw2-ut")
+  // For CH2, app.name is the deployment name which typically matches the CPS key
+  const isCh1 = app.deploymentType !== 'CloudHub 2.0';
+  const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name']
+    || (isCh1 ? app.id : app.name)
+    || app.name;
   const depType = app.deploymentType === 'CloudHub 2.0' ? 'ch2' : 'ch1';
 
-  // Fetch non-secure
-  let flatNs = {};
-  try {
-    const nsRes = await api.get('/cps/fetch', { params: {
-      baseUrl: cpsBaseUrl, type: 'non-secure', environment: cpsEnv,
-      keys: cpsKey, deploymentType: depType, bgOrgId
-    }});
-    const nsRaw = nsRes.data;
-    const arr = normalisePropsArray(nsRaw, cpsKey);
-    const match = arr.find(p => p.key === cpsKey) || arr[0];
-    const inner = match?.properties || match;
-    flatNs = (inner && typeof inner === 'object' && !Array.isArray(inner)) ? inner : {};
-  } catch { /* no non-secure */ }
+  // Fetch non-secure — throw on error so the caller can record it in the export
+  const nsRes = await api.get('/cps/fetch', { params: {
+    baseUrl: cpsBaseUrl, type: 'non-secure', environment: cpsEnv,
+    keys: cpsKey, deploymentType: depType, bgOrgId
+  }});
+  const nsRaw = nsRes.data;
+  const arr = normalisePropsArray(nsRaw, cpsKey);
+  const match = arr.find(p => p.key === cpsKey) || arr[0];
+  const inner = match?.properties || match;
+  let flatNs = (inner && typeof inner === 'object' && !Array.isArray(inner)) ? inner : {};
 
   const secureKeyStr = flatNs['cps.secure.properties'] || '';
   const secureKeys = secureKeyStr.split(',').map(s => s.trim()).filter(Boolean);
