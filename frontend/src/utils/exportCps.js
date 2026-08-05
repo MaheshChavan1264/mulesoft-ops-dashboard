@@ -82,7 +82,6 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
       const res = await api.get(`/applications/cloudhub2/${bgOrgId}/${envId}/${app.id}`);
       const cfg = res.data?.application?.configuration || {};
       const propsSvc = cfg['mule.agent.application.properties.service'] || {};
-      const schedSvc = cfg['mule.agent.scheduling.service'] || {};
       const ds = res.data?.target?.deploymentSettings || {};
       runtimeProps = {
         ...propsSvc.properties,
@@ -91,7 +90,11 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
         ...ds.environmentVars,
         ...res.data?.properties
       };
-      schedulers = schedSvc.schedulers || [];
+      // CH2 schedulers from dedicated endpoint — returns { items: [{flowName, type, expression, enabled}] }
+      try {
+        const schedRes = await api.get(`/applications/cloudhub2/${bgOrgId}/${envId}/${app.id}/schedulers`);
+        schedulers = schedRes.data?.items || schedRes.data?.schedulers || (Array.isArray(schedRes.data) ? schedRes.data : []);
+      } catch { /* no schedulers */ }
     } else {
       const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: bgOrgId } });
       runtimeProps = res.data?.properties || {};
