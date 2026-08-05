@@ -190,18 +190,30 @@ export async function exportCpsProperties({ apps, bgOrgId, cpsBaseUrl, cpsEnvOve
 
       // Add scheduler rows inside try so fetchedSchedulers is in scope
       for (const s of (fetchedSchedulers || [])) {
-        // For cronscheduler type, expression may be a property placeholder
-        const rawCron = s.schedule?.cronExpression || s.expression || s.cronExpression || '';
+        // Scheduler structure can be:
+        // CH1: { name, enabled, schedulers: [{ type, expression, timeUnit, startDelay }] }
+        //   OR { flow, enabled, schedule: { cronExpression, timeZone } }
+        // CH2: { name, enabled, schedulers: [{ type, expression, ... }] }
+        const innerSchedulers = Array.isArray(s.schedulers) ? s.schedulers : [];
+        const cronSched = innerSchedulers.find(x => x.type === 'cron' || x.type === 'cronscheduler') || innerSchedulers[0];
+        const fixedSched = innerSchedulers.find(x => x.type === 'fixedfrequency' || x.type === 'fixed-frequency') || null;
+
+        // Cron expression: nested schedulers[0].expression → s.schedule.cronExpression → s.expression
+        const rawCron = cronSched?.expression || s.schedule?.cronExpression || s.expression || s.cronExpression || '';
         const resolvedCron = resolveProp(rawCron);
+
+        // Fixed frequency: period + timeUnit
+        const rawPeriod = fixedSched?.period || s.schedule?.period || s.frequency || '';
+        const rawTimeUnit = fixedSched?.timeUnit || s.schedule?.timeUnit || s.timeUnit || '';
 
         scheduleRows.push({
           apiDomainName: app.name,
           scheduleName: s.flow || s.flowName || s.name || '',
           enabled: s.enabled !== false ? 'true' : 'false',
           scheduleCronExpression: resolvedCron,
-          scheduleTimeZone: resolveProp(s.schedule?.timeZone || s.timeZone || ''),
-          scheduleTimeUnit: s.timeUnit || s.schedule?.timeUnit || '',
-          schedulePeriod: String(resolveProp(s.frequency || s.schedule?.period || ''))
+          scheduleTimeZone: resolveProp(cronSched?.timeZone || s.schedule?.timeZone || s.timeZone || ''),
+          scheduleTimeUnit: rawTimeUnit,
+          schedulePeriod: String(resolveProp(String(rawPeriod)))
         });
       }
 
