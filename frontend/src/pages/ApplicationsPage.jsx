@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
+import CpsExportModal from '../components/CpsExportModal';
 import api from '../services/api';
 
 const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
@@ -175,6 +176,7 @@ export default function ApplicationsPage() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
   const [error, setError] = useState('');
+  const [showExport, setShowExport] = useState(false);
 
   // Single-app action states
   const [actionLoading, setActionLoading] = useState({});
@@ -419,6 +421,16 @@ export default function ApplicationsPage() {
         results={bulkResults}
       />
 
+      {/* CPS Export Modal */}
+      {showExport && (
+        <CpsExportModal
+          apps={apps}
+          bgOrgId={selectedBg}
+          bgName={selectedBgName}
+          onClose={() => setShowExport(false)}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -427,10 +439,17 @@ export default function ApplicationsPage() {
             {loading ? 'Loading...' : `${apps.length} integrations in ${selectedBgName}`}
           </p>
         </div>
-        <button onClick={() => loadApps(selectedBg)} disabled={loading || bgLoading}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg disabled:opacity-50">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowExport(true)} disabled={loading || apps.length === 0}
+            title="Export CPS Properties to Excel"
+            className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
+            <FileSpreadsheet size={14} /> Export CPS
+          </button>
+          <button onClick={() => loadApps(selectedBg)} disabled={loading || bgLoading}
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg disabled:opacity-50">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Single-app toast */}
