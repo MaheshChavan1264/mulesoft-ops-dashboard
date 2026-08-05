@@ -20,8 +20,9 @@ function UrlCredRow({ url, maskedId, onDelete }) {
 }
 
 /* ── Add new server form ───────────────────────────────────────── */
-function AddServerForm({ prefilledUrl = '', onSaved, onCancel }) {
+function AddServerForm({ prefilledUrl = '', prefilledBgId = '', prefilledBgName = '', onSaved, onCancel }) {
   const [url, setUrl] = useState(prefilledUrl);
+  const [bgId, setBgId] = useState(prefilledBgId);
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [showSecret, setShowSecret] = useState(false);
@@ -29,15 +30,18 @@ function AddServerForm({ prefilledUrl = '', onSaved, onCancel }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  // Build the credential key: if bgId provided → URL::bgId, else URL-only
+  const credKey = url.trim() && bgId.trim() ? `${url.trim()}::${bgId.trim()}` : url.trim();
+
   const handleSave = async () => {
     if (!url.trim() || !clientId.trim() || !clientSecret.trim()) {
-      setError('All three fields are required.');
+      setError('CPS URL, Client ID and Client Secret are all required.');
       return;
     }
     setSaving(true);
     setError('');
     try {
-      await api.post('/cps/credentials', { credentials: { [url.trim()]: { clientId: clientId.trim(), clientSecret: clientSecret.trim() } } });
+      await api.post('/cps/credentials', { credentials: { [credKey]: { clientId: clientId.trim(), clientSecret: clientSecret.trim() } } });
       setSaved(true);
       setTimeout(() => { onSaved(); }, 600);
     } catch (e) {
@@ -48,16 +52,37 @@ function AddServerForm({ prefilledUrl = '', onSaved, onCancel }) {
 
   return (
     <div className="space-y-3 bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
-      <p className="text-slate-300 text-xs font-semibold">Add / Update CPS Server</p>
+      <p className="text-slate-300 text-xs font-semibold">Add / Update CPS Credentials</p>
 
-      <div>
-        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">CPS Base URL</label>
-        <input value={url} onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://sapi-config-property-pd.bt-integration.api.sfdcbt.net"
-          className="w-full bg-slate-900/80 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50 font-mono"
-        />
-        <p className="text-[10px] text-slate-600 mt-1">Same value as <code className="text-slate-500">cps.configServerBaseUrl</code> in runtime properties</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">CPS Base URL</label>
+          <input value={url} onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://sapi-config-property-pd…"
+            className="w-full bg-slate-900/80 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50 font-mono"
+          />
+          <p className="text-[10px] text-slate-600 mt-1"><code className="text-slate-500">cps.configServerBaseUrl</code></p>
+        </div>
+        <div>
+          <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+            Business Group ID <span className="normal-case text-slate-600">(optional — scopes creds to this BG)</span>
+          </label>
+          <input value={bgId} onChange={(e) => setBgId(e.target.value)}
+            placeholder={prefilledBgName ? `${prefilledBgName} (${prefilledBgId})` : 'Leave blank = shared across all BGs'}
+            className="w-full bg-slate-900/80 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50 font-mono"
+          />
+          {bgId && prefilledBgName && bgId === prefilledBgId && (
+            <p className="text-[10px] text-blue-500 mt-1">BG: {prefilledBgName}</p>
+          )}
+        </div>
       </div>
+
+      {credKey && (
+        <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg px-3 py-2">
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Credential key</p>
+          <p className="text-xs text-slate-300 font-mono mt-0.5 break-all">{credKey}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
@@ -98,7 +123,7 @@ function AddServerForm({ prefilledUrl = '', onSaved, onCancel }) {
 }
 
 /* ── Main Modal ────────────────────────────────────────────────── */
-export default function CpsSettingsModal({ onClose, prefilledUrl = '' }) {
+export default function CpsSettingsModal({ onClose, prefilledUrl = '', prefilledBgId = '', prefilledBgName = '' }) {
   const [status, setStatus] = useState({ credentials: {}, byUrl: {} });
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(!!prefilledUrl);
@@ -172,6 +197,8 @@ export default function CpsSettingsModal({ onClose, prefilledUrl = '' }) {
                   <div className="mb-3">
                     <AddServerForm
                       prefilledUrl={prefilledUrl}
+                      prefilledBgId={prefilledBgId}
+                      prefilledBgName={prefilledBgName}
                       onSaved={() => { setShowAddForm(false); loadStatus(); }}
                       onCancel={() => setShowAddForm(false)}
                     />
