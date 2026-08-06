@@ -12,6 +12,7 @@ import BusinessGroupsPage from './pages/BusinessGroupsPage';
 import ApiManagerPage from './pages/ApiManagerPage';
 import ExchangePage from './pages/ExchangePage';
 import PingTestPage from './pages/PingTestPage';
+import CpsComparisonPage from './pages/CpsComparisonPage';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="api-manager" element={<ApiManagerPage />} />
             <Route path="exchange" element={<ExchangePage />} />
             <Route path="ping-test" element={<PingTestPage />} />
+            <Route path="cps-compare" element={<CpsComparisonPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
