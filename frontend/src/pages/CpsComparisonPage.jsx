@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, ShieldCheck, SlidersHorizontal, Key } from 'lucide-react';
+import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, SlidersHorizontal, Key } from 'lucide-react';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
-import { useCredentialStore } from '../context/CredentialStoreContext';
+import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
+import CpsCredentialImportButton from '../components/CpsCredentialImportButton';
 import api from '../services/api';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -156,7 +157,7 @@ function SidePanel({ label, color, state, filteredBgs, onUpdate, onLoadEnvs, onL
 const INIT_SIDE = { bgId: '', envId: '', envs: [], apps: [], appId: '', loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false };
 
 export default function CpsComparisonPage() {
-  const { getSecret, hasCredentials } = useCredentialStore();
+  const { getSecret, hasCredentials } = useCpsCredentialStore();
   const [allBgs, setAllBgs] = useState([]);
   const [showBgFilter, setShowBgFilter] = useState(false);
   const [propType, setPropType] = useState('non-secure');
@@ -375,6 +376,8 @@ export default function CpsComparisonPage() {
           <p className="text-gray-400 text-sm mt-1">Compare CPS property values between two environments side-by-side</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* CPS credentials import */}
+          <CpsCredentialImportButton />
           {/* BG Filter button */}
           <button onClick={() => setShowBgFilter(true)}
             className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${filterActive ? 'bg-blue-600/20 border-blue-600/50 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'}`}>
