@@ -368,29 +368,56 @@ export default function CpsComparisonPage() {
 
       if (pt === 'secure') {
         const secureKeysRaw = nsFlat['cps.secure.properties'] || '';
-        if (!secureKeysRaw.trim()) {
-          return {}; // no secure properties defined for this app
+        if (!secureKeysRaw.trim()) return {};
+
+        const groupNames = secureKeysRaw.split(',').map(k => k.trim()).filter(Boolean);
+        // Fetch all groups at once
+        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'secure', keys: groupNames.join(',') } });
+        const raw = r.data;
+
+        // Normalize response to array of { key, properties }
+        const groups = Array.isArray(raw?.responses) ? raw.responses
+          : Array.isArray(raw?.properties) ? raw.properties
+          : Array.isArray(raw) ? raw : [];
+
+        // Build a flat map with group prefix: "groupName::propKey"
+        // This preserves group identity so the diff table can show section headers.
+        const map = {};
+        if (groups.length > 0) {
+          groups.forEach(g => {
+            const gKey = g.key || 'unknown';
+            Object.entries(g.properties || {}).forEach(([k, v]) => {
+              map[`${gKey}::${k}`] = String(v ?? '');
+            });
+          });
+        } else {
+          // Fallback: response was a flat map — prefix with first group name
+          const flat = flattenCpsResponse(raw);
+          Object.entries(flat).forEach(([k, v]) => {
+            const prefix = groupNames[0] || 'secure';
+            map[`${prefix}::${k}`] = String(v ?? '');
+          });
         }
-        const secureKeys = secureKeysRaw.split(',').map(k => k.trim()).filter(Boolean).join(',');
-        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'secure', keys: secureKeys } });
-        return flattenCpsResponse(r.data);
+        return map;
       }
 
       if (pt === 'binaries') {
         const binaryKeysRaw = nsFlat['cps.secure.binaries'] || '';
-        if (!binaryKeysRaw.trim()) {
-          return {}; // no binaries defined for this app
-        }
-        const binaryKeys = binaryKeysRaw.split(',').map(k => k.trim()).filter(Boolean).join(',');
-        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'binaries', keys: binaryKeys } });
-        // Binaries response: { type:'binaries', binaries:[{ key, size, contentType }] }
+        if (!binaryKeysRaw.trim()) return {};
+
+        const groupNames = binaryKeysRaw.split(',').map(k => k.trim()).filter(Boolean);
+        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'binaries', keys: groupNames.join(',') } });
         const binData = r.data?.binaries || r.data || [];
-        const binMap = {};
+
+        // Binaries: prefix with group name using "groupName::fileName" format
+        const map = {};
         (Array.isArray(binData) ? binData : []).forEach(b => {
-          const name = b.key || b.name || '?';
-          binMap[name] = b.size != null ? `${b.contentType || 'binary'} (${b.size} bytes)` : (b.contentType || 'present');
+          const fileName = b.key || b.name || '?';
+          const groupName = b.groupKey || groupNames.find(g => fileName.includes(g)) || groupNames[0] || 'binaries';
+          const value = b.size != null ? `${b.contentType || 'binary'} (${b.size} bytes)` : (b.contentType || 'present');
+          map[`${groupName}::${fileName}`] = value;
         });
-        return binMap;
+        return map;
       }
 
       return {};
@@ -409,7 +436,7 @@ export default function CpsComparisonPage() {
     setSearch('');
   };
 
-  // Build diff
+  // Build diff — keys may contain "groupName::propKey" for grouped types
   const diff = useMemo(() => {
     if (!propsA && !propsB) return [];
     const a = propsA || {};
@@ -423,7 +450,10 @@ export default function CpsComparisonPage() {
       else if (valB === null) status = 'only-a';
       else if (valA === valB) status = 'matching';
       else status = 'different';
-      return { key, valA, valB, status };
+      // Parse group and display key
+      const hasGroup = key.includes('::');
+      const [groupName, displayKey] = hasGroup ? key.split('::') : ['', key];
+      return { key, displayKey: hasGroup ? displayKey : key, groupName, valA, valB, status };
     });
   }, [propsA, propsB]);
 
@@ -603,12 +633,27 @@ export default function CpsComparisonPage() {
             <div className="divide-y divide-gray-800/40 max-h-[60vh] overflow-y-auto">
               {displayRows.length === 0 ? (
                 <div className="px-4 py-10 text-center text-gray-500 text-sm">No properties match the current filter.</div>
-              ) : displayRows.map(row => (
+              ) : (() => {
+                  // Render rows with group headers when groupName changes
+                  const rendered = [];
+                  let lastGroup = null;
+                  displayRows.forEach((row, i) => {
+                    if (row.groupName && row.groupName !== lastGroup) {
+                      lastGroup = row.groupName;
+                      rendered.push(
+                        <div key={`__group__${row.groupName}`}
+                          className="px-4 py-1.5 bg-gray-800/70 border-b border-gray-700/60 flex items-center gap-2">
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Group</span>
+                          <span className="font-mono text-[10px] text-cyan-400/80 font-semibold">{row.groupName}</span>
+                        </div>
+                      );
+                    }
+                    rendered.push(
                 <div key={row.key} className={`grid grid-cols-[1fr_1fr_1fr_80px] gap-3 px-4 py-2.5 group transition-colors hover:bg-gray-800/20 ${STATUS_ROW[row.status] || ''}`}>
                   {/* Key */}
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-mono text-xs text-gray-300 truncate" title={row.key}>{row.key}</span>
-                    <CopyBtn text={row.key} />
+                    <span className="font-mono text-xs text-gray-300 truncate" title={row.displayKey}>{row.displayKey}</span>
+                    <CopyBtn text={row.displayKey} />
                   </div>
                   {/* Value A */}
                   <div className="flex items-center gap-1.5 min-w-0">
@@ -635,7 +680,10 @@ export default function CpsComparisonPage() {
                     </span>
                   </div>
                 </div>
-              ))}
+                    );
+                  });
+                  return rendered;
+                })()}
             </div>
 
             {/* Footer */}
