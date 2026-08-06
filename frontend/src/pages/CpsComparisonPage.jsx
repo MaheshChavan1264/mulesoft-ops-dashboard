@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, SlidersHorizontal, Key } from 'lucide-react';
+import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, SlidersHorizontal, Key, X } from 'lucide-react';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
@@ -62,6 +62,110 @@ function CopyBtn({ text }) {
       className="text-gray-600 hover:text-gray-300 transition-colors p-0.5">
       {done ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
     </button>
+  );
+}
+
+// ─── Word-level diff highlighter ─────────────────────────────────────────────
+
+function wordDiff(a, b) {
+  const wordsA = (a || '').split(/(\s+|[,;:|\/\\])/);
+  const wordsB = (b || '').split(/(\s+|[,;:|\/\\])/);
+  // Simple diff: mark words that are in A but not B as removed, and vice versa
+  const setA = new Set(wordsA);
+  const setB = new Set(wordsB);
+  return {
+    aTokens: wordsA.map(w => ({ word: w, changed: !setB.has(w) && w.trim() !== '' })),
+    bTokens: wordsB.map(w => ({ word: w, changed: !setA.has(w) && w.trim() !== '' })),
+  };
+}
+
+// ─── Diff Detail Modal ───────────────────────────────────────────────────────
+
+function DiffModal({ row, labelA, labelB, onClose }) {
+  if (!row) return null;
+  const isOnlyA = row.status === 'only-a';
+  const isOnlyB = row.status === 'only-b';
+  const isDiff  = row.status === 'different';
+  const { aTokens, bTokens } = isDiff ? wordDiff(row.valA, row.valB) : { aTokens: [], bTokens: [] };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onClose}>
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl shadow-2xl mx-4"
+        onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Property</p>
+            <p className="font-mono text-sm text-white font-semibold">{row.displayKey}</p>
+            {row.groupName && <p className="text-[10px] text-cyan-400/70 mt-0.5">Group: {row.groupName}</p>}
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white p-1.5 rounded-lg hover:bg-gray-800 transition-colors">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Diff body */}
+        <div className="px-5 py-4 space-y-4">
+          {/* Side A */}
+          <div>
+            <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${isOnlyB ? 'text-gray-600' : 'text-blue-400'}`}>
+              Side A — {labelA}
+              {isOnlyB && <span className="ml-2 normal-case font-normal text-gray-600">(not set)</span>}
+            </p>
+            <div className={`rounded-xl px-4 py-3 font-mono text-sm leading-relaxed break-all min-h-[48px] border ${
+              isOnlyB ? 'bg-gray-800/30 border-gray-700/30 text-gray-600 italic' :
+              isDiff   ? 'bg-red-950/30 border-red-800/40 text-red-200' :
+                         'bg-gray-800/60 border-gray-700/40 text-gray-200'
+            }`}>
+              {isOnlyB ? '(not present in Side A)' : isDiff ? (
+                aTokens.map((t, i) => (
+                  <span key={i} className={t.changed ? 'bg-red-500/30 text-red-200 rounded px-0.5' : ''}>
+                    {t.word}
+                  </span>
+                ))
+              ) : (row.valA ?? '—')}
+            </div>
+          </div>
+
+          {/* Side B */}
+          <div>
+            <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${isOnlyA ? 'text-gray-600' : 'text-orange-400'}`}>
+              Side B — {labelB}
+              {isOnlyA && <span className="ml-2 normal-case font-normal text-gray-600">(not set)</span>}
+            </p>
+            <div className={`rounded-xl px-4 py-3 font-mono text-sm leading-relaxed break-all min-h-[48px] border ${
+              isOnlyA ? 'bg-gray-800/30 border-gray-700/30 text-gray-600 italic' :
+              isDiff   ? 'bg-orange-950/30 border-orange-800/40 text-orange-200' :
+                         'bg-gray-800/60 border-gray-700/40 text-gray-200'
+            }`}>
+              {isOnlyA ? '(not present in Side B)' : isDiff ? (
+                bTokens.map((t, i) => (
+                  <span key={i} className={t.changed ? 'bg-orange-500/30 text-orange-200 rounded px-0.5' : ''}>
+                    {t.word}
+                  </span>
+                ))
+              ) : (row.valB ?? '—')}
+            </div>
+          </div>
+
+          {/* Summary */}
+          {isDiff && (
+            <div className="flex items-start gap-2 bg-yellow-950/20 border border-yellow-800/40 rounded-xl px-4 py-3 text-xs text-yellow-400/80">
+              <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+              <span>Values differ — highlighted words show what changed between the two sides.</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end px-5 py-3 border-t border-gray-800">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -210,6 +314,7 @@ export default function CpsComparisonPage() {
   const [errorB, setErrorB] = useState('');
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [diffRow, setDiffRow] = useState(null); // row clicked to show detail modal
 
   // Load BGs on mount
   useEffect(() => {
@@ -644,7 +749,8 @@ export default function CpsComparisonPage() {
           {/* Diff table */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
             {/* Column headers */}
-            <div className="grid grid-cols-[1fr_1fr_1fr_80px] bg-gray-800/60 text-gray-400 text-[10px] uppercase tracking-wider px-4 py-2.5 gap-3">
+            <div className="grid grid-cols-[36px_1fr_1fr_1fr_80px] bg-gray-800/60 text-gray-400 text-[10px] uppercase tracking-wider px-4 py-2.5 gap-3">
+              <span className="text-center">#</span>
               <span>Property Key</span>
               <span>Side A ({sideA.cpsKey || '—'})</span>
               <span>Side B ({sideB.cpsKey || '—'})</span>
@@ -655,52 +761,60 @@ export default function CpsComparisonPage() {
               {displayRows.length === 0 ? (
                 <div className="px-4 py-10 text-center text-gray-500 text-sm">No properties match the current filter.</div>
               ) : (() => {
-                  // Render rows with group headers when groupName changes
                   const rendered = [];
                   let lastGroup = null;
-                  displayRows.forEach((row, i) => {
+                  let lineNum = 0;
+                  displayRows.forEach((row) => {
                     if (row.groupName && row.groupName !== lastGroup) {
                       lastGroup = row.groupName;
                       rendered.push(
                         <div key={`__group__${row.groupName}`}
-                          className="px-4 py-1.5 bg-gray-800/70 border-b border-gray-700/60 flex items-center gap-2">
+                          className="col-span-full px-4 py-1.5 bg-gray-800/70 border-b border-gray-700/60 flex items-center gap-2">
                           <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Group</span>
                           <span className="font-mono text-[10px] text-cyan-400/80 font-semibold">{row.groupName}</span>
                         </div>
                       );
                     }
+                    lineNum++;
+                    const clickable = row.status === 'different' || row.status === 'only-a' || row.status === 'only-b';
                     rendered.push(
-                <div key={row.key} className={`grid grid-cols-[1fr_1fr_1fr_80px] gap-3 px-4 py-2.5 group transition-colors hover:bg-gray-800/20 ${STATUS_ROW[row.status] || ''}`}>
-                  {/* Key */}
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-mono text-xs text-gray-300 truncate" title={row.displayKey}>{row.displayKey}</span>
-                    <CopyBtn text={row.displayKey} />
-                  </div>
-                  {/* Value A */}
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {row.valA !== null ? (
-                      <>
-                        <span className={`font-mono text-xs truncate ${row.status === 'different' ? 'text-red-300' : 'text-gray-300'}`} title={row.valA}>{row.valA}</span>
-                        <CopyBtn text={row.valA} />
-                      </>
-                    ) : <span className="text-[10px] text-gray-700 italic">not set</span>}
-                  </div>
-                  {/* Value B */}
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {row.valB !== null ? (
-                      <>
-                        <span className={`font-mono text-xs truncate ${row.status === 'different' ? 'text-orange-300' : 'text-gray-300'}`} title={row.valB}>{row.valB}</span>
-                        <CopyBtn text={row.valB} />
-                      </>
-                    ) : <span className="text-[10px] text-gray-700 italic">not set</span>}
-                  </div>
-                  {/* Status badge */}
-                  <div className="flex items-center justify-center">
-                    <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold ${STATUS_BADGE[row.status]}`}>
-                      {STATUS_LABEL[row.status]}
-                    </span>
-                  </div>
-                </div>
+                      <div key={row.key}
+                        onClick={() => clickable && setDiffRow(row)}
+                        className={`grid grid-cols-[36px_1fr_1fr_1fr_80px] gap-3 px-4 py-2.5 transition-colors hover:bg-gray-800/20 ${STATUS_ROW[row.status] || ''} ${clickable ? 'cursor-pointer' : ''}`}>
+                        {/* Line number */}
+                        <div className="flex items-center justify-center">
+                          <span className="text-[10px] text-gray-600 font-mono select-none">{lineNum}</span>
+                        </div>
+                        {/* Key */}
+                        <div className="flex items-center gap-1.5 min-w-0" onClick={e => e.stopPropagation()}>
+                          <span className="font-mono text-xs text-gray-300 truncate" title={row.displayKey}>{row.displayKey}</span>
+                          <CopyBtn text={row.displayKey} />
+                        </div>
+                        {/* Value A */}
+                        <div className="flex items-center gap-1.5 min-w-0" onClick={e => e.stopPropagation()}>
+                          {row.valA !== null ? (
+                            <>
+                              <span className={`font-mono text-xs truncate ${row.status === 'different' ? 'text-red-300' : 'text-gray-300'}`} title={row.valA}>{row.valA}</span>
+                              <CopyBtn text={row.valA} />
+                            </>
+                          ) : <span className="text-[10px] text-gray-700 italic">not set</span>}
+                        </div>
+                        {/* Value B */}
+                        <div className="flex items-center gap-1.5 min-w-0" onClick={e => e.stopPropagation()}>
+                          {row.valB !== null ? (
+                            <>
+                              <span className={`font-mono text-xs truncate ${row.status === 'different' ? 'text-orange-300' : 'text-gray-300'}`} title={row.valB}>{row.valB}</span>
+                              <CopyBtn text={row.valB} />
+                            </>
+                          ) : <span className="text-[10px] text-gray-700 italic">not set</span>}
+                        </div>
+                        {/* Status badge — clickable for non-matching rows */}
+                        <div className="flex items-center justify-center">
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold ${STATUS_BADGE[row.status]} ${clickable ? 'hover:opacity-80' : ''}`}>
+                            {STATUS_LABEL[row.status]}
+                          </span>
+                        </div>
+                      </div>
                     );
                   });
                   return rendered;
@@ -709,13 +823,25 @@ export default function CpsComparisonPage() {
 
             {/* Footer */}
             {displayRows.length > 0 && (
-              <div className="px-4 py-2 bg-gray-800/30 border-t border-gray-800 text-[10px] text-gray-600">
-                Showing {displayRows.length} of {diff.length} properties
-                {search && ` · filtered by "${search}"`}
+              <div className="px-4 py-2 bg-gray-800/30 border-t border-gray-800 text-[10px] text-gray-600 flex items-center justify-between">
+                <span>Showing {displayRows.length} of {diff.length} properties{search && ` · filtered by "${search}"`}</span>
+                {stats.different + stats['only-a'] + stats['only-b'] > 0 && (
+                  <span className="text-gray-700">Click any 🔴🔵🟠 row to see the diff detail</span>
+                )}
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {/* Diff detail modal */}
+      {diffRow && (
+        <DiffModal
+          row={diffRow}
+          labelA={sideA.cpsKey || 'Side A'}
+          labelB={sideB.cpsKey || 'Side B'}
+          onClose={() => setDiffRow(null)}
+        />
       )}
 
       {/* Empty state after compare */}
