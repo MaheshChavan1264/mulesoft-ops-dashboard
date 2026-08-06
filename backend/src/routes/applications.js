@@ -281,7 +281,7 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/action', authMiddleware, asy
   }
 });
 
-const SUMMARY_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const SUMMARY_CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
 // Summary: get apps across all environments for an org (accepts orgId param or query)
 router.get('/summary/:orgId', authMiddleware, async (req, res) => {
