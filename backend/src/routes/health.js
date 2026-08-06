@@ -9,7 +9,7 @@ const { createClient } = require('../utils/anypointClient');
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 const PING_PATHS = ['/api/v1/ping', '/api/v2/ping', '/api/ping', '/ping'];
-const PING_TIMEOUT_MS = 5000;
+const PING_TIMEOUT_MS = 10000; // 10 s — bulk pings run sequentially + auto-creds resolution adds latency
 
 function buildBaseUrl(targetType, appName, ch2IngressUrl) {
   const safe = (appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
