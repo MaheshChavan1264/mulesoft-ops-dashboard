@@ -70,9 +70,28 @@ const ENV_TAG = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yel
 
 // ─── SidePanel ────────────────────────────────────────────────────────────────
 
-function SidePanel({ label, color, state, filteredBgs, onUpdate, onLoadEnvs, onLoadApps, onSelectApp }) {
+function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp }) {
   const { bgId, envId, envs, apps, appId, loadingEnvs, loadingApps, loadingDetail, cpsUrl, cpsEnv, cpsKey, credsResolved } = state;
   const isBlue = color === 'border-blue-700/50';
+  const showEnvInLabel = bgId === '__all__' || !envId; // show env name in app label when "all"
+
+  const bgOptions = [
+    { value: '__all__', label: 'All Organizations', tag: `${filteredBgs.length}`, tagColor: 'bg-gray-700 text-gray-300' },
+    ...filteredBgs.map(g => ({ value: g.id, label: g.name, tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400', indent: !!g.parentId })),
+  ];
+
+  const envOptions = [
+    { value: '__all__', label: 'All Environments' },
+    ...envs.map(e => ({ value: e.id, label: e.name, badge: true, badgeColor: ENV_BADGE[e.type] || 'bg-gray-400', tag: e.type, tagColor: ENV_TAG[e.type] || 'bg-gray-700 text-gray-400' })),
+  ];
+
+  // App options: when showing all, include env name in label for disambiguation
+  const appOptions = apps.map(a => ({
+    value: `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`,
+    label: showEnvInLabel ? `${a.name} (${a.environment?.name || ''})` : a.name,
+    tag: a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1',
+    tagColor: a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400',
+  }));
 
   return (
     <div className={`flex-1 min-w-0 bg-gray-900 border ${color} rounded-xl p-4 space-y-3`}>
@@ -85,44 +104,63 @@ function SidePanel({ label, color, state, filteredBgs, onUpdate, onLoadEnvs, onL
         )}
       </div>
 
-      {/* BG */}
+      {/* Property type tabs — per-side selection */}
+      <div className="flex gap-1">
+        {PROP_TYPE_OPTS.map(opt => (
+          <button key={opt.value} onClick={() => onPropTypeChange(opt.value)}
+            className={`flex-1 text-[10px] py-1 px-1.5 rounded-lg border font-medium transition-all text-center ${
+              propType === opt.value
+                ? (isBlue ? 'bg-blue-600/20 border-blue-600/50 text-blue-300' : 'bg-orange-600/20 border-orange-600/50 text-orange-300')
+                : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
+            }`}>
+            {opt.value === 'non-secure' ? 'Non-Secure' : opt.value === 'secure' ? 'Secure' : 'Binaries'}
+          </button>
+        ))}
+      </div>
+
+      {/* BG — includes "All Organizations" option */}
       <div>
         <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Business Group</p>
         <Select
           value={bgId}
-          onChange={v => { onUpdate({ bgId: v, envId: '', appId: '', envs: [], apps: [], cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false }); onLoadEnvs(v); }}
-          options={filteredBgs.map(g => ({ value: g.id, label: g.name, tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400' }))}
+          onChange={v => {
+            onUpdate({ bgId: v, envId: '__all__', appId: '', envs: [], apps: [], cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false });
+            onLoadEnvs(v);
+            onLoadApps(v, '__all__');
+          }}
+          options={bgOptions}
           placeholder="Select Business Group…"
           searchable={filteredBgs.length > 5}
         />
       </div>
 
-      {/* Env */}
+      {/* Env — optional; "All Environments" triggers loading all apps */}
       <div>
         <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
           Environment {loadingEnvs && <RefreshCw size={9} className="animate-spin text-gray-600" />}
         </p>
         <Select
-          value={envId}
+          value={envId || '__all__'}
           onChange={v => { onUpdate({ envId: v, appId: '', apps: [], cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false }); onLoadApps(bgId, v); }}
-          options={envs.map(e => ({ value: e.id, label: e.name, badge: true, badgeColor: ENV_BADGE[e.type] || 'bg-gray-400', tag: e.type, tagColor: ENV_TAG[e.type] || 'bg-gray-700 text-gray-400' }))}
-          placeholder="Select Environment…"
+          options={envOptions}
+          placeholder="All Environments"
           disabled={!bgId}
         />
       </div>
 
-      {/* App */}
+      {/* App — searchable, always enabled once BG is set */}
       <div>
         <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
           Application {loadingApps && <RefreshCw size={9} className="animate-spin text-gray-600" />}
           {loadingDetail && <span className="text-[9px] text-cyan-400 ml-1">Resolving CPS config…</span>}
+          {apps.length > 0 && <span className="text-[9px] text-gray-600 ml-auto">{apps.length} apps</span>}
         </p>
         <Select
           value={appId}
           onChange={v => onSelectApp(v)}
-          options={apps.map(a => ({ value: a.id, label: a.name, tag: a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1', tagColor: a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400' }))}
-          placeholder="Select Application…"
-          disabled={!envId}
+          options={appOptions}
+          placeholder={bgId ? 'Search application…' : 'Select a BG first…'}
+          disabled={!bgId}
           searchable
         />
       </div>
@@ -154,13 +192,15 @@ function SidePanel({ label, color, state, filteredBgs, onUpdate, onLoadEnvs, onL
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const INIT_SIDE = { bgId: '', envId: '', envs: [], apps: [], appId: '', loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false };
+const INIT_SIDE = { bgId: '', envId: '__all__', envs: [], apps: [], appId: '', loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false };
 
 export default function CpsComparisonPage() {
   const { getSecret, hasCredentials } = useCpsCredentialStore();
   const [allBgs, setAllBgs] = useState([]);
   const [showBgFilter, setShowBgFilter] = useState(false);
-  const [propType, setPropType] = useState('non-secure');
+  // Each side has its own property type
+  const [propTypeA, setPropTypeA] = useState('non-secure');
+  const [propTypeB, setPropTypeB] = useState('non-secure');
   const [sideA, setSideA] = useState({ ...INIT_SIDE });
   const [sideB, setSideB] = useState({ ...INIT_SIDE });
   const [comparing, setComparing] = useState(false);
@@ -192,45 +232,69 @@ export default function CpsComparisonPage() {
   }, [updateSide]);
 
   const loadApps = useCallback(async (side, bgId, envId) => {
-    if (!bgId || !envId) return;
+    if (!bgId) return;
     updateSide(side, { loadingApps: true, apps: [] });
     try {
-      const r = await api.get(`/applications/summary/${bgId}`);
-      const all = r.data.data || [];
-      const filtered = all.filter(a => a.environment?.id === envId);
-      updateSide(side, { apps: filtered, loadingApps: false });
+      const visible = applyBgFilter(allBgs);
+      // Determine which BG IDs to fetch from
+      const bgIds = bgId === '__all__'
+        ? (visible.length > 0 ? visible.map(g => g.id) : [])
+        : [bgId];
+
+      if (bgIds.length === 0) { updateSide(side, { loadingApps: false }); return; }
+
+      const results = await Promise.allSettled(bgIds.map(id => api.get(`/applications/summary/${id}`)));
+      const merged = [];
+      const seen = new Set();
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          (r.value.data.data || []).forEach(a => {
+            // Filter by env if a specific env is selected
+            if (envId && envId !== '__all__' && a.environment?.id !== envId) return;
+            const key = `${a.id}|${a.environment?.id || ''}`;
+            if (!seen.has(key)) { seen.add(key); merged.push({ ...a, _bgId: bgIds[i] }); }
+          });
+        }
+      });
+      updateSide(side, { apps: merged, loadingApps: false });
     } catch {
       updateSide(side, { loadingApps: false });
     }
-  }, [updateSide]);
+  }, [allBgs, updateSide]);
 
-  const selectApp = useCallback(async (side, appId) => {
+  const selectApp = useCallback(async (side, compositeId) => {
     const sideState = side === 'A' ? sideA : sideB;
-    const app = sideState.apps.find(a => a.id === appId);
+    // compositeId = "appId|envId|bgId"
+    const [appId, envId, bgId] = compositeId.split('|');
+    const app = sideState.apps.find(a =>
+      String(a.id) === appId &&
+      (a.environment?.id === envId || !envId) &&
+      (a._bgId === bgId || !bgId)
+    ) || sideState.apps.find(a => String(a.id) === appId);
     if (!app) return;
 
-    updateSide(side, { appId, loadingDetail: true, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false });
+    const resolvedBgId = bgId || app._bgId || sideState.bgId;
+    const resolvedEnvId = envId || app.environment?.id || sideState.envId;
+
+    updateSide(side, { appId: compositeId, loadingDetail: true, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false });
     try {
       let detail;
       if (app.deploymentType === 'CloudHub 2.0') {
-        const r = await api.get(`/applications/cloudhub2/${sideState.bgId}/${sideState.envId}/${app.id}`);
+        const r = await api.get(`/applications/cloudhub2/${resolvedBgId}/${resolvedEnvId}/${app.id}`);
         detail = r.data;
       } else {
-        const r = await api.get(`/applications/cloudhub1/${sideState.envId}/${app.id}`, { params: { orgId: sideState.bgId } });
+        const r = await api.get(`/applications/cloudhub1/${resolvedEnvId}/${app.id}`, { params: { orgId: resolvedBgId } });
         detail = { name: app.name, properties: r.data.properties || {} };
       }
       const extracted = extractCpsProps(detail);
 
-      // Auto-resolve CPS credentials from the imported CSV:
-      // If the app's runtime properties contain a CPS clientId AND the CSV has the matching secret,
-      // save them to the CPS session so the comparison works without manual config.
+      // Auto-resolve CPS credentials from the imported CPS CSV
       let credsResolved = false;
       if (extracted.cpsClientId && extracted.cpsBaseUrl && hasCredentials) {
         const clientSecret = getSecret(extracted.cpsClientId);
         if (clientSecret) {
           try {
-            // Save to session using URL::bgId key (matches how CPS creds are looked up)
-            const credKey = `${extracted.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${sideState.bgId}`;
+            const credKey = `${extracted.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${resolvedBgId}`;
             await api.post('/cps/credentials', {
               credentials: { [credKey]: { clientId: extracted.cpsClientId, clientSecret } }
             });
@@ -265,27 +329,27 @@ export default function CpsComparisonPage() {
   const filteredBgs = applyBgFilter(allBgs);
   const filterActive = filteredBgs.length < allBgs.length;
 
-  // Compare
+  // Compare — each side uses its own propType
   const compare = async () => {
     setComparing(true);
     setPropsA(null); setPropsB(null);
     setErrorA(''); setErrorB('');
 
-    const fetchSide = async (s) => {
+    const fetchSide = async (s, pt) => {
       if (!s.cpsUrl || !s.cpsKey) throw new Error('CPS URL and project key are required');
       const r = await api.get('/cps/fetch', {
         params: {
           baseUrl: s.cpsUrl,
-          type: propType,
+          type: pt,
           environment: s.cpsEnv || undefined,
           keys: s.cpsKey,
-          bgOrgId: s.bgId || undefined,
+          bgOrgId: (s.bgId && s.bgId !== '__all__') ? s.bgId : undefined,
         },
       });
       return flattenCpsResponse(r.data);
     };
 
-    const [resA, resB] = await Promise.allSettled([fetchSide(sideA), fetchSide(sideB)]);
+    const [resA, resB] = await Promise.allSettled([fetchSide(sideA, propTypeA), fetchSide(sideB, propTypeB)]);
 
     if (resA.status === 'fulfilled') setPropsA(resA.value);
     else setErrorA(resA.reason?.response?.data?.error || resA.reason?.message || 'Failed');
@@ -384,11 +448,6 @@ export default function CpsComparisonPage() {
             <SlidersHorizontal size={11} />
             {filterActive ? `${filteredBgs.length}/${allBgs.length} BGs` : 'Filter BGs'}
           </button>
-          {/* Property type dropdown */}
-          <select value={propType} onChange={e => setPropType(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-600/50">
-            {PROP_TYPE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
           {hasResults && (
             <button onClick={exportCsv}
               className="flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg transition-colors">
@@ -405,10 +464,12 @@ export default function CpsComparisonPage() {
           color="border-blue-700/50"
           state={sideA}
           filteredBgs={filteredBgs}
+          propType={propTypeA}
+          onPropTypeChange={setPropTypeA}
           onUpdate={u => updateSide('A', u)}
           onLoadEnvs={bgId => loadEnvs('A', bgId)}
           onLoadApps={(bgId, envId) => loadApps('A', bgId, envId)}
-          onSelectApp={appId => selectApp('A', appId)}
+          onSelectApp={id => selectApp('A', id)}
         />
 
         {/* Swap + Compare button column */}
@@ -428,10 +489,12 @@ export default function CpsComparisonPage() {
           color="border-orange-700/50"
           state={sideB}
           filteredBgs={filteredBgs}
+          propType={propTypeB}
+          onPropTypeChange={setPropTypeB}
           onUpdate={u => updateSide('B', u)}
           onLoadEnvs={bgId => loadEnvs('B', bgId)}
           onLoadApps={(bgId, envId) => loadApps('B', bgId, envId)}
-          onSelectApp={appId => selectApp('B', appId)}
+          onSelectApp={id => selectApp('B', id)}
         />
       </div>
 
