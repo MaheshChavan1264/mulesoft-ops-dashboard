@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CredentialStoreProvider } from './context/CredentialStoreContext';
+import { CpsCredentialStoreProvider } from './context/CpsCredentialStoreContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -28,6 +29,7 @@ const ProtectedRoute = ({ children }) => {
 
 export default function App() {
   return (
+    <CpsCredentialStoreProvider>
     <CredentialStoreProvider>
     <AuthProvider>
       <BrowserRouter>
@@ -55,5 +57,6 @@ export default function App() {
       </BrowserRouter>
     </AuthProvider>
     </CredentialStoreProvider>
+    </CpsCredentialStoreProvider>
   );
 }
