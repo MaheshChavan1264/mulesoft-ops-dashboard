@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
@@ -164,16 +165,59 @@ function BulkConfirmModal({ state, onConfirm, onCancel, loading, results }) {
 /* ── Bulk Ping Modal ────────────────────────────────────────── */
 function BulkPingModal({ apps, onClose }) {
   const navigate = useNavigate();
+  const { hasCredentials, resolveFromCandidates } = useCredentialStore();
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [transactionId, setTransactionId] = useState('smokeTest');
   const [running, setRunning] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const [results, setResults] = useState({});
+  const [autoResolvedMap, setAutoResolvedMap] = useState({});
   const [showSecret, setShowSecret] = useState(false);
 
+  // Resolve credentials from API Manager + CSV sheet for each app (in parallel)
+  const resolveAllCredentials = useCallback(async () => {
+    if (!hasCredentials || clientId.trim()) return {};
+    const settled = await Promise.allSettled(
+      apps.map(async (app) => {
+        const bgId = app._bgId;
+        const envId = app.environment?.id;
+        if (!bgId || !envId) return null;
+        try {
+          const { data } = await api.post('/health/auto-credentials', {
+            orgId: bgId, envId, appName: app.name,
+          });
+          if (data.found && data.matchInfo?.length > 0) {
+            const matched = resolveFromCandidates(data.matchInfo.map(m => m.clientId));
+            if (matched) {
+              const meta = data.matchInfo.find(m => m.clientId === matched.clientId);
+              return { appId: app.id, ...matched, apiInstanceName: meta?.apiInstanceName || '—', contractApp: meta?.contractApp || '—' };
+            }
+          }
+          return null;
+        } catch { return null; }
+      })
+    );
+    const resolved = {};
+    settled.forEach(r => { if (r.status === 'fulfilled' && r.value) resolved[r.value.appId] = r.value; });
+    return resolved;
+  }, [hasCredentials, resolveFromCandidates, apps, clientId]);
+
   const runAll = async () => {
-    setRunning(true);
+    setRunning(false);
     setResults({});
+    setAutoResolvedMap({});
+
+    // Step 1: auto-resolve credentials if sheet is loaded and no manual creds
+    let resolvedCreds = {};
+    if (hasCredentials && !clientId.trim()) {
+      setResolving(true);
+      resolvedCreds = await resolveAllCredentials();
+      setAutoResolvedMap(resolvedCreds);
+      setResolving(false);
+    }
+
+    setRunning(true);
     const collectedResults = {};
 
     for (const app of apps) {
@@ -192,18 +236,21 @@ function BulkPingModal({ apps, onClose }) {
             endpoints.find(e => e.access === 'external')?.url ||
             endpoints[0]?.url ||
             undefined;
-        } catch {
-          // couldn't fetch detail — will fall back to derived URL
-        }
+        } catch {}
       }
+
+      // Credential priority: manual → auto-resolved → none
+      const auto = resolvedCreds[app.id];
+      const useClientId     = clientId.trim()     || auto?.clientId     || undefined;
+      const useClientSecret = clientSecret.trim() || auto?.clientSecret || undefined;
 
       try {
         const { data } = await api.post('/health/ping', {
           targetType: isCH1 ? 'CH1' : 'CH2',
           appName: app.name,
           ch2IngressUrl,
-          clientId: clientId.trim() || undefined,
-          clientSecret: clientSecret.trim() || undefined,
+          clientId: useClientId,
+          clientSecret: useClientSecret,
           transactionId: transactionId.trim() || 'smokeTest',
         });
         collectedResults[app.id] = data;
@@ -241,11 +288,13 @@ function BulkPingModal({ apps, onClose }) {
         </div>
 
         {/* Credential inputs */}
-        <div className="px-6 py-4 border-b border-gray-800 flex-shrink-0">
+        <div className="px-6 py-4 border-b border-gray-800 flex-shrink-0 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium block mb-1">client_id</label>
-              <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="optional"
+              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium block mb-1">
+                client_id <span className="normal-case text-gray-600">(overrides auto)</span>
+              </label>
+              <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="leave blank to auto-resolve"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
             </div>
             <div>
@@ -262,7 +311,22 @@ function BulkPingModal({ apps, onClose }) {
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
             </div>
           </div>
+          {/* Credential import status */}
+          {hasCredentials && !clientId.trim() && (
+            <div className="flex items-center gap-1.5 text-[10px] text-emerald-400/80">
+              <ShieldCheck size={10} />
+              Credentials CSV loaded — will auto-resolve per app from API Manager
+            </div>
+          )}
         </div>
+
+        {/* Resolving banner */}
+        {resolving && (
+          <div className="px-6 py-2 border-b border-gray-800 flex items-center gap-2 text-xs text-emerald-400 flex-shrink-0">
+            <RefreshCw size={11} className="animate-spin" />
+            Resolving credentials from API Manager…
+          </div>
+        )}
 
         {/* Progress summary */}
         {done > 0 && (
@@ -271,6 +335,11 @@ function BulkPingModal({ apps, onClose }) {
             {success > 0 && <span className="text-green-400 font-medium">✓ {success} healthy</span>}
             {partial > 0 && <span className="text-yellow-400 font-medium">~ {partial} partial</span>}
             {failed > 0 && <span className="text-red-400 font-medium">✗ {failed} failed</span>}
+            {Object.keys(autoResolvedMap).length > 0 && (
+              <span className="flex items-center gap-1 text-emerald-400/70 font-medium">
+                <ShieldCheck size={10} />{Object.keys(autoResolvedMap).length} auto-creds
+              </span>
+            )}
           </div>
         )}
 
@@ -291,9 +360,9 @@ function BulkPingModal({ apps, onClose }) {
           <p className="text-gray-600 text-xs">Pings /api/v1/ping → /api/v2/ping → /api/ping → /ping in order</p>
           <div className="flex items-center gap-3">
             <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg">Close</button>
-            <button onClick={runAll} disabled={running}
+            <button onClick={runAll} disabled={running || resolving}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded-lg">
-              {running ? <><RefreshCw size={13} className="animate-spin" /> Running…</> : <><Activity size={13} /> Run All Pings</>}
+              {resolving ? <><RefreshCw size={13} className="animate-spin" /> Resolving…</> : running ? <><RefreshCw size={13} className="animate-spin" /> Running…</> : <><Activity size={13} /> Run All Pings</>}
             </button>
           </div>
         </div>

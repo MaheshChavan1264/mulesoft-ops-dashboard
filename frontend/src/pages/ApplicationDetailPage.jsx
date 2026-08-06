@@ -959,6 +959,8 @@ export default function ApplicationDetailPage() {
         <PingTestPanel
           appName={app.name}
           isCH1={isCH1}
+          orgId={orgId}
+          envId={envId}
           ch2IngressUrl={
             httpInbound.publicUrl ||
             endpoints.find(e => e.access === 'external')?.url ||
