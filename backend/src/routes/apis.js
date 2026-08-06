@@ -3,6 +3,57 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 
+// Fetch a client application's clientId from Exchange by numeric appId.
+// Route uses a hyphenated prefix so it CANNOT be confused with /:orgId/:envId/:apiId.
+router.get('/app-client-id/:appId', authMiddleware, async (req, res) => {
+  const { appId } = req.params;
+  // orgIds is a comma-separated list of org IDs to try in order
+  // (app's masterOrgId, app's orgId, API Manager's orgId as fallback)
+  const { orgIds = '', orgId } = req.query;
+
+  const toTry = orgIds
+    ? orgIds.split(',').map(o => o.trim()).filter(Boolean)
+    : orgId ? [orgId] : [];
+
+  if (toTry.length === 0) {
+    return res.status(400).json({ error: 'orgIds or orgId query parameter is required' });
+  }
+
+  const client = createClient(req.anypointToken);
+
+  for (const oid of toTry) {
+    // Try 1: main application endpoint
+    try {
+      const r = await client.get(`/exchange/api/v2/organizations/${oid}/applications/${appId}`);
+      const app = r.data;
+      const clientId = app.clientId || app.client_id || null;
+      if (clientId) {
+        console.log(`[APIs] clientId resolved for appId ${appId} via org ${oid}`);
+        return res.json({ id: app.id, name: app.name, clientId });
+      }
+    } catch (e1) {
+      console.warn(`[APIs] Exchange app lookup failed (org ${oid}):`, e1.response?.status, e1.message);
+    }
+
+    // Try 2: explicit credentials sub-endpoint
+    try {
+      const r = await client.get(`/exchange/api/v2/organizations/${oid}/applications/${appId}/credentials`);
+      const cred = r.data;
+      const clientId = cred.clientId || cred.client_id || null;
+      if (clientId) {
+        console.log(`[APIs] clientId resolved for appId ${appId} via credentials endpoint (org ${oid})`);
+        return res.json({ id: appId, name: null, clientId });
+      }
+    } catch (e2) {
+      console.warn(`[APIs] Exchange credentials endpoint failed (org ${oid}):`, e2.response?.status, e2.message);
+    }
+  }
+
+  // Nothing worked — return null clientId without error so UI gracefully shows "—"
+  console.warn(`[APIs] Could not resolve clientId for appId ${appId} after trying orgs: ${toTry.join(', ')}`);
+  res.json({ id: appId, name: null, clientId: null });
+});
+
 // Get all API instances for an environment
 router.get('/:orgId/:envId', authMiddleware, async (req, res) => {
   try {

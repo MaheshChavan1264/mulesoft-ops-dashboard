@@ -10,9 +10,33 @@ const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design
 const ENV_TAG_COLOR = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yellow-500/20 text-yellow-400' };
 
 function ContractCard({ c, i }) {
-  const appName = c.clientApplication?.name || c.application?.name || `App ${c.clientApplicationId || c.id}`;
-  const clientId = c.clientApplication?.clientId || c.clientApplication?.client_id || c.clientId || c.client_id || null;
-  const clientAppId = c.clientApplication?.id || c.clientApplicationId || null;
+  const appName =
+    c.application?.name ||
+    c.clientApplication?.name ||
+    c.applicationName ||
+    `App ${c.clientApplicationId || c.applicationId || c.id}`;
+
+  // coreServicesId inside application{} IS the OAuth client_id in Anypoint Platform.
+  // The contracts endpoint never returns a field literally named "clientId" —
+  // the client credential is stored as application.coreServicesId.
+  const clientId =
+    c.application?.coreServicesId ||              // PRIMARY — confirmed as the client_id
+    c._enrichedClientId ||                         // Exchange API enrichment (fallback)
+    c.application?.clientId ||
+    c.application?.client_id ||
+    c.application?.credentials?.clientId ||
+    c.clientApplication?.coreServicesId ||
+    c.clientApplication?.clientId ||
+    c.clientId ||
+    c.client_id ||
+    null;
+
+  const clientAppId =
+    c.application?.id ||
+    c.clientApplication?.id ||
+    c.clientApplicationId ||
+    c.applicationId ||
+    null;
   const status = (c.status || 'ACTIVE').toUpperCase();
   const tierName = c.tier?.name || c.requestedTier?.name || null;
   const created = c.createdDate ? new Date(c.createdDate).toLocaleDateString() : null;
@@ -150,12 +174,25 @@ export default function ApiManagerPage() {
 
   const selectApi = async (apiInstance) => {
     setSelectedApi(apiInstance); setPolicies([]); setContracts([]); setContractsLoading(true);
+
     const [pRes, cRes] = await Promise.allSettled([
       api.get(`/apis/${selectedBg}/${selectedEnv}/${apiInstance.id}/policies`),
       api.get(`/apis/${selectedBg}/${selectedEnv}/${apiInstance.id}/contracts`),
     ]);
-    if (pRes.status === 'fulfilled') { const d = pRes.value.data; setPolicies(d.policies || (Array.isArray(d) ? d : [])); }
-    if (cRes.status === 'fulfilled') { const d = cRes.value.data; setContracts(d.contracts || (Array.isArray(d) ? d : [])); }
+
+    if (pRes.status === 'fulfilled') {
+      const d = pRes.value.data;
+      setPolicies(d.policies || (Array.isArray(d) ? d : []));
+    }
+
+    let contractList = [];
+    if (cRes.status === 'fulfilled') {
+      const d = cRes.value.data;
+      contractList = d.contracts || (Array.isArray(d) ? d : []);
+    }
+
+    // No enrichment needed — coreServicesId in application{} is the client_id.
+    setContracts(contractList);
     setContractsLoading(false);
   };
 

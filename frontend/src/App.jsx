@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { CredentialStoreProvider } from './context/CredentialStoreContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -26,6 +27,7 @@ const ProtectedRoute = ({ children }) => {
 
 export default function App() {
   return (
+    <CredentialStoreProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -50,5 +52,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </CredentialStoreProvider>
   );
 }
