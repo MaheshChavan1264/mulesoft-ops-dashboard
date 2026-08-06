@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Package,
   Activity,
+  GitCompare,
   ChevronRight
 } from 'lucide-react';
 
@@ -19,6 +20,7 @@ const navItems = [
   { to: '/api-manager', icon: ShieldCheck, label: 'API Manager' },
   { to: '/exchange', icon: Package, label: 'Exchange Assets' },
   { to: '/ping-test', icon: Activity, label: 'Ping Test' },
+  { to: '/cps-compare', icon: GitCompare, label: 'CPS Compare' },
 ];
 
 export default function Sidebar({ open }) {
