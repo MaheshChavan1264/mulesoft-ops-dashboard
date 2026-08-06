@@ -3,6 +3,8 @@ import { Menu, LogOut, User, RefreshCw, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { isDemoMode } from '../services/api';
+import CredentialImportButton from './CredentialImportButton';
+import CpsCredentialImportButton from './CpsCredentialImportButton';
 
 export default function Header({ onToggleSidebar }) {
   const { user, orgName, logout } = useAuth();
@@ -39,6 +41,12 @@ export default function Header({ onToggleSidebar }) {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Global credential imports — always accessible from any page */}
+        <div className="flex items-center gap-2 border-r border-gray-700/60 pr-3">
+          <CredentialImportButton compact />
+          <CpsCredentialImportButton compact />
+        </div>
+
         <button
           onClick={() => window.location.reload()}
           className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
