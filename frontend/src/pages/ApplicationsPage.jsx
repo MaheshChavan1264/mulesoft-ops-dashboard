@@ -10,6 +10,7 @@ import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import CpsExportModal from '../components/CpsExportModal';
 import PingResultCard from '../components/PingResultCard';
 import api from '../services/api';
+import { getCached, setCached, bustCache } from '../services/apiCache';
 
 const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
 const ENV_TAG_COLOR = {
@@ -427,27 +428,50 @@ export default function ApplicationsPage() {
   const loadBusinessGroups = async () => {
     setBgLoading(true);
     try {
+      // BG list rarely changes — cache for 5 minutes
+      const cacheKey = `bgs:${orgId}`;
+      const cached = getCached(cacheKey);
+      if (cached) {
+        setAllBusinessGroups(cached);
+        setSelectedBg('__all__');
+        setBgLoading(false);
+        return;
+      }
       const res = await api.get('/organizations/business-groups');
       const groups = res.data.data || [];
+      setCached(cacheKey, groups);
       setAllBusinessGroups(groups);
-      // Default to "All" so all filtered BGs are shown from the start
       setSelectedBg('__all__');
     } catch { setSelectedBg(orgId); }
     setBgLoading(false);
   };
 
   const loadApps = async (bgId, forceRefresh = false) => {
+    const visible = applyBgFilter(allBusinessGroups);
+    const bgIds = bgId === '__all__'
+      ? (visible.length > 0 ? visible.map(g => g.id) : [orgId])
+      : [bgId];
+
+    // ── Frontend cache (module-level, survives route changes) ─────────────────
+    if (!forceRefresh) {
+      const cacheKey = `apps:${bgId}:${bgIds.join(',')}`;
+      const cached = getCached(cacheKey);
+      if (cached) {
+        setApps(cached.apps);
+        setEnvironments(cached.envs);
+        setError(cached.apps.length === 0 ? 'No applications found.' : '');
+        setFilterEnv('');
+        setSelectedIds(new Set());
+        return; // instant — no network call
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     setLoading(true);
     setError('');
     setFilterEnv('');
     setSelectedIds(new Set());
     try {
-      // '__all__' → load from every visible BG in parallel and merge
-      const visible = applyBgFilter(allBusinessGroups);
-      const bgIds = bgId === '__all__'
-        ? (visible.length > 0 ? visible.map(g => g.id) : [orgId])
-        : [bgId];
-
       const params = forceRefresh ? { params: { refresh: 'true' } } : {};
       const [appsResults, envsResults] = await Promise.all([
         Promise.allSettled(bgIds.map(id => api.get(`/applications/summary/${id}`, params))),
@@ -463,7 +487,6 @@ export default function ApplicationsPage() {
         if (r.status === 'fulfilled') {
           (r.value.data.data || []).forEach(a => {
             const key = `${a.id}|${a.environment?.id || ''}`;
-            // Tag each app with _bgId so actions know which org it belongs to
             if (!seenApps.has(key)) { seenApps.add(key); mergedApps.push({ ...a, _bgId: bgIds[i] }); }
           });
         }
@@ -479,6 +502,10 @@ export default function ApplicationsPage() {
       setApps(mergedApps);
       setEnvironments(mergedEnvs);
       if (mergedApps.length === 0) setError('No applications found.');
+
+      // Store in frontend cache
+      const cacheKey = `apps:${bgId}:${bgIds.join(',')}`;
+      setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs });
     } catch (e) {
       setError(e.response?.data?.error || 'Failed to load applications.');
       setApps([]);
