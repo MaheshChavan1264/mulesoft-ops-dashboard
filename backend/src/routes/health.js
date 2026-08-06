@@ -229,7 +229,11 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
     const searchOrgId = (apiMgrOrgId && apiMgrOrgId !== orgId) ? apiMgrOrgId : orgId;
 
     /**
-     * Try fetching API Manager instances for a given org+env.
+     * Fetch API Manager instances for a given org+env.
+     * The Anypoint API Manager response wraps instances inside:
+     *   { total: N, assets: [{ assetId, apis: [{ id, instanceLabel, ... }] }] }
+     * We flatten assets[].apis[] into a single array, merging assetId from the
+     * parent asset onto each instance so name-matching can use it.
      * Returns [] on any error.
      */
     async function fetchApisForEnv(oId, eId) {
@@ -238,7 +242,24 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
           `/apimanager/api/v1/organizations/${oId}/environments/${eId}/apis`,
           { params: { limit: 200 } }
         );
-        const raw = r.data?.apis || r.data?.data || r.data || [];
+        // Primary shape: { assets: [{ assetId, apis: [...] }] }
+        const assets = r.data?.assets;
+        if (Array.isArray(assets) && assets.length > 0) {
+          return assets.flatMap(asset =>
+            (asset.apis || []).map(api => ({
+              ...api,
+              // Ensure assetId and asset metadata are always accessible at the top level
+              assetId: api.assetId || asset.assetId,
+              asset: {
+                assetId: asset.assetId,
+                exchangeAssetName: asset.exchangeAssetName || asset.assetId,
+                ...(api.asset || {}),
+              },
+            }))
+          );
+        }
+        // Fallback for older API Manager versions that return a flat array
+        const raw = r.data?.apis || r.data?.data || [];
         return Array.isArray(raw) ? raw : [];
       } catch { return []; }
     }
