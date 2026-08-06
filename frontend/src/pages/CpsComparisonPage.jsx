@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, ShieldCheck, SlidersHorizontal, Key } from 'lucide-react';
 import Select from '../components/Select';
+import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
+import { useCredentialStore } from '../context/CredentialStoreContext';
 import api from '../services/api';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -14,11 +16,19 @@ function extractCpsProps(appDetail) {
   const envVars = ds.environmentVariables || ds.environmentVars || {};
   const allProps = { ...appDetail.properties, ...runtimeProps, ...ds.properties, ...envVars };
   return {
-    cpsBaseUrl: allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'] || '',
-    cpsKey: allProps['cps.projectName'] || allProps['cloudhub.api.name'] || appDetail.name || '',
-    cpsEnv: allProps['cps.prefix'] || allProps['cps.environment'] || '',
+    cpsBaseUrl:  allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'] || '',
+    cpsKey:      allProps['cps.projectName']          || allProps['cloudhub.api.name']       || appDetail.name || '',
+    cpsEnv:      allProps['cps.prefix']               || allProps['cps.environment']          || '',
+    // CPS client ID — secret resolved from the imported CSV
+    cpsClientId: allProps['cps.clientId'] || allProps['cps.client_id'] || allProps['cps.client.id'] || allProps['cps.apiClientId'] || '',
   };
 }
+
+const PROP_TYPE_OPTS = [
+  { value: 'non-secure', label: 'Non-Secure Properties' },
+  { value: 'secure',     label: 'Secure Properties' },
+  { value: 'binaries',   label: 'Binary Assets' },
+];
 
 function flattenCpsResponse(data) {
   if (!data) return {};
@@ -59,22 +69,30 @@ const ENV_TAG = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yel
 
 // ─── SidePanel ────────────────────────────────────────────────────────────────
 
-function SidePanel({ label, color, state, allBgs, onUpdate, onLoadEnvs, onLoadApps, onSelectApp }) {
-  const { bgId, envId, envs, apps, appId, loadingEnvs, loadingApps, loadingDetail, cpsUrl, cpsEnv, cpsKey } = state;
+function SidePanel({ label, color, state, filteredBgs, onUpdate, onLoadEnvs, onLoadApps, onSelectApp }) {
+  const { bgId, envId, envs, apps, appId, loadingEnvs, loadingApps, loadingDetail, cpsUrl, cpsEnv, cpsKey, credsResolved } = state;
+  const isBlue = color === 'border-blue-700/50';
 
   return (
     <div className={`flex-1 min-w-0 bg-gray-900 border ${color} rounded-xl p-4 space-y-3`}>
-      <p className={`text-xs font-bold uppercase tracking-wider ${color === 'border-blue-700/50' ? 'text-blue-400' : 'text-orange-400'}`}>{label}</p>
+      <div className="flex items-center justify-between">
+        <p className={`text-xs font-bold uppercase tracking-wider ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>{label}</p>
+        {credsResolved && (
+          <span className="flex items-center gap-1 text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-1.5 py-0.5 rounded">
+            <Key size={8} /> CPS creds auto-filled
+          </span>
+        )}
+      </div>
 
       {/* BG */}
       <div>
         <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Business Group</p>
         <Select
           value={bgId}
-          onChange={v => { onUpdate({ bgId: v, envId: '', appId: '', envs: [], apps: [], cpsUrl: '', cpsEnv: '', cpsKey: '' }); onLoadEnvs(v); }}
-          options={allBgs.map(g => ({ value: g.id, label: g.name, tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400' }))}
+          onChange={v => { onUpdate({ bgId: v, envId: '', appId: '', envs: [], apps: [], cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false }); onLoadEnvs(v); }}
+          options={filteredBgs.map(g => ({ value: g.id, label: g.name, tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400' }))}
           placeholder="Select Business Group…"
-          searchable={allBgs.length > 5}
+          searchable={filteredBgs.length > 5}
         />
       </div>
 
@@ -85,7 +103,7 @@ function SidePanel({ label, color, state, allBgs, onUpdate, onLoadEnvs, onLoadAp
         </p>
         <Select
           value={envId}
-          onChange={v => { onUpdate({ envId: v, appId: '', apps: [], cpsUrl: '', cpsEnv: '', cpsKey: '' }); onLoadApps(bgId, v); }}
+          onChange={v => { onUpdate({ envId: v, appId: '', apps: [], cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false }); onLoadApps(bgId, v); }}
           options={envs.map(e => ({ value: e.id, label: e.name, badge: true, badgeColor: ENV_BADGE[e.type] || 'bg-gray-400', tag: e.type, tagColor: ENV_TAG[e.type] || 'bg-gray-700 text-gray-400' }))}
           placeholder="Select Environment…"
           disabled={!bgId}
@@ -96,7 +114,7 @@ function SidePanel({ label, color, state, allBgs, onUpdate, onLoadEnvs, onLoadAp
       <div>
         <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
           Application {loadingApps && <RefreshCw size={9} className="animate-spin text-gray-600" />}
-          {loadingDetail && <span className="text-[9px] text-cyan-400">Loading CPS props…</span>}
+          {loadingDetail && <span className="text-[9px] text-cyan-400 ml-1">Resolving CPS config…</span>}
         </p>
         <Select
           value={appId}
@@ -135,10 +153,13 @@ function SidePanel({ label, color, state, allBgs, onUpdate, onLoadEnvs, onLoadAp
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const INIT_SIDE = { bgId: '', envId: '', envs: [], apps: [], appId: '', loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '' };
+const INIT_SIDE = { bgId: '', envId: '', envs: [], apps: [], appId: '', loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false };
 
 export default function CpsComparisonPage() {
+  const { getSecret, hasCredentials } = useCredentialStore();
   const [allBgs, setAllBgs] = useState([]);
+  const [showBgFilter, setShowBgFilter] = useState(false);
+  const [propType, setPropType] = useState('non-secure');
   const [sideA, setSideA] = useState({ ...INIT_SIDE });
   const [sideB, setSideB] = useState({ ...INIT_SIDE });
   const [comparing, setComparing] = useState(false);
@@ -187,7 +208,7 @@ export default function CpsComparisonPage() {
     const app = sideState.apps.find(a => a.id === appId);
     if (!app) return;
 
-    updateSide(side, { appId, loadingDetail: true, cpsUrl: '', cpsEnv: '', cpsKey: '' });
+    updateSide(side, { appId, loadingDetail: true, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false });
     try {
       let detail;
       if (app.deploymentType === 'CloudHub 2.0') {
@@ -195,15 +216,39 @@ export default function CpsComparisonPage() {
         detail = r.data;
       } else {
         const r = await api.get(`/applications/cloudhub1/${sideState.envId}/${app.id}`, { params: { orgId: sideState.bgId } });
-        // For CH1, build a similar structure
         detail = { name: app.name, properties: r.data.properties || {} };
       }
       const extracted = extractCpsProps(detail);
-      updateSide(side, { loadingDetail: false, cpsUrl: extracted.cpsBaseUrl, cpsEnv: extracted.cpsEnv, cpsKey: extracted.cpsKey });
+
+      // Auto-resolve CPS credentials from the imported CSV:
+      // If the app's runtime properties contain a CPS clientId AND the CSV has the matching secret,
+      // save them to the CPS session so the comparison works without manual config.
+      let credsResolved = false;
+      if (extracted.cpsClientId && extracted.cpsBaseUrl && hasCredentials) {
+        const clientSecret = getSecret(extracted.cpsClientId);
+        if (clientSecret) {
+          try {
+            // Save to session using URL::bgId key (matches how CPS creds are looked up)
+            const credKey = `${extracted.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${sideState.bgId}`;
+            await api.post('/cps/credentials', {
+              credentials: { [credKey]: { clientId: extracted.cpsClientId, clientSecret } }
+            });
+            credsResolved = true;
+          } catch { /* non-fatal */ }
+        }
+      }
+
+      updateSide(side, {
+        loadingDetail: false,
+        cpsUrl: extracted.cpsBaseUrl,
+        cpsEnv: extracted.cpsEnv,
+        cpsKey: extracted.cpsKey,
+        credsResolved,
+      });
     } catch {
       updateSide(side, { loadingDetail: false });
     }
-  }, [sideA, sideB, updateSide]);
+  }, [sideA, sideB, updateSide, hasCredentials, getSecret]);
 
   // Swap sides
   const swapSides = () => {
@@ -214,6 +259,10 @@ export default function CpsComparisonPage() {
     setErrorA(errorB);
     setErrorB(errorA);
   };
+
+  // Filtered BGs (respects BG filter modal)
+  const filteredBgs = applyBgFilter(allBgs);
+  const filterActive = filteredBgs.length < allBgs.length;
 
   // Compare
   const compare = async () => {
@@ -226,7 +275,7 @@ export default function CpsComparisonPage() {
       const r = await api.get('/cps/fetch', {
         params: {
           baseUrl: s.cpsUrl,
-          type: 'non-secure',
+          type: propType,
           environment: s.cpsEnv || undefined,
           keys: s.cpsKey,
           bgOrgId: s.bgId || undefined,
@@ -313,22 +362,37 @@ export default function CpsComparisonPage() {
 
   return (
     <div className="space-y-5">
+      {showBgFilter && (
+        <BgFilterModal businessGroups={allBgs} onClose={() => setShowBgFilter(false)} onSaved={() => {}} />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
             <GitCompare size={20} className="text-cyan-400" /> CPS Properties Comparison
           </h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Compare CPS property values between two environments side-by-side
-          </p>
+          <p className="text-gray-400 text-sm mt-1">Compare CPS property values between two environments side-by-side</p>
         </div>
-        {hasResults && (
-          <button onClick={exportCsv}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg transition-colors">
-            <Download size={13} /> Export CSV
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* BG Filter button */}
+          <button onClick={() => setShowBgFilter(true)}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${filterActive ? 'bg-blue-600/20 border-blue-600/50 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'}`}>
+            <SlidersHorizontal size={11} />
+            {filterActive ? `${filteredBgs.length}/${allBgs.length} BGs` : 'Filter BGs'}
           </button>
-        )}
+          {/* Property type dropdown */}
+          <select value={propType} onChange={e => setPropType(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-600/50">
+            {PROP_TYPE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          {hasResults && (
+            <button onClick={exportCsv}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg transition-colors">
+              <Download size={12} /> Export CSV
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Side panels */}
@@ -337,7 +401,7 @@ export default function CpsComparisonPage() {
           label="Side A"
           color="border-blue-700/50"
           state={sideA}
-          allBgs={allBgs}
+          filteredBgs={filteredBgs}
           onUpdate={u => updateSide('A', u)}
           onLoadEnvs={bgId => loadEnvs('A', bgId)}
           onLoadApps={(bgId, envId) => loadApps('A', bgId, envId)}
@@ -350,11 +414,8 @@ export default function CpsComparisonPage() {
             className="p-2 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-700 transition-colors">
             <ArrowLeftRight size={14} />
           </button>
-          <button
-            onClick={compare}
-            disabled={comparing || !canCompare}
-            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded-lg transition-colors"
-          >
+          <button onClick={compare} disabled={comparing || !canCompare}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded-lg transition-colors">
             {comparing ? <><RefreshCw size={13} className="animate-spin" /> Comparing…</> : <><GitCompare size={13} /> Compare</>}
           </button>
         </div>
@@ -363,7 +424,7 @@ export default function CpsComparisonPage() {
           label="Side B"
           color="border-orange-700/50"
           state={sideB}
-          allBgs={allBgs}
+          filteredBgs={filteredBgs}
           onUpdate={u => updateSide('B', u)}
           onLoadEnvs={bgId => loadEnvs('B', bgId)}
           onLoadApps={(bgId, envId) => loadApps('B', bgId, envId)}
