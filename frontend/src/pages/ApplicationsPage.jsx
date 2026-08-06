@@ -436,7 +436,7 @@ export default function ApplicationsPage() {
     setBgLoading(false);
   };
 
-  const loadApps = async (bgId) => {
+  const loadApps = async (bgId, forceRefresh = false) => {
     setLoading(true);
     setError('');
     setFilterEnv('');
@@ -448,8 +448,9 @@ export default function ApplicationsPage() {
         ? (visible.length > 0 ? visible.map(g => g.id) : [orgId])
         : [bgId];
 
+      const params = forceRefresh ? { params: { refresh: 'true' } } : {};
       const [appsResults, envsResults] = await Promise.all([
-        Promise.allSettled(bgIds.map(id => api.get(`/applications/summary/${id}`))),
+        Promise.allSettled(bgIds.map(id => api.get(`/applications/summary/${id}`, params))),
         Promise.allSettled(bgIds.map(id => api.get(`/environments/${id}`))),
       ]);
 
@@ -745,7 +746,7 @@ export default function ApplicationsPage() {
             className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
             <FileSpreadsheet size={14} /> Export CPS
           </button>
-          <button onClick={() => loadApps(selectedBg)} disabled={loading || bgLoading}
+          <button onClick={() => loadApps(selectedBg, true)} disabled={loading || bgLoading}
             className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg disabled:opacity-50">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
