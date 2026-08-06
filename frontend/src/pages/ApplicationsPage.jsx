@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useNavigate } from 'react-router-dom';
 import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck } from 'lucide-react';
+import CredentialImportButton from '../components/CredentialImportButton';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
@@ -284,7 +285,10 @@ function BulkPingModal({ apps, onClose }) {
             <span className="text-white font-semibold">Bulk Ping Test</span>
             <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">{apps.length} apps</span>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-300"><X size={16} /></button>
+          <div className="flex items-center gap-3">
+            <CredentialImportButton compact />
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-300"><X size={16} /></button>
+          </div>
         </div>
 
         {/* Credential inputs */}
