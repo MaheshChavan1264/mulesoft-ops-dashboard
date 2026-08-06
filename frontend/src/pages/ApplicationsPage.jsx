@@ -209,7 +209,7 @@ function BulkPingModal({ apps, onClose }) {
     setResults({});
     setAutoResolvedMap({});
 
-    // Step 1: auto-resolve credentials if sheet is loaded and no manual creds
+    // Step 1: auto-resolve credentials in parallel for all apps
     let resolvedCreds = {};
     if (hasCredentials && !clientId.trim()) {
       setResolving(true);
@@ -221,11 +221,14 @@ function BulkPingModal({ apps, onClose }) {
     setRunning(true);
     const collectedResults = {};
 
-    for (const app of apps) {
+    /**
+     * Ping a single app and return its result.
+     * Fetches CH2 ingress URL on-demand, uses resolved or manual credentials.
+     */
+    const pingApp = async (app) => {
       const isCH1 = app.deploymentType !== 'CloudHub 2.0';
       let ch2IngressUrl = undefined;
 
-      // For CH2 apps, fetch the deployment detail to get the actual ingress URL
       if (!isCH1 && app._bgId && app.environment?.id && app.id) {
         try {
           const detail = await api.get(`/applications/cloudhub2/${app._bgId}/${app.environment.id}/${app.id}`);
@@ -240,7 +243,6 @@ function BulkPingModal({ apps, onClose }) {
         } catch {}
       }
 
-      // Credential priority: manual → auto-resolved → none
       const auto = resolvedCreds[app.id];
       const useClientId     = clientId.trim()     || auto?.clientId     || undefined;
       const useClientSecret = clientSecret.trim() || auto?.clientSecret || undefined;
@@ -254,14 +256,27 @@ function BulkPingModal({ apps, onClose }) {
           clientSecret: useClientSecret,
           transactionId: transactionId.trim() || 'smokeTest',
         });
-        collectedResults[app.id] = data;
-        setResults(prev => ({ ...prev, [app.id]: data }));
+        return { appId: app.id, result: data };
       } catch (err) {
-        const r = { status: 'FAILED', error: err.message };
-        collectedResults[app.id] = r;
-        setResults(prev => ({ ...prev, [app.id]: r }));
+        return { appId: app.id, result: { status: 'FAILED', error: err.message } };
       }
+    };
+
+    // Run pings in parallel batches of 10 to balance speed vs rate limiting.
+    // 100 apps → ~10 batches × ~5s avg = ~50s total (vs ~500s sequential).
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < apps.length; i += BATCH_SIZE) {
+      const batch = apps.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.allSettled(batch.map(pingApp));
+      batchResults.forEach(r => {
+        if (r.status === 'fulfilled') {
+          const { appId, result } = r.value;
+          collectedResults[appId] = result;
+          setResults(prev => ({ ...prev, [appId]: result }));
+        }
+      });
     }
+
     setRunning(false);
     // Navigate to Ping Test Results page with full results + auto-resolved credential info
     navigate('/ping-test', { state: { preloadedResults: collectedResults, preloadedApps: apps, autoResolvedMap: resolvedCreds } });
