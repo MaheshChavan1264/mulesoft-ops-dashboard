@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, ChevronDown, ChevronRight, CheckCircle2, XCircle,
-  AlertCircle, Globe, ShieldCheck, ArrowLeft,
+  AlertCircle, Globe, ShieldCheck, ArrowLeft, Download,
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -227,6 +227,52 @@ export default function PingTestPage() {
     );
   }, [apps, results]);
 
+  // ─── Export CSV ─────────────────────────────────────────────────────────────
+
+  const exportCsv = useCallback(() => {
+    const rows = [
+      ['Application', 'Environment', 'Type', 'Status', 'HTTP Code', 'Active Endpoint', 'Latency (ms)', 'Credentials', 'Error'],
+    ];
+
+    testedApps.forEach(app => {
+      const result = results[app.id];
+      const auto = autoResolvedMap[app.id];
+      const isCH1 = app.deploymentType !== 'CloudHub 2.0';
+      const statusLabel = result
+        ? (STATUS_CONFIG[result.status]?.label || result.status)
+        : '—';
+      const creds = auto
+        ? `Auto (${auto.contractApp})`
+        : result ? 'Manual / None' : '—';
+
+      rows.push([
+        app.name,
+        app.environment?.name || '—',
+        isCH1 ? 'CH1' : 'CH2',
+        statusLabel,
+        result?.httpStatus ?? '—',
+        result?.activeEndpoint || '—',
+        result?.responseTimeMs ?? '—',
+        creds,
+        result?.error || '—',
+      ]);
+    });
+
+    const csv = rows
+      .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ping-test-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [testedApps, results, autoResolvedMap]);
+
   const displayApps = showAll ? apps : testedApps;
   const done = testedApps.length;
   const successCount = testedApps.filter(a => results[a.id]?.status === 'SUCCESS').length;
@@ -288,12 +334,23 @@ export default function PingTestPage() {
             )}
           </p>
         </div>
-        <button
-          onClick={() => navigate('/applications')}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors"
-        >
-          <ArrowLeft size={13} /> Back to Applications
-        </button>
+        <div className="flex items-center gap-2">
+          {hasResults && (
+            <button
+              onClick={exportCsv}
+              title="Export results as CSV"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg transition-colors"
+            >
+              <Download size={13} /> Export CSV
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/applications')}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors"
+          >
+            <ArrowLeft size={13} /> Back to Applications
+          </button>
+        </div>
       </div>
 
       {/* Summary + toggle */}
