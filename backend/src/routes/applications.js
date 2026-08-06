@@ -297,24 +297,25 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
     const results = [];
     const errors = [];
+    // Track which environments are accessible (at least one platform returned non-403)
+    const accessibleEnvIds = new Set();
 
     await Promise.all(environments.map(async (env) => {
+      let ch2Accessible = false;
+      let ch1Accessible = false;
+
       // Try CloudHub 2.0
       try {
         const ch2Response = await client.get(
           `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${env.id}/deployments`,
           { params: { limit: 500 } }
         );
+        ch2Accessible = true;
         const apps = parseCH2Apps(ch2Response.data);
         apps.forEach((app) => {
-          // CH2 has two status fields:
-          // - app.status / app.desiredStatus = deployment status (APPLIED, DEPLOYING, etc.)
-          // - app.application.status = actual runtime status (RUNNING, NOT_RUNNING, STOPPED, etc.)
-          // Use the runtime status when available, fall back to deployment status
           const runtimeStatus = app.application?.status || app.application?.state;
           const deploymentStatus = app.status || app.desiredStatus;
           const effectiveStatus = runtimeStatus || deploymentStatus;
-
           results.push({
             id: app.id,
             name: app.name,
@@ -328,7 +329,9 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
           });
         });
       } catch (e) {
-        errors.push(`CH2 ${env.name}: ${e.message}`);
+        const status = e.response?.status;
+        if (status !== 403 && status !== 401) ch2Accessible = true; // accessible but empty/errored
+        if (status !== 403 && status !== 401) errors.push(`CH2 ${env.name}: ${e.message}`);
       }
 
       // Try CloudHub 1.0
@@ -339,11 +342,10 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
             'X-ANYPNT-ORG-ID': targetOrgId
           }
         });
-        // CH1 can return array or { applications: [...] }
+        ch1Accessible = true;
         const raw = ch1Response.data;
         const ch1Apps = Array.isArray(raw) ? raw : (raw.applications || raw.data || []);
         ch1Apps.forEach((app) => {
-          // Avoid duplicates if already found via CH2
           if (!results.find((r) => r.name === (app.domain || app.name))) {
             results.push({
               id: app.domain || app.name,
@@ -358,16 +360,24 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
           }
         });
       } catch (e) {
-        const ch1Status = e.response?.status;
-        console.error(`CH1 ${env.name} (${ch1Status}):`, e.response?.data || e.message);
-        errors.push(`CH1 ${env.name} (${ch1Status || 'ERR'}): ${e.response?.data?.message || e.message}`);
+        const status = e.response?.status;
+        if (status !== 403 && status !== 401) ch1Accessible = true; // accessible but empty/errored
+        if (status !== 403 && status !== 401) errors.push(`CH1 ${env.name} (${status || 'ERR'}): ${e.response?.data?.message || e.message}`);
+      }
+
+      // Only include this environment in results if the user has access to it
+      if (ch1Accessible || ch2Accessible) {
+        accessibleEnvIds.add(env.id);
       }
     }));
+
+    // Only return environments the user can actually access
+    const accessibleEnvironments = environments.filter(e => accessibleEnvIds.has(e.id));
 
     res.json({
       total: results.length,
       data: results,
-      environments,
+      environments: accessibleEnvironments,
       orgId: targetOrgId,
       _errors: errors.length > 0 ? errors : undefined
     });
