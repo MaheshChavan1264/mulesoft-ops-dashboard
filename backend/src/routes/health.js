@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const https = require('https');
+const authMiddleware = require('../middleware/authMiddleware');
+const { createClient } = require('../utils/anypointClient');
 
 // Agent that tolerates self-signed / internal-CA certs
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -162,6 +164,223 @@ router.post('/ping', async (req, res) => {
     attempts,
     error: 'All ping paths unreachable or returned 5xx',
   });
+});
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Normalize an API/app name for fuzzy matching:
+ *   - lowercase
+ *   - strip version suffixes (-v1, -v2, -v1.0, v1 …)
+ *   - replace hyphens, underscores, dots with a single space
+ *   - collapse multiple spaces
+ */
+function normalizeName(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[-_.]v\d+(\.\d+)*$/i, '')   // trailing -v1 / _v2 / .v1.0
+    .replace(/\bv\d+(\.\d+)*$/i, '')       // trailing v1 / v2.0
+    .replace(/[-_.]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isMatch(appName, apiLabel) {
+  const a = normalizeName(appName);
+  const b = normalizeName(apiLabel);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+// ─── POST /api/health/auto-credentials ──────────────────────────────────────
+/**
+ * Given an app name + org/env, searches API Manager for a matching API
+ * instance and returns the clientIds from its APPROVED contracts.
+ * The frontend then performs a local lookup against the in-memory credential
+ * map to find the matching clientSecret — the secret never reaches this server.
+ *
+ * Body: { orgId, envId, appName }
+ * Response: {
+ *   found: boolean,
+ *   candidates: string[],          ← clientIds of approved contracts
+ *   matchInfo: [{                   ← metadata for each candidate
+ *     clientId, apiInstanceName, apiInstanceId, contractApp
+ *   }],
+ *   matchedApis: [{ id, label }]   ← API Manager instances that matched
+ * }
+ */
+router.post('/auto-credentials', authMiddleware, async (req, res) => {
+  const { orgId, envId, appName, apiMgrOrgId } = req.body || {};
+
+  if (!orgId || !envId || !appName) {
+    return res.status(400).json({
+      error: 'orgId, envId, and appName are required',
+      found: false,
+      candidates: [],
+    });
+  }
+
+  try {
+    const client = createClient(req.anypointToken);
+
+    let apis = [];
+    let resolvedEnvId = envId;
+    // searchOrgId: use the apiMgrOrgId override if provided, else same BG as deployment
+    const searchOrgId = (apiMgrOrgId && apiMgrOrgId !== orgId) ? apiMgrOrgId : orgId;
+
+    /**
+     * Try fetching API Manager instances for a given org+env.
+     * Returns [] on any error.
+     */
+    async function fetchApisForEnv(oId, eId) {
+      try {
+        const r = await client.get(
+          `/apimanager/api/v1/organizations/${oId}/environments/${eId}/apis`,
+          { params: { limit: 200 } }
+        );
+        const raw = r.data?.apis || r.data?.data || r.data || [];
+        return Array.isArray(raw) ? raw : [];
+      } catch { return []; }
+    }
+
+    // 1a. Try the deployment env first (fast path — covers most cases)
+    apis = await fetchApisForEnv(searchOrgId, envId);
+    resolvedEnvId = envId;
+
+    // 1b. If no APIs found in the deployment env, search ALL other environments
+    //     in the same org. This handles the common pattern where the app is
+    //     deployed in env X but API Manager instances are registered in env Y
+    //     within the same Business Group.
+    if (apis.length === 0) {
+      console.log(`[auto-credentials] No APIs in deployment env — scanning all envs in org ${searchOrgId}…`);
+      try {
+        const envsRes = await client.get(`/accounts/api/organizations/${searchOrgId}/environments`);
+        const envList = envsRes.data?.data || envsRes.data?.environments || envsRes.data || [];
+
+        for (const env of Array.isArray(envList) ? envList : []) {
+          if (env.id === envId) continue; // already tried
+          const envApis = await fetchApisForEnv(searchOrgId, env.id);
+          if (envApis.length > 0) {
+            const hasMatch = envApis.some(a =>
+              [a.instanceLabel, a.asset?.exchangeAssetName, a.asset?.assetId, a.asset?.name]
+                .filter(Boolean).some(c => isMatch(appName, c))
+            );
+            if (hasMatch) {
+              apis = envApis;
+              resolvedEnvId = env.id;
+              console.log(`[auto-credentials] ✅ Match found in env "${env.name}" (${env.id})`);
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[auto-credentials] Could not list org environments:', e.message);
+      }
+    }
+
+    // 2. Find instances whose label/assetId fuzzy-matches the app name
+    const matchedApis = apis.filter(api => {
+      const candidates = [
+        api.instanceLabel,
+        api.asset?.exchangeAssetName,
+        api.asset?.assetId,
+        api.asset?.name,
+      ].filter(Boolean);
+      return candidates.some(c => isMatch(appName, c));
+    });
+
+    console.log(`[auto-credentials] appName="${appName}" → ${matchedApis.length} API Manager match(es)`);
+
+    if (matchedApis.length === 0) {
+      return res.json({
+        found: false,
+        candidates: [],
+        matchInfo: [],
+        matchedApis: [],
+        message: 'No matching API Manager instance found for this app name',
+      });
+    }
+
+    // 3. Fetch contracts for each matched instance (up to 5)
+    const allCandidates = [];
+    const matchInfo = [];
+
+    await Promise.allSettled(
+      matchedApis.slice(0, 5).map(async (api) => {
+        try {
+          const contractsRes = await client.get(
+            `/apimanager/api/v1/organizations/${searchOrgId}/environments/${resolvedEnvId}/apis/${api.id}/contracts`
+          );
+
+          const raw = contractsRes.data?.contracts || contractsRes.data || [];
+          const contracts = Array.isArray(raw) ? raw : [];
+
+          const approved = contracts.filter(
+            c => (c.status || '').toUpperCase() === 'APPROVED'
+          );
+
+          const apiLabel =
+            api.instanceLabel ||
+            api.asset?.exchangeAssetName ||
+            api.asset?.assetId ||
+            String(api.id);
+
+          for (const contract of approved) {
+            // In Anypoint Platform, the OAuth client_id is stored as
+            // application.coreServicesId in the contracts response.
+            // Other field paths are kept as fallbacks for older API Manager versions.
+            const clientId =
+              contract.application?.coreServicesId ||   // PRIMARY — confirmed field name
+              contract.application?.clientId ||
+              contract.application?.credentials?.clientId ||
+              contract.clientApplication?.coreServicesId ||
+              contract.clientId ||
+              contract.credentials?.clientId ||
+              null;
+
+            if (clientId && !allCandidates.includes(clientId)) {
+              allCandidates.push(clientId);
+              matchInfo.push({
+                clientId,
+                apiInstanceName: apiLabel,
+                apiInstanceId: api.id,
+                contractApp: contract.application?.name || 'Unknown',
+              });
+            }
+          }
+        } catch (err) {
+          console.warn(
+            `[auto-credentials] Could not fetch contracts for API ${api.id}:`,
+            err.message
+          );
+        }
+      })
+    );
+
+    console.log(`[auto-credentials] Found ${allCandidates.length} approved contract clientId(s) for "${appName}"`);
+
+    return res.json({
+      found: allCandidates.length > 0,
+      candidates: allCandidates,
+      matchInfo,
+      matchedApis: matchedApis.slice(0, 5).map(a => ({
+        id: a.id,
+        label:
+          a.instanceLabel ||
+          a.asset?.exchangeAssetName ||
+          a.asset?.assetId ||
+          String(a.id),
+      })),
+    });
+  } catch (error) {
+    console.error('[auto-credentials] Error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data?.message || 'Failed to resolve credentials from API Manager',
+      found: false,
+      candidates: [],
+      matchInfo: [],
+    });
+  }
 });
 
 module.exports = router;

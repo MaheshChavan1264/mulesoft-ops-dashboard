@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Globe, Wifi, WifiOff, Key, Eye, EyeOff } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2 } from 'lucide-react';
 import api from '../services/api';
+import { useCredentialStore } from '../context/CredentialStoreContext';
 
 /**
  * PingTestPanel
@@ -12,7 +13,23 @@ import api from '../services/api';
  *   defaultClientId     {string}  – pre-fill client_id from app properties
  *   defaultClientSecret {string}  – pre-fill client_secret from app properties
  */
-export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, defaultClientId = '', defaultClientSecret = '' }) {
+/**
+ * PingTestPanel
+ *
+ * Props:
+ *   appName       {string}   – application name
+ *   isCH1         {boolean}  – true for CloudHub 1.0
+ *   ch2IngressUrl {string}   – public ingress URL for CH2 apps
+ *   orgId         {string}   – org/BG ID (needed for auto-credential lookup)
+ *   envId         {string}   – environment ID (needed for auto-credential lookup)
+ *   defaultClientId     {string}  – pre-fill client_id from app properties
+ *   defaultClientSecret {string}  – pre-fill client_secret from app properties
+ */
+const API_MGR_ORG_KEY = 'mule_dashboard_api_mgr_org_id';
+
+export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, envId, defaultClientId = '', defaultClientSecret = '' }) {
+  const { hasCredentials, resolveFromCandidates } = useCredentialStore();
+
   const [clientId, setClientId] = useState(defaultClientId);
   const [clientSecret, setClientSecret] = useState(defaultClientSecret);
   const [transactionId, setTransactionId] = useState('smokeTest');
@@ -21,6 +38,56 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, defaultCl
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showAttempts, setShowAttempts] = useState(false);
+  const [autoResolving, setAutoResolving] = useState(false);
+  const [autoResolved, setAutoResolved] = useState(null);
+  // API Manager BG org ID — may differ from the deployment BG.
+  // Persisted to localStorage so user only needs to set it once.
+  const [apiMgrOrgId, setApiMgrOrgId] = useState(
+    () => localStorage.getItem(API_MGR_ORG_KEY) || ''
+  );
+  const [showApiMgrInput, setShowApiMgrInput] = useState(false);
+
+  const saveApiMgrOrgId = (val) => {
+    setApiMgrOrgId(val);
+    if (val.trim()) localStorage.setItem(API_MGR_ORG_KEY, val.trim());
+    else localStorage.removeItem(API_MGR_ORG_KEY);
+  };
+
+  // Auto-fill credentials from API Manager + CSV sheet
+  const autoFillCredentials = useCallback(async () => {
+    if (!hasCredentials || !orgId || !envId) return;
+    setAutoResolving(true);
+    setAutoResolved(null);
+    try {
+      const body = { orgId, envId, appName };
+      // If user provided a different API Manager BG, pass it so the backend
+      // searches that org's environments instead of the deployment env.
+      if (apiMgrOrgId.trim() && apiMgrOrgId.trim() !== orgId) {
+        body.apiMgrOrgId = apiMgrOrgId.trim();
+      }
+      const { data } = await api.post('/health/auto-credentials', body);
+      if (data.found && data.matchInfo?.length > 0) {
+        const matched = resolveFromCandidates(data.matchInfo.map(m => m.clientId));
+        if (matched) {
+          const meta = data.matchInfo.find(m => m.clientId === matched.clientId);
+          setClientId(matched.clientId);
+          setClientSecret(matched.clientSecret);
+          setAutoResolved({
+            clientId: matched.clientId,
+            apiInstanceName: meta?.apiInstanceName || '—',
+            contractApp: meta?.contractApp || '—',
+          });
+        } else {
+          setAutoResolved({ error: 'API Manager found a match, but no credential in your CSV matches the approved contract.' });
+        }
+      } else {
+        setAutoResolved({ error: 'No matching API Manager instance found for this app.' });
+      }
+    } catch (err) {
+      setAutoResolved({ error: err.message });
+    }
+    setAutoResolving(false);
+  }, [hasCredentials, orgId, envId, appName, resolveFromCandidates]);
 
   const targetType = isCH1 ? 'CH1' : 'CH2';
   const displayBase = isCH1
@@ -91,7 +158,7 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, defaultCl
             <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1">
               <Key size={9} /> client_id
             </label>
-            <input value={clientId} onChange={e => setClientId(e.target.value)}
+            <input value={clientId} onChange={e => { setClientId(e.target.value); setAutoResolved(null); }}
               placeholder="optional"
               className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono placeholder-slate-600 focus:outline-none focus:border-cyan-600/50" />
           </div>
@@ -116,6 +183,71 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, defaultCl
               className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono placeholder-slate-600 focus:outline-none focus:border-cyan-600/50" />
           </div>
         </div>
+
+        {/* Auto-fill row — shown when CSV credentials are loaded */}
+        {hasCredentials && (
+          <div className="space-y-2 pt-1 border-t border-slate-800/40">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={autoFillCredentials}
+                  disabled={autoResolving || !orgId || !envId}
+                  title="Auto-fill credentials from API Manager contracts + your loaded CSV"
+                  className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-700/40 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition-colors disabled:opacity-50 font-medium"
+                >
+                  {autoResolving
+                    ? <><RefreshCw size={9} className="animate-spin" /> Resolving…</>
+                    : <><Wand2 size={9} /> Auto-fill from API Manager</>}
+                </button>
+                <button
+                  onClick={() => setShowApiMgrInput(v => !v)}
+                  title="Configure API Manager Business Group (if different from deployment BG)"
+                  className={`text-[10px] px-1.5 py-1 rounded border transition-colors ${
+                    apiMgrOrgId.trim()
+                      ? 'bg-blue-500/10 border-blue-700/40 text-blue-400'
+                      : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {apiMgrOrgId.trim() ? '🏢 API Mgr BG set' : '⚙ API Mgr BG'}
+                </button>
+              </div>
+              {autoResolved && !autoResolved.error && (
+                <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
+                  <ShieldCheck size={9} />
+                  {autoResolved.apiInstanceName} → {autoResolved.contractApp}
+                </span>
+              )}
+              {autoResolved?.error && (
+                <span className="text-[10px] text-yellow-500/80">{autoResolved.error}</span>
+              )}
+            </div>
+
+            {/* API Manager BG override input */}
+            {showApiMgrInput && (
+              <div className="bg-slate-800/40 border border-slate-700/40 rounded-lg px-3 py-2.5 space-y-1.5">
+                <p className="text-[10px] text-slate-400">
+                  If your API Manager is in a <strong className="text-slate-300">different Business Group</strong> than this app's deployment, enter that BG's Org ID below. It will be saved for all ping tests.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={apiMgrOrgId}
+                    onChange={e => saveApiMgrOrgId(e.target.value)}
+                    placeholder={`Default: ${orgId} (deployment BG)`}
+                    className="flex-1 bg-slate-800 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono placeholder-slate-600 focus:outline-none focus:border-blue-600/50"
+                  />
+                  {apiMgrOrgId.trim() && (
+                    <button
+                      onClick={() => saveApiMgrOrgId('')}
+                      className="text-slate-500 hover:text-red-400 text-[10px] px-2 py-1.5 rounded border border-slate-700 hover:border-red-700/40 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* CH2 no-URL warning */}
