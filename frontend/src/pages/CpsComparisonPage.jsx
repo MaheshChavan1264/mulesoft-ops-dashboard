@@ -172,6 +172,65 @@ function DiffModal({ row, labelA, labelB, onClose }) {
 const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
 const ENV_TAG = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yellow-500/20 text-yellow-400' };
 
+// ─── MultiAppChecklist ────────────────────────────────────────────────────────
+
+function MultiAppChecklist({ apps, selectedIds, loading, onToggle, onSelectAll, onClearAll, isBlue }) {
+  const [localSearch, setLocalSearch] = useState('');
+  const filtered = apps.filter(a => !localSearch || a.name.toLowerCase().includes(localSearch.toLowerCase()));
+  const selectedSet = new Set(selectedIds);
+  const accentText = isBlue ? 'text-blue-400' : 'text-orange-400';
+  const accentBg = isBlue ? 'bg-blue-600' : 'bg-orange-600';
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] text-gray-500 uppercase tracking-wider flex items-center gap-1">
+          Applications {loading && <RefreshCw size={9} className="animate-spin text-gray-600" />}
+          {selectedIds.length > 0 && <span className={`ml-1 font-bold ${accentText}`}>{selectedIds.length} selected</span>}
+        </p>
+        <div className="flex items-center gap-1.5">
+          <button onClick={onSelectAll} className={`text-[9px] ${accentText} hover:opacity-80`}>All</button>
+          <span className="text-gray-700 text-[9px]">·</span>
+          <button onClick={onClearAll} className="text-[9px] text-gray-500 hover:text-gray-300">Clear</button>
+        </div>
+      </div>
+      {/* Search */}
+      <div className="relative">
+        <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+        <input value={localSearch} onChange={e => setLocalSearch(e.target.value)} placeholder="Filter apps…"
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-6 pr-3 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-cyan-600/50" />
+      </div>
+      {/* App list */}
+      <div className="max-h-48 overflow-y-auto border border-gray-700/50 rounded-lg divide-y divide-gray-800/30">
+        {filtered.length === 0 ? (
+          <p className="px-3 py-4 text-center text-[11px] text-gray-600">
+            {apps.length === 0 ? 'Select a BG and Environment first' : 'No apps match'}
+          </p>
+        ) : filtered.map(a => {
+          const compositeId = `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`;
+          const isChecked = selectedSet.has(compositeId);
+          const order = selectedIds.indexOf(compositeId) + 1; // 1-based order
+          return (
+            <button key={compositeId} onClick={() => onToggle(compositeId)}
+              className={`w-full flex items-center gap-2 px-2.5 py-2 hover:bg-gray-800/40 transition-colors text-left ${isChecked ? (isBlue ? 'bg-blue-950/20' : 'bg-orange-950/10') : ''}`}>
+              <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[9px] font-bold ${isChecked ? `${accentBg} border-transparent text-white` : 'border-gray-600'}`}>
+                {isChecked ? order : ''}
+              </div>
+              <span className={`text-xs font-mono truncate flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>{a.name}</span>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/10 text-blue-500' : 'bg-purple-500/10 text-purple-500'}`}>
+                {a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {selectedIds.length > 0 && (
+        <p className="text-[9px] text-gray-600">Numbers show comparison order (1st A paired with 1st B)</p>
+      )}
+    </div>
+  );
+}
+
 // ─── SidePanel ────────────────────────────────────────────────────────────────
 
 function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp, hideAppSelector }) {
@@ -252,8 +311,8 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
         />
       </div>
 
-      {/* App — hidden in multi-app mode */}
-      {!hideAppSelector && (
+      {/* App selector: single dropdown (1 App mode) or multi-select checklist (All Apps mode) */}
+      {!hideAppSelector ? (
         <div>
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
             Application {loadingApps && <RefreshCw size={9} className="animate-spin text-gray-600" />}
@@ -269,11 +328,22 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
             searchable
           />
         </div>
-      )}
-      {hideAppSelector && apps.length > 0 && (
-        <p className="text-[10px] text-cyan-400/70 bg-cyan-950/20 border border-cyan-800/30 rounded-lg px-2.5 py-1.5">
-          {apps.length} apps will be compared
-        </p>
+      ) : (
+        <MultiAppChecklist
+          apps={apps}
+          selectedIds={state.selectedAppIds || []}
+          loading={loadingApps}
+          onToggle={(compositeId) => {
+            const current = state.selectedAppIds || [];
+            const next = current.includes(compositeId)
+              ? current.filter(id => id !== compositeId)
+              : [...current, compositeId];
+            onUpdate({ selectedAppIds: next });
+          }}
+          onSelectAll={() => onUpdate({ selectedAppIds: appOptions.map(a => a.value) })}
+          onClearAll={() => onUpdate({ selectedAppIds: [] })}
+          isBlue={isBlue}
+        />
       )}
 
       {/* CPS config — auto-filled, editable */}
@@ -303,7 +373,7 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const INIT_SIDE = { bgId: '', envId: '__all__', envs: [], apps: [], appId: '', loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false };
+const INIT_SIDE = { bgId: '', envId: '__all__', envs: [], apps: [], appId: '', selectedAppIds: [], loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false };
 
 export default function CpsComparisonPage() {
   const { getSecret, hasCredentials } = useCpsCredentialStore();
@@ -455,23 +525,34 @@ export default function CpsComparisonPage() {
     setPropsA(null); setPropsB(null);
     setErrorA(''); setErrorB('');
 
-    // 1. Get all apps for each side (already loaded in sideA.apps / sideB.apps)
-    const appsA = sideA.apps;
-    const appsB = sideB.apps;
+    // 1. Get selected apps from each side (in selection order)
+    const getSelectedApps = (side) => {
+      const ids = side.selectedAppIds || [];
+      if (ids.length > 0) {
+        // Return in the order user selected them
+        return ids.map(compositeId => {
+          const [appId, envId, bgId] = compositeId.split('|');
+          return side.apps.find(a =>
+            String(a.id) === appId &&
+            (a.environment?.id === envId || !envId) &&
+            (a._bgId === bgId || !bgId)
+          );
+        }).filter(Boolean);
+      }
+      // No selection → use all apps
+      return side.apps;
+    };
 
-    // 2. Match by name (case-insensitive, strip version suffix)
-    const mapB = {};
-    appsB.forEach(a => {
-      const name = a.name.toLowerCase().replace(/-v\d+(\.\d+)*$/, '');
-      mapB[name] = a;
-      mapB[a.name.toLowerCase()] = a; // exact match too
-    });
+    const appsA = getSelectedApps(sideA);
+    const appsB = getSelectedApps(sideB);
 
-    const pairs = appsA.map(appA => {
-      const normName = appA.name.toLowerCase().replace(/-v\d+(\.\d+)*$/, '');
-      const appB = mapB[appA.name.toLowerCase()] || mapB[normName] || null;
-      return { appA, appB };
-    });
+    // 2. Pair apps positionally (1st A with 1st B, etc.)
+    //    If sides have different counts, unpaired apps have no counterpart.
+    const maxLen = Math.max(appsA.length, appsB.length);
+    const pairs = Array.from({ length: maxLen }, (_, i) => ({
+      appA: appsA[i] || null,
+      appB: appsB[i] || null,
+    })).filter(p => p.appA || p.appB); // at least one side must have an app
 
     const total = pairs.length;
     setCompareProgress({ done: 0, total });
@@ -761,7 +842,12 @@ export default function CpsComparisonPage() {
     return rows;
   }, [diff, filter, search]);
 
-  const canMultiCompare = sideA.bgId && sideB.bgId && (sideA.apps.length > 0 || sideB.apps.length > 0);
+  const selectedCountA = (sideA.selectedAppIds || []).length;
+  const selectedCountB = (sideB.selectedAppIds || []).length;
+  const multiAppCount = selectedCountA || selectedCountB
+    ? Math.max(selectedCountA, selectedCountB)
+    : Math.max(sideA.apps.length, sideB.apps.length);
+  const canMultiCompare = sideA.bgId && sideB.bgId && multiAppCount > 0;
   const canCompare = compareMode === 'multi' ? canMultiCompare : (sideA.cpsUrl && sideA.cpsKey) || (sideB.cpsUrl && sideB.cpsKey);
   const hasResults = propsA !== null || propsB !== null;
 
@@ -861,7 +947,7 @@ export default function CpsComparisonPage() {
             className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded-lg transition-colors">
             {comparing
               ? <><RefreshCw size={13} className="animate-spin" /> {compareMode === 'multi' && compareProgress.total > 0 ? `${compareProgress.done}/${compareProgress.total}` : 'Comparing…'}</>
-              : <><GitCompare size={13} /> {compareMode === 'multi' ? `Compare All Apps` : 'Compare'}</>}
+              : <><GitCompare size={13} /> {compareMode === 'multi' ? `Compare (${multiAppCount})` : 'Compare'}</>}
           </button>
         </div>
 
