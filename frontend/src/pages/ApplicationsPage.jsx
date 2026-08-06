@@ -263,8 +263,8 @@ function BulkPingModal({ apps, onClose }) {
       }
     }
     setRunning(false);
-    // Navigate to Ping Test page with full results
-    navigate('/ping-test', { state: { preloadedResults: collectedResults, preloadedApps: apps } });
+    // Navigate to Ping Test Results page with full results + auto-resolved credential info
+    navigate('/ping-test', { state: { preloadedResults: collectedResults, preloadedApps: apps, autoResolvedMap: resolvedCreds } });
     onClose();
   };
 
@@ -718,6 +718,7 @@ export default function ApplicationsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <CredentialImportButton />
           <button onClick={() => setShowBulkPing(true)} disabled={loading || filtered.length === 0}
             title={selectedApps.length > 0 ? `Ping ${selectedApps.length} selected apps` : 'Ping all visible apps'}
             className="flex items-center gap-2 text-sm text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 hover:bg-cyan-950/60 border border-cyan-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
