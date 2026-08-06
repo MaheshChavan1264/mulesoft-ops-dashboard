@@ -39,32 +39,36 @@ router.get('/:orgId/:envId/:apiId', authMiddleware, async (req, res) => {
 
 // Get policies applied to an API instance
 router.get('/:orgId/:envId/:apiId/policies', authMiddleware, async (req, res) => {
+  const { orgId, envId, apiId } = req.params;
+  const url = `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/policies`;
+  console.log('[APIs] GET policies →', url);
   try {
     const client = createClient(req.anypointToken);
-    const response = await client.get(
-      `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis/${req.params.apiId}/policies`
-    );
+    const response = await client.get(url);
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching API policies:', error.response?.data || error.message);
+    console.error('[APIs] policies error:', error.response?.status, error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API policies'
+      error: error.response?.data?.message || 'Failed to fetch API policies',
+      _debug: { orgId, envId, apiId, url }
     });
   }
 });
 
 // Get contracts for an API instance
 router.get('/:orgId/:envId/:apiId/contracts', authMiddleware, async (req, res) => {
+  const { orgId, envId, apiId } = req.params;
+  const url = `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts`;
+  console.log('[APIs] GET contracts →', url);
   try {
     const client = createClient(req.anypointToken);
-    const response = await client.get(
-      `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis/${req.params.apiId}/contracts`
-    );
+    const response = await client.get(url);
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching API contracts:', error.response?.data || error.message);
+    console.error('[APIs] contracts error:', error.response?.status, error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API contracts'
+      error: error.response?.data?.message || 'Failed to fetch API contracts',
+      _debug: { orgId, envId, apiId, url }
     });
   }
 });

@@ -25,15 +25,8 @@ export default function DashboardPage() {
   const [exchangeSummary, setExchangeSummary] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Step 1: load all business groups
-  useEffect(() => {
-    if (orgId) loadBusinessGroups();
-  }, [orgId]);
-
-  // Step 2: load data when BG is selected
-  useEffect(() => {
-    if (selectedBg) loadData(selectedBg);
-  }, [selectedBg]);
+  useEffect(() => { if (orgId) loadBusinessGroups(); }, [orgId]);
+  useEffect(() => { if (selectedBg) loadData(selectedBg); }, [selectedBg]);
 
   const loadBusinessGroups = async () => {
     setBgLoading(true);
@@ -41,11 +34,8 @@ export default function DashboardPage() {
       const res = await api.get('/organizations/business-groups');
       const groups = res.data.data || [];
       setAllBusinessGroups(groups);
-
-      // Apply filter and pick initial selection from filtered list
-      const visible = applyBgFilter(groups);
-      const root = visible.find((g) => !g.parentId) || visible[0];
-      setSelectedBg(root?.id || orgId);
+      // Default to "All" so aggregated data shows from the start
+      setSelectedBg('__all__');
     } catch {
       setSelectedBg(orgId);
     }
@@ -54,34 +44,77 @@ export default function DashboardPage() {
 
   const loadData = async (bgId) => {
     setLoading(true);
+    const visible = applyBgFilter(allBusinessGroups);
     const rootOrg = allBusinessGroups.find((g) => !g.parentId);
     const exchangeOrgId = rootOrg?.id || orgId;
-    const [metricsRes, envsRes, exchangeRes] = await Promise.allSettled([
-      api.get(`/metrics/summary/${bgId}`),
-      api.get(`/environments/${bgId}`),
-      api.get(`/exchange/org/${exchangeOrgId}/summary`)
-    ]);
-    if (metricsRes.status === 'fulfilled') setMetrics(metricsRes.value.data.summary);
-    else setMetrics(null);
-    if (envsRes.status === 'fulfilled') setEnvironments(envsRes.value.data.data || []);
-    else setEnvironments([]);
-    if (exchangeRes.status === 'fulfilled') setExchangeSummary(exchangeRes.value.data.assetCounts);
-    else setExchangeSummary(null);
+
+    if (bgId === '__all__') {
+      // Load metrics from all visible BGs in parallel, then aggregate
+      const bgIds = visible.length > 0 ? visible.map(g => g.id) : [orgId];
+      const [metricsResults, envsResults, exchangeRes] = await Promise.all([
+        Promise.allSettled(bgIds.map(id => api.get(`/metrics/summary/${id}`))),
+        Promise.allSettled(bgIds.map(id => api.get(`/environments/${id}`))),
+        api.get(`/exchange/org/${exchangeOrgId}/summary`).catch(() => null),
+      ]);
+
+      // Aggregate metrics
+      const aggregated = { totalApplications: 0, running: 0, failed: 0, stopped: 0, environments: 0 };
+      metricsResults.forEach(r => {
+        if (r.status === 'fulfilled') {
+          const s = r.value.data.summary || {};
+          aggregated.totalApplications += s.totalApplications || 0;
+          aggregated.running += s.running || 0;
+          aggregated.failed += s.failed || 0;
+          aggregated.stopped += s.stopped || 0;
+        }
+      });
+
+      // Merge environments (deduplicate)
+      const mergedEnvs = [];
+      const seenEnvs = new Set();
+      envsResults.forEach(r => {
+        if (r.status === 'fulfilled') {
+          (r.value.data.data || []).forEach(e => {
+            if (!seenEnvs.has(e.id)) { seenEnvs.add(e.id); mergedEnvs.push(e); }
+          });
+        }
+      });
+      aggregated.environments = mergedEnvs.length;
+
+      setMetrics(aggregated);
+      setEnvironments(mergedEnvs);
+      setExchangeSummary(exchangeRes?.data?.assetCounts || null);
+    } else {
+      // Single BG
+      const [metricsRes, envsRes, exchangeRes] = await Promise.allSettled([
+        api.get(`/metrics/summary/${bgId}`),
+        api.get(`/environments/${bgId}`),
+        api.get(`/exchange/org/${exchangeOrgId}/summary`)
+      ]);
+      setMetrics(metricsRes.status === 'fulfilled' ? metricsRes.value.data.summary : null);
+      setEnvironments(envsRes.status === 'fulfilled' ? envsRes.value.data.data || [] : []);
+      setExchangeSummary(exchangeRes.status === 'fulfilled' ? exchangeRes.value.data.assetCounts : null);
+    }
+
     setLoading(false);
   };
 
-  // Filtered BG list for the dropdown
   const visibleGroups = applyBgFilter(allBusinessGroups);
 
-  const bgOptions = visibleGroups.map((g) => ({
-    value: g.id,
-    label: g.name,
-    indent: !!g.parentId,
-    tag: !g.parentId ? 'Root' : undefined,
-    tagColor: 'bg-blue-500/20 text-blue-400'
-  }));
+  const bgOptions = [
+    { value: '__all__', label: 'All Organizations', tag: `${visibleGroups.length}`, tagColor: 'bg-gray-700 text-gray-300' },
+    ...visibleGroups.map((g) => ({
+      value: g.id,
+      label: g.name,
+      indent: !!g.parentId,
+      tag: !g.parentId ? 'Root' : undefined,
+      tagColor: 'bg-blue-500/20 text-blue-400'
+    }))
+  ];
 
-  const selectedBgName = visibleGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
+  const selectedBgName = selectedBg === '__all__'
+    ? 'All Organizations'
+    : visibleGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
 
   const statusChartData = metrics
     ? [
@@ -101,17 +134,14 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* BG Filter Modal */}
       {showBgFilter && (
         <BgFilterModal
           businessGroups={allBusinessGroups}
           onClose={() => setShowBgFilter(false)}
           onSaved={() => {
-            // Re-apply filter: if current selection is now hidden, switch to first visible
             const visible = applyBgFilter(allBusinessGroups);
-            if (!visible.find((g) => g.id === selectedBg)) {
-              const root = visible.find((g) => !g.parentId) || visible[0];
-              if (root) setSelectedBg(root.id);
+            if (selectedBg !== '__all__' && !visible.find((g) => g.id === selectedBg)) {
+              setSelectedBg('__all__');
             }
           }}
         />
@@ -150,17 +180,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Filter active notice */}
       {filterActive && (
         <div className="flex items-center justify-between bg-blue-950/30 border border-blue-800/40 rounded-xl px-4 py-2.5 text-xs">
           <span className="text-blue-300">
             <SlidersHorizontal size={11} className="inline mr-1.5" />
             Showing {visibleGroups.length} of {allBusinessGroups.length} business groups
           </span>
-          <button
-            onClick={() => setShowBgFilter(true)}
-            className="text-blue-400 hover:text-blue-200 underline underline-offset-2"
-          >
+          <button onClick={() => setShowBgFilter(true)} className="text-blue-400 hover:text-blue-200 underline underline-offset-2">
             Manage filter
           </button>
         </div>
@@ -172,26 +198,21 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          {/* Stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard title="Total Applications" value={metrics?.totalApplications ?? '—'} icon={Server} color="blue" />
             <StatCard title="Running" value={metrics?.running ?? '—'} icon={CheckCircle} color="green" />
             <StatCard title="Failed" value={metrics?.failed ?? '—'} icon={XCircle} color="red" />
-            <StatCard title="Environments" value={metrics?.environments ?? environments.length} icon={Globe} color="purple"
-              subtitle={selectedBgName} />
+            <StatCard title="Environments" value={metrics?.environments ?? environments.length} icon={Globe} color="purple" subtitle={selectedBgName} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Status Pie */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <h3 className="text-white font-semibold mb-4">Application Status</h3>
               {statusChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
                     <Pie data={statusChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                      {statusChartData.map((_, i) => (
-                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                      ))}
+                      {statusChartData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                     </Pie>
                     <Tooltip contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} />
                     <Legend />
@@ -199,14 +220,11 @@ export default function DashboardPage() {
                 </ResponsiveContainer>
               ) : (
                 <div className="flex items-center justify-center h-40 text-gray-500 text-sm">
-                  {metrics?.totalApplications === 0
-                    ? `No applications in ${selectedBgName}`
-                    : 'No status data available'}
+                  {metrics?.totalApplications === 0 ? `No applications in ${selectedBgName}` : 'No status data available'}
                 </div>
               )}
             </div>
 
-            {/* Exchange Assets Bar */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <h3 className="text-white font-semibold mb-4">Exchange Assets</h3>
               {exchangeChartData.length > 0 ? (
@@ -224,7 +242,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Environments Table */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4">
               Environments ({environments.length})
@@ -243,17 +260,13 @@ export default function DashboardPage() {
                   {environments.map((env) => (
                     <tr key={env.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                       <td className="py-2.5 pr-4 text-white font-medium flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${
-                          env.type === 'production' ? 'bg-green-400' : 'bg-yellow-400'
-                        }`} />
+                        <span className={`w-2 h-2 rounded-full ${env.type === 'production' ? 'bg-green-400' : 'bg-yellow-400'}`} />
                         {env.name}
                       </td>
                       <td className="py-2.5 pr-4">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          env.type === 'production'
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-yellow-500/20 text-yellow-400'
-                        }`}>{env.type}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${env.type === 'production' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                          {env.type}
+                        </span>
                       </td>
                       <td className="py-2.5 text-gray-500 font-mono text-xs">{env.id}</td>
                     </tr>

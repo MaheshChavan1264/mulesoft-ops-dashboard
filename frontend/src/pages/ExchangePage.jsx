@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { Search, Package, RefreshCw, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import Select from '../components/Select';
 import api from '../services/api';
 
 const ASSET_TYPES = [
@@ -31,8 +32,12 @@ const typeColor = (type) => {
 const LIMIT = 100;
 
 export default function ExchangePage() {
-  const { orgId } = useAuth();
+  const { orgId: rootOrgId } = useAuth();
   const location = useLocation();
+
+  const [businessGroups, setBusinessGroups] = useState([]);
+  const [selectedOrgId, setSelectedOrgId] = useState('');
+  const [bgLoading, setBgLoading] = useState(true);
 
   const [assets, setAssets] = useState([]);
   const [total, setTotal] = useState(0);
@@ -41,24 +46,47 @@ export default function ExchangePage() {
   const [assetType, setAssetType] = useState('');
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState(null);
-  // Pending auto-select from navigation state
   const [pendingAssetId, setPendingAssetId] = useState(null);
   const [pendingGroupId, setPendingGroupId] = useState(null);
 
-  // On mount: check if navigated from app detail with a specific asset
+  // Load business groups on mount
+  useEffect(() => {
+    loadBusinessGroups();
+  }, [rootOrgId]);
+
+  // Handle navigation state from ApplicationDetailPage
   useEffect(() => {
     const state = location.state;
     if (state?.assetId) {
       setPendingAssetId(state.assetId);
       setPendingGroupId(state.groupId || null);
-      setSearch(state.assetId); // pre-populate search
+      setSearch(state.assetId);
+      // Pre-select the BG that matches the groupId
+      if (state.groupId) setSelectedOrgId(state.groupId);
     }
   }, []);
 
   useEffect(() => {
-    setOffset(0);
-    loadAssets(0);
-  }, [search, assetType]);
+    if (selectedOrgId !== undefined && !bgLoading) {
+      setOffset(0);
+      loadAssets(0);
+    }
+  }, [search, assetType, selectedOrgId, bgLoading]);
+
+  const loadBusinessGroups = async () => {
+    setBgLoading(true);
+    try {
+      const res = await api.get('/organizations/business-groups');
+      const groups = res.data.data || [];
+      setBusinessGroups(groups);
+      // Default to root org
+      const root = groups.find(g => !g.parentId) || groups[0];
+      if (root && !location.state?.groupId) setSelectedOrgId(root.id);
+    } catch {
+      setSelectedOrgId(rootOrgId);
+    }
+    setBgLoading(false);
+  };
 
   const loadAssets = async (off) => {
     setLoading(true);
@@ -67,7 +95,7 @@ export default function ExchangePage() {
         params: {
           search: search || undefined,
           type: assetType || undefined,
-          organizationId: orgId,
+          organizationId: selectedOrgId || undefined,
           offset: off,
           limit: LIMIT
         }
@@ -85,7 +113,7 @@ export default function ExchangePage() {
           || (list.length === 1 ? list[0] : null);
         if (match) {
           setSelected(match);
-          setPendingAssetId(null); // clear after auto-select
+          setPendingAssetId(null);
         }
       }
     } catch {
@@ -110,16 +138,41 @@ export default function ExchangePage() {
   const currentPage = Math.floor(offset / LIMIT) + 1;
   const totalPages = Math.ceil(total / LIMIT);
 
+  const bgOptions = [
+    { value: '', label: 'All Organizations', tag: 'ALL', tagColor: 'bg-gray-700 text-gray-400' },
+    ...businessGroups.map(g => ({
+      value: g.id, label: g.name, indent: !!g.parentId,
+      tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400'
+    }))
+  ];
+
+  const selectedBgName = businessGroups.find(g => g.id === selectedOrgId)?.name
+    || (selectedOrgId ? selectedOrgId : 'All Organizations');
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-white">Exchange Assets</h1>
-        <p className="text-gray-400 text-sm mt-1">Browse and search your organization's Anypoint Exchange</p>
+        <p className="text-gray-400 text-sm mt-1">
+          Browse assets in <span className="text-blue-400">{selectedBgName}</span>
+          {total > 0 && <span className="text-gray-600"> — {total} total</span>}
+        </p>
       </div>
 
-      {/* Filters */}
+      {/* BG selector + Search + Type filter */}
       <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-64">
+        {/* Business Group selector */}
+        <div className="w-56">
+          <Select
+            value={selectedOrgId}
+            onChange={(v) => { setSelectedOrgId(v); setOffset(0); setSelected(null); }}
+            options={bgOptions}
+            placeholder="Select organization..."
+            searchable={businessGroups.length > 5}
+            disabled={bgLoading}
+          />
+        </div>
+        <div className="relative flex-1 min-w-48">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             value={search}
@@ -138,7 +191,7 @@ export default function ExchangePage() {
           ))}
         </select>
         <button
-          onClick={() => loadAssets(offset)}
+          onClick={() => { setOffset(0); loadAssets(0); }}
           className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg"
         >
           <RefreshCw size={14} /> Refresh
@@ -149,7 +202,13 @@ export default function ExchangePage() {
         {/* Asset list */}
         <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
-            <h3 className="text-white font-semibold">Assets {total > 0 && <span className="text-gray-400 font-normal text-sm">({total})</span>}</h3>
+            <h3 className="text-white font-semibold">
+              Assets {total > 0 && (
+                <span className="text-gray-400 font-normal text-sm">
+                  ({assets.length}{total > assets.length ? ` of ${total}` : ''})
+                </span>
+              )}
+            </h3>
             {totalPages > 1 && (
               <div className="flex items-center gap-2 text-sm text-gray-400">
                 <button onClick={prevPage} disabled={offset === 0} className="p-1 hover:text-white disabled:opacity-30">
@@ -197,17 +256,18 @@ export default function ExchangePage() {
               ))}
               {assets.length === 0 && (
                 <div className="px-5 py-16 text-center text-gray-500 text-sm">
-                  No assets found. Try a different search term or type.
+                  No assets found. Try a different search term, type, or organization.
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* Asset Detail */}
+        {/* Asset Detail panel */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           {selected ? (
             <div className="h-full flex flex-col">
+              {/* Detail header */}
               <div className="px-5 py-4 border-b border-gray-800">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -227,6 +287,8 @@ export default function ExchangePage() {
                   </a>
                 </div>
               </div>
+
+              {/* Detail body */}
               <div className="p-5 space-y-2.5 text-sm overflow-y-auto flex-1">
                 {selected.description && (
                   <div className="mb-3">

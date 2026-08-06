@@ -10,6 +10,7 @@ import EnvironmentsPage from './pages/EnvironmentsPage';
 import BusinessGroupsPage from './pages/BusinessGroupsPage';
 import ApiManagerPage from './pages/ApiManagerPage';
 import ExchangePage from './pages/ExchangePage';
+import PingTestPage from './pages/PingTestPage';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="business-groups" element={<BusinessGroupsPage />} />
             <Route path="api-manager" element={<ApiManagerPage />} />
             <Route path="exchange" element={<ExchangePage />} />
+            <Route path="ping-test" element={<PingTestPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import CpsExportModal from '../components/CpsExportModal';
+import PingResultCard from '../components/PingResultCard';
 import api from '../services/api';
 
 const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
@@ -160,6 +161,147 @@ function BulkConfirmModal({ state, onConfirm, onCancel, loading, results }) {
   );
 }
 
+/* ── Bulk Ping Modal ────────────────────────────────────────── */
+function BulkPingModal({ apps, onClose }) {
+  const navigate = useNavigate();
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [transactionId, setTransactionId] = useState('smokeTest');
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState({});
+  const [showSecret, setShowSecret] = useState(false);
+
+  const runAll = async () => {
+    setRunning(true);
+    setResults({});
+    const collectedResults = {};
+
+    for (const app of apps) {
+      const isCH1 = app.deploymentType !== 'CloudHub 2.0';
+      let ch2IngressUrl = undefined;
+
+      // For CH2 apps, fetch the deployment detail to get the actual ingress URL
+      if (!isCH1 && app._bgId && app.environment?.id && app.id) {
+        try {
+          const detail = await api.get(`/applications/cloudhub2/${app._bgId}/${app.environment.id}/${app.id}`);
+          const ds = detail.data?.target?.deploymentSettings || {};
+          const httpInbound = ds.http?.inbound || {};
+          const endpoints = httpInbound.endpoints || [];
+          ch2IngressUrl =
+            httpInbound.publicUrl ||
+            endpoints.find(e => e.access === 'external')?.url ||
+            endpoints[0]?.url ||
+            undefined;
+        } catch {
+          // couldn't fetch detail — will fall back to derived URL
+        }
+      }
+
+      try {
+        const { data } = await api.post('/health/ping', {
+          targetType: isCH1 ? 'CH1' : 'CH2',
+          appName: app.name,
+          ch2IngressUrl,
+          clientId: clientId.trim() || undefined,
+          clientSecret: clientSecret.trim() || undefined,
+          transactionId: transactionId.trim() || 'smokeTest',
+        });
+        collectedResults[app.id] = data;
+        setResults(prev => ({ ...prev, [app.id]: data }));
+      } catch (err) {
+        const r = { status: 'FAILED', error: err.message };
+        collectedResults[app.id] = r;
+        setResults(prev => ({ ...prev, [app.id]: r }));
+      }
+    }
+    setRunning(false);
+    // Navigate to Ping Test page with full results
+    navigate('/ping-test', { state: { preloadedResults: collectedResults, preloadedApps: apps } });
+    onClose();
+  };
+
+  const done = Object.keys(results).length;
+  const success = Object.values(results).filter(r => r.status === 'SUCCESS').length;
+  const partial = Object.values(results).filter(r => r.status === 'PARTIAL').length;
+  const failed = Object.values(results).filter(r => r.status === 'FAILED').length;
+
+  const latencyColor = ms => !ms ? 'text-gray-500' : ms < 300 ? 'text-green-400' : ms < 1000 ? 'text-yellow-400' : 'text-red-400';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <Activity size={16} className="text-cyan-400" />
+            <span className="text-white font-semibold">Bulk Ping Test</span>
+            <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">{apps.length} apps</span>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300"><X size={16} /></button>
+        </div>
+
+        {/* Credential inputs */}
+        <div className="px-6 py-4 border-b border-gray-800 flex-shrink-0">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium block mb-1">client_id</label>
+              <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="optional"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium block mb-1">client_secret</label>
+              <div className="relative">
+                <input value={clientSecret} onChange={e => setClientSecret(e.target.value)} type={showSecret ? 'text' : 'password'} placeholder="optional"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 pr-8 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
+                <button onClick={() => setShowSecret(!showSecret)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">{showSecret ? '🙈' : '👁'}</button>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium block mb-1">x-transaction-id</label>
+              <input value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="smokeTest"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
+            </div>
+          </div>
+        </div>
+
+        {/* Progress summary */}
+        {done > 0 && (
+          <div className="px-6 py-3 border-b border-gray-800 flex items-center gap-4 text-xs flex-shrink-0">
+            <span className="text-gray-500">{done}/{apps.length} tested</span>
+            {success > 0 && <span className="text-green-400 font-medium">✓ {success} healthy</span>}
+            {partial > 0 && <span className="text-yellow-400 font-medium">~ {partial} partial</span>}
+            {failed > 0 && <span className="text-red-400 font-medium">✗ {failed} failed</span>}
+          </div>
+        )}
+
+        {/* Results list — each app gets a full PingResultCard */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-3">
+          {apps.map(app => (
+            <PingResultCard
+              key={app.id}
+              app={app}
+              result={results[app.id]}
+              loading={running && !results[app.id]}
+            />
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-800 flex items-center justify-between flex-shrink-0">
+          <p className="text-gray-600 text-xs">Pings /api/v1/ping → /api/v2/ping → /api/ping → /ping in order</p>
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg">Close</button>
+            <button onClick={runAll} disabled={running}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded-lg">
+              {running ? <><RefreshCw size={13} className="animate-spin" /> Running…</> : <><Activity size={13} /> Run All Pings</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ApplicationsPage() {
   const { orgId } = useAuth();
   const navigate = useNavigate();
@@ -177,6 +319,7 @@ export default function ApplicationsPage() {
   const [filterType, setFilterType] = useState('');
   const [error, setError] = useState('');
   const [showExport, setShowExport] = useState(false);
+  const [showBulkPing, setShowBulkPing] = useState(false);
 
   // Single-app action states
   const [actionLoading, setActionLoading] = useState({});
@@ -199,9 +342,8 @@ export default function ApplicationsPage() {
       const res = await api.get('/organizations/business-groups');
       const groups = res.data.data || [];
       setAllBusinessGroups(groups);
-      const visible = applyBgFilter(groups);
-      const root = visible.find((g) => !g.parentId) || visible[0];
-      setSelectedBg(root?.id || orgId);
+      // Default to "All" so all filtered BGs are shown from the start
+      setSelectedBg('__all__');
     } catch { setSelectedBg(orgId); }
     setBgLoading(false);
   };
@@ -212,12 +354,42 @@ export default function ApplicationsPage() {
     setFilterEnv('');
     setSelectedIds(new Set());
     try {
-      const [appsRes, envsRes] = await Promise.all([
-        api.get(`/applications/summary/${bgId}`),
-        api.get(`/environments/${bgId}`)
+      // '__all__' → load from every visible BG in parallel and merge
+      const visible = applyBgFilter(allBusinessGroups);
+      const bgIds = bgId === '__all__'
+        ? (visible.length > 0 ? visible.map(g => g.id) : [orgId])
+        : [bgId];
+
+      const [appsResults, envsResults] = await Promise.all([
+        Promise.allSettled(bgIds.map(id => api.get(`/applications/summary/${id}`))),
+        Promise.allSettled(bgIds.map(id => api.get(`/environments/${id}`))),
       ]);
-      setApps(appsRes.data.data || []);
-      setEnvironments(envsRes.data.data || []);
+
+      const mergedApps = [];
+      const mergedEnvs = [];
+      const seenApps = new Set();
+      const seenEnvs = new Set();
+
+      appsResults.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          (r.value.data.data || []).forEach(a => {
+            const key = `${a.id}|${a.environment?.id || ''}`;
+            // Tag each app with _bgId so actions know which org it belongs to
+            if (!seenApps.has(key)) { seenApps.add(key); mergedApps.push({ ...a, _bgId: bgIds[i] }); }
+          });
+        }
+      });
+      envsResults.forEach(r => {
+        if (r.status === 'fulfilled') {
+          (r.value.data.data || []).forEach(e => {
+            if (!seenEnvs.has(e.id)) { seenEnvs.add(e.id); mergedEnvs.push(e); }
+          });
+        }
+      });
+
+      setApps(mergedApps);
+      setEnvironments(mergedEnvs);
+      if (mergedApps.length === 0) setError('No applications found.');
     } catch (e) {
       setError(e.response?.data?.error || 'Failed to load applications.');
       setApps([]);
@@ -239,10 +411,11 @@ export default function ApplicationsPage() {
     try {
       const isCH2 = app.deploymentType === 'CloudHub 2.0';
       const envId = app.environment?.id;
+      const appBgId = app._bgId || (selectedBg !== '__all__' ? selectedBg : orgId);
       if (isCH2) {
-        await api.post(`/applications/cloudhub2/${selectedBg}/${envId}/${app.id}/action`, { action });
+        await api.post(`/applications/cloudhub2/${appBgId}/${envId}/${app.id}/action`, { action });
       } else {
-        await api.post(`/applications/cloudhub1/${envId}/${app.id}/action?orgId=${selectedBg}`, { action });
+        await api.post(`/applications/cloudhub1/${envId}/${app.id}/action?orgId=${appBgId}`, { action });
       }
       const nextStatus = action === 'start' ? 'RUNNING' : action === 'stop' ? 'STOPPED' : 'DEPLOYING';
       setApps((prev) => prev.map((a) => a.id === app.id ? { ...a, status: nextStatus } : a));
@@ -268,6 +441,16 @@ export default function ApplicationsPage() {
   const allSelected = filtered.length > 0 && filtered.every((a) => selectedIds.has(a.id));
   const someSelected = !allSelected && filtered.some((a) => selectedIds.has(a.id));
   const selectedApps = filtered.filter((a) => selectedIds.has(a.id));
+
+  // Selected rows float to the top
+  const displayFiltered = useMemo(() => {
+    if (selectedIds.size === 0) return filtered;
+    return [...filtered].sort((a, b) => {
+      const aS = selectedIds.has(a.id) ? 0 : 1;
+      const bS = selectedIds.has(b.id) ? 0 : 1;
+      return aS - bS;
+    });
+  }, [filtered, selectedIds]);
 
   const toggleRow = (e, appId) => {
     e.stopPropagation();
@@ -307,10 +490,11 @@ export default function ApplicationsPage() {
       targets.map((app) => {
         const isCH2 = app.deploymentType === 'CloudHub 2.0';
         const envId = app.environment?.id;
+        const appBgId = app._bgId || (selectedBg !== '__all__' ? selectedBg : orgId);
         if (isCH2) {
-          return api.post(`/applications/cloudhub2/${selectedBg}/${envId}/${app.id}/action`, { action });
+          return api.post(`/applications/cloudhub2/${appBgId}/${envId}/${app.id}/action`, { action });
         } else {
-          return api.post(`/applications/cloudhub1/${envId}/${app.id}/action?orgId=${selectedBg}`, { action });
+          return api.post(`/applications/cloudhub1/${envId}/${app.id}/action?orgId=${appBgId}`, { action });
         }
       })
     );
@@ -354,10 +538,13 @@ export default function ApplicationsPage() {
   const visibleGroups = applyBgFilter(allBusinessGroups);
   const filterActive = visibleGroups.length < allBusinessGroups.length;
 
-  const bgOptions = visibleGroups.map((g) => ({
-    value: g.id, label: g.name, indent: !!g.parentId,
-    tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400'
-  }));
+  const bgOptions = [
+    { value: '__all__', label: 'All Organizations', tag: `${visibleGroups.length}`, tagColor: 'bg-gray-700 text-gray-300' },
+    ...visibleGroups.map((g) => ({
+      value: g.id, label: g.name, indent: !!g.parentId,
+      tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400'
+    })),
+  ];
 
   const envOptions = [
     { value: '', label: 'All Environments' },
@@ -387,7 +574,9 @@ export default function ApplicationsPage() {
     { value: 'CloudHub 1.0', label: 'CloudHub 1.0', tag: 'CH1', tagColor: 'bg-purple-500/20 text-purple-400' }
   ];
 
-  const selectedBgName = visibleGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
+  const selectedBgName = selectedBg === '__all__'
+    ? 'All Organizations'
+    : visibleGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
 
   return (
     <div className="space-y-5">
@@ -421,6 +610,14 @@ export default function ApplicationsPage() {
         results={bulkResults}
       />
 
+      {/* Bulk Ping Modal */}
+      {showBulkPing && (
+        <BulkPingModal
+          apps={selectedApps.length > 0 ? selectedApps : filtered}
+          onClose={() => setShowBulkPing(false)}
+        />
+      )}
+
       {/* CPS Export Modal */}
       {showExport && (
         <CpsExportModal
@@ -448,6 +645,12 @@ export default function ApplicationsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowBulkPing(true)} disabled={loading || filtered.length === 0}
+            title={selectedApps.length > 0 ? `Ping ${selectedApps.length} selected apps` : 'Ping all visible apps'}
+            className="flex items-center gap-2 text-sm text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 hover:bg-cyan-950/60 border border-cyan-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
+            <Activity size={14} />
+            {selectedApps.length > 0 ? `Ping (${selectedApps.length})` : 'Ping Test'}
+          </button>
           <button onClick={() => setShowExport(true)} disabled={loading || apps.length === 0}
             title="Export CPS Properties to Excel"
             className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
@@ -570,7 +773,7 @@ export default function ApplicationsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((app, idx) => {
+              {displayFiltered.map((app, idx) => {
                 const actions = availableActions(app.status);
                 const isActing = !!actionLoading[app.id];
                 const isChecked = selectedIds.has(app.id);
@@ -578,7 +781,7 @@ export default function ApplicationsPage() {
                 return (
                   <tr key={`${app.id}-${idx}`}
                     className={`border-t border-gray-800 hover:bg-gray-800/30 cursor-pointer transition-colors ${isChecked ? 'bg-blue-950/20' : ''}`}
-                    onClick={() => navigate(`/applications/${selectedBg}/${app.environment?.id}/${app.id}`)}>
+                    onClick={() => navigate(`/applications/${app._bgId || (selectedBg !== '__all__' ? selectedBg : orgId)}/${app.environment?.id}/${app.id}`)}>
                     {/* Checkbox */}
                     <td className="px-4 py-3" onClick={(e) => toggleRow(e, app.id)}>
                       <div className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-colors ${
@@ -627,7 +830,7 @@ export default function ApplicationsPage() {
                   </tr>
                 );
               })}
-              {filtered.length === 0 && (
+              {displayFiltered.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-5 py-12 text-center text-gray-500">
                     {apps.length === 0

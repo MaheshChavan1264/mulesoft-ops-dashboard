@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, Play, Square, RotateCcw, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, Play, Square, RotateCcw, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity } from 'lucide-react';
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
+import PingTestPanel from '../components/PingTestPanel';
 
 /* ── Micro components ──────────────────────────────────── */
 
@@ -343,6 +344,7 @@ export default function ApplicationDetailPage() {
     { id:'properties', label:'Properties', badge:Object.keys(allProps).length },
     { id:'infrastructure', label:'Infra & Config' },
     ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config' }] : []),
+    { id:'ping', label:'Ping Test' },
     { id:'raw', label:'Raw JSON' },
   ];
 
@@ -453,6 +455,7 @@ export default function ApplicationDetailPage() {
             onClick={() => { setTab(t.id); if (t.id === 'cps' && !cpsData && !cpsLoading) loadCpsData(); }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.id?'bg-slate-700/80 text-white shadow-md':'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'}`}>
             {t.id === 'cps' && <Key size={11} />}
+            {t.id === 'ping' && <Activity size={11} />}
             {t.label}
             {t.badge>0 && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${tab===t.id?'bg-blue-500/30 text-blue-300':'bg-slate-800 text-slate-500'}`}>{t.badge}</span>}
           </button>
@@ -949,6 +952,32 @@ export default function ApplicationDetailPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── PING TEST ───────────────────────────────── */}
+      {tab==='ping' && (
+        <PingTestPanel
+          appName={app.name}
+          isCH1={isCH1}
+          ch2IngressUrl={
+            httpInbound.publicUrl ||
+            endpoints.find(e => e.access === 'external')?.url ||
+            endpoints[0]?.url ||
+            null
+          }
+          defaultClientId={
+            allProps['client_id'] ||
+            allProps['clientId'] ||
+            allProps['client.id'] ||
+            ''
+          }
+          defaultClientSecret={
+            allProps['client_secret'] ||
+            allProps['clientSecret'] ||
+            allProps['client.secret'] ||
+            ''
+          }
+        />
       )}
 
       {/* ── RAW JSON ────────────────────────────────── */}

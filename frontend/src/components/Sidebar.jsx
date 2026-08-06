@@ -7,6 +7,7 @@ import {
   Layers,
   ShieldCheck,
   Package,
+  Activity,
   ChevronRight
 } from 'lucide-react';
 
@@ -16,7 +17,8 @@ const navItems = [
   { to: '/environments', icon: Globe, label: 'Environments' },
   { to: '/business-groups', icon: Layers, label: 'Business Groups' },
   { to: '/api-manager', icon: ShieldCheck, label: 'API Manager' },
-  { to: '/exchange', icon: Package, label: 'Exchange Assets' }
+  { to: '/exchange', icon: Package, label: 'Exchange Assets' },
+  { to: '/ping-test', icon: Activity, label: 'Ping Test' },
 ];
 
 export default function Sidebar({ open }) {
