@@ -281,11 +281,25 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/action', authMiddleware, asy
   }
 });
 
+const SUMMARY_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+
 // Summary: get apps across all environments for an org (accepts orgId param or query)
 router.get('/summary/:orgId', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
     const targetOrgId = req.params.orgId;
+    const forceRefresh = req.query.refresh === 'true';
+
+    // ── Session cache (per-user, 2-min TTL) ──────────────────────────────────
+    // Cache is keyed by orgId inside the user's session so different users
+    // never share cached data.
+    if (!req.session.summaryCache) req.session.summaryCache = {};
+    const cached = req.session.summaryCache[targetOrgId];
+    if (!forceRefresh && cached && (Date.now() - cached.ts) < SUMMARY_CACHE_TTL_MS) {
+      console.log(`[Summary] Cache HIT for org ${targetOrgId} (${Math.round((Date.now() - cached.ts) / 1000)}s old)`);
+      return res.json(cached.data);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Get environments for the target org
     const envResponse = await client.get(
@@ -374,13 +388,20 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     // Only return environments the user can actually access
     const accessibleEnvironments = environments.filter(e => accessibleEnvIds.has(e.id));
 
-    res.json({
+    const responseData = {
       total: results.length,
       data: results,
       environments: accessibleEnvironments,
       orgId: targetOrgId,
-      _errors: errors.length > 0 ? errors : undefined
-    });
+      _errors: errors.length > 0 ? errors : undefined,
+      _cachedAt: new Date().toISOString(),
+    };
+
+    // Store in session cache
+    req.session.summaryCache[targetOrgId] = { data: responseData, ts: Date.now() };
+    console.log(`[Summary] Cache SET for org ${targetOrgId} (${results.length} apps)`);
+
+    res.json(responseData);
   } catch (error) {
     console.error('Error fetching app summary:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
