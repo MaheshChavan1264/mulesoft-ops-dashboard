@@ -335,18 +335,65 @@ export default function CpsComparisonPage() {
     setPropsA(null); setPropsB(null);
     setErrorA(''); setErrorB('');
 
+    /**
+     * Fetch CPS properties for one side.
+     *
+     * For non-secure: direct fetch, flatten to {key: value} map.
+     *
+     * For secure / binaries: the keys are NOT known up-front — they live inside
+     * the non-secure response as:
+     *   cps.secure.properties  →  comma-separated list of keys for secure fetch
+     *   cps.secure.binaries    →  comma-separated list of keys for binary fetch
+     *
+     * So we always fetch non-secure first, extract those key lists, then fetch
+     * the requested type using the discovered keys.
+     */
     const fetchSide = async (s, pt) => {
       if (!s.cpsUrl || !s.cpsKey) throw new Error('CPS URL and project key are required');
-      const r = await api.get('/cps/fetch', {
-        params: {
-          baseUrl: s.cpsUrl,
-          type: pt,
-          environment: s.cpsEnv || undefined,
-          keys: s.cpsKey,
-          bgOrgId: (s.bgId && s.bgId !== '__all__') ? s.bgId : undefined,
-        },
-      });
-      return flattenCpsResponse(r.data);
+
+      const baseParams = {
+        baseUrl: s.cpsUrl,
+        environment: s.cpsEnv || undefined,
+        bgOrgId: (s.bgId && s.bgId !== '__all__') ? s.bgId : undefined,
+      };
+
+      if (pt === 'non-secure') {
+        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'non-secure', keys: s.cpsKey } });
+        return flattenCpsResponse(r.data);
+      }
+
+      // For secure or binaries — first fetch non-secure to discover the sub-keys
+      const nsR = await api.get('/cps/fetch', { params: { ...baseParams, type: 'non-secure', keys: s.cpsKey } });
+      const nsFlat = flattenCpsResponse(nsR.data);
+
+      if (pt === 'secure') {
+        const secureKeysRaw = nsFlat['cps.secure.properties'] || '';
+        if (!secureKeysRaw.trim()) {
+          return {}; // no secure properties defined for this app
+        }
+        const secureKeys = secureKeysRaw.split(',').map(k => k.trim()).filter(Boolean).join(',');
+        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'secure', keys: secureKeys } });
+        return flattenCpsResponse(r.data);
+      }
+
+      if (pt === 'binaries') {
+        const binaryKeysRaw = nsFlat['cps.secure.binaries'] || '';
+        if (!binaryKeysRaw.trim()) {
+          return {}; // no binaries defined for this app
+        }
+        const binaryKeys = binaryKeysRaw.split(',').map(k => k.trim()).filter(Boolean).join(',');
+        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'binaries', keys: binaryKeys } });
+        // Binaries response: { type:'binaries', binaries:[{ key, size, contentType }] }
+        const binData = r.data?.binaries || r.data || [];
+        const binMap = {};
+        (Array.isArray(binData) ? binData : []).forEach(b => {
+          const name = b.key || b.name || '?';
+          binMap[name] = b.size != null ? `${b.contentType || 'binary'} (${b.size} bytes)` : (b.contentType || 'present');
+        });
+        return binMap;
+      }
+
+      return {};
     };
 
     const [resA, resB] = await Promise.allSettled([fetchSide(sideA, propTypeA), fetchSide(sideB, propTypeB)]);
