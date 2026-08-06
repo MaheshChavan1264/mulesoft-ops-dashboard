@@ -370,8 +370,9 @@ export default function CpsComparisonPage() {
         const secureKeysRaw = nsFlat['cps.secure.properties'] || '';
         if (!secureKeysRaw.trim()) return {};
 
-        const groupNames = secureKeysRaw.split(',').map(k => k.trim()).filter(Boolean);
-        // Fetch all groups at once
+        // Sort group names alphabetically — ensures both sides produce identical
+        // groupName prefixes even if cps.secure.properties lists them in different order.
+        const groupNames = secureKeysRaw.split(',').map(k => k.trim()).filter(Boolean).sort();
         const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'secure', keys: groupNames.join(',') } });
         const raw = r.data;
 
@@ -380,22 +381,21 @@ export default function CpsComparisonPage() {
           : Array.isArray(raw?.properties) ? raw.properties
           : Array.isArray(raw) ? raw : [];
 
-        // Build a flat map with group prefix: "groupName::propKey"
-        // This preserves group identity so the diff table can show section headers.
         const map = {};
         if (groups.length > 0) {
-          groups.forEach(g => {
+          // Sort groups by key for consistent ordering between sides
+          [...groups].sort((a, b) => (a.key || '').localeCompare(b.key || '')).forEach(g => {
             const gKey = g.key || 'unknown';
-            Object.entries(g.properties || {}).forEach(([k, v]) => {
-              map[`${gKey}::${k}`] = String(v ?? '');
+            // Sort property keys within each group for consistent ordering
+            Object.keys(g.properties || {}).sort().forEach(k => {
+              map[`${gKey}::${k}`] = String(g.properties[k] ?? '');
             });
           });
         } else {
-          // Fallback: response was a flat map — prefix with first group name
           const flat = flattenCpsResponse(raw);
-          Object.entries(flat).forEach(([k, v]) => {
-            const prefix = groupNames[0] || 'secure';
-            map[`${prefix}::${k}`] = String(v ?? '');
+          const prefix = groupNames[0] || 'secure';
+          Object.keys(flat).sort().forEach(k => {
+            map[`${prefix}::${k}`] = String(flat[k] ?? '');
           });
         }
         return map;
@@ -405,18 +405,39 @@ export default function CpsComparisonPage() {
         const binaryKeysRaw = nsFlat['cps.secure.binaries'] || '';
         if (!binaryKeysRaw.trim()) return {};
 
-        const groupNames = binaryKeysRaw.split(',').map(k => k.trim()).filter(Boolean);
+        // Sort group names alphabetically so both sides use identical group prefixes
+        const groupNames = binaryKeysRaw.split(',').map(k => k.trim()).filter(Boolean).sort();
+        // Build a set for fast group lookup
+        const groupSet = new Set(groupNames);
+
         const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'binaries', keys: groupNames.join(',') } });
         const binData = r.data?.binaries || r.data || [];
 
-        // Binaries: prefix with group name using "groupName::fileName" format
+        // Binaries: use "groupName::fileName" as the key.
+        // Priority for group resolution:
+        //   1. b.groupKey (explicit from API)
+        //   2. A groupName that matches the file's key/name exactly
+        //   3. A groupName that is a prefix of the filename
+        //   4. A groupName that the filename contains
+        //   5. Sort-stable first groupName as fallback
+        const resolveGroup = (fileName) => {
+          if (groupSet.has(fileName)) return fileName;
+          const exactPrefix = groupNames.find(g => fileName.startsWith(g + '-') || fileName.startsWith(g + '.') || fileName.startsWith(g + '_'));
+          if (exactPrefix) return exactPrefix;
+          const contains = groupNames.find(g => fileName.includes(g));
+          if (contains) return contains;
+          return groupNames[0] || 'binaries';
+        };
+
         const map = {};
-        (Array.isArray(binData) ? binData : []).forEach(b => {
-          const fileName = b.key || b.name || '?';
-          const groupName = b.groupKey || groupNames.find(g => fileName.includes(g)) || groupNames[0] || 'binaries';
-          const value = b.size != null ? `${b.contentType || 'binary'} (${b.size} bytes)` : (b.contentType || 'present');
-          map[`${groupName}::${fileName}`] = value;
-        });
+        (Array.isArray(binData) ? binData : [])
+          .sort((a, b) => (a.key || a.name || '').localeCompare(b.key || b.name || ''))
+          .forEach(b => {
+            const fileName = b.key || b.name || '?';
+            const groupName = b.groupKey || resolveGroup(fileName);
+            const value = b.size != null ? `${b.contentType || 'binary'} (${b.size} bytes)` : (b.contentType || 'present');
+            map[`${groupName}::${fileName}`] = value;
+          });
         return map;
       }
 
