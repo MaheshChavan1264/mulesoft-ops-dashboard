@@ -231,7 +231,7 @@ export default function PingTestPage() {
 
   const exportCsv = useCallback(() => {
     const rows = [
-      ['Application', 'Environment', 'Type', 'Status', 'HTTP Code', 'Active Endpoint', 'Latency (ms)', 'Credentials', 'Error'],
+      ['Application', 'Environment', 'Type', 'Status', 'HTTP Code', 'Active Endpoint', 'Latency (ms)', 'Credentials', 'Error', 'Response Payload'],
     ];
 
     testedApps.forEach(app => {
@@ -245,6 +245,16 @@ export default function PingTestPage() {
         ? `Auto (${auto.contractApp})`
         : result ? 'Manual / None' : '—';
 
+      // Serialize payload: keep JSON compact but readable in CSV
+      let payloadStr = '—';
+      if (result?.payload != null) {
+        payloadStr = typeof result.payload === 'string'
+          ? result.payload
+          : JSON.stringify(result.payload);
+        // Truncate very long payloads to keep CSV manageable
+        if (payloadStr.length > 1000) payloadStr = payloadStr.slice(0, 1000) + '…';
+      }
+
       rows.push([
         app.name,
         app.environment?.name || '—',
@@ -255,6 +265,7 @@ export default function PingTestPage() {
         result?.responseTimeMs ?? '—',
         creds,
         result?.error || '—',
+        payloadStr,
       ]);
     });
 
