@@ -2,29 +2,21 @@ import { useState, useCallback } from 'react';
 import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2 } from 'lucide-react';
 import api from '../services/api';
 import { useCredentialStore } from '../context/CredentialStoreContext';
+import CredentialImportButton from './CredentialImportButton';
 
 /**
  * PingTestPanel
  *
  * Props:
- *   appName       {string}   – application name
- *   isCH1         {boolean}  – true for CloudHub 1.0
- *   ch2IngressUrl {string}   – public ingress URL for CH2 apps
+ *   appName             {string}  – application name
+ *   isCH1               {boolean} – true for CloudHub 1.0
+ *   ch2IngressUrl       {string}  – public ingress URL for CH2 apps
+ *   orgId               {string}  – deployment BG org ID
+ *   envId               {string}  – deployment environment ID
  *   defaultClientId     {string}  – pre-fill client_id from app properties
  *   defaultClientSecret {string}  – pre-fill client_secret from app properties
  */
-/**
- * PingTestPanel
- *
- * Props:
- *   appName       {string}   – application name
- *   isCH1         {boolean}  – true for CloudHub 1.0
- *   ch2IngressUrl {string}   – public ingress URL for CH2 apps
- *   orgId         {string}   – org/BG ID (needed for auto-credential lookup)
- *   envId         {string}   – environment ID (needed for auto-credential lookup)
- *   defaultClientId     {string}  – pre-fill client_id from app properties
- *   defaultClientSecret {string}  – pre-fill client_secret from app properties
- */
+
 const API_MGR_ORG_KEY = 'mule_dashboard_api_mgr_org_id';
 
 export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, envId, defaultClientId = '', defaultClientSecret = '' }) {
@@ -40,8 +32,8 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, en
   const [showAttempts, setShowAttempts] = useState(false);
   const [autoResolving, setAutoResolving] = useState(false);
   const [autoResolved, setAutoResolved] = useState(null);
-  // API Manager BG org ID — may differ from the deployment BG.
-  // Persisted to localStorage so user only needs to set it once.
+
+  // API Manager BG org ID override — persisted to localStorage so user sets it once.
   const [apiMgrOrgId, setApiMgrOrgId] = useState(
     () => localStorage.getItem(API_MGR_ORG_KEY) || ''
   );
@@ -60,8 +52,6 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, en
     setAutoResolved(null);
     try {
       const body = { orgId, envId, appName };
-      // If user provided a different API Manager BG, pass it so the backend
-      // searches that org's environments instead of the deployment env.
       if (apiMgrOrgId.trim() && apiMgrOrgId.trim() !== orgId) {
         body.apiMgrOrgId = apiMgrOrgId.trim();
       }
@@ -87,7 +77,7 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, en
       setAutoResolved({ error: err.message });
     }
     setAutoResolving(false);
-  }, [hasCredentials, orgId, envId, appName, resolveFromCandidates]);
+  }, [hasCredentials, orgId, envId, appName, apiMgrOrgId, resolveFromCandidates]);
 
   const targetType = isCH1 ? 'CH1' : 'CH2';
   const displayBase = isCH1
@@ -118,17 +108,18 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, en
 
   const badgeConfig = {
     SUCCESS: { icon: <CheckCircle2 size={15} className="text-emerald-400" />, label: 'Healthy / Reachable', cls: 'bg-emerald-950/50 border-emerald-700/50 text-emerald-300', dot: 'bg-emerald-400', ping: true },
-    PARTIAL:  { icon: <AlertCircle  size={15} className="text-yellow-400"  />, label: 'Reachable (non-2xx)', cls: 'bg-yellow-950/50 border-yellow-700/50 text-yellow-300',  dot: 'bg-yellow-400', ping: false },
-    FAILED:   { icon: <XCircle      size={15} className="text-red-400"     />, label: 'Unreachable',         cls: 'bg-red-950/50 border-red-700/50 text-red-300',           dot: 'bg-red-500',    ping: false },
+    PARTIAL: { icon: <AlertCircle  size={15} className="text-yellow-400"  />, label: 'Reachable (non-2xx)', cls: 'bg-yellow-950/50 border-yellow-700/50 text-yellow-300',  dot: 'bg-yellow-400', ping: false },
+    FAILED:  { icon: <XCircle      size={15} className="text-red-400"     />, label: 'Unreachable',         cls: 'bg-red-950/50 border-red-700/50 text-red-300',           dot: 'bg-red-500',    ping: false },
   };
   const badge = result ? badgeConfig[result.status] || badgeConfig.FAILED : null;
-
   const latencyColor = (ms) => !ms ? 'text-slate-400' : ms < 300 ? 'text-emerald-400' : ms < 1000 ? 'text-yellow-400' : 'text-red-400';
 
   return (
     <div className="space-y-5">
       {/* Config panel */}
       <div className="bg-slate-900/60 border border-slate-800/60 rounded-2xl px-5 py-4 space-y-4">
+
+        {/* Header row */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-1.5 flex-1 min-w-0">
             <div className="flex items-center gap-2">
@@ -152,7 +143,7 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, en
           </button>
         </div>
 
-        {/* Credentials */}
+        {/* Credentials row */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-slate-800/60">
           <div className="space-y-1">
             <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1">
@@ -184,70 +175,80 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, en
           </div>
         </div>
 
-        {/* Auto-fill row — shown when CSV credentials are loaded */}
-        {hasCredentials && (
-          <div className="space-y-2 pt-1 border-t border-slate-800/40">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={autoFillCredentials}
-                  disabled={autoResolving || !orgId || !envId}
-                  title="Auto-fill credentials from API Manager contracts + your loaded CSV"
-                  className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-700/40 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition-colors disabled:opacity-50 font-medium"
-                >
-                  {autoResolving
-                    ? <><RefreshCw size={9} className="animate-spin" /> Resolving…</>
-                    : <><Wand2 size={9} /> Auto-fill from API Manager</>}
-                </button>
-                <button
-                  onClick={() => setShowApiMgrInput(v => !v)}
-                  title="Configure API Manager Business Group (if different from deployment BG)"
-                  className={`text-[10px] px-1.5 py-1 rounded border transition-colors ${
-                    apiMgrOrgId.trim()
-                      ? 'bg-blue-500/10 border-blue-700/40 text-blue-400'
-                      : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  {apiMgrOrgId.trim() ? '🏢 API Mgr BG set' : '⚙ API Mgr BG'}
-                </button>
-              </div>
-              {autoResolved && !autoResolved.error && (
-                <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
-                  <ShieldCheck size={9} />
-                  {autoResolved.apiInstanceName} → {autoResolved.contractApp}
-                </span>
-              )}
-              {autoResolved?.error && (
-                <span className="text-[10px] text-yellow-500/80">{autoResolved.error}</span>
+        {/* CSV import + auto-fill row */}
+        <div className="space-y-2 pt-1 border-t border-slate-800/40">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+
+            {/* Left: import button + auto-fill buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Always visible — lets user import CSV directly from this page */}
+              <CredentialImportButton compact />
+
+              {/* Auto-fill and BG config — only shown after CSV is loaded */}
+              {hasCredentials && (
+                <>
+                  <button
+                    onClick={autoFillCredentials}
+                    disabled={autoResolving || !orgId || !envId}
+                    title="Auto-fill credentials from API Manager contracts + your loaded CSV"
+                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-700/40 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition-colors disabled:opacity-50 font-medium"
+                  >
+                    {autoResolving
+                      ? <><RefreshCw size={9} className="animate-spin" /> Resolving…</>
+                      : <><Wand2 size={9} /> Auto-fill from API Manager</>}
+                  </button>
+                  <button
+                    onClick={() => setShowApiMgrInput(v => !v)}
+                    title="Configure API Manager Business Group (if different from deployment BG)"
+                    className={`text-[10px] px-1.5 py-1 rounded border transition-colors ${
+                      apiMgrOrgId.trim()
+                        ? 'bg-blue-500/10 border-blue-700/40 text-blue-400'
+                        : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    {apiMgrOrgId.trim() ? '🏢 API Mgr BG set' : '⚙ API Mgr BG'}
+                  </button>
+                </>
               )}
             </div>
 
-            {/* API Manager BG override input */}
-            {showApiMgrInput && (
-              <div className="bg-slate-800/40 border border-slate-700/40 rounded-lg px-3 py-2.5 space-y-1.5">
-                <p className="text-[10px] text-slate-400">
-                  If your API Manager is in a <strong className="text-slate-300">different Business Group</strong> than this app's deployment, enter that BG's Org ID below. It will be saved for all ping tests.
-                </p>
-                <div className="flex items-center gap-2">
-                  <input
-                    value={apiMgrOrgId}
-                    onChange={e => saveApiMgrOrgId(e.target.value)}
-                    placeholder={`Default: ${orgId} (deployment BG)`}
-                    className="flex-1 bg-slate-800 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono placeholder-slate-600 focus:outline-none focus:border-blue-600/50"
-                  />
-                  {apiMgrOrgId.trim() && (
-                    <button
-                      onClick={() => saveApiMgrOrgId('')}
-                      className="text-slate-500 hover:text-red-400 text-[10px] px-2 py-1.5 rounded border border-slate-700 hover:border-red-700/40 transition-colors"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
+            {/* Right: auto-resolve status */}
+            {autoResolved && !autoResolved.error && (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
+                <ShieldCheck size={9} />
+                {autoResolved.apiInstanceName} → {autoResolved.contractApp}
+              </span>
+            )}
+            {autoResolved?.error && (
+              <span className="text-[10px] text-yellow-500/80">{autoResolved.error}</span>
             )}
           </div>
-        )}
+
+          {/* API Manager BG override input — expandable */}
+          {hasCredentials && showApiMgrInput && (
+            <div className="bg-slate-800/40 border border-slate-700/40 rounded-lg px-3 py-2.5 space-y-1.5">
+              <p className="text-[10px] text-slate-400">
+                If your API Manager is in a <strong className="text-slate-300">different Business Group</strong> than this app's deployment, enter that BG's Org ID below. Saved for all ping tests.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  value={apiMgrOrgId}
+                  onChange={e => saveApiMgrOrgId(e.target.value)}
+                  placeholder={`Default: ${orgId} (deployment BG)`}
+                  className="flex-1 bg-slate-800 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono placeholder-slate-600 focus:outline-none focus:border-blue-600/50"
+                />
+                {apiMgrOrgId.trim() && (
+                  <button
+                    onClick={() => saveApiMgrOrgId('')}
+                    className="text-slate-500 hover:text-red-400 text-[10px] px-2 py-1.5 rounded border border-slate-700 hover:border-red-700/40 transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* CH2 no-URL warning */}
@@ -324,19 +325,25 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, en
               {showAttempts && (
                 <div className="border-t border-slate-800/40">
                   <table className="w-full text-xs">
-                    <thead><tr className="bg-slate-800/50">
-                      <th className="px-5 py-2 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">URL</th>
-                      <th className="px-5 py-2 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Status</th>
-                      <th className="px-5 py-2 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Latency</th>
-                    </tr></thead>
+                    <thead>
+                      <tr className="bg-slate-800/50">
+                        <th className="px-5 py-2 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">URL</th>
+                        <th className="px-5 py-2 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Status</th>
+                        <th className="px-5 py-2 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Latency</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {result.attempts.map((a, i) => (
                         <tr key={i} className="border-t border-slate-800/30 hover:bg-slate-800/20">
                           <td className="px-5 py-2.5 font-mono text-slate-300 break-all">{a.url}</td>
                           <td className="px-5 py-2.5">
-                            {a.error ? <span className="text-red-400">{a.error}</span> : <span className={`font-bold ${a.httpStatus < 300 ? 'text-emerald-400' : a.httpStatus < 500 ? 'text-yellow-400' : 'text-red-400'}`}>{a.httpStatus}</span>}
+                            {a.error
+                              ? <span className="text-red-400">{a.error}</span>
+                              : <span className={`font-bold ${a.httpStatus < 300 ? 'text-emerald-400' : a.httpStatus < 500 ? 'text-yellow-400' : 'text-red-400'}`}>{a.httpStatus}</span>}
                           </td>
-                          <td className={`px-5 py-2.5 font-mono ${latencyColor(a.responseTimeMs)}`}>{a.responseTimeMs != null ? `${a.responseTimeMs}ms` : '—'}</td>
+                          <td className={`px-5 py-2.5 font-mono ${latencyColor(a.responseTimeMs)}`}>
+                            {a.responseTimeMs != null ? `${a.responseTimeMs}ms` : '—'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
