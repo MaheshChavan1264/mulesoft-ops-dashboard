@@ -174,7 +174,7 @@ const ENV_TAG = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yel
 
 // ─── SidePanel ────────────────────────────────────────────────────────────────
 
-function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp }) {
+function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp, hideAppSelector }) {
   const { bgId, envId, envs, apps, appId, loadingEnvs, loadingApps, loadingDetail, cpsUrl, cpsEnv, cpsKey, credsResolved } = state;
   const isBlue = color === 'border-blue-700/50';
   const showEnvInLabel = bgId === '__all__' || !envId; // show env name in app label when "all"
@@ -252,22 +252,29 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
         />
       </div>
 
-      {/* App — searchable, always enabled once BG is set */}
-      <div>
-        <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
-          Application {loadingApps && <RefreshCw size={9} className="animate-spin text-gray-600" />}
-          {loadingDetail && <span className="text-[9px] text-cyan-400 ml-1">Resolving CPS config…</span>}
-          {apps.length > 0 && <span className="text-[9px] text-gray-600 ml-auto">{apps.length} apps</span>}
+      {/* App — hidden in multi-app mode */}
+      {!hideAppSelector && (
+        <div>
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+            Application {loadingApps && <RefreshCw size={9} className="animate-spin text-gray-600" />}
+            {loadingDetail && <span className="text-[9px] text-cyan-400 ml-1">Resolving CPS config…</span>}
+            {apps.length > 0 && <span className="text-[9px] text-gray-600 ml-auto">{apps.length} apps</span>}
+          </p>
+          <Select
+            value={appId}
+            onChange={v => onSelectApp(v)}
+            options={appOptions}
+            placeholder={bgId ? 'Search application…' : 'Select a BG first…'}
+            disabled={!bgId}
+            searchable
+          />
+        </div>
+      )}
+      {hideAppSelector && apps.length > 0 && (
+        <p className="text-[10px] text-cyan-400/70 bg-cyan-950/20 border border-cyan-800/30 rounded-lg px-2.5 py-1.5">
+          {apps.length} apps will be compared
         </p>
-        <Select
-          value={appId}
-          onChange={v => onSelectApp(v)}
-          options={appOptions}
-          placeholder={bgId ? 'Search application…' : 'Select a BG first…'}
-          disabled={!bgId}
-          searchable
-        />
-      </div>
+      )}
 
       {/* CPS config — auto-filled, editable */}
       <div className="pt-2 border-t border-gray-800/60 space-y-2">
@@ -302,19 +309,25 @@ export default function CpsComparisonPage() {
   const { getSecret, hasCredentials } = useCpsCredentialStore();
   const [allBgs, setAllBgs] = useState([]);
   const [showBgFilter, setShowBgFilter] = useState(false);
+  const [compareMode, setCompareMode] = useState('single'); // 'single' | 'multi'
   // Each side has its own property type
   const [propTypeA, setPropTypeA] = useState('non-secure');
   const [propTypeB, setPropTypeB] = useState('non-secure');
   const [sideA, setSideA] = useState({ ...INIT_SIDE });
   const [sideB, setSideB] = useState({ ...INIT_SIDE });
   const [comparing, setComparing] = useState(false);
-  const [propsA, setPropsA] = useState(null); // flat {k:v} map or null
+  const [compareProgress, setCompareProgress] = useState({ done: 0, total: 0 });
+  // Multi-app results: array of { appName, diff[], stats, error }
+  const [multiResults, setMultiResults] = useState([]);
+  const [expandedApps, setExpandedApps] = useState(new Set());
+  // Single-app comparison results
+  const [propsA, setPropsA] = useState(null);
   const [propsB, setPropsB] = useState(null);
   const [errorA, setErrorA] = useState('');
   const [errorB, setErrorB] = useState('');
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [diffRow, setDiffRow] = useState(null); // row clicked to show detail modal
+  const [diffRow, setDiffRow] = useState(null);
 
   // Load BGs on mount
   useEffect(() => {
@@ -419,6 +432,157 @@ export default function CpsComparisonPage() {
       updateSide(side, { loadingDetail: false });
     }
   }, [sideA, sideB, updateSide, hasCredentials, getSecret]);
+
+  // ─── Multi-app compare ───────────────────────────────────────────────────────
+
+  /** Build a diff array from two flat {k:v} maps */
+  function buildDiff(a, b) {
+    const allKeys = [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].sort();
+    return allKeys.map(key => {
+      const valA = key in (a || {}) ? String(a[key] ?? '') : null;
+      const valB = key in (b || {}) ? String(b[key] ?? '') : null;
+      const status = valA === null ? 'only-b' : valB === null ? 'only-a' : valA === valB ? 'matching' : 'different';
+      const hasGroup = key.includes('::');
+      const [groupName, displayKey] = hasGroup ? key.split('::') : ['', key];
+      return { key, displayKey: hasGroup ? displayKey : key, groupName, valA, valB, status };
+    });
+  }
+
+  const compareAll = async () => {
+    if (!sideA.bgId || !sideB.bgId) return;
+    setComparing(true);
+    setMultiResults([]);
+    setPropsA(null); setPropsB(null);
+    setErrorA(''); setErrorB('');
+
+    // 1. Get all apps for each side (already loaded in sideA.apps / sideB.apps)
+    const appsA = sideA.apps;
+    const appsB = sideB.apps;
+
+    // 2. Match by name (case-insensitive, strip version suffix)
+    const mapB = {};
+    appsB.forEach(a => {
+      const name = a.name.toLowerCase().replace(/-v\d+(\.\d+)*$/, '');
+      mapB[name] = a;
+      mapB[a.name.toLowerCase()] = a; // exact match too
+    });
+
+    const pairs = appsA.map(appA => {
+      const normName = appA.name.toLowerCase().replace(/-v\d+(\.\d+)*$/, '');
+      const appB = mapB[appA.name.toLowerCase()] || mapB[normName] || null;
+      return { appA, appB };
+    });
+
+    const total = pairs.length;
+    setCompareProgress({ done: 0, total });
+
+    // 3. Helper to fetch CPS props for one app
+    const fetchAppCps = async (app, bgId, propTypeForSide) => {
+      if (!app) return null;
+      const resolvedBgId = bgId || app._bgId;
+      const resolvedEnvId = app.environment?.id;
+      if (!resolvedBgId || !resolvedEnvId) return null;
+      try {
+        let detail;
+        if (app.deploymentType === 'CloudHub 2.0') {
+          const r = await api.get(`/applications/cloudhub2/${resolvedBgId}/${resolvedEnvId}/${app.id}`);
+          detail = r.data;
+        } else {
+          const r = await api.get(`/applications/cloudhub1/${resolvedEnvId}/${app.id}`, { params: { orgId: resolvedBgId } });
+          detail = { name: app.name, properties: r.data.properties || {} };
+        }
+        const extracted = extractCpsProps(detail);
+        if (!extracted.cpsBaseUrl || !extracted.cpsKey) return null;
+
+        // Auto-save CPS creds if available from CSV
+        if (extracted.cpsClientId && hasCredentials) {
+          const secret = getSecret(extracted.cpsClientId);
+          if (secret) {
+            try {
+              const credKey = `${extracted.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${resolvedBgId}`;
+              await api.post('/cps/credentials', { credentials: { [credKey]: { clientId: extracted.cpsClientId, clientSecret: secret } } });
+            } catch {}
+          }
+        }
+
+        const baseP = { baseUrl: extracted.cpsBaseUrl, environment: extracted.cpsEnv || undefined, bgOrgId: resolvedBgId };
+        const pt = propTypeForSide;
+
+        if (pt === 'non-secure') {
+          const r = await api.get('/cps/fetch', { params: { ...baseP, type: 'non-secure', keys: extracted.cpsKey } });
+          return flattenCpsResponse(r.data);
+        }
+        // secure/binaries: get non-secure first to discover keys
+        const nsR = await api.get('/cps/fetch', { params: { ...baseP, type: 'non-secure', keys: extracted.cpsKey } });
+        const nsFlat = flattenCpsResponse(nsR.data);
+
+        if (pt === 'secure') {
+          const secKeys = (nsFlat['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean).sort();
+          if (!secKeys.length) return {};
+          const r = await api.get('/cps/fetch', { params: { ...baseP, type: 'secure', keys: secKeys.join(',') } });
+          const raw = r.data;
+          const groups = Array.isArray(raw?.responses) ? raw.responses : Array.isArray(raw) ? raw : [];
+          const map = {};
+          [...groups].sort((a, b) => (a.key || '').localeCompare(b.key || '')).forEach(g => {
+            Object.keys(g.properties || {}).sort().forEach(k => { map[`${g.key}::${k}`] = String(g.properties[k] ?? ''); });
+          });
+          return map;
+        }
+
+        if (pt === 'binaries') {
+          const binKeys = (nsFlat['cps.secure.binaries'] || '').split(',').map(k => k.trim()).filter(Boolean).sort();
+          if (!binKeys.length) return {};
+          const r = await api.get('/cps/fetch', { params: { ...baseP, type: 'binaries', keys: binKeys.join(',') } });
+          const binData = r.data?.binaries || r.data || [];
+          const map = {};
+          (Array.isArray(binData) ? binData : []).forEach(b => {
+            const fn = b.key || b.name || '?';
+            const gn = binKeys.find(g => fn.startsWith(g) || fn.includes(g)) || binKeys[0] || 'binaries';
+            map[`${gn}::${fn}`] = b.size != null ? `${b.contentType || 'binary'} (${b.size} bytes)` : 'present';
+          });
+          return map;
+        }
+        return {};
+      } catch { return null; }
+    };
+
+    // 4. Process in batches of 5
+    const BATCH = 5;
+    const results = [];
+    for (let i = 0; i < pairs.length; i += BATCH) {
+      const batch = pairs.slice(i, i + BATCH);
+      const batchRes = await Promise.allSettled(
+        batch.map(async ({ appA, appB }) => {
+          const [mA, mB] = await Promise.allSettled([
+            fetchAppCps(appA, sideA.bgId, propTypeA),
+            fetchAppCps(appB, sideB.bgId, propTypeB),
+          ]);
+          const prA = mA.status === 'fulfilled' ? mA.value : null;
+          const prB = mB.status === 'fulfilled' ? mB.value : null;
+          const d = buildDiff(prA, prB);
+          return {
+            appName: appA.name,
+            appB: appB?.name || null,
+            diff: d,
+            stats: {
+              total: d.length,
+              different: d.filter(x => x.status === 'different').length,
+              'only-a': d.filter(x => x.status === 'only-a').length,
+              'only-b': d.filter(x => x.status === 'only-b').length,
+              matching: d.filter(x => x.status === 'matching').length,
+            },
+            errorA: mA.status === 'rejected' ? mA.reason?.message : (!prA ? 'No CPS config found' : null),
+            errorB: mB.status === 'rejected' ? mB.reason?.message : (!prB ? appB ? 'No CPS config found' : 'Not in Side B' : null),
+          };
+        })
+      );
+      batchRes.forEach(r => { if (r.status === 'fulfilled') results.push(r.value); });
+      setCompareProgress(p => ({ ...p, done: Math.min(i + BATCH, pairs.length) }));
+    }
+
+    setMultiResults(results);
+    setComparing(false);
+  };
 
   // Swap sides
   const swapSides = () => {
@@ -597,7 +761,8 @@ export default function CpsComparisonPage() {
     return rows;
   }, [diff, filter, search]);
 
-  const canCompare = (sideA.cpsUrl && sideA.cpsKey) || (sideB.cpsUrl && sideB.cpsKey);
+  const canMultiCompare = sideA.bgId && sideB.bgId && (sideA.apps.length > 0 || sideB.apps.length > 0);
+  const canCompare = compareMode === 'multi' ? canMultiCompare : (sideA.cpsUrl && sideA.cpsKey) || (sideB.cpsUrl && sideB.cpsKey);
   const hasResults = propsA !== null || propsB !== null;
 
   // Export CSV
@@ -673,6 +838,7 @@ export default function CpsComparisonPage() {
           onLoadEnvs={bgId => loadEnvs('A', bgId)}
           onLoadApps={(bgId, envId) => loadApps('A', bgId, envId)}
           onSelectApp={id => selectApp('A', id)}
+          hideAppSelector={compareMode === 'multi'}
         />
 
         {/* Swap + Compare button column */}
@@ -681,9 +847,21 @@ export default function CpsComparisonPage() {
             className="p-2 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-700 transition-colors">
             <ArrowLeftRight size={14} />
           </button>
-          <button onClick={compare} disabled={comparing || !canCompare}
+          {/* Mode toggle */}
+          <div className="flex gap-1 bg-gray-800 rounded-lg p-0.5 border border-gray-700">
+            {['single', 'multi'].map(m => (
+              <button key={m} onClick={() => setCompareMode(m)}
+                className={`text-[10px] px-2 py-1 rounded-md font-medium transition-all ${compareMode === m ? 'bg-cyan-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                {m === 'single' ? '1 App' : 'All Apps'}
+              </button>
+            ))}
+          </div>
+          <button onClick={compareMode === 'multi' ? compareAll : compare}
+            disabled={comparing || !canCompare}
             className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded-lg transition-colors">
-            {comparing ? <><RefreshCw size={13} className="animate-spin" /> Comparing…</> : <><GitCompare size={13} /> Compare</>}
+            {comparing
+              ? <><RefreshCw size={13} className="animate-spin" /> {compareMode === 'multi' && compareProgress.total > 0 ? `${compareProgress.done}/${compareProgress.total}` : 'Comparing…'}</>
+              : <><GitCompare size={13} /> {compareMode === 'multi' ? `Compare All Apps` : 'Compare'}</>}
           </button>
         </div>
 
@@ -698,6 +876,7 @@ export default function CpsComparisonPage() {
           onLoadEnvs={bgId => loadEnvs('B', bgId)}
           onLoadApps={(bgId, envId) => loadApps('B', bgId, envId)}
           onSelectApp={id => selectApp('B', id)}
+          hideAppSelector={compareMode === 'multi'}
         />
       </div>
 
@@ -852,8 +1031,88 @@ export default function CpsComparisonPage() {
         </div>
       )}
 
+      {/* Multi-app results accordion */}
+      {compareMode === 'multi' && multiResults.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <p className="text-sm text-gray-400">
+              <span className="text-white font-semibold">{multiResults.length}</span> apps compared ·{' '}
+              <span className="text-red-400">{multiResults.filter(r => r.stats.different > 0 || r.stats['only-a'] > 0 || r.stats['only-b'] > 0).length} with diffs</span> ·{' '}
+              <span className="text-emerald-400">{multiResults.filter(r => r.stats.different === 0 && r.stats['only-a'] === 0 && r.stats['only-b'] === 0 && r.stats.total > 0).length} identical</span>
+            </p>
+            <button
+              onClick={() => {
+                const rows = [['App Name', 'Property Key', `Side A`, `Side B`, 'Status']];
+                multiResults.forEach(mr => mr.diff.forEach(d => rows.push([mr.appName, d.key, d.valA ?? '(not set)', d.valB ?? '(not set)', d.status.toUpperCase()])));
+                const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `cps-multi-comparison-${new Date().toISOString().slice(0, 10)}.csv`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 rounded-lg transition-colors">
+              <Download size={11} /> Export All CSV
+            </button>
+          </div>
+
+          {multiResults.map(mr => {
+            const isExpanded = expandedApps.has(mr.appName);
+            const hasDiffs = mr.stats.different > 0 || mr.stats['only-a'] > 0 || mr.stats['only-b'] > 0;
+            return (
+              <div key={mr.appName} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                {/* App header row */}
+                <button
+                  onClick={() => setExpandedApps(prev => { const n = new Set(prev); n.has(mr.appName) ? n.delete(mr.appName) : n.add(mr.appName); return n; })}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/30 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-mono text-sm text-white font-medium truncate">{mr.appName}</span>
+                    {!mr.appB && <span className="text-[9px] text-orange-400 bg-orange-950/30 border border-orange-800/40 px-1.5 py-0.5 rounded">No match in B</span>}
+                    {mr.errorA && <span className="text-[9px] text-red-400">A: {mr.errorA}</span>}
+                    {mr.errorB && <span className="text-[9px] text-orange-400">B: {mr.errorB}</span>}
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    {hasDiffs
+                      ? <span className="text-xs text-red-400 font-semibold">🔴 {mr.stats.different + mr.stats['only-a'] + mr.stats['only-b']} diffs</span>
+                      : mr.stats.total > 0 ? <span className="text-xs text-emerald-400 font-semibold">✅ identical</span>
+                      : <span className="text-xs text-gray-600">—</span>}
+                    <span className="text-gray-600 text-xs">{mr.stats.total} props</span>
+                    <span className={`text-gray-500 text-xs transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                  </div>
+                </button>
+
+                {/* Expanded diff rows */}
+                {isExpanded && mr.diff.length > 0 && (
+                  <div className="border-t border-gray-800">
+                    <div className="grid grid-cols-[36px_1fr_1fr_1fr_80px] bg-gray-800/40 text-gray-500 text-[9px] uppercase tracking-wider px-4 py-1.5 gap-3">
+                      <span className="text-center">#</span>
+                      <span>Key</span><span>Side A</span><span>Side B</span><span className="text-center">Status</span>
+                    </div>
+                    <div className="divide-y divide-gray-800/30 max-h-64 overflow-y-auto">
+                      {mr.diff.filter(d => d.status !== 'matching').concat(mr.diff.filter(d => d.status === 'matching')).map((row, idx) => (
+                        <div key={row.key}
+                          onClick={() => (row.status !== 'matching') && setDiffRow(row)}
+                          className={`grid grid-cols-[36px_1fr_1fr_1fr_80px] gap-3 px-4 py-2 text-xs transition-colors hover:bg-gray-800/20 ${STATUS_ROW[row.status] || ''} ${row.status !== 'matching' ? 'cursor-pointer' : ''}`}>
+                          <span className="flex items-center justify-center text-[10px] text-gray-700 font-mono">{idx + 1}</span>
+                          <span className="font-mono text-gray-300 truncate" title={row.displayKey}>{row.displayKey}</span>
+                          <span className={`font-mono truncate ${row.status === 'different' ? 'text-red-300' : 'text-gray-400'}`}>{row.valA ?? <em className="text-gray-700">not set</em>}</span>
+                          <span className={`font-mono truncate ${row.status === 'different' ? 'text-orange-300' : 'text-gray-400'}`}>{row.valB ?? <em className="text-gray-700">not set</em>}</span>
+                          <div className="flex items-center justify-center">
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold ${STATUS_BADGE[row.status]}`}>{STATUS_LABEL[row.status]}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Initial empty state */}
-      {!hasResults && !comparing && (
+      {!hasResults && !(compareMode === 'multi' && multiResults.length > 0) && !comparing && (
         <div className="flex flex-col items-center justify-center py-16 gap-3 bg-gray-900 border border-gray-800 rounded-xl">
           <GitCompare size={40} className="text-gray-700" />
           <p className="text-gray-500 text-sm">Select apps on both sides, then click <strong className="text-white">Compare</strong></p>
