@@ -40,6 +40,7 @@ router.post('/ping', async (req, res) => {
     clientId,
     clientSecret,
     transactionId = 'smokeTest',
+    queryParams = '',   // optional: "key1=val1&key2=val2" appended to every ping URL
   } = req.body || {};
 
   if (!appName) {
@@ -66,7 +67,8 @@ router.post('/ping', async (req, res) => {
   const attempts = [];
 
   for (const path of PING_PATHS) {
-    const url = `${base}${path}`;
+    // Append optional query parameters (Feature 5: smart ping URL resolution)
+    const url = queryParams ? `${base}${path}?${queryParams}` : `${base}${path}`;
     const t0 = Date.now();
 
     try {

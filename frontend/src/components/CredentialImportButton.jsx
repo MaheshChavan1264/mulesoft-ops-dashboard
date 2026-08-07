@@ -84,7 +84,7 @@ export default function CredentialImportButton({ compact = false }) {
         className={`flex items-center ${sizeClass} bg-gray-800 border border-gray-700 text-gray-400 hover:text-cyan-300 hover:border-cyan-700/50 rounded-lg transition-colors font-medium`}
       >
         <Upload size={iconSize} />
-        Import Creds CSV
+        Import Ping Creds
       </button>
     </>
   );
