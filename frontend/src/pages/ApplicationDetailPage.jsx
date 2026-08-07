@@ -343,6 +343,21 @@ export default function ApplicationDetailPage() {
     }
   };
 
+  // Fetch Exchange ping spec once the app detail is loaded
+  // Defined BEFORE early returns to satisfy Rules of Hooks
+  useEffect(() => {
+    const ref = app?.application?.ref;
+    if (!ref?.groupId || !ref?.artifactId || !ref?.version) return;
+    setPingSpecLoading(true);
+    api.get('/exchange/ping-spec', {
+      params: { groupId: ref.groupId, assetId: ref.artifactId, version: ref.version, orgId }
+    }).then(r => {
+      setPingSpec(r.data);
+      console.log(`[pingSpec] ${ref.artifactId}: ${r.data?.pingEndpoints?.length ?? 0} ping endpoint(s) found`);
+    }).catch(() => setPingSpec(null))
+      .finally(() => setPingSpecLoading(false));
+  }, [app?.application?.ref?.artifactId, orgId]);
+
   const isCH1 = app?._type === 'ch1';
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"/></div>;
@@ -485,20 +500,6 @@ export default function ApplicationDetailPage() {
     STOPPED:'text-slate-400 bg-slate-800/50 border-slate-700/50',
     DEPLOYING:'text-blue-300 bg-blue-950/50 border-blue-700/50 shadow-blue-900/30',
     APPLIED:'text-cyan-300 bg-cyan-950/50 border-cyan-700/50' }[rStatus] || 'text-slate-400 bg-slate-800/50 border-slate-700/50';
-
-  // Fetch Exchange ping spec once the app detail is loaded
-  useEffect(() => {
-    const ref = app?.application?.ref;
-    if (!ref?.groupId || !ref?.artifactId || !ref?.version) return;
-    setPingSpecLoading(true);
-    api.get('/exchange/ping-spec', {
-      params: { groupId: ref.groupId, assetId: ref.artifactId, version: ref.version, orgId }
-    }).then(r => {
-      setPingSpec(r.data);
-      console.log(`[pingSpec] ${ref.artifactId}: ${r.data?.pingEndpoints?.length ?? 0} ping endpoint(s) found`);
-    }).catch(() => setPingSpec(null))
-      .finally(() => setPingSpecLoading(false));
-  }, [app?.application?.ref?.artifactId, orgId]);
 
   const tabs = [
     { id:'overview', label:'Overview' },
