@@ -372,6 +372,17 @@ export default function PingTestPanel({
                 {autoResolved.apiInstanceName} → {autoResolved.contractApp}
               </span>
             )}
+            {/* Re-check button for pending contracts */}
+            {autoResolved && autoResolved.source === 'contract-pending' && (
+              <button
+                onClick={autoFillCredentials}
+                disabled={autoResolving}
+                title="Re-check if the contract has been approved in API Manager"
+                className="flex items-center gap-1 text-[10px] px-2 py-1 bg-yellow-900/30 border border-yellow-700/40 text-yellow-300 hover:bg-yellow-900/50 rounded transition-colors">
+                {autoResolving ? <RefreshCw size={9} className="animate-spin" /> : <RefreshCw size={9} />}
+                Re-check Approval
+              </button>
+            )}
             {autoResolved?.error && (
               <span className="text-[10px] text-yellow-500/80">{autoResolved.error}</span>
             )}
