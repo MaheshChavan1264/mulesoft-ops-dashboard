@@ -74,13 +74,21 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               <RefreshCw size={10} className="animate-spin" /> Retrying…
             </span>
           ) : cfg ? (
-            <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold ${cfg.cls}`}>
-              <span className="relative flex h-1.5 w-1.5 flex-shrink-0">
-                {cfg.ping && <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${cfg.dot}`} />}
-                <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${cfg.dot}`} />
+            <div className="space-y-0.5">
+              <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold ${cfg.cls}`}>
+                <span className="relative flex h-1.5 w-1.5 flex-shrink-0">
+                  {cfg.ping && <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${cfg.dot}`} />}
+                  <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${cfg.dot}`} />
+                </span>
+                {cfg.label}
               </span>
-              {cfg.label}
-            </span>
+              {/* Show short reason inline for FAILED / SKIPPED rows */}
+              {result.error && (result.status === 'FAILED' || result.status === 'SKIPPED_CONTRACT_PENDING') && (
+                <p className="text-[10px] text-gray-500 max-w-[200px] leading-tight">
+                  {result.error.length > 80 ? result.error.slice(0, 77) + '…' : result.error}
+                </p>
+              )}
+            </div>
           ) : <span className="text-gray-600 text-xs">—</span>}
         </td>
 
