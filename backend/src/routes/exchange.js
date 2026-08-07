@@ -140,7 +140,12 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
         `/exchange/api/v2/assets/${groupId}/${assetId}/${version}/portal/model`
       );
       const model = modelRes.data;
-      console.log(`[ping-spec] Portal model fetched for ${groupId}/${assetId}/${version}`);
+      // Log the top-level keys and type to help debug parsing
+      if (Array.isArray(model)) {
+        console.log(`[ping-spec] Portal model is Array, length=${model.length}, first item keys:`, Object.keys(model[0] || {}).slice(0, 6));
+      } else if (model && typeof model === 'object') {
+        console.log(`[ping-spec] Portal model is Object, top-level keys:`, Object.keys(model).slice(0, 10));
+      }
 
       // Helper: safely extract string value from AMF scalar node
       const scalar = (node) => {
@@ -191,23 +196,56 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
         const apiNode = encodes[0] || {};
         assetName = scalar(apiNode['http://schema.org/name'] || apiNode['http://a.ml/vocabularies/core#name']) || assetId;
 
-        const endpoints = apiNode['http://a.ml/vocabularies/apiContract#endpoint'] || [];
-        for (const ep of endpoints) {
-          const path = scalar(ep['http://a.ml/vocabularies/apiContract#path']);
-          const operations = ep['http://a.ml/vocabularies/apiContract#supportedOperation'] || [];
+        // Walk the full graph to find endpoint nodes regardless of nesting
+        // (AMF may inline endpoints in the graph rather than on the encodes node)
+        const allNodes = model;
+
+        // Build a map of id → node for dereferencing $ref-style links
+        const nodeMap = {};
+        for (const n of allNodes) {
+          if (n['@id']) nodeMap[n['@id']] = n;
+        }
+
+        const deref = (node) => {
+          if (!node) return node;
+          if (Array.isArray(node)) return node.map(deref);
+          if (typeof node === 'object' && node['@id'] && Object.keys(node).length === 1) {
+            return nodeMap[node['@id']] || node;
+          }
+          return node;
+        };
+
+        // Find all endpoint nodes (any node with apiContract#path)
+        const PATH_KEY = 'http://a.ml/vocabularies/apiContract#path';
+        const OP_KEY   = 'http://a.ml/vocabularies/apiContract#supportedOperation';
+        const METHOD_KEY = 'http://a.ml/vocabularies/apiContract#method';
+        const EXPECTS_KEY = 'http://a.ml/vocabularies/apiContract#expects';
+        const PARAM_KEY = 'http://a.ml/vocabularies/apiContract#parameter';
+        const HEADER_KEY = 'http://a.ml/vocabularies/apiContract#header';
+
+        for (const node of allNodes) {
+          if (!node[PATH_KEY]) continue;
+          const path = scalar(node[PATH_KEY]);
+          if (!path) continue;
+
+          const operations = (node[OP_KEY] || []).map(deref).flat().filter(Boolean);
           for (const op of operations) {
-            const method = scalar(op['http://a.ml/vocabularies/apiContract#method']).toUpperCase();
-            const description = scalar(op['http://schema.org/description']
-              || op['http://a.ml/vocabularies/core#name'] || '');
-            const request = (op['http://a.ml/vocabularies/apiContract#expects'] || [])[0] || {};
-            const qpNodes = request['http://a.ml/vocabularies/apiContract#parameter'] || [];
-            const hdrNodes = request['http://a.ml/vocabularies/apiContract#header'] || [];
+            const realOp = deref(op);
+            if (!realOp) continue;
+            const method = scalar(realOp[METHOD_KEY] || (Array.isArray(realOp) ? realOp[0]?.[METHOD_KEY] : null)).toUpperCase() || 'GET';
+            const description = scalar(realOp['http://schema.org/description'] || realOp['http://a.ml/vocabularies/core#name'] || '');
+            const expects = ((realOp[EXPECTS_KEY] || []).map(deref).flat().filter(Boolean))[0] || {};
+            const qpNodes = (expects[PARAM_KEY] || []).map(deref).flat().filter(Boolean);
+            const hdrNodes = (expects[HEADER_KEY] || []).map(deref).flat().filter(Boolean);
             allEndpoints.push({
               path, method, description,
               queryParams: extractAmfParams(qpNodes),
               headers: extractAmfParams(hdrNodes),
             });
           }
+        }
+        if (allEndpoints.length > 0) {
+          console.log(`[ping-spec] AMF JSON-LD: extracted ${allEndpoints.length} endpoint(s)`);
         }
         modelParsed = allEndpoints.length > 0;
       }
