@@ -5,6 +5,7 @@ import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, G
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 import PingTestPanel from '../components/PingTestPanel';
+import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 
 /* ── Micro components ──────────────────────────────────── */
 
@@ -143,6 +144,9 @@ export default function ApplicationDetailPage() {
   const [actionLoading, setActionLoading] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const [actionResult, setActionResult] = useState(null);
+  const { getSecret, hasCredentials: hasCpsCsvCredentials } = useCpsCredentialStore();
+  const [cpsCredsResolved, setCpsCredsResolved] = useState(false);
+
   // CPS state
   const [cpsLoading, setCpsLoading] = useState(false);
   const [cpsData, setCpsData] = useState(null);
@@ -255,6 +259,7 @@ export default function ApplicationDetailPage() {
 
   // CPS computed values — read directly from runtime properties
   const cpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
+  const cpsClientId = allProps['cps.clientId'] || allProps['cps.client_id'] || allProps['cps.client.id'] || allProps['cps.apiClientId'] || '';
   const cpsProjectName = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
   const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || (() => {
     // fallback: derive from Anypoint env name if cps.prefix not set
@@ -274,6 +279,25 @@ export default function ApplicationDetailPage() {
     const useKey = keyOverride || effectiveCpsKey;
     const useEnv = envOverride || effectiveCpsEnv;
     setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null); setCpsAttemptedUrl('');
+    setCpsCredsResolved(false);
+
+    // ── Auto-resolve CPS credentials from the imported CSV ────────────────
+    // Mirrors the logic in CpsComparisonPage: look up the app's CPS clientId
+    // in the in-memory credential store, then POST the pair to the backend
+    // session so the CPS fetch carries the right OAuth credentials.
+    if (cpsClientId && hasCpsCsvCredentials) {
+      const secret = getSecret(cpsClientId);
+      if (secret) {
+        try {
+          const credKey = `${cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${orgId}`;
+          await api.post('/cps/credentials', {
+            credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } },
+          });
+          setCpsCredsResolved(true);
+        } catch { /* non-fatal — CPS fetch will fail with 401 if needed */ }
+      }
+    }
+
     try {
       // Fetch non-secure properties for this specific project key
       const nsRes = await api.get('/cps/fetch', { params: {
@@ -342,7 +366,7 @@ export default function ApplicationDetailPage() {
   const tabs = [
     { id:'overview', label:'Overview' },
     { id:'properties', label:'Properties', badge:Object.keys(allProps).length },
-    { id:'infrastructure', label:'Infra & Config' },
+    { id:'infrastructure', label:'Schedulers & OS' },
     ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config' }] : []),
     { id:'ping', label:'Ping Test' },
     { id:'raw', label:'Raw JSON' },
@@ -688,6 +712,14 @@ export default function ApplicationDetailPage() {
                 <span className="text-white text-sm font-semibold">Config Property Server</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${cpsEnv==='prod'?'bg-emerald-950/50 text-emerald-300 border-emerald-700/50':'bg-yellow-950/50 text-yellow-300 border-yellow-700/50'}`}>{cpsEnv.toUpperCase()}</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${isCH1?'bg-purple-950/50 text-purple-300 border-purple-700/50':'bg-blue-950/50 text-blue-300 border-blue-700/50'}`}>{isCH1?'CH1':'CH2'}</span>
+                {cpsCredsResolved && (
+                  <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-1.5 py-0.5 rounded-full">
+                    <Key size={8} /> CPS creds auto-resolved
+                  </span>
+                )}
+                {cpsClientId && hasCpsCsvCredentials && !cpsCredsResolved && !cpsData && (
+                  <span className="text-[10px] text-yellow-400/70">🔑 CSV loaded — will auto-resolve on load</span>
+                )}
               </div>
               <p className="text-slate-500 text-xs font-mono break-all">{cpsBaseUrl}</p>
               {/* Editable key + env overrides */}
@@ -979,6 +1011,10 @@ export default function ApplicationDetailPage() {
             allProps['client.secret'] ||
             ''
           }
+          cpsBaseUrl={cpsBaseUrl || ''}
+          cpsClientId={cpsClientId || ''}
+          cpsKey={effectiveCpsKey || ''}
+          cpsEnv={effectiveCpsEnv || ''}
         />
       )}
 

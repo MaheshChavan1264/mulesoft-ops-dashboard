@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2 } from 'lucide-react';
 import api from '../services/api';
 import { useCredentialStore } from '../context/CredentialStoreContext';
+import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import CredentialImportButton from './CredentialImportButton';
 
 /**
@@ -19,8 +20,15 @@ import CredentialImportButton from './CredentialImportButton';
 
 const API_MGR_ORG_KEY = 'mule_dashboard_api_mgr_org_id';
 
-export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, envId, defaultClientId = '', defaultClientSecret = '' }) {
+export default function PingTestPanel({
+  appName, isCH1, ch2IngressUrl, orgId, envId,
+  defaultClientId = '', defaultClientSecret = '',
+  // CPS connection props (passed from ApplicationDetailPage) — used to
+  // look up the api.id from CPS non-secure before calling auto-credentials
+  cpsBaseUrl = '', cpsClientId = '', cpsKey = '', cpsEnv = '',
+}) {
   const { hasCredentials, resolveFromCandidates } = useCredentialStore();
+  const { getSecret: getCpsSecret, hasCredentials: hasCpsCreds } = useCpsCredentialStore();
 
   const [clientId, setClientId] = useState(defaultClientId);
   const [clientSecret, setClientSecret] = useState(defaultClientSecret);
@@ -45,7 +53,41 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, en
     else localStorage.removeItem(API_MGR_ORG_KEY);
   };
 
+  // ── Helper: flatten a CPS non-secure response to {key:value} ──────────
+  const flattenCpsProps = (data) => {
+    if (!data) return {};
+    let props = {};
+    if (Array.isArray(data?.responses)) {
+      data.responses.forEach(r => Object.assign(props, r.properties || {}));
+    } else if (Array.isArray(data)) {
+      data.forEach(r => { if (r?.properties) Object.assign(props, r.properties); });
+    } else if (data && typeof data === 'object') {
+      const fv = Object.values(data)[0];
+      props = (fv && typeof fv === 'object')
+        ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {})
+        : data;
+    }
+    return props;
+  };
+
+  // ── Helper: extract the API Manager instance id from CPS properties ────
+  const extractApiId = (props) => {
+    if ('api.id' in props) {
+      const v = String(props['api.id']).trim();
+      if (/^\d+$/.test(v)) return v;
+    }
+    const dotApiId = Object.entries(props).find(([k]) => k.endsWith('.api.id'));
+    if (dotApiId && /^\d+$/.test(String(dotApiId[1]).trim())) return String(dotApiId[1]).trim();
+    const dotId = Object.entries(props).find(([k, v]) => k.endsWith('.id') && /^\d+$/.test(String(v).trim()));
+    if (dotId) return String(dotId[1]).trim();
+    if ('id' in props && /^\d+$/.test(String(props['id']).trim())) return String(props['id']).trim();
+    return null;
+  };
+
   // Auto-fill credentials from API Manager + CSV sheet
+  // Strategy:
+  //   1. If CPS props are available, fetch non-secure to get api.id → Layer 1 direct lookup
+  //   2. Fall back to paginated fuzzy name matching (Layer 3)
   const autoFillCredentials = useCallback(async () => {
     if (!hasCredentials || !orgId || !envId) return;
     setAutoResolving(true);
@@ -55,6 +97,31 @@ export default function PingTestPanel({ appName, isCH1, ch2IngressUrl, orgId, en
       if (apiMgrOrgId.trim() && apiMgrOrgId.trim() !== orgId) {
         body.apiMgrOrgId = apiMgrOrgId.trim();
       }
+
+      // ── Step 1: get api.id from CPS non-secure ────────────────────────
+      if (cpsBaseUrl && cpsKey) {
+        // First ensure CPS credentials are posted to the backend session
+        if (cpsClientId && hasCpsCreds) {
+          const secret = getCpsSecret(cpsClientId);
+          if (secret) {
+            try {
+              const credKey = `${cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${orgId}`;
+              await api.post('/cps/credentials', { credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } } });
+            } catch { /* non-fatal */ }
+          }
+        }
+        try {
+          const r = await api.get('/cps/fetch', {
+            params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId },
+          });
+          const apiId = extractApiId(flattenCpsProps(r.data));
+          if (apiId) {
+            body.apiId = apiId;
+            console.log(`[PingTestPanel] autoFillCredentials — found apiId=${apiId} from CPS for "${appName}"`);
+          }
+        } catch { /* CPS fetch failed — continue without apiId */ }
+      }
+
       const { data } = await api.post('/health/auto-credentials', body);
       if (data.found && data.matchInfo?.length > 0) {
         const matched = resolveFromCandidates(data.matchInfo.map(m => m.clientId));

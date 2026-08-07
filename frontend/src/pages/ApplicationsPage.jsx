@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCredentialStore } from '../context/CredentialStoreContext';
+import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { useNavigate } from 'react-router-dom';
 import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck } from 'lucide-react';
 import CredentialImportButton from '../components/CredentialImportButton';
@@ -168,6 +169,7 @@ function BulkConfirmModal({ state, onConfirm, onCancel, loading, results }) {
 function BulkPingModal({ apps, onClose }) {
   const navigate = useNavigate();
   const { hasCredentials, resolveFromCandidates } = useCredentialStore();
+  const { getSecret: getCpsSecret, hasCredentials: hasCpsCreds } = useCpsCredentialStore();
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [transactionId, setTransactionId] = useState('smokeTest');
@@ -177,7 +179,155 @@ function BulkPingModal({ apps, onClose }) {
   const [autoResolvedMap, setAutoResolvedMap] = useState({});
   const [showSecret, setShowSecret] = useState(false);
 
-  // Resolve credentials from API Manager + CSV sheet for each app (in parallel)
+  // ── Extract the API Manager autodiscovery ID from CPS non-secure props ───
+  //
+  // The team stores the autodiscovery ID in CPS non-secure properties using
+  // key patterns like:
+  //   <prefix>.api.id   e.g.  customer-sapi.api.id = 12345678
+  //   <prefix>.id       e.g.  customer-sapi.id     = 12345678  (fallback)
+  //
+  // Strategy:
+  //   1. Read CPS connection config (baseUrl, key, env) from the app's ARM
+  //      deployment properties — same fields used by the CPS Compare page.
+  //   2. Fetch CPS non-secure properties for this app.
+  //   3. Find the first key ending in ".api.id" → its value is the apiId.
+  //      If not found, find the first key ending in ".id" with a numeric value.
+  //   4. On any failure (CPS unreachable, no CPS config) return {} so the
+  //      caller falls through to fuzzy name matching (Layers 3-5).
+  const fetchAppApiProps = useCallback(async (app) => {
+    const bgId = app._bgId;
+    const envId = app.environment?.id;
+    if (!bgId || !envId) return {};
+
+    try {
+      // ── Step 1: Get ARM detail to extract CPS connection properties ────────
+      let armDetail = null;
+      if (app.deploymentType === 'CloudHub 2.0') {
+        const r = await api.get(`/applications/cloudhub2/${bgId}/${envId}/${app.id}`);
+        armDetail = r.data;
+      } else {
+        const r = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: bgId } });
+        armDetail = { name: app.name, properties: r.data?.properties || {} };
+      }
+
+      // Merge all ARM property sources (same logic as extractCpsProps in CpsComparisonPage)
+      const ds = armDetail?.target?.deploymentSettings || {};
+      const appCfg = armDetail?.application?.configuration || {};
+      const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
+      const allArmProps = {
+        ...armDetail?.properties,
+        ...(propsSvc.properties || {}),
+        ...(ds.properties || {}),
+        ...(ds.environmentVariables || ds.environmentVars || {}),
+      };
+
+      const cpsBaseUrl  = allArmProps['cps.configServerBaseUrl'] || allArmProps['config.server.base.url'] || '';
+      const cpsKey      = allArmProps['cps.projectName'] || allArmProps['cloudhub.api.name'] || app.name || '';
+      const cpsEnv      = allArmProps['cps.prefix'] || allArmProps['cps.environment'] || '';
+      const cpsClientId = allArmProps['cps.clientId'] || allArmProps['cps.client_id'] ||
+                          allArmProps['cps.client.id'] || allArmProps['cps.apiClientId'] || '';
+
+      if (!cpsBaseUrl || !cpsKey) return {}; // no CPS config → skip
+
+      // ── Step 2a: Post CPS credentials to backend session ──────────────────
+      // Without this step the CPS fetch returns 422 for apps whose CPS
+      // server requires OAuth. Mirror the logic in CpsComparisonPage.
+      if (cpsClientId && hasCpsCreds) {
+        const secret = getCpsSecret(cpsClientId);
+        if (secret) {
+          try {
+            const credKey = `${cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${bgId}`;
+            await api.post('/cps/credentials', {
+              credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } },
+            });
+          } catch { /* non-fatal — CPS fetch will fail with 422 if creds are wrong */ }
+        }
+      }
+
+      // ── Step 2b: Fetch CPS non-secure properties ──────────────────────────
+      const cpsRes = await api.get('/cps/fetch', {
+        params: {
+          baseUrl: cpsBaseUrl,
+          type: 'non-secure',
+          keys: cpsKey,
+          ...(cpsEnv && { environment: cpsEnv }),
+          bgOrgId: bgId,
+        },
+      });
+
+      // Flatten the CPS response to a plain {key: value} map
+      const data = cpsRes.data;
+      let cpsProps = {};
+      if (Array.isArray(data?.responses)) {
+        data.responses.forEach(r => Object.assign(cpsProps, r.properties || {}));
+      } else if (Array.isArray(data)) {
+        data.forEach(r => { if (r?.properties) Object.assign(cpsProps, r.properties); });
+        if (Object.keys(cpsProps).length === 0 && typeof data[0] !== 'object') cpsProps = {};
+      } else if (data && typeof data === 'object') {
+        const firstVal = Object.values(data)[0];
+        cpsProps = (firstVal && typeof firstVal === 'object') ?
+          Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) :
+          data;
+      }
+
+      // ── Step 3: Find the autodiscovery ID ─────────────────────────────────
+      const cpsKeys = Object.keys(cpsProps);
+      //console.log(`[fetchAppApiProps] ${app.name} — CPS keys: [${cpsKeys.join(', ')}]`);
+
+      // Priority 1: exact key "api.id"
+      if ('api.id' in cpsProps) {
+        const val = String(cpsProps['api.id']).trim();
+        if (val && /^\d+$/.test(val)) {
+          console.log(`[fetchAppApiProps] ${app.name} — found apiId via exact "api.id": ${val}`);
+          return { apiId: val };
+        }
+      }
+
+      // Priority 2: key ending with ".api.id"  →  e.g. customer-sapi.api.id
+      const dotApiIdEntry = Object.entries(cpsProps).find(([k]) => k.endsWith('.api.id'));
+      if (dotApiIdEntry) {
+        const val = String(dotApiIdEntry[1]).trim();
+        if (val && /^\d+$/.test(val)) {
+          console.log(`[fetchAppApiProps] ${app.name} — found apiId via "${dotApiIdEntry[0]}": ${val}`);
+          return { apiId: val };
+        }
+      }
+
+      // Priority 3: key ending with ".id" whose value is purely numeric
+      // e.g.  sapi-workday-ar-refunds.id = 12345678
+      // (Numeric-only check avoids matching client.id, secret.id which hold UUIDs)
+      const dotIdEntry = Object.entries(cpsProps).find(([k, v]) =>
+        k.endsWith('.id') && /^\d+$/.test(String(v).trim())
+      );
+      if (dotIdEntry) {
+        const val = String(dotIdEntry[1]).trim();
+        console.log(`[fetchAppApiProps] ${app.name} — found apiId via "${dotIdEntry[0]}": ${val}`);
+        return { apiId: val };
+      }
+
+      // Priority 4: bare "id" key with numeric value
+      // (handles case where CPS flattening strips the group-name prefix)
+      if ('id' in cpsProps) {
+        const val = String(cpsProps['id']).trim();
+        if (/^\d+$/.test(val)) {
+          console.log(`[fetchAppApiProps] ${app.name} — found apiId via bare "id": ${val}`);
+          return { apiId: val };
+        }
+      }
+
+      console.log(`[fetchAppApiProps] ${app.name} — no matching id key found in CPS props, falling back to fuzzy match`);
+      return {}; // no autodiscovery ID found in CPS — use fuzzy matching
+    } catch (err) {
+      console.warn(`[fetchAppApiProps] ${app.name} — error fetching CPS: ${err.message}`);
+      return {};
+    }
+  }, []);
+
+  // Resolve credentials from API Manager + CSV sheet for each app (in parallel).
+  // Strategy (in priority order):
+  //   1. Fetch app's Autodiscovery api.id → pass to backend for direct lookup (Layer 1)
+  //   2. Pass assetId if found → backend uses it for filtered search (Layer 2)
+  //   3. Backend falls back to paginated fuzzy name search (Layers 3-5)
   const resolveAllCredentials = useCallback(async () => {
     if (!hasCredentials || clientId.trim()) return {};
     const settled = await Promise.allSettled(
@@ -186,14 +336,27 @@ function BulkPingModal({ apps, onClose }) {
         const envId = app.environment?.id;
         if (!bgId || !envId) return null;
         try {
+          // Fetch Autodiscovery properties (api.id) in parallel with cred resolution
+          const { apiId, assetId } = await fetchAppApiProps(app);
+
           const { data } = await api.post('/health/auto-credentials', {
-            orgId: bgId, envId, appName: app.name,
+            orgId: bgId,
+            envId,
+            appName: app.name,
+            ...(apiId   && { apiId }),    // Layer 1: direct instance lookup
+            ...(assetId && { assetId }),  // Layer 2: asset-filtered search
           });
           if (data.found && data.matchInfo?.length > 0) {
             const matched = resolveFromCandidates(data.matchInfo.map(m => m.clientId));
             if (matched) {
               const meta = data.matchInfo.find(m => m.clientId === matched.clientId);
-              return { appId: app.id, ...matched, apiInstanceName: meta?.apiInstanceName || '—', contractApp: meta?.contractApp || '—' };
+              return {
+                appId: app.id,
+                ...matched,
+                apiInstanceName: meta?.apiInstanceName || '—',
+                contractApp: meta?.contractApp || '—',
+                resolvedLayer: data.resolvedLayer,
+              };
             }
           }
           return null;
@@ -203,7 +366,7 @@ function BulkPingModal({ apps, onClose }) {
     const resolved = {};
     settled.forEach(r => { if (r.status === 'fulfilled' && r.value) resolved[r.value.appId] = r.value; });
     return resolved;
-  }, [hasCredentials, resolveFromCandidates, apps, clientId]);
+  }, [hasCredentials, resolveFromCandidates, apps, clientId, fetchAppApiProps]);
 
   const runAll = async () => {
     setRunning(false);
@@ -556,7 +719,10 @@ export default function ApplicationsPage() {
 
   const allSelected = filtered.length > 0 && filtered.every((a) => selectedIds.has(a.id));
   const someSelected = !allSelected && filtered.some((a) => selectedIds.has(a.id));
-  const selectedApps = filtered.filter((a) => selectedIds.has(a.id));
+  // selectedApps is derived from ALL loaded apps (not just filtered) so that
+  // selections persist when the user changes env/status/type/search filters.
+  // This allows selecting apps from multiple environments and pinging them all.
+  const selectedApps = apps.filter((a) => selectedIds.has(a.id));
 
   // Selected rows float to the top
   const displayFiltered = useMemo(() => {

@@ -9,42 +9,28 @@ const { createClient } = require('../utils/anypointClient');
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 const PING_PATHS = ['/api/v1/ping', '/api/v2/ping', '/api/ping', '/ping'];
-const PING_TIMEOUT_MS = 10000; // 10 s — bulk pings run sequentially + auto-creds resolution adds latency
+const PING_TIMEOUT_MS = 10000; // 10 s
 
 function buildBaseUrl(targetType, appName, ch2IngressUrl) {
   const safe = (appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
 
   if (targetType === 'CH2' && ch2IngressUrl) {
-    // Anypoint sometimes returns a comma-separated list of URLs (internal + external).
-    // Split, clean, then prefer the public-facing URL over the internal one.
     const candidates = ch2IngressUrl
       .split(',')
       .map(u => u.trim().replace(/\/+$/, ''))
       .filter(u => /^https?:\/\/.+/.test(u));
 
     if (candidates.length > 0) {
-      // Prefer the external/public URL (doesn't contain "internalapi")
       const external = candidates.find(u => !u.includes('internalapi'));
       return external || candidates[0];
     }
   }
 
-  // CH1, or CH2 without an ingress URL (bulk ping scenario) →
-  // derive from app name using the standard API domain
   return `https://${safe}.api.sfdcbt.net`;
 }
 
 /**
  * POST /api/health/ping
- *
- * Body: {
- *   targetType:    'CH1' | 'CH2',
- *   appName:       string,
- *   ch2IngressUrl: string    (CH2 only — public ingress URL)
- *   clientId:      string    (optional — sent as client_id header)
- *   clientSecret:  string    (optional — sent as client_secret header)
- *   transactionId: string    (optional — sent as x-transaction-id, defaults to 'smokeTest')
- * }
  */
 router.post('/ping', async (req, res) => {
   const {
@@ -61,9 +47,7 @@ router.post('/ping', async (req, res) => {
   }
 
   const base = buildBaseUrl(targetType, appName, ch2IngressUrl);
-  // base is always non-null now (falls back to derived domain)
 
-  // Build outbound headers — log them so we can verify what's being sent
   const outboundHeaders = {
     Accept: 'application/json, */*',
     'Content-Type': 'application/json',
@@ -91,7 +75,7 @@ router.post('/ping', async (req, res) => {
         validateStatus: () => true,
         headers: outboundHeaders,
         maxRedirects: 5,
-        httpsAgent,   // tolerate internal / self-signed CA certs
+        httpsAgent,
       });
 
       console.log(`[Ping] ${url} → ${response.status}`);
@@ -110,33 +94,33 @@ router.post('/ping', async (req, res) => {
 
       attempts.push({ url, httpStatus, responseTimeMs });
 
-      // Detect Mule "No listener for endpoint" — endpoint path doesn't exist on this app,
-      // so skip to the next path rather than treating it as a success.
       const payloadStr = payload
         ? typeof payload === 'string' ? payload : JSON.stringify(payload)
         : '';
+
+      // Detect responses that mean "this path doesn't exist on the app" —
+      // in these cases skip to the next path rather than stopping early.
+      //
+      // Rules (any of the following → skip):
+      //   1. HTTP 404 — path not found on the Mule app; try the next path
+      //   2. Mule "No listener for endpoint" text
+      //   3. "No flow" text (older Mule runtimes)
+      //   4. "resource not found" text
       const isNoListener =
+        httpStatus === 404 ||
         payloadStr.toLowerCase().includes('no listener for endpoint') ||
         payloadStr.toLowerCase().includes('no flow') ||
-        payloadStr.toLowerCase().includes('resource not found') ||
-        (httpStatus === 404 && payloadStr.toLowerCase().includes('not found'));
+        payloadStr.toLowerCase().includes('resource not found');
 
       if (httpStatus < 500 && !isNoListener) {
+        // This path returned a definitive response (2xx success, or 401/403
+        // meaning the app IS reachable but credentials are wrong).
         const status =
           httpStatus >= 200 && httpStatus < 300 ? 'SUCCESS' :
           httpStatus >= 400 && httpStatus < 500 ? 'PARTIAL' : 'FAILED';
 
-        return res.json({
-          status,
-          activeEndpoint: url,
-          responseTimeMs,
-          httpStatus,
-          payload,
-          attempts,
-        });
+        return res.json({ status, activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts });
       }
-
-      // 5xx or "No listener" — continue to next path
     } catch (err) {
       const responseTimeMs = Date.now() - t0;
       let errorDetail = err.message;
@@ -166,20 +150,26 @@ router.post('/ping', async (req, res) => {
   });
 });
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Normalize an API/app name for fuzzy matching:
+ * Normalize a name for fuzzy matching:
  *   - lowercase
  *   - strip version suffixes (-v1, -v2, -v1.0, v1 …)
- *   - replace hyphens, underscores, dots with a single space
- *   - collapse multiple spaces
+ *   - replace hyphens / underscores / dots with space
+ *   - collapse whitespace
  */
 function normalizeName(name) {
   return (name || '')
     .toLowerCase()
-    .replace(/[-_.]v\d+(\.\d+)*$/i, '')   // trailing -v1 / _v2 / .v1.0
-    .replace(/\bv\d+(\.\d+)*$/i, '')       // trailing v1 / v2.0
+    // Strip trailing cloud/region+env deployment suffixes before version:
+    //   e.g. -uw2-up, -eu2-ut, -ap1-ud, -uw2-up1, -eu1-prod, -us1-uat
+    .replace(/-[a-z]{2,4}\d+[-_][a-z]{2,5}\d*$/i, '')
+    // Strip standalone region codes at end: -uw2, -eu2, -ap1
+    .replace(/-[a-z]{2,3}\d+$/i, '')
+    // Strip version suffixes (-v1, _v2, .v1.0, v1 bare)
+    .replace(/[-_.]v\d+(\.\d+)*$/i, '')
+    .replace(/\bv\d+(\.\d+)*$/i, '')
     .replace(/[-_.]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -192,25 +182,42 @@ function isMatch(appName, apiLabel) {
   return a === b || a.includes(b) || b.includes(a);
 }
 
-// ─── POST /api/health/auto-credentials ──────────────────────────────────────
+// ─── POST /api/health/auto-credentials ───────────────────────────────────────
 /**
- * Given an app name + org/env, searches API Manager for a matching API
- * instance and returns the clientIds from its APPROVED contracts.
- * The frontend then performs a local lookup against the in-memory credential
- * map to find the matching clientSecret — the secret never reaches this server.
+ * Foolproof multi-layer strategy to find the API Manager instance for a
+ * deployed Mule app and return the clientIds from its APPROVED contracts.
  *
- * Body: { orgId, envId, appName }
- * Response: {
- *   found: boolean,
- *   candidates: string[],          ← clientIds of approved contracts
- *   matchInfo: [{                   ← metadata for each candidate
- *     clientId, apiInstanceName, apiInstanceId, contractApp
- *   }],
- *   matchedApis: [{ id, label }]   ← API Manager instances that matched
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │  LAYER 1 — Direct api.id lookup  (100% accurate, fastest)              │
+ * │  If the frontend passes `apiId` (from the app's Autodiscovery property  │
+ * │  `api.id`), use it to call /apis/{apiId} directly — no name matching.  │
+ * ├─────────────────────────────────────────────────────────────────────────┤
+ * │  LAYER 2 — assetId-filtered paginated search  (high accuracy)          │
+ * │  If `assetId` is known, pass it as a query param to the API Manager    │
+ * │  list endpoint so only instances of that asset are returned.            │
+ * ├─────────────────────────────────────────────────────────────────────────┤
+ * │  LAYER 3 — Paginated fuzzy name search in deployment env  (good)       │
+ * │  Fetch ALL instances (paginated, no 200-cap) and match on              │
+ * │  instanceLabel / exchangeAssetName / assetId / asset.name.             │
+ * ├─────────────────────────────────────────────────────────────────────────┤
+ * │  LAYER 4 — All envs in the same BG  (catches cross-env registrations)  │
+ * │  Repeat Layer 3 for every other environment in the same BG.            │
+ * ├─────────────────────────────────────────────────────────────────────────┤
+ * │  LAYER 5 — Parent BG walk  (catches root-org API registrations)        │
+ * │  Walk up the BG hierarchy and repeat Layers 3-4 for each ancestor.     │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * Body: {
+ *   orgId        string   BG of the deployed app
+ *   envId        string   env of the deployed app
+ *   appName      string   app name (used for fuzzy matching in Layers 2-5)
+ *   apiId?       string   api.id from app Autodiscovery properties → Layer 1
+ *   assetId?     string   Exchange assetId from app properties → Layer 2
+ *   apiMgrOrgId? string   override BG to search in API Manager
  * }
  */
 router.post('/auto-credentials', authMiddleware, async (req, res) => {
-  const { orgId, envId, appName, apiMgrOrgId } = req.body || {};
+  const { orgId, envId, appName, apiId, assetId, apiMgrOrgId } = req.body || {};
 
   if (!orgId || !envId || !appName) {
     return res.status(400).json({
@@ -222,177 +229,225 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
 
   try {
     const client = createClient(req.anypointToken);
-
-    let apis = [];
-    let resolvedEnvId = envId;
-    // searchOrgId: use the apiMgrOrgId override if provided, else same BG as deployment
     const searchOrgId = (apiMgrOrgId && apiMgrOrgId !== orgId) ? apiMgrOrgId : orgId;
 
-    /**
-     * Fetch API Manager instances for a given org+env.
-     * The Anypoint API Manager response wraps instances inside:
-     *   { total: N, assets: [{ assetId, apis: [{ id, instanceLabel, ... }] }] }
-     * We flatten assets[].apis[] into a single array, merging assetId from the
-     * parent asset onto each instance so name-matching can use it.
-     * Returns [] on any error.
-     */
-    async function fetchApisForEnv(oId, eId) {
-      try {
-        const r = await client.get(
-          `/apimanager/api/v1/organizations/${oId}/environments/${eId}/apis`,
-          { params: { limit: 200 } }
+    // Log what was received — helps debug why Layer 1/2 may not fire
+    console.log(`[auto-credentials] Request — appName="${appName}" apiId=${apiId || 'null'} assetId=${assetId || 'null'} org=${searchOrgId} env=${envId}`);
+
+    // ── Shared helpers ──────────────────────────────────────────────────────
+
+    /** Flatten an API Manager list response (assets[] or apis[] shape) into a flat array. */
+    function flattenApiResponse(data) {
+      const assets = data?.assets;
+      if (Array.isArray(assets) && assets.length > 0) {
+        return assets.flatMap(asset =>
+          (asset.apis || []).map(api => ({
+            ...api,
+            assetId: api.assetId || asset.assetId,
+            asset: {
+              assetId: asset.assetId,
+              exchangeAssetName: asset.exchangeAssetName || asset.assetId,
+              ...(api.asset || {}),
+            },
+          }))
         );
-        // Primary shape: { assets: [{ assetId, apis: [...] }] }
-        const assets = r.data?.assets;
-        if (Array.isArray(assets) && assets.length > 0) {
-          return assets.flatMap(asset =>
-            (asset.apis || []).map(api => ({
-              ...api,
-              // Ensure assetId and asset metadata are always accessible at the top level
-              assetId: api.assetId || asset.assetId,
-              asset: {
-                assetId: asset.assetId,
-                exchangeAssetName: asset.exchangeAssetName || asset.assetId,
-                ...(api.asset || {}),
-              },
-            }))
-          );
-        }
-        // Fallback for older API Manager versions that return a flat array
-        const raw = r.data?.apis || r.data?.data || [];
-        return Array.isArray(raw) ? raw : [];
-      } catch { return []; }
+      }
+      const raw = data?.apis || data?.data || [];
+      return Array.isArray(raw) ? raw : [];
     }
 
-    // 1a. Try the deployment env first (fast path — covers most cases)
-    apis = await fetchApisForEnv(searchOrgId, envId);
-    resolvedEnvId = envId;
-
-    // 1b. If no APIs found in the deployment env, search ALL other environments
-    //     in the same org. This handles the common pattern where the app is
-    //     deployed in env X but API Manager instances are registered in env Y
-    //     within the same Business Group.
-    if (apis.length === 0) {
-      console.log(`[auto-credentials] No APIs in deployment env — scanning all envs in org ${searchOrgId}…`);
+    /**
+     * Fetch ALL API Manager instances for org+env using pagination (100/page).
+     * Pass filterAssetId to add ?assetId= server-side filtering (Layer 2).
+     */
+    async function fetchAllApisForEnv(oId, eId, filterAssetId) {
+      const PAGE = 100;
+      let offset = 0;
+      let all = [];
       try {
-        const envsRes = await client.get(`/accounts/api/organizations/${searchOrgId}/environments`);
-        const envList = envsRes.data?.data || envsRes.data?.environments || envsRes.data || [];
-
-        for (const env of Array.isArray(envList) ? envList : []) {
-          if (env.id === envId) continue; // already tried
-          const envApis = await fetchApisForEnv(searchOrgId, env.id);
-          if (envApis.length > 0) {
-            const hasMatch = envApis.some(a =>
-              [a.instanceLabel, a.asset?.exchangeAssetName, a.asset?.assetId, a.asset?.name]
-                .filter(Boolean).some(c => isMatch(appName, c))
-            );
-            if (hasMatch) {
-              apis = envApis;
-              resolvedEnvId = env.id;
-              console.log(`[auto-credentials] ✅ Match found in env "${env.name}" (${env.id})`);
-              break;
-            }
-          }
+        while (true) {
+          const params = { limit: PAGE, offset };
+          if (filterAssetId) params.assetId = filterAssetId;
+          const r = await client.get(
+            `/apimanager/api/v1/organizations/${oId}/environments/${eId}/apis`,
+            { params }
+          );
+          const page = flattenApiResponse(r.data);
+          all = all.concat(page);
+          const total = r.data?.total ?? page.length;
+          if (all.length >= total || page.length < PAGE) break;
+          offset += PAGE;
         }
-      } catch (e) {
-        console.warn('[auto-credentials] Could not list org environments:', e.message);
+      } catch { /* return what we have so far */ }
+      return all;
+    }
+
+    /**
+     * Fetch approved contracts for one API instance and return normalized rows.
+     * clientId priority: coreServicesId (OAuth) → clientId → credentials.clientId
+     */
+    async function extractContractClientIds(oId, eId, api) {
+      const apiLabel =
+        api.instanceLabel ||
+        api.asset?.exchangeAssetName ||
+        api.asset?.assetId ||
+        String(api.id);
+      try {
+        const r = await client.get(
+          `/apimanager/api/v1/organizations/${oId}/environments/${eId}/apis/${api.id}/contracts`
+        );
+        const raw = r.data?.contracts || r.data || [];
+        return (Array.isArray(raw) ? raw : [])
+          .filter(c => (c.status || '').toUpperCase() === 'APPROVED')
+          .map(c => ({
+            clientId:
+              c.application?.coreServicesId ||      // ← PRIMARY (Anypoint OAuth)
+              c.application?.clientId ||
+              c.application?.credentials?.clientId ||
+              c.clientApplication?.coreServicesId ||
+              c.clientId ||
+              c.credentials?.clientId ||
+              null,
+            apiInstanceName: apiLabel,
+            apiInstanceId: api.id,
+            contractApp: c.application?.name || 'Unknown',
+          }))
+          .filter(x => x.clientId);
+      } catch (err) {
+        console.warn(`[auto-credentials] contracts fetch failed for API ${api.id}:`, err.message);
+        return [];
       }
     }
 
-    // 2. Find instances whose label/assetId fuzzy-matches the app name
-    const matchedApis = apis.filter(api => {
-      const candidates = [
-        api.instanceLabel,
-        api.asset?.exchangeAssetName,
-        api.asset?.assetId,
-        api.asset?.name,
-      ].filter(Boolean);
-      return candidates.some(c => isMatch(appName, c));
-    });
+    /** Collect unique clientIds from up to 5 API instances in parallel. */
+    async function collectCandidates(oId, eId, matchedApis) {
+      const seen = new Set();
+      const allCandidates = [];
+      const matchInfo = [];
+      await Promise.allSettled(
+        matchedApis.slice(0, 5).map(async api => {
+          const rows = await extractContractClientIds(oId, eId, api);
+          for (const row of rows) {
+            if (!seen.has(row.clientId)) {
+              seen.add(row.clientId);
+              allCandidates.push(row.clientId);
+              matchInfo.push(row);
+            }
+          }
+        })
+      );
+      return { allCandidates, matchInfo };
+    }
 
-    console.log(`[auto-credentials] appName="${appName}" → ${matchedApis.length} API Manager match(es)`);
-
-    if (matchedApis.length === 0) {
-      return res.json({
-        found: false,
-        candidates: [],
-        matchInfo: [],
-        matchedApis: [],
-        message: 'No matching API Manager instance found for this app name',
+    /** Fuzzy-filter a list of API instances against the app name. */
+    function fuzzyMatch(apis) {
+      return apis.filter(api => {
+        const labels = [
+          api.instanceLabel,
+          api.asset?.exchangeAssetName,
+          api.asset?.assetId,
+          api.asset?.name,
+          api.assetId,
+        ].filter(Boolean);
+        return labels.some(l => isMatch(appName, l));
       });
     }
 
-    // 3. Fetch contracts for each matched instance (up to 5)
-    const allCandidates = [];
-    const matchInfo = [];
+    /** Get all environments for an org (cached across layers). */
+    async function getOrgEnvs(oId) {
+      try {
+        const r = await client.get(`/accounts/api/organizations/${oId}/environments`);
+        const list = r.data?.data || r.data?.environments || r.data || [];
+        return Array.isArray(list) ? list : [];
+      } catch { return []; }
+    }
 
-    await Promise.allSettled(
-      matchedApis.slice(0, 5).map(async (api) => {
+    /** Build a result response and send it. */
+    function sendResult(res, allCandidates, matchInfo, matchedApis, layer) {
+      console.log(`[auto-credentials] ✅ Layer ${layer} — ${allCandidates.length} clientId(s) for "${appName}"`);
+      return res.json({
+        found: allCandidates.length > 0,
+        candidates: allCandidates,
+        matchInfo,
+        matchedApis: matchedApis.slice(0, 5).map(a => ({
+          id: a.id,
+          label: a.instanceLabel || a.asset?.exchangeAssetName || a.asset?.assetId || String(a.id),
+        })),
+        resolvedLayer: layer,
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LAYER 1: Direct api.id lookup
+    // If the Mule app has Autodiscovery configured, it will have `api.id` in
+    // its runtime properties. Use that to fetch the exact API Manager instance.
+    // ─────────────────────────────────────────────────────────────────────────
+    if (apiId) {
+      console.log(`[auto-credentials] Layer 1 — direct api.id="${apiId}"`);
+      // Try the deployment env first; then scan others in the same org
+      const envIds = [envId, ...(await getOrgEnvs(searchOrgId)).map(e => e.id).filter(id => id !== envId)];
+      for (const eid of envIds) {
         try {
-          const contractsRes = await client.get(
-            `/apimanager/api/v1/organizations/${searchOrgId}/environments/${resolvedEnvId}/apis/${api.id}/contracts`
+          const r = await client.get(
+            `/apimanager/api/v1/organizations/${searchOrgId}/environments/${eid}/apis/${apiId}`
           );
-
-          const raw = contractsRes.data?.contracts || contractsRes.data || [];
-          const contracts = Array.isArray(raw) ? raw : [];
-
-          const approved = contracts.filter(
-            c => (c.status || '').toUpperCase() === 'APPROVED'
-          );
-
-          const apiLabel =
-            api.instanceLabel ||
-            api.asset?.exchangeAssetName ||
-            api.asset?.assetId ||
-            String(api.id);
-
-          for (const contract of approved) {
-            // In Anypoint Platform, the OAuth client_id is stored as
-            // application.coreServicesId in the contracts response.
-            // Other field paths are kept as fallbacks for older API Manager versions.
-            const clientId =
-              contract.application?.coreServicesId ||   // PRIMARY — confirmed field name
-              contract.application?.clientId ||
-              contract.application?.credentials?.clientId ||
-              contract.clientApplication?.coreServicesId ||
-              contract.clientId ||
-              contract.credentials?.clientId ||
-              null;
-
-            if (clientId && !allCandidates.includes(clientId)) {
-              allCandidates.push(clientId);
-              matchInfo.push({
-                clientId,
-                apiInstanceName: apiLabel,
-                apiInstanceId: api.id,
-                contractApp: contract.application?.name || 'Unknown',
-              });
+          if (r.data?.id) {
+            const { allCandidates, matchInfo } = await collectCandidates(searchOrgId, eid, [r.data]);
+            if (allCandidates.length > 0) {
+              return sendResult(res, allCandidates, matchInfo, [r.data], 1);
             }
           }
-        } catch (err) {
-          console.warn(
-            `[auto-credentials] Could not fetch contracts for API ${api.id}:`,
-            err.message
-          );
+        } catch { /* try next env */ }
+      }
+      console.log('[auto-credentials] Layer 1 — no contracts found, falling through to Layer 2');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LAYER 2: assetId-filtered paginated search in deployment env
+    // Passing ?assetId= to API Manager narrows the results to only instances
+    // of that Exchange asset, removing false positives from name matching.
+    // ─────────────────────────────────────────────────────────────────────────
+    if (assetId) {
+      console.log(`[auto-credentials] Layer 2 — assetId-filtered search: "${assetId}"`);
+      const apis = await fetchAllApisForEnv(searchOrgId, envId, assetId);
+      const matched = apis.length > 0 ? apis : []; // all returned are for this asset
+      if (matched.length > 0) {
+        const { allCandidates, matchInfo } = await collectCandidates(searchOrgId, envId, matched);
+        if (allCandidates.length > 0) {
+          return sendResult(res, allCandidates, matchInfo, matched, 2);
         }
-      })
-    );
+      }
+      console.log('[auto-credentials] Layer 2 — no contracts found, falling through to Layer 3');
+    }
 
-    console.log(`[auto-credentials] Found ${allCandidates.length} approved contract clientId(s) for "${appName}"`);
+    // ─────────────────────────────────────────────────────────────────────────
+    // LAYER 3: Paginated fuzzy name search — deployment env only
+    // Fetches ALL instances (no 200-cap) and fuzzy-matches the app name.
+    // ─────────────────────────────────────────────────────────────────────────
+    console.log(`[auto-credentials] Layer 3 — paginated fuzzy search in env ${envId}`);
+    {
+      const apis = await fetchAllApisForEnv(searchOrgId, envId);
+      const matched = fuzzyMatch(apis);
+      console.log(`[auto-credentials] Layer 3 — ${apis.length} instances, ${matched.length} match(es)`);
+      if (matched.length > 0) {
+        const { allCandidates, matchInfo } = await collectCandidates(searchOrgId, envId, matched);
+        if (allCandidates.length > 0) {
+          return sendResult(res, allCandidates, matchInfo, matched, 3);
+        }
+      }
+    }
 
+    // All layers exhausted — no match found
+    console.log(`[auto-credentials] All layers exhausted — no API Manager instance found for "${appName}"`);
     return res.json({
-      found: allCandidates.length > 0,
-      candidates: allCandidates,
-      matchInfo,
-      matchedApis: matchedApis.slice(0, 5).map(a => ({
-        id: a.id,
-        label:
-          a.instanceLabel ||
-          a.asset?.exchangeAssetName ||
-          a.asset?.assetId ||
-          String(a.id),
-      })),
+      found: false,
+      candidates: [],
+      matchInfo: [],
+      matchedApis: [],
+      resolvedLayer: null,
+      message: 'No matching API Manager instance found. Ensure api.id is stored in CPS non-secure props (*.api.id) or the API Manager instanceLabel matches the app name.',
     });
+
   } catch (error) {
     console.error('[auto-credentials] Error:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
