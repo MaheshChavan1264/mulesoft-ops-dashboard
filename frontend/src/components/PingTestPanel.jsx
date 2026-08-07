@@ -34,6 +34,7 @@ export default function PingTestPanel({
   const [clientSecret, setClientSecret] = useState(defaultClientSecret);
   const [transactionId, setTransactionId] = useState('smokeTest');
   const [showSecret, setShowSecret] = useState(false);
+  const [queryParams, setQueryParams] = useState('');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -164,6 +165,7 @@ export default function PingTestPanel({
         clientId: clientId.trim() || undefined,
         clientSecret: clientSecret.trim() || undefined,
         transactionId: transactionId.trim() || 'smokeTest',
+        queryParams: queryParams.trim() || undefined,
       });
       setResult(data);
     } catch (err) {
@@ -210,8 +212,21 @@ export default function PingTestPanel({
           </button>
         </div>
 
+        {/* Query params row — Feature 5: smart ping URL resolution */}
+        <div className="pt-1 border-t border-slate-800/60">
+          <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1 mb-1">
+            <Globe size={9} /> Query Parameters <span className="normal-case text-slate-600 font-normal">(optional — appended to every ping path)</span>
+          </label>
+          <input
+            value={queryParams}
+            onChange={e => setQueryParams(e.target.value)}
+            placeholder="e.g. checkDb=true&type=health"
+            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono placeholder-slate-600 focus:outline-none focus:border-cyan-600/50"
+          />
+        </div>
+
         {/* Credentials row */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-slate-800/60">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="space-y-1">
             <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1">
               <Key size={9} /> client_id

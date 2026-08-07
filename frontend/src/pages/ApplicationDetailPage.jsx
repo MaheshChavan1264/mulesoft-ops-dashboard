@@ -147,6 +147,47 @@ export default function ApplicationDetailPage() {
   const { getSecret, hasCredentials: hasCpsCsvCredentials } = useCpsCredentialStore();
   const [cpsCredsResolved, setCpsCredsResolved] = useState(false);
 
+  // Feature 3: resolve BG name and env name for context badges
+  const [bgName, setBgName] = useState('');
+  useEffect(() => {
+    if (!orgId) return;
+    api.get('/organizations/business-groups').then(r => {
+      const groups = r.data?.data || [];
+      const match = groups.find(g => g.id === orgId);
+      if (match) setBgName(match.name);
+    }).catch(() => {});
+  }, [orgId]);
+
+  // Feature 4: contracts tab state
+  const [contractsLoading, setContractsLoading] = useState(false);
+  const [contracts, setContracts] = useState(null);
+  const [contractsError, setContractsError] = useState('');
+  const [contractApiInstanceId, setContractApiInstanceId] = useState(null);
+
+  // Feature 4: load contracts — defined here (before early returns) to satisfy Rules of Hooks
+  const loadContracts = useCallback(async () => {
+    if (!orgId || !envId) return;
+    setContractsLoading(true);
+    setContractsError('');
+    setContracts(null);
+    try {
+      const acRes = await api.post('/health/auto-credentials', { orgId, envId, appName: app?.name });
+      const instanceId = acRes.data?.matchedApis?.[0]?.id;
+      if (!instanceId) {
+        setContractsError('No API Manager instance found for this application. Ensure it is registered in API Manager.');
+        setContractsLoading(false);
+        return;
+      }
+      setContractApiInstanceId(instanceId);
+      const contractsRes = await api.get(`/apis/${orgId}/${envId}/${instanceId}/contracts`);
+      const raw = contractsRes.data?.contracts || contractsRes.data || [];
+      setContracts(Array.isArray(raw) ? raw : []);
+    } catch (e) {
+      setContractsError(e.response?.data?.error || e.message || 'Failed to load contracts');
+    }
+    setContractsLoading(false);
+  }, [orgId, envId, app?.name]);
+
   // CPS state
   const [cpsLoading, setCpsLoading] = useState(false);
   const [cpsData, setCpsData] = useState(null);
@@ -366,8 +407,9 @@ export default function ApplicationDetailPage() {
   const tabs = [
     { id:'overview', label:'Overview' },
     { id:'properties', label:'Properties', badge:Object.keys(allProps).length },
-    { id:'infrastructure', label:'Schedulers & OS' },
+    { id:'infrastructure', label:'Infra & Config' },
     ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config' }] : []),
+    { id:'contracts', label:'Contracts' },
     { id:'ping', label:'Ping Test' },
     { id:'raw', label:'Raw JSON' },
   ];
@@ -418,6 +460,21 @@ export default function ApplicationDetailPage() {
                 <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${isCH1?'bg-purple-950/50 text-purple-300 border-purple-700/50':'bg-blue-950/50 text-blue-300 border-blue-700/50'}`}>
                   {isCH1?'CloudHub 1.0':'CloudHub 2.0'}
                 </span>
+                {/* Feature 3: BG & Env context badges */}
+                {bgName && (
+                  <span className="text-xs px-2 py-0.5 rounded-full border bg-slate-800/60 text-slate-400 border-slate-700/50">
+                    🏢 {bgName}
+                  </span>
+                )}
+                {app.environment?.name && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
+                    app.environment?.type === 'production'
+                      ? 'bg-green-950/40 text-green-400 border-green-800/50'
+                      : 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50'
+                  }`}>
+                    🌐 {app.environment.name}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <MetaTag color="gray">{app.id}</MetaTag>
@@ -476,7 +533,11 @@ export default function ApplicationDetailPage() {
       <div className="bg-slate-900 p-1 rounded-xl border border-slate-800 w-fit flex gap-0.5">
         {tabs.map(t => (
           <button key={t.id}
-            onClick={() => { setTab(t.id); if (t.id === 'cps' && !cpsData && !cpsLoading) loadCpsData(); }}
+            onClick={() => {
+            setTab(t.id);
+            if (t.id === 'cps' && !cpsData && !cpsLoading) loadCpsData();
+            if (t.id === 'contracts' && contracts === null && !contractsLoading) loadContracts();
+          }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.id?'bg-slate-700/80 text-white shadow-md':'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'}`}>
             {t.id === 'cps' && <Key size={11} />}
             {t.id === 'ping' && <Activity size={11} />}
@@ -981,6 +1042,114 @@ export default function ApplicationDetailPage() {
                   </GlassCard>
                 );
               })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── CONTRACTS ───────────────────────────────── */}
+      {tab==='contracts' && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-white font-semibold text-sm">API Consumer Contracts</h2>
+              <p className="text-slate-500 text-xs mt-0.5">
+                Client applications approved to consume this API instance
+                {contractApiInstanceId && <span className="ml-2 font-mono text-slate-600">API ID: {contractApiInstanceId}</span>}
+              </p>
+            </div>
+            <button onClick={loadContracts} disabled={contractsLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors">
+              <RefreshCw size={11} className={contractsLoading ? 'animate-spin' : ''} />
+              {contracts ? 'Refresh' : 'Load'}
+            </button>
+          </div>
+
+          {contractsLoading && (
+            <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
+              <RefreshCw size={18} className="animate-spin" />
+              <span className="text-sm">Loading contracts…</span>
+            </div>
+          )}
+
+          {contractsError && !contractsLoading && (
+            <div className="flex items-start gap-3 bg-slate-900/60 border border-slate-800/60 rounded-2xl px-5 py-4">
+              <AlertTriangle size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-slate-300 text-sm font-medium">No contracts available</p>
+                <p className="text-slate-500 text-xs mt-1">{contractsError}</p>
+              </div>
+            </div>
+          )}
+
+          {contracts !== null && !contractsLoading && !contractsError && (
+            contracts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-slate-900/50 border border-slate-800/60 rounded-2xl">
+                <Key size={36} className="text-slate-700" />
+                <p className="text-slate-500 text-sm">No approved contracts for this API instance</p>
+              </div>
+            ) : (
+              <GlassCard icon={Key} title="Consumer Contracts" count={contracts.length} noPad>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                        {['Client App', 'Client ID', 'Status', 'SLA Tier', 'Requested'].map(h => (
+                          <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {contracts.map((c, i) => {
+                        const status = (c.status || 'UNKNOWN').toUpperCase();
+                        const statusCls = status === 'APPROVED'
+                          ? 'bg-emerald-950/50 text-emerald-300 border-emerald-700/50'
+                          : status === 'REVOKED'
+                          ? 'bg-red-950/50 text-red-300 border-red-700/50'
+                          : 'bg-yellow-950/50 text-yellow-300 border-yellow-700/50';
+                        const clientId =
+                          c.application?.coreServicesId ||
+                          c.application?.clientId ||
+                          c.clientApplication?.coreServicesId ||
+                          c.clientId || '—';
+                        const slaTier = c.tier?.name || c.slaTier?.name || c.tierLabel || '—';
+                        const reqDate = c.requestedAt || c.createdDate
+                          ? new Date(c.requestedAt || c.createdDate).toLocaleDateString()
+                          : '—';
+                        return (
+                          <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                            <td className="px-5 py-3">
+                              <p className="text-slate-200 text-xs font-medium">{c.application?.name || c.clientApplication?.name || '—'}</p>
+                              {c.application?.description && (
+                                <p className="text-slate-600 text-[10px] mt-0.5 truncate max-w-xs">{c.application.description}</p>
+                              )}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className="font-mono text-xs text-slate-400">{clientId !== '—' ? `${String(clientId).slice(0, 12)}…` : '—'}</span>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`inline-flex text-[10px] px-2 py-0.5 rounded-full border font-bold ${statusCls}`}>{status}</span>
+                            </td>
+                            <td className="px-5 py-3 text-slate-400 text-xs">{slaTier}</td>
+                            <td className="px-5 py-3 text-slate-500 text-xs">{reqDate}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </GlassCard>
+            )
+          )}
+
+          {contracts === null && !contractsLoading && !contractsError && (
+            <div className="flex flex-col items-center justify-center py-16 gap-4 bg-slate-900/50 border border-slate-800/60 rounded-2xl">
+              <Key size={32} className="text-slate-700" />
+              <p className="text-slate-500 text-sm">Click <strong>Load</strong> to fetch consumer contracts from API Manager</p>
+              <button onClick={loadContracts}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
+                <Key size={13} /> Load Contracts
+              </button>
             </div>
           )}
         </div>
