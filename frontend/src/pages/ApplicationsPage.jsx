@@ -367,7 +367,9 @@ function BulkPingModal({ apps, onClose }) {
                   orgId: bgId, envId, apiId: apiInstanceId,
                 });
                 const cd = contractRes.data;
-                if (cd.clientId && cd.clientSecret) {
+                // Only use credentials if the contract is APPROVED.
+                // If pending, do NOT ping with these creds — the API will reject them.
+                if (cd.clientId && cd.clientSecret && cd.contractStatus === 'approved') {
                   return {
                     appId: app.id,
                     clientId: cd.clientId,
@@ -376,8 +378,12 @@ function BulkPingModal({ apps, onClose }) {
                     contractApp: cd.appName || '—',
                     resolvedLayer: 'contract',
                     contractStatus: cd.contractStatus,
-                    source: cd.contractStatus === 'approved' ? 'contract' : 'contract-pending',
+                    source: 'contract',
                   };
+                }
+                // Contract is pending — log it but don't use the credentials
+                if (cd.contractStatus === 'pending') {
+                  console.log(`[BulkPing] Contract pending for ${app.name} (app: ${cd.appName}) — skipping credentials, ping will run without auth`);
                 }
               } catch { /* contract fallback failed — skip */ }
             }
