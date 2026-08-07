@@ -381,9 +381,19 @@ function BulkPingModal({ apps, onClose }) {
                     source: 'contract',
                   };
                 }
-                // Contract is pending — log it but don't use the credentials
+                // Contract is pending — mark app as skipped so the ping is NOT run
                 if (cd.contractStatus === 'pending') {
-                  console.log(`[BulkPing] Contract pending for ${app.name} (app: ${cd.appName}) — skipping credentials, ping will run without auth`);
+                  console.log(`[BulkPing] Contract pending for ${app.name} (app: ${cd.appName}) — skipping ping`);
+                  return {
+                    appId: app.id,
+                    clientId: null,
+                    clientSecret: null,
+                    apiInstanceId: apiInstanceId,  // saved for retry after approval
+                    contractApp: cd.appName || '—',
+                    apiInstanceName: data.matchedApis[0]?.label || '—',
+                    source: 'contract-pending',
+                    contractStatus: 'pending',
+                  };
                 }
               } catch { /* contract fallback failed — skip */ }
             }
@@ -437,6 +447,20 @@ function BulkPingModal({ apps, onClose }) {
       }
 
       const auto = resolvedCreds[app.id];
+
+      // Skip ping entirely for apps with a pending contract approval
+      if (auto?.source === 'contract-pending') {
+        return {
+          appId: app.id,
+          result: {
+            status: 'SKIPPED_CONTRACT_PENDING',
+            error: `Contract pending approval for "${auto.contractApp}". Approve in API Manager, then use the Retry button.`,
+            contractApp: auto.contractApp,
+            apiInstanceId: auto.apiInstanceId,
+          },
+        };
+      }
+
       const useClientId     = clientId.trim()     || auto?.clientId     || undefined;
       const useClientSecret = clientSecret.trim() || auto?.clientSecret || undefined;
 
