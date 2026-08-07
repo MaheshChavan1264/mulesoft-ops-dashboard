@@ -22,6 +22,7 @@ A full-stack monitoring and management dashboard for MuleSoft Anypoint Platform,
    - [API Manager](#api-manager)
    - [Exchange Assets](#exchange-assets)
    - [Ping Test](#ping-test)
+   - [CPS Properties Comparison](#cps-properties-comparison)
    - [Business Groups](#business-groups)
    - [Environments](#environments)
 6. [Architecture Overview](#architecture-overview)
@@ -85,12 +86,13 @@ mulesoft-dashboard/
 │       │   ├── PingResultCard.jsx     # Result card component
 │       │   └── BulkPingModal.jsx      # Bulk ping modal (launched from Applications page)
 │       └── pages/
-│           ├── DashboardPage.jsx      # Metrics, charts, environment summary
-│           ├── ApplicationsPage.jsx   # Full app list with bulk operations
-│           ├── ApplicationDetailPage.jsx  # 6-tab deep-dive per application
-│           ├── ApiManagerPage.jsx     # API instances, policies, contracts
-│           ├── ExchangePage.jsx       # Exchange asset browser
-│           └── PingTestPage.jsx       # Dedicated ping-test workspace
+│           ├── DashboardPage.jsx           # Metrics, charts, environment summary
+│           ├── ApplicationsPage.jsx        # Full app list with bulk operations
+│           ├── ApplicationDetailPage.jsx   # 6-tab deep-dive per application
+│           ├── ApiManagerPage.jsx          # API instances, policies, contracts
+│           ├── ExchangePage.jsx            # Exchange asset browser
+│           ├── PingTestPage.jsx            # Dedicated ping-test workspace
+│           └── CpsComparisonPage.jsx       # Side-by-side CPS property diff tool
 └── README.md
 ```
 
@@ -198,7 +200,7 @@ The Dashboard provides an at-a-glance operational view:
 ### Applications
 
 **Route:** `/applications`  
-**Backend routes used:** `/api/applications`, `/api/applications/summary`
+**Backend routes used:** `/api/applications/summary`, `/api/environments`, `/api/organizations/business-groups`
 
 A paginated, filterable table of all Mule applications across CloudHub 1.0 and CloudHub 2.0.
 
@@ -207,25 +209,30 @@ A paginated, filterable table of all Mule applications across CloudHub 1.0 and C
 | Column | Description |
 |---|---|
 | ☑ | Multi-select checkbox |
-| Application Name | Links to Application Detail page |
-| Type | CH1 / CH2 badge |
-| Status | STARTED / STOPPED / FAILED with colour coding |
-| Environment | Deployment environment name |
-| Workers / Replicas | Resource allocation |
-| Runtime Version | Mule runtime version |
-| Last Modified | Timestamp of last deployment |
+| Application Name | Clickable — opens Application Detail page |
+| Status | RUNNING / STOPPED / FAILED / DEPLOYING with colour-coded badge |
+| Environment | Environment name with colour dot (green = Production, yellow = Sandbox) |
+| Type | CloudHub 2.0 / CloudHub 1.0 badge |
+| Mule Version | Runtime version string |
+| Last Modified | Date of last deployment |
+| Actions | Per-row ▶ Start / ⏹ Stop / 🔄 Restart buttons |
 
 #### Key Features
 
-- **Business Group selector** — Filter apps by a specific BG or view **All Organizations** (aggregates every BG in parallel).
-- **Environment filter** — Narrow down by Sandbox, Production, UAT, etc.
-- **Status filter** — Running, Stopped, or All.
+- **Business Group selector** — Filter apps by a specific BG or view **All Organizations** (aggregates every BG in parallel using `Promise.allSettled`).
+- **Environment filter** — Narrow to Sandbox, Production, UAT, etc.
+- **Status filter** — Running, Stopped, Deploying, Partially Started, and more.
+- **Deployment Type filter** — Filter to CloudHub 2.0 (CH2) or CloudHub 1.0 (CH1) only.
 - **Search** — Full-text filter on application name.
-- **Multi-select with floating rows** — Selected rows automatically float to the top of the table so your selection is always visible even when scrolling through hundreds of apps.
-- **Bulk Ping** — Select one or more apps and click **Ping Selected** to run live health checks. Results open in the Ping Test page pre-populated with data.
-- **Start / Stop / Restart** — Per-row action buttons call the ARM API to control application lifecycle.
+- **BG Filter modal** — Restrict the Business Group dropdown to only the BGs relevant to your team. Active filter shows `N/M shown` badge.
+- **Multi-select with floating rows** — Selected rows automatically float to the top of the table so your selection is always visible when scrolling.
+- **Bulk Ping modal** — Select apps and click **Ping (N)** (or **Ping Test** to ping all visible apps) to open the Bulk Ping modal. Runs pings in parallel batches of 10 and auto-resolves credentials from API Manager (see Ping Test section). After completion, navigates to the Ping Test Results page.
+- **Import Credentials CSV** — Upload a CSV of `client_id`/`client_secret` pairs. Credentials are stored in-memory only (never written to disk or sent to any server) and are used for auto-credential resolution during ping runs.
+- **Export CPS** — Exports CPS property values for all visible apps to an Excel/CSV file via the CPS Export modal.
+- **Start / Stop / Restart** — Per-row and bulk action buttons call the ARM API with a confirmation dialog before executing. Successful actions update the status badge optimistically; failed apps remain selected.
+- **Frontend cache** — App list is cached per BG selection (module-level, survives route changes). Use the **Refresh** button to force a fresh fetch.
 
-**Use case:** Daily operations review; finding failing apps across all BGs; selecting a set of apps for bulk health verification before a release window.
+**Use case:** Daily operations review; finding failing apps; running a bulk smoke test before a release window; exporting CPS values for documentation.
 
 ---
 
@@ -326,38 +333,147 @@ Browse assets published to Anypoint Exchange within your organisation.
 
 ### Ping Test
 
-**Route:** `/ping-test`  
-**Backend route used:** `POST /api/ping`
+**Trigger:** Click **Ping Test** or **Ping (N)** button on the Applications page  
+**Results page route:** `/ping-test`  
+**Backend routes used:** `POST /api/health/ping`, `POST /api/health/auto-credentials`
 
-A dedicated workspace for running live HTTP health checks against deployed Mule applications.
+The Ping Test workflow is split into two parts: a **Bulk Ping Modal** (launched from the Applications page) that runs the pings, and a **Ping Test Results page** that displays the outcomes.
 
-#### Table Columns
+#### Step 1 — Bulk Ping Modal
+
+Launched by clicking **Ping Test** (pings all visible apps) or **Ping (N)** (pings selected apps) on the Applications page:
+
+1. **Import Credentials CSV** — button in the modal header. Upload a `client_id`/`client_secret` CSV; credentials are stored in-memory only and never sent to any server until a ping is triggered.
+2. **Manual credentials** — `client_id`, `client_secret`, and `x-transaction-id` fields. Manual entries override auto-resolved credentials.
+3. **Auto-credential resolution** — when a credentials CSV is loaded and no manual `client_id` is entered, the modal calls the API Manager contracts API for each app to discover its `client_id`, then matches it against the loaded CSV. A resolving banner is shown during this step.
+4. **Run All Pings** — runs pings in **parallel batches of 10** for speed. Real-time per-app progress cards update as results arrive, showing status, HTTP code, and latency.
+5. On completion, navigates to the **Ping Test Results page** (`/ping-test`) carrying all results and credential metadata in `location.state`.
+
+#### Step 2 — Ping Test Results Page
+
+A read-only results viewer populated from the Bulk Ping Modal run:
+
+##### Result Table Columns
 
 | Column | Description |
 |---|---|
-| ☑ | Select apps to include in a run |
-| Application | Application name and BG |
-| Type | CH1 / CH2 |
-| Status | ARM deployment status |
-| Active Endpoint | Discovered endpoint path that returned a successful ping |
-| HTTP | HTTP status code from the ping response |
-| Latency | Round-trip time in milliseconds |
-| ▶ | Run ping for this single row |
+| Application | App name with environment colour dot; 🔑 auto badge if credentials were auto-resolved |
+| Type | CH1 / CH2 badge |
+| Status | Healthy / Partial / Unreachable badge with animated pulse dot |
+| Active Endpoint | Full URL of the path that returned the best response |
+| HTTP | HTTP status code, colour-coded (green <300, yellow <500, red ≥500) |
+| Latency | Round-trip time; green <300 ms, yellow <1000 ms, red ≥1000 ms |
+| ▶ | Expand row for detail |
 
-#### Key Features
+##### 3-Status System
 
-- **Selected rows float to top** — Selected applications always appear at the top of the table for visibility.
-- **Run N selected / Run all** — Ping only selected apps or run all at once with a single button.
-- **Expandable rows** — Click any row to expand and see:
-  - Full endpoint URL attempted
-  - Complete error message (if failed)
-  - Response payload (first 500 characters)
-  - Attempt log showing each path tried in order
-- **View tested apps toggle** — Toggle between "All apps" and "Tested apps only" to focus on results.
-- **Pre-loaded results** — When navigated from the Applications page Bulk Ping flow (`location.state`), results are immediately populated without re-running.
-- **Client credentials** — Optional `client_id` and `client_secret` fields sent as headers for protected APIs.
+| Badge | Meaning |
+|---|---|
+| ✅ Healthy | At least one path returned a successful response |
+| ⚠️ Partial | App responded but with a non-success HTTP code |
+| ❌ Unreachable | All paths failed or timed out |
 
-**Use case:** Pre-release smoke testing; incident investigation; verifying connectivity after a network change or VPC update.
+##### Key Features
+
+- **Summary stats bar** — shows total tested, ✓ healthy count, ~ partial count, ✗ failed count, and 🔑 auto-creds used count. Toggle between "Show tested only" and "Show all" with one click.
+- **Results sorted by status** — Healthy apps appear first, then Partial, then Unreachable, for fast triage.
+- **Expandable rows** — click any row to see:
+  - 🔑 **Auto-resolved credentials detail**: API Manager instance name, consumer contract app, and first 8 characters of `client_id`
+  - **Full endpoint URL** attempted
+  - **Error message** (if failed)
+  - **Response payload** (formatted in a code block)
+  - **Attempt log table** — each path tried with its full URL, HTTP result or error, and per-attempt latency
+- **Export CSV** — downloads a 10-column CSV: Application, Environment, Type, Status, HTTP Code, Active Endpoint, Latency (ms), Credentials (Auto/Manual), Error, Response Payload (truncated at 1000 chars).
+- **Back to Applications** button — returns to the Applications page.
+- **Empty state** — if navigated to directly without a prior ping run, shows an instructional message with a "Go to Applications" button.
+
+**Use case:** Pre-release smoke testing across all apps; incident investigation; post-deployment connectivity verification; auditing which apps use auto-resolved vs manual credentials.
+
+---
+
+### CPS Properties Comparison
+
+**Route:** `/cps-compare`  
+**Backend routes used:** `/api/cps/fetch`, `/api/cps/credentials`, `/api/applications/summary`, `/api/applications/cloudhub2`, `/api/applications/cloudhub1`
+
+A dedicated side-by-side diff tool for comparing **Config Property Server (CPS)** values between any two applications, environments, or Business Groups. Supports non-secure properties, secure properties, and binary assets.
+
+#### How It Works
+
+The page is divided into two configurable **side panels** (Side A and Side B) flanking a central **Compare** button and diff table:
+
+1. **Configure each side** — select a Business Group, Environment, and Application. CPS Base URL, environment prefix, and project key are auto-populated from the selected app's runtime deployment properties.
+2. **Choose a property type** per side — Non-Secure Properties, Secure Properties, or Binary Assets. Each side can independently compare a different type.
+3. **Click Compare** — the diff table appears showing every property key with its value on each side, colour-coded by diff status.
+
+#### Property Types
+
+| Type | What Is Fetched |
+|---|---|
+| Non-Secure | Standard key-value application properties stored in CPS |
+| Secure | Encrypted properties — keys discovered automatically from `cps.secure.properties` in the non-secure response |
+| Binary Assets | Binary files stored in CPS — keys discovered automatically from `cps.secure.binaries` |
+
+#### Compare Modes
+
+| Mode | Button Label | Description |
+|---|---|---|
+| **1 App** | Compare | Single-app mode — select one app per side; compare their CPS properties directly |
+| **All Apps** | Compare (N) | Multi-app mode — select a checklist of apps per side; pairs matched positionally (1st A ↔ 1st B, 2nd A ↔ 2nd B, etc.); processed in batches of 5 |
+
+#### Collapsible Side Panels
+
+After clicking **Compare**, both side panels **automatically collapse** to compact summary bars, giving the diff table maximum horizontal space. Each summary bar shows:
+
+- Side label (**Side A** / **Side B**) in the side's accent colour
+- Business Group · Environment · App name or project key
+- 🔑 indicator if CPS credentials were auto-resolved from the imported CSV
+
+Click a summary bar (**▼ Edit**) to re-expand that side and change selections, then run Compare again. The **▲ Collapse** button in the expanded panel header collapses it manually at any time without triggering a new comparison.
+
+#### Diff Table
+
+The diff table presents all property keys from both sides sorted alphabetically, with status indicators:
+
+| Status Badge | Colour | Meaning |
+|---|---|---|
+| DIFF | 🔴 Red | Key exists on both sides but values differ |
+| A ONLY | 🔵 Blue | Key present in Side A only |
+| B ONLY | 🟠 Orange | Key present in Side B only |
+| MATCH | ✅ Green | Key exists on both sides with identical values |
+
+**Additional table features:**
+- **Group headers** — secure/binary properties are namespaced as `groupName::propertyKey`; group rows are rendered as section headers.
+- **Filter tabs** — All / Different / Only A / Only B / Matching — click to narrow the view.
+- **Search box** — filter by key name within the current filter tab.
+- **Word-level diff modal** — click any 🔴🔵🟠 row to open a modal showing the exact tokens that changed between the two values, highlighted inline.
+- **Copy buttons** — copy any key name or value to the clipboard with one click.
+- **Export CSV** — download the complete diff (all keys + both values + status) as a `.csv` file.
+
+#### CPS Credentials Import
+
+CPS secure fetches require a `clientId`/`clientSecret` pair. The dashboard supports bulk credential import from a CSV file:
+
+1. Click **Import CPS Creds** in the page header.
+2. Upload a CSV with `clientId` and `clientSecret` columns.
+3. Credentials are stored in the browser session and automatically matched to apps when you select them, based on the `clientId` found in the app's deployment properties.
+4. The 🔑 badge in the side panel confirms credentials were resolved and sent to the backend for that side.
+
+#### BG Filter
+
+Click **Filter BGs** in the page header to open the Business Group filter modal. When active, the filter restricts which BGs appear in the side panel dropdowns and applies to app loading. The button label shows `N/M BGs` when a filter is active.
+
+#### Multi-App Results Accordion
+
+In **All Apps** mode, results appear as a collapsible accordion — one row per app pair:
+
+- **App name** (Side A) and its positional match in Side B
+- 🔴 **N diffs** count, or ✅ **identical** if all properties match
+- Total property count
+- Click to expand and see the full per-property diff for that pair
+- **Export All CSV** downloads a combined diff across all app pairs in a single file
+
+**Use case:** Verifying CPS property values are aligned between UAT and Production before a release; detecting configuration drift across Business Groups after a migration; auditing CPS configurations for all apps in a BG in bulk; comparing secure property values across deployment targets.
 
 ---
 
