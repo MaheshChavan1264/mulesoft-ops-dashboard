@@ -356,7 +356,30 @@ function BulkPingModal({ apps, onClose }) {
                 apiInstanceName: meta?.apiInstanceName || '—',
                 contractApp: meta?.contractApp || '—',
                 resolvedLayer: data.resolvedLayer,
+                source: 'csv',
               };
+            }
+            // CSV lookup failed — try auto-contract-creds as fallback
+            const apiInstanceId = data.matchedApis?.[0]?.id;
+            if (apiInstanceId) {
+              try {
+                const contractRes = await api.post('/health/auto-contract-creds', {
+                  orgId: bgId, envId, apiId: apiInstanceId,
+                });
+                const cd = contractRes.data;
+                if (cd.clientId && cd.clientSecret) {
+                  return {
+                    appId: app.id,
+                    clientId: cd.clientId,
+                    clientSecret: cd.clientSecret,
+                    apiInstanceName: data.matchedApis[0]?.label || '—',
+                    contractApp: cd.appName || '—',
+                    resolvedLayer: 'contract',
+                    contractStatus: cd.contractStatus,
+                    source: cd.contractStatus === 'approved' ? 'contract' : 'contract-pending',
+                  };
+                }
+              } catch { /* contract fallback failed — skip */ }
             }
           }
           return null;
