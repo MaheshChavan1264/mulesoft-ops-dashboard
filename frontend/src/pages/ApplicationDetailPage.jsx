@@ -167,6 +167,10 @@ export default function ApplicationDetailPage() {
     }).catch(() => {});
   }, [orgId, envId]);
 
+  // Ping spec from Exchange (auto-fetched when app has application.ref)
+  const [pingSpec, setPingSpec] = useState(null);
+  const [pingSpecLoading, setPingSpecLoading] = useState(false);
+
   // Feature 4: contracts tab state
   const [contractsLoading, setContractsLoading] = useState(false);
   const [contracts, setContracts] = useState(null);
@@ -482,13 +486,28 @@ export default function ApplicationDetailPage() {
     DEPLOYING:'text-blue-300 bg-blue-950/50 border-blue-700/50 shadow-blue-900/30',
     APPLIED:'text-cyan-300 bg-cyan-950/50 border-cyan-700/50' }[rStatus] || 'text-slate-400 bg-slate-800/50 border-slate-700/50';
 
+  // Fetch Exchange ping spec once the app detail is loaded
+  useEffect(() => {
+    const ref = app?.application?.ref;
+    if (!ref?.groupId || !ref?.artifactId || !ref?.version) return;
+    setPingSpecLoading(true);
+    api.get('/exchange/ping-spec', {
+      params: { groupId: ref.groupId, assetId: ref.artifactId, version: ref.version, orgId }
+    }).then(r => {
+      setPingSpec(r.data);
+      console.log(`[pingSpec] ${ref.artifactId}: ${r.data?.pingEndpoints?.length ?? 0} ping endpoint(s) found`);
+    }).catch(() => setPingSpec(null))
+      .finally(() => setPingSpecLoading(false));
+  }, [app?.application?.ref?.artifactId, orgId]);
+
   const tabs = [
     { id:'overview', label:'Overview' },
     { id:'properties', label:'Properties', badge:Object.keys(allProps).length },
     { id:'infrastructure', label:'Schedulers & Object Store' },
     ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config' }] : []),
     { id:'contracts', label:'Contracts' },
-    { id:'ping', label:'Ping Test' },
+    { id:'ping', label:'Ping Test', badge: pingSpec?.pingEndpoints?.length > 0 ? pingSpec.pingEndpoints.length : undefined },
+    { id:'apispec', label:'API Spec', badge: pingSpec?.allEndpoints?.length > 0 ? pingSpec.allEndpoints.length : undefined },
     { id:'raw', label:'Raw JSON' },
   ];
 
@@ -1265,7 +1284,192 @@ export default function ApplicationDetailPage() {
           cpsClientId={cpsClientId || ''}
           cpsKey={effectiveCpsKey || ''}
           cpsEnv={effectiveCpsEnv || ''}
+          pingSpec={pingSpec}
+          pingSpecLoading={pingSpecLoading}
         />
+      )}
+
+      {/* ── API SPEC ────────────────────────────────── */}
+      {tab==='apispec' && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-white font-semibold text-sm flex items-center gap-2">
+                <Globe size={14} className="text-blue-400" /> API Specification — Exchange
+              </h2>
+              <p className="text-slate-500 text-xs mt-0.5">
+                {pingSpecLoading ? 'Fetching spec from Exchange…' :
+                  pingSpec ? <>
+                    <span className="text-slate-400">{pingSpec.assetName}</span>
+                    {' · '}{pingSpec.specType?.toUpperCase()} · {pingSpec.allEndpoints?.length ?? 0} endpoints
+                    {pingSpec.pingEndpoints?.length > 0 && (
+                      <span className="ml-2 text-emerald-400 font-medium">
+                        · {pingSpec.pingEndpoints.length} ping path{pingSpec.pingEndpoints.length !== 1 ? 's' : ''} found
+                      </span>
+                    )}
+                  </> : 'No spec available — app may not have an Exchange asset linked'}
+              </p>
+            </div>
+          </div>
+
+          {pingSpecLoading && (
+            <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
+              <RefreshCw size={18} className="animate-spin" />
+              <span className="text-sm">Fetching API spec from Exchange…</span>
+            </div>
+          )}
+
+          {!pingSpecLoading && !pingSpec && (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 bg-slate-900/50 border border-slate-800/60 rounded-2xl">
+              <Globe size={32} className="text-slate-700" />
+              <p className="text-slate-500 text-sm">No Exchange spec found for this application</p>
+              <p className="text-slate-600 text-xs">The app needs an Exchange asset linked via <code>application.ref</code> in its ARM descriptor</p>
+            </div>
+          )}
+
+          {pingSpec && !pingSpecLoading && (
+            <>
+              {/* Ping endpoints highlighted */}
+              {pingSpec.pingEndpoints?.length > 0 && (
+                <GlassCard icon={Activity} title="Ping / Health Endpoints" count={pingSpec.pingEndpoints.length} accent="blue" noPad>
+                  <div className="px-5 py-2 bg-emerald-950/20 border-b border-emerald-900/20">
+                    <span className="text-[10px] text-emerald-400/80">
+                      These endpoints will be tried first during ping tests. Required query params are auto-filled.
+                    </span>
+                  </div>
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                        {['Method', 'Path', 'Query Params', 'Headers', 'Description'].map(h => (
+                          <th key={h} className="px-4 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pingSpec.pingEndpoints.map((ep, i) => (
+                        <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/20 transition-colors">
+                          <td className="px-4 py-3">
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${
+                              ep.method === 'GET' ? 'bg-blue-950/40 text-blue-300 border-blue-700/40' :
+                              ep.method === 'POST' ? 'bg-green-950/40 text-green-300 border-green-700/40' :
+                              'bg-slate-800/60 text-slate-300 border-slate-700/40'
+                            }`}>{ep.method}</span>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-cyan-300">{ep.path}</td>
+                          <td className="px-4 py-3">
+                            {ep.queryParams?.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {ep.queryParams.map(p => (
+                                  <span key={p.name} title={`${p.description}${p.example ? ` (e.g. ${p.example})` : ''}`}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${p.required ? 'bg-orange-950/40 text-orange-300 border-orange-700/40' : 'bg-slate-800/60 text-slate-400 border-slate-700/40'}`}>
+                                    {p.name}{p.required ? '*' : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : <span className="text-slate-700 text-xs">—</span>}
+                          </td>
+                                  <td className="px-4 py-3">
+                            {ep.headers?.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {ep.headers.map(h => (
+                                  <span key={h.name} title={h.description}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${h.required ? 'bg-purple-950/40 text-purple-300 border-purple-700/40' : 'bg-slate-800/60 text-slate-400 border-slate-700/40'}`}>
+                                    {h.name}{h.required ? '*' : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : <span className="text-slate-700 text-xs">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-slate-400 text-xs">{ep.description || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </GlassCard>
+              )}
+
+              {/* All endpoints table */}
+              {pingSpec.allEndpoints?.length > 0 && (
+                <GlassCard icon={Globe} title="All Endpoints" count={pingSpec.allEndpoints.length} noPad>
+                  <div className="max-h-[50vh] overflow-y-auto">
+                    <table className="w-full text-sm border-collapse">
+                      <thead className="sticky top-0">
+                        <tr className="bg-slate-800/90 border-b border-slate-700/40">
+                          {['Method', 'Path', 'Query Params', 'Headers', 'Description'].map(h => (
+                            <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pingSpec.allEndpoints.map((ep, i) => {
+                          const isPing = pingSpec.pingEndpoints?.some(p => p.path === ep.path && p.method === ep.method);
+                          return (
+                            <tr key={i} className={`border-b border-slate-800/40 hover:bg-slate-800/20 transition-colors ${isPing ? 'bg-emerald-950/10' : ''}`}>
+                              <td className="px-4 py-2.5">
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${
+                                  ep.method === 'GET' ? 'bg-blue-950/40 text-blue-300 border-blue-700/40' :
+                                  ep.method === 'POST' ? 'bg-green-950/40 text-green-300 border-green-700/40' :
+                                  ep.method === 'PUT' ? 'bg-yellow-950/40 text-yellow-300 border-yellow-700/40' :
+                                  ep.method === 'DELETE' ? 'bg-red-950/40 text-red-300 border-red-700/40' :
+                                  'bg-slate-800/60 text-slate-300 border-slate-700/40'
+                                }`}>{ep.method}</span>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <span className={`font-mono text-xs ${isPing ? 'text-emerald-300' : 'text-slate-300'}`}>{ep.path}</span>
+                                {isPing && <span className="ml-1.5 text-[9px] text-emerald-500">● ping</span>}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                {ep.queryParams?.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {ep.queryParams.map(p => (
+                                      <span key={p.name} title={p.description}
+                                        className={`text-[9px] px-1 py-0.5 rounded border font-mono ${p.required ? 'bg-orange-950/30 text-orange-300 border-orange-700/40' : 'bg-slate-800/60 text-slate-500 border-slate-700/40'}`}>
+                                        {p.name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : <span className="text-slate-700 text-[10px]">—</span>}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                {ep.headers?.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {ep.headers.map(h => (
+                                      <span key={h.name} title={h.description}
+                                        className="text-[9px] px-1 py-0.5 rounded border font-mono bg-slate-800/60 text-slate-500 border-slate-700/40">
+                                        {h.name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : <span className="text-slate-700 text-[10px]">—</span>}
+                              </td>
+                              <td className="px-4 py-2.5 text-slate-500 text-xs max-w-xs truncate">{ep.description || '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="px-5 py-2 border-t border-slate-800/60 text-[10px] text-slate-600">
+                    * = required · <span className="text-orange-400/70">orange</span> = required query param · <span className="text-purple-400/70">purple</span> = required header · <span className="text-emerald-400/60">● ping</span> = health check endpoint
+                  </div>
+                </GlassCard>
+              )}
+
+              {pingSpec.pingEndpoints?.length === 0 && (
+                <div className="flex items-start gap-3 bg-slate-900/60 border border-slate-800/60 rounded-2xl px-5 py-4">
+                  <AlertTriangle size={14} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-slate-300 text-sm font-medium">No ping/health endpoints detected</p>
+                    <p className="text-slate-500 text-xs mt-1">
+                      The spec doesn't contain paths matching: ping, health, status, liveness, readiness, or heartbeat.
+                      The dashboard will still try the standard paths: <code className="text-slate-400">/api/v1/ping → /api/v2/ping → /api/ping → /ping</code>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
 
       {/* ── RAW JSON ────────────────────────────────── */}
