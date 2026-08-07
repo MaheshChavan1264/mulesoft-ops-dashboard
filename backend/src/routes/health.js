@@ -141,6 +141,21 @@ router.post('/ping', async (req, res) => {
     }
   }
 
+  // Build a human-readable summary of why all paths failed
+  const errorTypes = [...new Set(attempts.map(a => a.error).filter(Boolean))];
+  let summary = 'All ping paths unreachable';
+  if (errorTypes.some(e => e.includes('ECONNREFUSED') || e.includes('Connection refused'))) {
+    summary = 'Connection refused — app port is not accepting connections. The app may be stopped or crashed.';
+  } else if (errorTypes.some(e => e.includes('Timeout') || e.includes('ETIMEDOUT') || e.includes('ECONNABORTED'))) {
+    summary = `Request timed out after ${PING_TIMEOUT_MS / 1000}s — the app may be overloaded, or a firewall/VPC rule is blocking the connection.`;
+  } else if (errorTypes.some(e => e.includes('DNS') || e.includes('ENOTFOUND') || e.includes('EAI_AGAIN'))) {
+    summary = 'DNS resolution failed — the hostname could not be resolved. Check that the app URL is correct and accessible from this network.';
+  } else if (errorTypes.some(e => e.includes('SSL') || e.includes('certificate') || e.includes('CERT_'))) {
+    summary = 'SSL/TLS error — the app\'s certificate is expired, self-signed, or untrusted.';
+  } else if (attempts.every(a => !a.error && a.httpStatus >= 500)) {
+    summary = 'App returned 5xx (server error) on all ping paths — the app is reachable but erroring internally.';
+  }
+
   return res.json({
     status: 'FAILED',
     activeEndpoint: null,
@@ -148,7 +163,7 @@ router.post('/ping', async (req, res) => {
     httpStatus: null,
     payload: null,
     attempts,
-    error: 'All ping paths unreachable or returned 5xx',
+    error: summary,
   });
 });
 
