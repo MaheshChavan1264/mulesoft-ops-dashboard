@@ -26,6 +26,8 @@ export default function PingTestPanel({
   // CPS connection props (passed from ApplicationDetailPage) — used to
   // look up the api.id from CPS non-secure before calling auto-credentials
   cpsBaseUrl = '', cpsClientId = '', cpsKey = '', cpsEnv = '',
+  // Exchange spec props — discovered ping endpoints with query params & headers
+  pingSpec = null, pingSpecLoading = false,
 }) {
   const { hasCredentials, resolveFromCandidates } = useCredentialStore();
   const { getSecret: getCpsSecret, hasCredentials: hasCpsCreds } = useCpsCredentialStore();
@@ -212,8 +214,44 @@ export default function PingTestPanel({
           </button>
         </div>
 
+        {/* Smart ping hint from Exchange spec */}
+        {(pingSpecLoading || pingSpec) && (
+          <div className="pt-1 border-t border-slate-800/60">
+            {pingSpecLoading ? (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                <RefreshCw size={9} className="animate-spin" /> Fetching API spec from Exchange…
+              </div>
+            ) : pingSpec?.pingEndpoints?.length > 0 ? (
+              <div className="bg-blue-950/20 border border-blue-800/40 rounded-lg px-3 py-2 space-y-1.5">
+                <p className="text-[10px] text-blue-300 font-medium flex items-center gap-1">
+                  <Globe size={9} /> Spec-detected ping endpoint{pingSpec.pingEndpoints.length > 1 ? 's' : ''}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {pingSpec.pingEndpoints.map((ep, i) => {
+                    const requiredQp = (ep.queryParams || []).filter(p => p.required);
+                    const qpString = requiredQp.map(p => `${p.name}=${p.example || p.type || ''}`).join('&');
+                    return (
+                      <button key={i} onClick={() => { if (qpString) setQueryParams(qpString); }}
+                        title={qpString ? `Click to auto-fill query params: ${qpString}` : ep.path}
+                        className="flex items-center gap-1 text-[10px] px-2 py-1 bg-blue-900/30 border border-blue-700/40 rounded text-blue-300 hover:bg-blue-900/50 transition-colors font-mono">
+                        <span className="text-blue-500">{ep.method}</span>
+                        <span>{ep.path}</span>
+                        {requiredQp.length > 0 && (
+                          <span className="text-orange-400 ml-0.5">+{requiredQp.length} param{requiredQp.length > 1 ? 's' : ''}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : pingSpec ? (
+              <p className="text-[10px] text-slate-600">No ping/health endpoint in spec — using standard paths</p>
+            ) : null}
+          </div>
+        )}
+
         {/* Query params row — Feature 5: smart ping URL resolution */}
-        <div className="pt-1 border-t border-slate-800/60">
+        <div className={pingSpec || pingSpecLoading ? '' : 'pt-1 border-t border-slate-800/60'}>
           <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1 mb-1">
             <Globe size={9} /> Query Parameters <span className="normal-case text-slate-600 font-normal">(optional — appended to every ping path)</span>
           </label>
