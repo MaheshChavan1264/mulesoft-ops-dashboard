@@ -541,13 +541,14 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
     }
 
     const userAppIds = new Set(userApps.map(a => String(a.id)));
+
+    // Check for APPROVED contracts from any of the user's apps
     const existingApproved = existingContracts.find(c =>
       (c.status || '').toUpperCase() === 'APPROVED' &&
       userAppIds.has(String(c.application?.id || c.applicationId || ''))
     );
 
     if (existingApproved) {
-      // Already have an approved contract — just fetch credentials
       const appId = existingApproved.application?.id || existingApproved.applicationId;
       const appName = existingApproved.application?.name || 'User App';
       console.log(`[auto-contract-creds] Found existing approved contract for app ${appName} (${appId})`);
@@ -557,15 +558,33 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       }
     }
 
-    // 3. No existing approved contract — create one using the user's "ping" app
+    // Check for PENDING contracts from any of the user's apps
+    // IMPORTANT: Return the pending status WITHOUT creating a new contract.
+    // This is the "Check Approval" flow — we should never create a duplicate.
+    const existingPendingAny = existingContracts.find(c =>
+      (c.status || '').toUpperCase() !== 'APPROVED' &&
+      userAppIds.has(String(c.application?.id || c.applicationId || ''))
+    );
+
+    if (existingPendingAny) {
+      const appId = existingPendingAny.application?.id || existingPendingAny.applicationId;
+      const appName = existingPendingAny.application?.name || 'User App';
+      const status = (existingPendingAny.status || 'PENDING').toLowerCase();
+      console.log(`[auto-contract-creds] Found existing ${status.toUpperCase()} contract for app ${appName} (${appId}) — returning status only`);
+      // Return credentials of the user's app even though contract is pending
+      const creds = await fetchAppCreds(appId);
+      return res.json({ clientId: creds.clientId, clientSecret: creds.clientSecret, contractStatus: status, appName, appId });
+    }
+
+    // 3. No existing contract at all — create one using the user's "ping" app
     //    Prefer an app whose name contains "ping" (dedicated health-check app).
     //    Fall back to the first app if none found.
     const targetApp = userApps.find(a => (a.name || '').toLowerCase().includes('ping')) || userApps[0];
     const targetAppId = targetApp.id;
     const targetAppName = targetApp.name || 'User App';
-    console.log(`[auto-contract-creds] Creating contract for app "${targetAppName}" (${targetAppId})`);
+    console.log(`[auto-contract-creds] No existing contract found — creating for app "${targetAppName}" (${targetAppId})`);
 
-    // Check if a pending contract already exists for this app (avoid duplicates)
+    // Double-check this specific app doesn't already have a contract (safety net)
     const existingPending = existingContracts.find(c =>
       String(c.application?.id || c.applicationId || '') === String(targetAppId)
     );
