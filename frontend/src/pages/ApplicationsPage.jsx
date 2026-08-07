@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud } from 'lucide-react';
 import CredentialImportButton from '../components/CredentialImportButton';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
@@ -584,6 +584,44 @@ export default function ApplicationsPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResults, setBulkResults] = useState(null);
 
+  // CSV upload state — matched app names from uploaded file
+  const [csvMatchedNames, setCsvMatchedNames] = useState(null); // null = not uploaded
+  const [csvFileName, setCsvFileName] = useState('');
+  const csvInputRef = useRef(null);
+
+  const handleCsvUpload = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result || '';
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (lines.length === 0) { setCsvMatchedNames([]); return; }
+      const header = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+      const nameColIdx = header.findIndex(h => ['appname', 'name', 'domain', 'application'].includes(h));
+      let rawNames;
+      if (nameColIdx >= 0) {
+        rawNames = lines.slice(1).map(l => l.split(',')[nameColIdx]?.trim().replace(/^"|"$/g, '')).filter(Boolean);
+      } else {
+        rawNames = lines.map(l => l.split(',')[0]?.trim().replace(/^"|"$/g, '')).filter(Boolean);
+      }
+      const normalised = rawNames.map(n => n.toLowerCase());
+      setCsvMatchedNames(normalised);
+
+      // Auto-select matched apps
+      setApps(current => {
+        const matched = current.filter(a =>
+          normalised.some(n => a.name.toLowerCase().includes(n) || n.includes(a.name.toLowerCase()))
+        );
+        setSelectedIds(new Set(matched.map(a => a.id)));
+        return current;
+      });
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }, []);
+
   useEffect(() => { if (orgId) loadBusinessGroups(); }, [orgId]);
   useEffect(() => { if (selectedBg) loadApps(selectedBg); }, [selectedBg]);
   useEffect(() => { setSelectedIds(new Set()); }, [selectedBg]);
@@ -927,7 +965,14 @@ export default function ApplicationsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <CredentialImportButton />
+          {/* Hidden CSV file input */}
+          <input ref={csvInputRef} type="file" accept=".csv,text/csv" onChange={handleCsvUpload} className="hidden" />
+          {/* CSV upload button */}
+          <button onClick={() => csvInputRef.current?.click()}
+            title="Upload a CSV of app names to auto-select matching apps"
+            className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 bg-blue-950/40 hover:bg-blue-950/60 border border-blue-800/50 px-3 py-2 rounded-lg transition-colors">
+            <UploadCloud size={14} /> Upload CSV
+          </button>
           <button onClick={() => setShowBulkPing(true)} disabled={loading || filtered.length === 0}
             title={selectedApps.length > 0 ? `Ping ${selectedApps.length} selected apps` : 'Ping all visible apps'}
             className="flex items-center gap-2 text-sm text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 hover:bg-cyan-950/60 border border-cyan-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
@@ -953,6 +998,35 @@ export default function ApplicationsPage() {
         }`}>
           <span>{actionResult.message}</span>
           <button onClick={() => setActionResult(null)} className="ml-4 opacity-60 hover:opacity-100"><X size={14} /></button>
+        </div>
+      )}
+
+      {/* CSV match banner */}
+      {csvMatchedNames !== null && (
+        <div className={`flex items-center justify-between flex-wrap gap-3 px-4 py-3 rounded-xl border text-sm ${
+          selectedIds.size > 0 ? 'bg-blue-950/30 border-blue-800/50' : 'bg-gray-900 border-gray-800'
+        }`}>
+          <div className="flex items-center gap-3">
+            <UploadCloud size={14} className="text-blue-400 flex-shrink-0" />
+            <span className="text-gray-300 text-xs">
+              <span className="font-mono text-gray-500">{csvFileName}</span>{' — '}
+              {selectedIds.size > 0
+                ? <span className="text-blue-300 font-semibold">{selectedIds.size} app{selectedIds.size !== 1 ? 's' : ''} matched & selected</span>
+                : <span className="text-gray-500">No apps matched</span>}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <button onClick={() => setShowBulkPing(true)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg transition-colors font-medium">
+                <Activity size={10} /> Ping ({selectedIds.size})
+              </button>
+            )}
+            <button onClick={() => { setCsvMatchedNames(null); setCsvFileName(''); setSelectedIds(new Set()); }}
+              className="text-gray-600 hover:text-gray-300 transition-colors">
+              <X size={14} />
+            </button>
+          </div>
         </div>
       )}
 
