@@ -461,4 +461,169 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
   }
 });
 
+// ─── POST /api/health/auto-contract-creds ────────────────────────────────────
+/**
+ * Auto-resolve ping credentials by finding an existing Exchange application
+ * owned by the logged-in user and using it to create (or reuse) a contract
+ * on the target API instance.
+ *
+ * Flow:
+ *   1. List the user's existing Exchange applications
+ *   2. Find one that already has an APPROVED contract on this API instance → reuse it
+ *   3. If none → pick the first user app and create a new contract
+ *   4. Fetch clientId + clientSecret for that app
+ *
+ * Body: { orgId, envId, apiId }
+ * Response: { clientId, clientSecret, contractStatus, appName, appId }
+ */
+router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
+  const { orgId, envId, apiId } = req.body || {};
+  if (!orgId || !envId || !apiId) {
+    return res.status(400).json({ error: 'orgId, envId, and apiId are required' });
+  }
+
+  try {
+    const client = createClient(req.anypointToken);
+
+    // 1. List user's Exchange applications (owned by current user / org)
+    console.log(`[auto-contract-creds] Listing user apps for org ${orgId}`);
+    let userApps = [];
+    try {
+      const appsRes = await client.get(
+        `/exchange/api/v2/organizations/${orgId}/applications`,
+        { params: { limit: 50 } }
+      );
+      userApps = Array.isArray(appsRes.data) ? appsRes.data : (appsRes.data?.applications || appsRes.data?.data || []);
+    } catch (e) {
+      console.warn('[auto-contract-creds] Could not list user apps:', e.message);
+    }
+
+    if (userApps.length === 0) {
+      return res.status(404).json({
+        error: 'No Exchange applications found for the current user. Create an application in Anypoint Exchange first.',
+        contractStatus: 'no-apps'
+      });
+    }
+    console.log(`[auto-contract-creds] Found ${userApps.length} user app(s)`);
+
+    // Helper: fetch credentials for an app
+    const fetchAppCreds = async (appId) => {
+      try {
+        // Try credentials endpoint first
+        const r = await client.get(`/exchange/api/v2/organizations/${orgId}/applications/${appId}/credentials`);
+        const cred = r.data;
+        return {
+          clientId: cred.clientId || cred.client_id || null,
+          clientSecret: cred.clientSecret || cred.client_secret || null,
+        };
+      } catch {
+        try {
+          // Fallback: main app endpoint
+          const r = await client.get(`/exchange/api/v2/organizations/${orgId}/applications/${appId}`);
+          return {
+            clientId: r.data.clientId || r.data.client_id || null,
+            clientSecret: r.data.clientSecret || r.data.client_secret || null,
+          };
+        } catch { return { clientId: null, clientSecret: null }; }
+      }
+    };
+
+    // 2. Fetch existing contracts on this API and check if any belong to a user app
+    console.log(`[auto-contract-creds] Fetching existing contracts for API ${apiId}`);
+    let existingContracts = [];
+    try {
+      const contractsRes = await client.get(
+        `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts`
+      );
+      existingContracts = contractsRes.data?.contracts || contractsRes.data || [];
+    } catch (e) {
+      console.warn('[auto-contract-creds] Could not fetch contracts:', e.message);
+    }
+
+    const userAppIds = new Set(userApps.map(a => String(a.id)));
+    const existingApproved = existingContracts.find(c =>
+      (c.status || '').toUpperCase() === 'APPROVED' &&
+      userAppIds.has(String(c.application?.id || c.applicationId || ''))
+    );
+
+    if (existingApproved) {
+      // Already have an approved contract — just fetch credentials
+      const appId = existingApproved.application?.id || existingApproved.applicationId;
+      const appName = existingApproved.application?.name || 'User App';
+      console.log(`[auto-contract-creds] Found existing approved contract for app ${appName} (${appId})`);
+      const creds = await fetchAppCreds(appId);
+      if (creds.clientId && creds.clientSecret) {
+        return res.json({ ...creds, contractStatus: 'approved', appName, appId });
+      }
+    }
+
+    // 3. No existing approved contract — create one using the first user app
+    const targetApp = userApps[0];
+    const targetAppId = targetApp.id;
+    const targetAppName = targetApp.name || 'User App';
+    console.log(`[auto-contract-creds] Creating contract for app "${targetAppName}" (${targetAppId})`);
+
+    // Check if a pending contract already exists for this app (avoid duplicates)
+    const existingPending = existingContracts.find(c =>
+      String(c.application?.id || c.applicationId || '') === String(targetAppId)
+    );
+
+    let contractStatus = 'pending';
+    if (!existingPending) {
+      // Fetch available SLA tiers
+      let tierId = null;
+      try {
+        const tiersRes = await client.get(
+          `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/tiers`
+        );
+        const tiers = tiersRes.data?.tiers || tiersRes.data || [];
+        // Prefer tier with autoApprove, else take first
+        const autoTier = tiers.find(t => t.autoApprove === true) || tiers[0];
+        if (autoTier) tierId = autoTier.id;
+      } catch { /* no tiers required */ }
+
+      // Create the contract
+      const contractBody = { applicationId: targetAppId };
+      if (tierId) contractBody.requestedTierId = tierId;
+      try {
+        const createRes = await client.post(
+          `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts`,
+          contractBody
+        );
+        const created = createRes.data;
+        contractStatus = (created.status || 'pending').toLowerCase();
+        console.log(`[auto-contract-creds] Contract created, status: ${contractStatus}`);
+      } catch (createErr) {
+        console.warn('[auto-contract-creds] Could not create contract:', createErr.response?.data || createErr.message);
+        return res.status(createErr.response?.status || 500).json({
+          error: createErr.response?.data?.message || 'Failed to create contract',
+          contractStatus: 'error',
+          appName: targetAppName,
+          appId: targetAppId,
+        });
+      }
+    } else {
+      contractStatus = (existingPending.status || 'pending').toLowerCase();
+      console.log(`[auto-contract-creds] Contract already exists with status: ${contractStatus}`);
+    }
+
+    // 4. Fetch credentials for the user app
+    const creds = await fetchAppCreds(targetAppId);
+    return res.json({
+      clientId: creds.clientId,
+      clientSecret: creds.clientSecret,
+      contractStatus,
+      appName: targetAppName,
+      appId: targetAppId,
+    });
+
+  } catch (error) {
+    console.error('[auto-contract-creds] Error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data?.message || 'Failed to auto-resolve contract credentials',
+      contractStatus: 'error',
+    });
+  }
+});
+
 module.exports = router;

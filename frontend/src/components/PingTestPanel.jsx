@@ -136,10 +136,42 @@ export default function PingTestPanel({
             clientId: matched.clientId,
             apiInstanceName: meta?.apiInstanceName || '—',
             contractApp: meta?.contractApp || '—',
+            source: 'csv',
           });
-        } else {
-          setAutoResolved({ error: 'API Manager found a match, but no credential in your CSV matches the approved contract.' });
+          setAutoResolving(false);
+          return;
         }
+        // CSV didn't have the credential — try auto-contract-creds as fallback
+        const apiInstanceId = data.matchedApis?.[0]?.id;
+        if (apiInstanceId) {
+          try {
+            const contractRes = await api.post('/health/auto-contract-creds', {
+              orgId, envId, apiId: apiInstanceId,
+            });
+            const cd = contractRes.data;
+            if (cd.clientId && cd.clientSecret) {
+              setClientId(cd.clientId);
+              setClientSecret(cd.clientSecret);
+              setAutoResolved({
+                clientId: cd.clientId,
+                apiInstanceName: data.matchedApis[0]?.label || '—',
+                contractApp: cd.appName || '—',
+                source: cd.contractStatus === 'approved' ? 'contract' : 'contract-pending',
+                contractStatus: cd.contractStatus,
+              });
+              setAutoResolving(false);
+              return;
+            }
+            if (cd.contractStatus === 'pending') {
+              setAutoResolved({ error: `Contract requested for "${cd.appName}" — awaiting API Manager approval. Check back once approved.` });
+              setAutoResolving(false);
+              return;
+            }
+          } catch (contractErr) {
+            console.warn('[PingTestPanel] auto-contract-creds failed:', contractErr.message);
+          }
+        }
+        setAutoResolved({ error: 'API Manager found a match, but no credential could be resolved. Import a credentials CSV or ensure you have an Exchange app.' });
       } else {
         setAutoResolved({ error: 'No matching API Manager instance found for this app.' });
       }
@@ -334,8 +366,9 @@ export default function PingTestPanel({
 
             {/* Right: auto-resolve status */}
             {autoResolved && !autoResolved.error && (
-              <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
+              <span className={`flex items-center gap-1 text-[10px] ${autoResolved.source === 'contract-pending' ? 'text-yellow-400/80' : 'text-emerald-400/80'}`}>
                 <ShieldCheck size={9} />
+                {autoResolved.source === 'contract' ? '🔑 contract: ' : autoResolved.source === 'contract-pending' ? '⏳ pending: ' : ''}
                 {autoResolved.apiInstanceName} → {autoResolved.contractApp}
               </span>
             )}
