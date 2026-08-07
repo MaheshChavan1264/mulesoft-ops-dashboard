@@ -122,181 +122,299 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
 
   try {
     const client = createClient(req.anypointToken);
-    const axios = require('axios');
 
-    // 1. Fetch asset metadata from Exchange
-    const assetRes = await client.get(
-      `/exchange/api/v2/assets/${groupId}/${assetId}/${version}`
-    );
-    const asset = assetRes.data;
-    const files = asset.files || [];
-
-    // 2. Determine spec type and find the best file to download
-    //    Priority: OAS JSON > OAS YAML > fat-raml > raml
-    const findFile = (...classifiers) => {
-      for (const c of classifiers) {
-        const f = files.find(f => f.classifier === c);
-        if (f) return f;
-      }
-      return null;
-    };
-
-    const oasFile   = findFile('oas');
-    const ramlFile  = findFile('fat-raml', 'raml');
-    const specFile  = oasFile || ramlFile;
-
-    if (!specFile || !specFile.externalLink) {
-      return res.json({ specType: 'unknown', pingEndpoints: [], allEndpoints: [] });
-    }
-
-    // 3. Download the spec file using the bearer token
-    let specContent = '';
-    try {
-      const downloadRes = await axios.get(specFile.externalLink, {
-        headers: { Authorization: `Bearer ${req.anypointToken}` },
-        responseType: 'text',
-        timeout: 15000,
-      });
-      specContent = typeof downloadRes.data === 'string'
-        ? downloadRes.data
-        : JSON.stringify(downloadRes.data);
-    } catch (dlErr) {
-      console.warn('[ping-spec] Could not download spec file:', dlErr.message);
-      return res.json({ specType: 'unknown', pingEndpoints: [], allEndpoints: [], error: 'Could not download spec' });
-    }
-
-    // 4. Parse the spec
     const PING_KEYWORDS = ['ping', 'health', 'status', 'liveness', 'readiness', 'heartbeat'];
+    const isPingPath = (path) => PING_KEYWORDS.some(k => (path || '').toLowerCase().includes(k));
 
-    const isPingPath = (path) =>
-      PING_KEYWORDS.some(k => path.toLowerCase().includes(k));
-
+    // ── Step 1: Try the Exchange Portal Model API ─────────────────────────
+    // GET /exchange/api/v2/assets/{groupId}/{assetId}/{version}/portal/model
+    // This is the SAME endpoint the Exchange UI / API Console uses.
+    // Returns the fully parsed API model tree as JSON — no spec download needed.
+    let assetName = assetId;
     let specType = 'unknown';
     let allEndpoints = [];
+    let modelParsed = false;
 
-    // ── OAS 2.0 / 3.0 ──────────────────────────────────────────────────────
-    if (oasFile) {
-      specType = 'oas';
-      let spec = null;
-      try {
-        spec = JSON.parse(specContent);
-      } catch {
-        // Try YAML-ish parsing (very basic — look for key: value lines)
-        // For simplicity, only handle JSON OAS here
-        console.warn('[ping-spec] Could not parse OAS as JSON, trying basic extraction');
+    try {
+      const modelRes = await client.get(
+        `/exchange/api/v2/assets/${groupId}/${assetId}/${version}/portal/model`
+      );
+      const model = modelRes.data;
+      console.log(`[ping-spec] Portal model fetched for ${groupId}/${assetId}/${version}`);
+
+      // Helper: safely extract string value from AMF scalar node
+      const scalar = (node) => {
+        if (!node) return '';
+        if (typeof node === 'string') return node;
+        if (Array.isArray(node)) return scalar(node[0]);
+        if (typeof node === 'object') {
+          return node['@value'] || node.value || node.lexicalValue || '';
+        }
+        return String(node);
+      };
+
+      const boolVal = (node) => {
+        const v = scalar(node);
+        return v === true || v === 'true';
+      };
+
+      // Helper: extract param list from AMF parameter nodes
+      const extractAmfParams = (params = []) =>
+        params.map(p => {
+          const name = scalar(p['http://a.ml/vocabularies/apiContract#paramName']
+            || p['http://schema.org/name']
+            || p['@id'] || '');
+          const required = boolVal(p['http://a.ml/vocabularies/shapes#required']
+            || p['http://www.w3.org/ns/hydra/core#required']);
+          const schema = (p['http://a.ml/vocabularies/shapes#range'] || [])[0] || {};
+          const type = scalar(schema['http://www.w3.org/1999/02/22-rdf-syntax-ns#type']
+            || schema['xsd:type'] || schema['@type'] || 'string')
+            .replace(/.*#/, '').toLowerCase();
+          const description = scalar(p['http://schema.org/description']
+            || p['http://a.ml/vocabularies/core#description'] || '');
+          const example = scalar(p['http://a.ml/vocabularies/document#examples']
+            || p['http://a.ml/vocabularies/apiContract#examples'] || '');
+          return { name, required, type: type || 'string', description, example };
+        }).filter(p => p.name);
+
+      // The portal/model response can be in multiple shapes depending on the
+      // API type (RAML 0.8, RAML 1.0, OAS 2, OAS 3). Handle the three main shapes:
+
+      // Shape A: AMF JSON-LD graph (array of @id nodes)
+      if (Array.isArray(model) && model[0]?.['@type']) {
+        specType = 'amf-jsonld';
+        const docNode = model.find(n =>
+          (n['@type'] || []).some(t => t.includes('Document') || t.includes('ParsedUnit'))
+        ) || model[0];
+
+        const encodes = docNode?.['http://a.ml/vocabularies/document#encodes'] || [];
+        const apiNode = encodes[0] || {};
+        assetName = scalar(apiNode['http://schema.org/name'] || apiNode['http://a.ml/vocabularies/core#name']) || assetId;
+
+        const endpoints = apiNode['http://a.ml/vocabularies/apiContract#endpoint'] || [];
+        for (const ep of endpoints) {
+          const path = scalar(ep['http://a.ml/vocabularies/apiContract#path']);
+          const operations = ep['http://a.ml/vocabularies/apiContract#supportedOperation'] || [];
+          for (const op of operations) {
+            const method = scalar(op['http://a.ml/vocabularies/apiContract#method']).toUpperCase();
+            const description = scalar(op['http://schema.org/description']
+              || op['http://a.ml/vocabularies/core#name'] || '');
+            const request = (op['http://a.ml/vocabularies/apiContract#expects'] || [])[0] || {};
+            const qpNodes = request['http://a.ml/vocabularies/apiContract#parameter'] || [];
+            const hdrNodes = request['http://a.ml/vocabularies/apiContract#header'] || [];
+            allEndpoints.push({
+              path, method, description,
+              queryParams: extractAmfParams(qpNodes),
+              headers: extractAmfParams(hdrNodes),
+            });
+          }
+        }
+        modelParsed = allEndpoints.length > 0;
       }
 
-      if (spec && (spec.paths || spec.swagger || spec.openapi)) {
-        const basePath = spec.basePath || '';
+      // Shape B: RAML-style plain object with `resources` array (RAML 0.8 / console model)
+      if (!modelParsed && model && typeof model === 'object' && !Array.isArray(model)) {
+        specType = model.specType || (model.resources ? 'raml' : 'oas');
+        assetName = model.title || model.name || assetId;
+        const basePath = model.basePath || model.baseUri || '';
 
-        // Helper: extract param descriptors from OAS parameter objects
-        const extractParams = (params = [], inFilter) =>
-          params
-            .filter(p => p.in === inFilter)
-            .map(p => ({
+        // RAML: model.resources[]
+        const walkResources = (resources = [], parentPath = '') => {
+          for (const r of resources) {
+            const path = parentPath + (r.relativeUri || r.path || '');
+            for (const m of (r.methods || [])) {
+              const method = (m.method || 'GET').toUpperCase();
+              const qpRaw = m.queryParameters || {};
+              const hdrRaw = m.headers || {};
+              const toArr = (obj) => Object.entries(obj).map(([name, v]) => ({
+                name,
+                required: v.required === true || v.required === 'true',
+                type: v.type || 'string',
+                description: v.description || '',
+                example: v.example != null ? String(v.example) : '',
+              }));
+              allEndpoints.push({
+                path,
+                method,
+                description: m.description || m.displayName || '',
+                queryParams: toArr(qpRaw),
+                headers: toArr(hdrRaw),
+              });
+            }
+            if (r.resources?.length) walkResources(r.resources, path);
+          }
+        };
+
+        if (model.resources) {
+          walkResources(model.resources);
+          modelParsed = allEndpoints.length > 0;
+        }
+
+        // OAS: model.paths{}
+        if (!modelParsed && model.paths) {
+          specType = 'oas';
+          const bp = model.basePath || '';
+          const extractOasParams = (params = [], inFilter) =>
+            params.filter(p => p.in === inFilter).map(p => ({
               name: p.name,
               required: !!p.required,
               type: p.schema?.type || p.type || 'string',
               description: p.description || '',
-              example: p.example != null ? String(p.example)
-                : p.schema?.example != null ? String(p.schema.example) : '',
+              example: p.example != null ? String(p.example) : (p.schema?.example != null ? String(p.schema.example) : ''),
             }));
-
-        for (const [rawPath, pathItem] of Object.entries(spec.paths || {})) {
-          const fullPath = basePath + rawPath;
-          for (const method of ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']) {
-            const op = pathItem[method];
-            if (!op) continue;
-            const allParams = [...(pathItem.parameters || []), ...(op.parameters || [])];
-            const endpoint = {
-              path: fullPath,
-              method: method.toUpperCase(),
-              description: op.summary || op.description || '',
-              queryParams: extractParams(allParams, 'query'),
-              headers: extractParams(allParams, 'header'),
-            };
-            allEndpoints.push(endpoint);
+          for (const [rawPath, pathItem] of Object.entries(model.paths)) {
+            const fullPath = bp + rawPath;
+            for (const meth of ['get','post','put','patch','delete','head','options']) {
+              const op = pathItem[meth];
+              if (!op) continue;
+              const params = [...(pathItem.parameters || []), ...(op.parameters || [])];
+              allEndpoints.push({
+                path: fullPath,
+                method: meth.toUpperCase(),
+                description: op.summary || op.description || '',
+                queryParams: extractOasParams(params, 'query'),
+                headers: extractOasParams(params, 'header'),
+              });
+            }
           }
+          modelParsed = allEndpoints.length > 0;
         }
       }
+
+      // Shape C: Array of resources (some older console formats)
+      if (!modelParsed && Array.isArray(model) && model[0]?.relativeUri) {
+        specType = 'raml';
+        const walkResources = (resources = [], parentPath = '') => {
+          for (const r of resources) {
+            const path = parentPath + (r.relativeUri || '');
+            for (const m of (r.methods || [])) {
+              const qpRaw = m.queryParameters || {};
+              const hdrRaw = m.headers || {};
+              const toArr = (obj) => Object.entries(obj).map(([name, v]) => ({
+                name, required: v.required === true, type: v.type || 'string',
+                description: v.description || '', example: v.example != null ? String(v.example) : '',
+              }));
+              allEndpoints.push({
+                path, method: (m.method || 'GET').toUpperCase(),
+                description: m.description || '',
+                queryParams: toArr(qpRaw), headers: toArr(hdrRaw),
+              });
+            }
+            if (r.resources?.length) walkResources(r.resources, path);
+          }
+        };
+        walkResources(model);
+        modelParsed = allEndpoints.length > 0;
+      }
+
+    } catch (modelErr) {
+      console.warn(`[ping-spec] Portal model API failed (${modelErr.response?.status || modelErr.message}), falling back to asset file download`);
     }
 
-    // ── RAML (basic text parsing) ────────────────────────────────────────────
-    if (ramlFile && !oasFile) {
-      specType = 'raml';
-      // Basic RAML resource + queryParameters extraction via regex
-      // Format:  /path:\n  get:\n    queryParameters:\n      key:\n        type: ...
-      const lines = specContent.split('\n');
-      let currentPath = '';
-      let currentMethod = '';
-      let inQueryParams = false;
-      let inHeaders = false;
-      let currentParamName = '';
-      let currentEndpoint = null;
+    // ── Step 2: Fallback — download and parse the spec file ───────────────
+    // Only runs if the portal/model endpoint failed or returned no endpoints.
+    if (!modelParsed) {
+      const axios = require('axios');
+      try {
+        const assetRes = await client.get(`/exchange/api/v2/assets/${groupId}/${assetId}/${version}`);
+        const asset = assetRes.data;
+        assetName = asset.name || assetId;
+        const files = asset.files || [];
 
-      const pathRe   = /^(\/[\w\-\/{}]*):\s*$/;
-      const methodRe = /^  (get|post|put|delete|patch|head|options):\s*$/;
-      const qpRe     = /^    queryParameters:\s*$/;
-      const hdrRe    = /^    headers:\s*$/;
-      const paramRe  = /^      ([\w\-]+):\s*$/;
-      const propRe   = /^        (type|description|example|required):\s*(.+)$/;
-
-      for (const line of lines) {
-        const pathMatch = line.match(pathRe);
-        if (pathMatch) {
-          currentPath = pathMatch[1];
-          currentMethod = '';
-          inQueryParams = false;
-          inHeaders = false;
-          continue;
-        }
-        const methodMatch = line.match(methodRe);
-        if (methodMatch && currentPath) {
-          currentMethod = methodMatch[1].toUpperCase();
-          inQueryParams = false;
-          inHeaders = false;
-          currentEndpoint = { path: currentPath, method: currentMethod, description: '', queryParams: [], headers: [] };
-          allEndpoints.push(currentEndpoint);
-          continue;
-        }
-        if (currentEndpoint) {
-          if (qpRe.test(line))  { inQueryParams = true; inHeaders = false; continue; }
-          if (hdrRe.test(line)) { inHeaders = true; inQueryParams = false; continue; }
-          const paramMatch = line.match(paramRe);
-          if (paramMatch && (inQueryParams || inHeaders)) {
-            currentParamName = paramMatch[1];
-            const param = { name: currentParamName, required: false, type: 'string', description: '', example: '' };
-            if (inQueryParams) currentEndpoint.queryParams.push(param);
-            else currentEndpoint.headers.push(param);
-            continue;
+        const findFile = (...classifiers) => {
+          for (const c of classifiers) {
+            const f = files.find(fi => fi.classifier === c);
+            if (f) return f;
           }
-          const propMatch = line.match(propRe);
-          if (propMatch && currentParamName && (inQueryParams || inHeaders)) {
-            const arr = inQueryParams ? currentEndpoint.queryParams : currentEndpoint.headers;
-            const param = arr.find(p => p.name === currentParamName);
-            if (param) {
-              const val = propMatch[2].trim().replace(/^["']|["']$/g, '');
-              if (propMatch[1] === 'type') param.type = val;
-              else if (propMatch[1] === 'description') param.description = val;
-              else if (propMatch[1] === 'example') param.example = val;
-              else if (propMatch[1] === 'required') param.required = val === 'true';
+          return null;
+        };
+        const oasFile  = findFile('oas');
+        const ramlFile = findFile('fat-raml', 'raml');
+        const specFile = oasFile || ramlFile;
+
+        if (specFile?.externalLink) {
+          const dlRes = await axios.get(specFile.externalLink, {
+            headers: { Authorization: `Bearer ${req.anypointToken}` },
+            responseType: 'text', timeout: 15000,
+          });
+          const content = typeof dlRes.data === 'string' ? dlRes.data : JSON.stringify(dlRes.data);
+
+          if (oasFile) {
+            specType = 'oas';
+            let spec = null;
+            try { spec = JSON.parse(content); } catch {}
+            if (spec?.paths) {
+              const bp = spec.basePath || '';
+              for (const [rawPath, pathItem] of Object.entries(spec.paths)) {
+                for (const meth of ['get','post','put','patch','delete','head','options']) {
+                  const op = pathItem[meth];
+                  if (!op) continue;
+                  const params = [...(pathItem.parameters || []), ...(op.parameters || [])];
+                  allEndpoints.push({
+                    path: bp + rawPath, method: meth.toUpperCase(),
+                    description: op.summary || op.description || '',
+                    queryParams: params.filter(p => p.in === 'query').map(p => ({
+                      name: p.name, required: !!p.required,
+                      type: p.schema?.type || p.type || 'string',
+                      description: p.description || '',
+                      example: p.example != null ? String(p.example) : '',
+                    })),
+                    headers: params.filter(p => p.in === 'header').map(p => ({
+                      name: p.name, required: !!p.required, type: p.type || 'string',
+                      description: p.description || '', example: '',
+                    })),
+                  });
+                }
+              }
+            }
+          } else if (ramlFile) {
+            specType = 'raml';
+            // Basic regex fallback (same as before)
+            const lines = content.split('\n');
+            let curPath = '', curEp = null, inQp = false, inHdr = false, curParam = '';
+            for (const line of lines) {
+              const pm = line.match(/^(\/[\w\-\/{}]*):\s*$/);
+              if (pm) { curPath = pm[1]; curEp = null; inQp = false; inHdr = false; continue; }
+              const mm = line.match(/^  (get|post|put|delete|patch):\s*$/);
+              if (mm && curPath) {
+                curEp = { path: curPath, method: mm[1].toUpperCase(), description: '', queryParams: [], headers: [] };
+                allEndpoints.push(curEp); inQp = false; inHdr = false; continue;
+              }
+              if (curEp) {
+                if (/^    queryParameters:\s*$/.test(line)) { inQp = true; inHdr = false; continue; }
+                if (/^    headers:\s*$/.test(line)) { inHdr = true; inQp = false; continue; }
+                const paramM = line.match(/^      ([\w\-]+):\s*$/);
+                if (paramM && (inQp || inHdr)) {
+                  curParam = paramM[1];
+                  const p = { name: curParam, required: false, type: 'string', description: '', example: '' };
+                  if (inQp) curEp.queryParams.push(p); else curEp.headers.push(p);
+                  continue;
+                }
+                const propM = line.match(/^        (type|description|example|required):\s*(.+)$/);
+                if (propM && curParam) {
+                  const arr = inQp ? curEp.queryParams : curEp.headers;
+                  const p = arr.find(x => x.name === curParam);
+                  if (p) {
+                    const v = propM[2].trim().replace(/^["']|["']$/g, '');
+                    if (propM[1] === 'type') p.type = v;
+                    else if (propM[1] === 'description') p.description = v;
+                    else if (propM[1] === 'example') p.example = v;
+                    else if (propM[1] === 'required') p.required = v === 'true';
+                  }
+                }
+              }
             }
           }
         }
+      } catch (fbErr) {
+        console.warn('[ping-spec] Fallback file download also failed:', fbErr.message);
       }
     }
 
-    // 5. Filter ping endpoints
     const pingEndpoints = allEndpoints.filter(e => isPingPath(e.path));
+    console.log(`[ping-spec] ${groupId}/${assetId}/${version} (${specType}): ${allEndpoints.length} endpoints, ${pingEndpoints.length} ping path(s)`);
 
-    console.log(`[ping-spec] ${groupId}/${assetId}/${version}: ${allEndpoints.length} endpoints, ${pingEndpoints.length} ping path(s)`);
-
-    return res.json({
-      specType,
-      assetName: asset.name || assetId,
-      pingEndpoints,
-      allEndpoints,
-    });
+    return res.json({ specType, assetName, pingEndpoints, allEndpoints });
 
   } catch (error) {
     console.error('[ping-spec] Error:', error.response?.data || error.message);
