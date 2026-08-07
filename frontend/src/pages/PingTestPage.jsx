@@ -12,9 +12,10 @@ import api from '../services/api';
 const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
 
 const STATUS_CONFIG = {
-  SUCCESS: { label: 'Healthy',     cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-700/40', dot: 'bg-emerald-400', ping: true },
-  PARTIAL: { label: 'Partial',     cls: 'text-yellow-400 bg-yellow-500/10 border-yellow-700/40',   dot: 'bg-yellow-400', ping: false },
-  FAILED:  { label: 'Unreachable', cls: 'text-red-400 bg-red-500/10 border-red-700/40',             dot: 'bg-red-500',    ping: false },
+  SUCCESS:                   { label: 'Healthy',            cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-700/40', dot: 'bg-emerald-400', ping: true },
+  PARTIAL:                   { label: 'Partial',            cls: 'text-yellow-400 bg-yellow-500/10 border-yellow-700/40',   dot: 'bg-yellow-400', ping: false },
+  FAILED:                    { label: 'Unreachable',        cls: 'text-red-400 bg-red-500/10 border-red-700/40',             dot: 'bg-red-500',    ping: false },
+  SKIPPED_CONTRACT_PENDING:  { label: 'Contract Pending',  cls: 'text-orange-400 bg-orange-500/10 border-orange-700/40',   dot: 'bg-orange-400', ping: false },
 };
 
 function latencyColor(ms) {
@@ -31,7 +32,8 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
   const isExpanded = expandedId === rowKey;
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
   const cfg = result ? STATUS_CONFIG[result.status] || STATUS_CONFIG.FAILED : null;
-  const canRetry = result && (result.status === 'FAILED' || result.status === 'PARTIAL');
+  const canRetry = result && (result.status === 'FAILED' || result.status === 'PARTIAL' || result.status === 'SKIPPED_CONTRACT_PENDING');
+  const isPendingContract = result?.status === 'SKIPPED_CONTRACT_PENDING';
 
   return (
     <>
@@ -113,10 +115,10 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
             {canRetry && !retrying && (
               <button
                 onClick={() => onRetry(app)}
-                title="Retry ping for this app"
-                className="p-1 rounded text-red-400 hover:text-red-300 hover:bg-red-950/40 transition-colors"
+                title={isPendingContract ? 'Re-check contract approval, then ping' : 'Retry ping for this app'}
+                className={`p-1 rounded transition-colors ${isPendingContract ? 'text-orange-400 hover:text-orange-300 hover:bg-orange-950/40' : 'text-red-400 hover:text-red-300 hover:bg-red-950/40'}`}
               >
-                <RefreshCw size={13} />
+                {isPendingContract ? '🔑' : <RefreshCw size={13} />}
               </button>
             )}
             {result && (
@@ -252,8 +254,58 @@ export default function PingTestPage() {
 
   const retryApp = useCallback(async (app) => {
     const appId = app.id;
+    const prevResult = results[appId];
     setRetryingIds(prev => new Set([...prev, appId]));
+
     try {
+      let useClientId, useClientSecret;
+
+      // For pending-contract apps: re-check approval before pinging
+      if (prevResult?.status === 'SKIPPED_CONTRACT_PENDING' && prevResult?.apiInstanceId) {
+        const bgId = app._bgId;
+        const envId = app.environment?.id;
+        if (!bgId || !envId) {
+          setResults(prev => ({ ...prev, [appId]: { ...prevResult, error: 'Missing org/env info — cannot check contract status.' }}));
+          setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
+          return;
+        }
+        try {
+          const contractRes = await api.post('/health/auto-contract-creds', {
+            orgId: bgId, envId, apiId: prevResult.apiInstanceId,
+          });
+          const cd = contractRes.data;
+          if (cd.contractStatus !== 'approved') {
+            // Still pending
+            setResults(prev => ({ ...prev, [appId]: {
+              status: 'SKIPPED_CONTRACT_PENDING',
+              error: `Contract still pending approval for "${cd.appName || prevResult.contractApp}". Try again after the API Manager admin approves it.`,
+              contractApp: cd.appName || prevResult.contractApp,
+              apiInstanceId: prevResult.apiInstanceId,
+            }}));
+            setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
+            return;
+          }
+          // Approved! Update auto-resolved map and use the credentials
+          useClientId = cd.clientId;
+          useClientSecret = cd.clientSecret;
+          setAutoResolvedMap(prev => ({ ...prev, [appId]: {
+            clientId: cd.clientId,
+            clientSecret: cd.clientSecret,
+            apiInstanceName: prevResult.apiInstanceId,
+            contractApp: cd.appName || prevResult.contractApp,
+            source: 'contract',
+          }}));
+        } catch (contractErr) {
+          setResults(prev => ({ ...prev, [appId]: { status: 'FAILED', error: `Contract check failed: ${contractErr.message}` }}));
+          setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
+          return;
+        }
+      } else {
+        const auto = autoResolvedMap[appId];
+        useClientId = auto?.clientId;
+        useClientSecret = auto?.clientSecret;
+      }
+
       const isCH1 = app.deploymentType !== 'CloudHub 2.0';
       let ch2IngressUrl;
       if (!isCH1 && app._bgId && app.environment?.id) {
@@ -269,13 +321,12 @@ export default function PingTestPage() {
             undefined;
         } catch {}
       }
-      const auto = autoResolvedMap[appId];
       const { data } = await api.post('/health/ping', {
         targetType: isCH1 ? 'CH1' : 'CH2',
         appName: app.name,
         ch2IngressUrl,
-        clientId: auto?.clientId || undefined,
-        clientSecret: auto?.clientSecret || undefined,
+        clientId: useClientId || undefined,
+        clientSecret: useClientSecret || undefined,
         transactionId: 'smokeTest',
       });
       setResults(prev => ({ ...prev, [appId]: data }));
@@ -284,7 +335,7 @@ export default function PingTestPage() {
     } finally {
       setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
     }
-  }, [autoResolvedMap]);
+  }, [autoResolvedMap, results]);
 
   // ─── Feature 2: CSV Upload & Batch Ping ───────────────────────────────────
 
