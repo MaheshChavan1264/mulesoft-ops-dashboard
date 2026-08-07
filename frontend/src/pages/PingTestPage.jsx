@@ -27,13 +27,16 @@ function latencyColor(ms) {
 
 // ─── Result Row (Feature 1: retry button) ────────────────────────────────────
 
-function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRetry, retrying }) {
+function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRetry, onCheckContract, checkingContract, retrying }) {
   const rowKey = `${app.id}|${app.environment?.id}`;
   const isExpanded = expandedId === rowKey;
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
   const cfg = result ? STATUS_CONFIG[result.status] || STATUS_CONFIG.FAILED : null;
-  const canRetry = result && (result.status === 'FAILED' || result.status === 'PARTIAL' || result.status === 'SKIPPED_CONTRACT_PENDING');
   const isPendingContract = result?.status === 'SKIPPED_CONTRACT_PENDING';
+  // Normal retry: FAILED or PARTIAL (not pending contract)
+  const canRetry = result && (result.status === 'FAILED' || result.status === 'PARTIAL');
+  // Contract approved and creds resolved → can ping
+  const contractApproved = isPendingContract && autoResolved?.source === 'contract';
 
   return (
     <>
@@ -112,13 +115,37 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
         <td className="px-3 py-3">
           <div className="flex items-center justify-center gap-1.5">
             {/* Feature 1: Retry button for FAILED / PARTIAL rows */}
+            {/* Pending contract: two separate buttons */}
+            {isPendingContract && !retrying && !checkingContract && (
+              <>
+                <button
+                  onClick={() => onCheckContract(app)}
+                  title="Check if the contract has been approved in API Manager"
+                  className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-orange-400 hover:text-orange-300 hover:bg-orange-950/40 border border-orange-800/40 transition-colors font-medium whitespace-nowrap">
+                  🔑 Check
+                </button>
+                {contractApproved && (
+                  <button
+                    onClick={() => onRetry(app)}
+                    title="Run ping test with resolved credentials"
+                    className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 border border-emerald-800/40 transition-colors font-medium whitespace-nowrap">
+                    <RefreshCw size={10} /> Ping
+                  </button>
+                )}
+              </>
+            )}
+            {isPendingContract && checkingContract && (
+              <span className="text-[10px] text-orange-400/70 flex items-center gap-1">
+                <RefreshCw size={9} className="animate-spin" /> Checking…
+              </span>
+            )}
+            {/* Normal retry for FAILED / PARTIAL */}
             {canRetry && !retrying && (
               <button
                 onClick={() => onRetry(app)}
-                title={isPendingContract ? 'Re-check contract approval, then ping' : 'Retry ping for this app'}
-                className={`p-1 rounded transition-colors ${isPendingContract ? 'text-orange-400 hover:text-orange-300 hover:bg-orange-950/40' : 'text-red-400 hover:text-red-300 hover:bg-red-950/40'}`}
-              >
-                {isPendingContract ? '🔑' : <RefreshCw size={13} />}
+                title="Retry ping for this app"
+                className="p-1 rounded text-red-400 hover:text-red-300 hover:bg-red-950/40 transition-colors">
+                <RefreshCw size={13} />
               </button>
             )}
             {result && (
@@ -227,6 +254,7 @@ export default function PingTestPage() {
 
   // Feature 1: per-app retry state
   const [retryingIds, setRetryingIds] = useState(new Set());
+  const [checkingContractIds, setCheckingContractIds] = useState(new Set());
 
   // Feature 2: CSV upload state
   const [csvMatchedNames, setCsvMatchedNames] = useState(null); // null = not uploaded yet
@@ -250,62 +278,60 @@ export default function PingTestPage() {
     );
   }, [apps, results]);
 
-  // ─── Feature 1: Retry a single failed app ─────────────────────────────────
+  // ─── Check contract approval (no ping — just updates creds + status) ──────
+
+  const checkContractApproval = useCallback(async (app) => {
+    const appId = app.id;
+    const prevResult = results[appId];
+    if (!prevResult?.apiInstanceId) return;
+    const bgId = app._bgId;
+    const envId = app.environment?.id;
+    if (!bgId || !envId) return;
+
+    setCheckingContractIds(prev => new Set([...prev, appId]));
+    try {
+      const contractRes = await api.post('/health/auto-contract-creds', {
+        orgId: bgId, envId, apiId: prevResult.apiInstanceId,
+      });
+      const cd = contractRes.data;
+      if (cd.contractStatus === 'approved' && cd.clientId && cd.clientSecret) {
+        // Store credentials — user can now click "Retry Ping"
+        setAutoResolvedMap(prev => ({ ...prev, [appId]: {
+          clientId: cd.clientId,
+          clientSecret: cd.clientSecret,
+          apiInstanceName: String(prevResult.apiInstanceId),
+          contractApp: cd.appName || prevResult.contractApp,
+          source: 'contract',
+        }}));
+        // Update error message to show approval
+        setResults(prev => ({ ...prev, [appId]: {
+          ...prevResult,
+          error: `✅ Contract approved for "${cd.appName}". Click Retry Ping to run the test.`,
+        }}));
+      } else {
+        // Still pending — update error message
+        setResults(prev => ({ ...prev, [appId]: {
+          ...prevResult,
+          error: `⏳ Contract still pending approval for "${cd.appName || prevResult.contractApp}". Approve in API Manager and check again.`,
+        }}));
+      }
+    } catch (err) {
+      setResults(prev => ({ ...prev, [appId]: {
+        ...prevResult,
+        error: `Contract check failed: ${err.message}`,
+      }}));
+    } finally {
+      setCheckingContractIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
+    }
+  }, [results]);
+
+  // ─── Retry ping (uses already-resolved credentials from autoResolvedMap) ──
 
   const retryApp = useCallback(async (app) => {
     const appId = app.id;
-    const prevResult = results[appId];
+    const auto = autoResolvedMap[appId];
     setRetryingIds(prev => new Set([...prev, appId]));
-
     try {
-      let useClientId, useClientSecret;
-
-      // For pending-contract apps: re-check approval before pinging
-      if (prevResult?.status === 'SKIPPED_CONTRACT_PENDING' && prevResult?.apiInstanceId) {
-        const bgId = app._bgId;
-        const envId = app.environment?.id;
-        if (!bgId || !envId) {
-          setResults(prev => ({ ...prev, [appId]: { ...prevResult, error: 'Missing org/env info — cannot check contract status.' }}));
-          setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
-          return;
-        }
-        try {
-          const contractRes = await api.post('/health/auto-contract-creds', {
-            orgId: bgId, envId, apiId: prevResult.apiInstanceId,
-          });
-          const cd = contractRes.data;
-          if (cd.contractStatus !== 'approved') {
-            // Still pending
-            setResults(prev => ({ ...prev, [appId]: {
-              status: 'SKIPPED_CONTRACT_PENDING',
-              error: `Contract still pending approval for "${cd.appName || prevResult.contractApp}". Try again after the API Manager admin approves it.`,
-              contractApp: cd.appName || prevResult.contractApp,
-              apiInstanceId: prevResult.apiInstanceId,
-            }}));
-            setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
-            return;
-          }
-          // Approved! Update auto-resolved map and use the credentials
-          useClientId = cd.clientId;
-          useClientSecret = cd.clientSecret;
-          setAutoResolvedMap(prev => ({ ...prev, [appId]: {
-            clientId: cd.clientId,
-            clientSecret: cd.clientSecret,
-            apiInstanceName: prevResult.apiInstanceId,
-            contractApp: cd.appName || prevResult.contractApp,
-            source: 'contract',
-          }}));
-        } catch (contractErr) {
-          setResults(prev => ({ ...prev, [appId]: { status: 'FAILED', error: `Contract check failed: ${contractErr.message}` }}));
-          setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
-          return;
-        }
-      } else {
-        const auto = autoResolvedMap[appId];
-        useClientId = auto?.clientId;
-        useClientSecret = auto?.clientSecret;
-      }
-
       const isCH1 = app.deploymentType !== 'CloudHub 2.0';
       let ch2IngressUrl;
       if (!isCH1 && app._bgId && app.environment?.id) {
@@ -325,8 +351,8 @@ export default function PingTestPage() {
         targetType: isCH1 ? 'CH1' : 'CH2',
         appName: app.name,
         ch2IngressUrl,
-        clientId: useClientId || undefined,
-        clientSecret: useClientSecret || undefined,
+        clientId: auto?.clientId || undefined,
+        clientSecret: auto?.clientSecret || undefined,
         transactionId: 'smokeTest',
       });
       setResults(prev => ({ ...prev, [appId]: data }));
@@ -335,7 +361,7 @@ export default function PingTestPage() {
     } finally {
       setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
     }
-  }, [autoResolvedMap, results]);
+  }, [autoResolvedMap]);
 
   // ─── Feature 2: CSV Upload & Batch Ping ───────────────────────────────────
 
@@ -574,6 +600,8 @@ export default function PingTestPage() {
                   expandedId={expandedId}
                   setExpandedId={setExpandedId}
                   onRetry={retryApp}
+                  onCheckContract={checkContractApproval}
+                  checkingContract={checkingContractIds.has(app.id)}
                   retrying={retryingIds.has(app.id)}
                 />
               ))}
