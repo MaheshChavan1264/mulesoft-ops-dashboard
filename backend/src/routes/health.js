@@ -557,8 +557,10 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       }
     }
 
-    // 3. No existing approved contract — create one using the first user app
-    const targetApp = userApps[0];
+    // 3. No existing approved contract — create one using the user's "ping" app
+    //    Prefer an app whose name contains "ping" (dedicated health-check app).
+    //    Fall back to the first app if none found.
+    const targetApp = userApps.find(a => (a.name || '').toLowerCase().includes('ping')) || userApps[0];
     const targetAppId = targetApp.id;
     const targetAppName = targetApp.name || 'User App';
     console.log(`[auto-contract-creds] Creating contract for app "${targetAppName}" (${targetAppId})`);
