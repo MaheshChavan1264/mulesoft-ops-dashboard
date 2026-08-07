@@ -353,8 +353,13 @@ export default function ApplicationDetailPage() {
       params: { groupId: ref.groupId, assetId: ref.artifactId, version: ref.version, orgId }
     }).then(r => {
       setPingSpec(r.data);
-      console.log(`[pingSpec] ${ref.artifactId}: ${r.data?.pingEndpoints?.length ?? 0} ping endpoint(s) found`);
-    }).catch(() => setPingSpec(null))
+      const total = r.data?.allEndpoints?.length ?? 0;
+      const ping  = r.data?.pingEndpoints?.length ?? 0;
+      console.log(`[pingSpec] ${ref.artifactId}: specType=${r.data?.specType}, total=${total} endpoints, ${ping} ping paths found`);
+      if (total > 0 && ping === 0) {
+        console.log(`[pingSpec] All paths:`, r.data.allEndpoints.map(e => `${e.method} ${e.path}`));
+      }
+    }).catch(err => { console.warn('[pingSpec] fetch failed:', err.message); setPingSpec(null); })
       .finally(() => setPingSpecLoading(false));
   }, [app?.application?.ref?.artifactId, orgId]);
 
