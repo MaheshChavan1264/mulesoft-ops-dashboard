@@ -351,8 +351,60 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
 
     // ── Step 2: Fallback — download and parse the spec file ───────────────
     // Only runs if the portal/model endpoint failed or returned no endpoints.
+    // Key fixes:
+    //   1. Files are stored as ZIPs in S3 — download as arraybuffer (not text)
+    //   2. S3 pre-signed URLs must NOT have an Authorization header
+    //   3. Parse the ZIP central directory and inflate the spec file (api.json / *.yaml)
     if (!modelParsed) {
       const axios = require('axios');
+      const zlib  = require('zlib');
+
+      /**
+       * Extract the main spec file from a ZIP buffer.
+       * Uses the ZIP central directory (reliable compressed sizes) and
+       * zlib.inflateRawSync for deflate-compressed entries.
+       * Returns the spec text string or null on failure.
+       */
+      const extractFromZip = (buf) => {
+        try {
+          // Parse central directory to get correct sizes + local offsets
+          const cdEntries = [];
+          let pos = 0;
+          while (pos < buf.length - 4) {
+            if (buf[pos]===0x50 && buf[pos+1]===0x4b && buf[pos+2]===0x01 && buf[pos+3]===0x02) {
+              const compMethod = buf.readUInt16LE(pos + 10);
+              const compSize   = buf.readUInt32LE(pos + 20);
+              const uncompSize = buf.readUInt32LE(pos + 24);
+              const fnLen      = buf.readUInt16LE(pos + 28);
+              const extraLen   = buf.readUInt16LE(pos + 30);
+              const commentLen = buf.readUInt16LE(pos + 32);
+              const localOffset= buf.readUInt32LE(pos + 42);
+              const fn = buf.slice(pos + 46, pos + 46 + fnLen).toString('utf8');
+              cdEntries.push({ fn, compMethod, compSize, uncompSize, localOffset });
+              pos += 46 + fnLen + extraLen + commentLen;
+            } else { pos++; }
+          }
+          // Priority: api.json > *.json (not exchange.json) > *.yaml > *.raml
+          const specEntry = cdEntries.find(e => e.fn === 'api.json')
+            || cdEntries.find(e => e.fn.endsWith('.json') && e.fn !== 'exchange.json')
+            || cdEntries.find(e => e.fn.endsWith('.yaml') || e.fn.endsWith('.yml'))
+            || cdEntries.find(e => e.fn.endsWith('.raml') && e.fn !== 'exchange.json');
+          if (!specEntry) return null;
+          const lh = specEntry.localOffset;
+          const lfnLen   = buf.readUInt16LE(lh + 26);
+          const lextraLen= buf.readUInt16LE(lh + 28);
+          const dataStart = lh + 30 + lfnLen + lextraLen;
+          const compressed = buf.slice(dataStart, dataStart + specEntry.compSize);
+          const raw = specEntry.compMethod === 8
+            ? zlib.inflateRawSync(compressed)
+            : compressed;
+          return raw.toString('utf8');
+        } catch (e) {
+          console.warn('[ping-spec] ZIP extraction error:', e.message);
+          return null;
+        }
+      };
+
       try {
         const assetRes = await client.get(`/exchange/api/v2/assets/${groupId}/${assetId}/${version}`);
         const asset = assetRes.data;
@@ -366,16 +418,30 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
           }
           return null;
         };
-        const oasFile  = findFile('oas');
+        // Prefer fat-oas (resolved/flattened) for most complete spec
+        const oasFile  = findFile('fat-oas', 'oas');
         const ramlFile = findFile('fat-raml', 'raml');
         const specFile = oasFile || ramlFile;
 
         if (specFile?.externalLink) {
+          // S3 pre-signed URLs already carry auth in query params — sending
+          // an Authorization header causes S3 to return 400 InvalidArgument.
+          const isS3 = specFile.externalLink.includes('s3.amazonaws.com');
           const dlRes = await axios.get(specFile.externalLink, {
-            headers: { Authorization: `Bearer ${req.anypointToken}` },
-            responseType: 'text', timeout: 15000,
+            headers: isS3 ? {} : { Authorization: `Bearer ${req.anypointToken}` },
+            responseType: 'arraybuffer',  // always binary — zip or not
+            timeout: 20000,
           });
-          const content = typeof dlRes.data === 'string' ? dlRes.data : JSON.stringify(dlRes.data);
+          const buf = Buffer.from(dlRes.data);
+          const isZip = buf[0] === 0x50 && buf[1] === 0x4b;
+          let content;
+          if (isZip) {
+            content = extractFromZip(buf);
+            console.log('[ping-spec] ZIP extracted:', content ? `${content.length} chars` : 'FAILED');
+          } else {
+            content = buf.toString('utf8');
+          }
+          if (!content) throw new Error('Could not extract spec content from file');
 
           if (oasFile) {
             specType = 'oas';
