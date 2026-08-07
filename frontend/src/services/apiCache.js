@@ -5,10 +5,10 @@
  * is cleared on browser refresh (intentional — ensures data freshness
  * after a full page reload).
  *
- * Default TTL: 2 minutes.
+ * Default TTL: 20 minutes.
  */
 
-const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
 const cache = new Map();
 
 /** Return cached value if still fresh, otherwise null. */

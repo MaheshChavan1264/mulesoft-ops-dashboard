@@ -149,6 +149,7 @@ export default function ApplicationDetailPage() {
 
   // Feature 3: resolve BG name and env name for context badges
   const [bgName, setBgName] = useState('');
+  const [resolvedEnvName, setResolvedEnvName] = useState('');
   useEffect(() => {
     if (!orgId) return;
     api.get('/organizations/business-groups').then(r => {
@@ -157,6 +158,14 @@ export default function ApplicationDetailPage() {
       if (match) setBgName(match.name);
     }).catch(() => {});
   }, [orgId]);
+  useEffect(() => {
+    if (!orgId || !envId) return;
+    api.get(`/environments/${orgId}`).then(r => {
+      const envs = r.data?.data || r.data?.environments || r.data || [];
+      const match = (Array.isArray(envs) ? envs : []).find(e => e.id === envId);
+      if (match) setResolvedEnvName(match.name);
+    }).catch(() => {});
+  }, [orgId, envId]);
 
   // Feature 4: contracts tab state
   const [contractsLoading, setContractsLoading] = useState(false);
@@ -164,20 +173,89 @@ export default function ApplicationDetailPage() {
   const [contractsError, setContractsError] = useState('');
   const [contractApiInstanceId, setContractApiInstanceId] = useState(null);
 
-  // Feature 4: load contracts — defined here (before early returns) to satisfy Rules of Hooks
+  // Feature 4: load contracts — defined here (before early returns) to satisfy Rules of Hooks.
+  // Resolves the API Manager instance the same way PingTestPanel does:
+  //   Step 1 — extract CPS config from ARM deployment properties
+  //   Step 2 — post CPS credentials so the CPS server accepts the fetch
+  //   Step 3 — fetch CPS non-secure to discover the Autodiscovery api.id
+  //   Step 4 — pass apiId to /health/auto-credentials for a direct Layer 1 lookup
+  //   Step 5 — fetch contracts for the matched API Manager instance
   const loadContracts = useCallback(async () => {
     if (!orgId || !envId) return;
     setContractsLoading(true);
     setContractsError('');
     setContracts(null);
     try {
-      const acRes = await api.post('/health/auto-credentials', { orgId, envId, appName: app?.name });
+      const appData = app;
+      let apiId;
+
+      // ── Step 1-3: get api.id from CPS non-secure properties ──────────────
+      if (appData) {
+        const ds = appData.target?.deploymentSettings || {};
+        const appCfg = appData.application?.configuration || {};
+        const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
+        const armProps = {
+          ...appData.properties,
+          ...(propsSvc.properties || {}),
+          ...(ds.properties || {}),
+          ...(ds.environmentVariables || ds.environmentVars || {}),
+        };
+        const cpsUrl  = armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] || '';
+        const cpsKey  = armProps['cps.projectName'] || armProps['cloudhub.api.name'] || appData.name || '';
+        const cpsPfx  = armProps['cps.prefix'] || armProps['cps.environment'] || '';
+        const cpsCId  = armProps['cps.clientId'] || armProps['cps.client_id'] ||
+                        armProps['cps.client.id'] || armProps['cps.apiClientId'] || '';
+
+        if (cpsUrl && cpsKey) {
+          // Post CPS creds to backend session if available
+          if (cpsCId && hasCpsCsvCredentials) {
+            const secret = getSecret(cpsCId);
+            if (secret) {
+              try {
+                const credKey = `${cpsUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${orgId}`;
+                await api.post('/cps/credentials', { credentials: { [credKey]: { clientId: cpsCId, clientSecret: secret } } });
+              } catch {}
+            }
+          }
+          try {
+            const r = await api.get('/cps/fetch', { params: { baseUrl: cpsUrl, type: 'non-secure', keys: cpsKey, ...(cpsPfx && { environment: cpsPfx }), bgOrgId: orgId } });
+            const data = r.data;
+            let props = {};
+            if (Array.isArray(data?.responses)) data.responses.forEach(r2 => Object.assign(props, r2.properties || {}));
+            else if (Array.isArray(data)) data.forEach(r2 => { if (r2?.properties) Object.assign(props, r2.properties); });
+            else if (data && typeof data === 'object') {
+              const fv = Object.values(data)[0];
+              props = (fv && typeof fv === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
+            }
+            // Find numeric api.id
+            const findId = () => {
+              if ('api.id' in props && /^\d+$/.test(String(props['api.id']).trim())) return String(props['api.id']).trim();
+              const e1 = Object.entries(props).find(([k]) => k.endsWith('.api.id'));
+              if (e1 && /^\d+$/.test(String(e1[1]).trim())) return String(e1[1]).trim();
+              const e2 = Object.entries(props).find(([k, v]) => k.endsWith('.id') && /^\d+$/.test(String(v).trim()));
+              if (e2) return String(e2[1]).trim();
+              if ('id' in props && /^\d+$/.test(String(props['id']).trim())) return String(props['id']).trim();
+              return null;
+            };
+            apiId = findId();
+          } catch {}
+        }
+      }
+
+      // ── Step 4: find API Manager instance (Layer 1 if apiId, else fuzzy) ─
+      const acRes = await api.post('/health/auto-credentials', {
+        orgId, envId,
+        appName: appData?.name,
+        ...(apiId && { apiId }),
+      });
       const instanceId = acRes.data?.matchedApis?.[0]?.id;
       if (!instanceId) {
         setContractsError('No API Manager instance found for this application. Ensure it is registered in API Manager.');
         setContractsLoading(false);
         return;
       }
+
+      // ── Step 5: fetch contracts ───────────────────────────────────────────
       setContractApiInstanceId(instanceId);
       const contractsRes = await api.get(`/apis/${orgId}/${envId}/${instanceId}/contracts`);
       const raw = contractsRes.data?.contracts || contractsRes.data || [];
@@ -186,7 +264,7 @@ export default function ApplicationDetailPage() {
       setContractsError(e.response?.data?.error || e.message || 'Failed to load contracts');
     }
     setContractsLoading(false);
-  }, [orgId, envId, app?.name]);
+  }, [orgId, envId, app, hasCpsCsvCredentials, getSecret]);
 
   // CPS state
   const [cpsLoading, setCpsLoading] = useState(false);
@@ -407,7 +485,7 @@ export default function ApplicationDetailPage() {
   const tabs = [
     { id:'overview', label:'Overview' },
     { id:'properties', label:'Properties', badge:Object.keys(allProps).length },
-    { id:'infrastructure', label:'Infra & Config' },
+    { id:'infrastructure', label:'Schedulers & Object Store' },
     ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config' }] : []),
     { id:'contracts', label:'Contracts' },
     { id:'ping', label:'Ping Test' },
@@ -466,13 +544,13 @@ export default function ApplicationDetailPage() {
                     🏢 {bgName}
                   </span>
                 )}
-                {app.environment?.name && (
+                {(resolvedEnvName || app.environment?.name) && (
                   <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
                     app.environment?.type === 'production'
                       ? 'bg-green-950/40 text-green-400 border-green-800/50'
                       : 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50'
                   }`}>
-                    🌐 {app.environment.name}
+                    🌐 {resolvedEnvName || app.environment?.name}
                   </span>
                 )}
               </div>
@@ -1125,7 +1203,10 @@ export default function ApplicationDetailPage() {
                               )}
                             </td>
                             <td className="px-5 py-3">
-                              <span className="font-mono text-xs text-slate-400">{clientId !== '—' ? `${String(clientId).slice(0, 12)}…` : '—'}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-xs text-slate-300 break-all">{clientId}</span>
+                                {clientId !== '—' && <CopyBtn text={String(clientId)} />}
+                              </div>
                             </td>
                             <td className="px-5 py-3">
                               <span className={`inline-flex text-[10px] px-2 py-0.5 rounded-full border font-bold ${statusCls}`}>{status}</span>
