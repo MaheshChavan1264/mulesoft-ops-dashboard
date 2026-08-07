@@ -72,12 +72,12 @@ router.get('/cloudhub2/:orgId/:envId/:deploymentId', authMiddleware, async (req,
     }
 
     // Log what property paths exist for debugging
-    const ds = deployment.target?.deploymentSettings || {};
+    /*const ds = deployment.target?.deploymentSettings || {};
     console.log(`CH2 props for ${deploymentId}:`, {
       'target.deploymentSettings.properties': Object.keys(ds.properties || {}),
       'target.deploymentSettings.environmentVars': Object.keys(ds.environmentVars || {}),
       'application.configuration': !!deployment.application?.configuration
-    });
+    });*/
 
     res.json(deployment);
   } catch (error) {
