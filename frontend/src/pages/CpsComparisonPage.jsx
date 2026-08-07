@@ -233,10 +233,36 @@ function MultiAppChecklist({ apps, selectedIds, loading, onToggle, onSelectAll, 
 
 // ─── SidePanel ────────────────────────────────────────────────────────────────
 
-function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp, hideAppSelector }) {
+function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp, hideAppSelector, collapsed, onToggleCollapse }) {
   const { bgId, envId, envs, apps, appId, loadingEnvs, loadingApps, loadingDetail, cpsUrl, cpsEnv, cpsKey, credsResolved } = state;
   const isBlue = color === 'border-blue-700/50';
-  const showEnvInLabel = bgId === '__all__' || !envId; // show env name in app label when "all"
+  const showEnvInLabel = bgId === '__all__' || !envId;
+  const bgName = filteredBgs.find(g => g.id === bgId)?.name || (bgId === '__all__' ? 'All BGs' : '—');
+  const envName = envs.find(e => e.id === envId)?.name || (envId === '__all__' ? 'All Envs' : '—');
+  const selCount = (state.selectedAppIds || []).length;
+  const appSummary = hideAppSelector ? (selCount > 0 ? `${selCount} apps selected` : `${apps.length} apps`) : (cpsKey || '—');
+
+  if (collapsed) {
+    return (
+      <div className={`flex-1 min-w-0 bg-gray-900 border ${color} rounded-xl`}>
+        <button onClick={onToggleCollapse} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/20 transition-colors">
+          <div className="flex items-center gap-2 min-w-0">
+            <p className={`text-xs font-bold uppercase tracking-wider flex-shrink-0 ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>{label}</p>
+            {bgId ? (
+              <span className="text-[10px] text-gray-400 truncate">
+                {bgName} · {envName}
+                {appSummary !== '—' && <span className={`ml-1 font-medium ${isBlue ? 'text-blue-300' : 'text-orange-300'}`}> · {appSummary}</span>}
+              </span>
+            ) : <span className="text-[10px] text-gray-600">not configured</span>}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {credsResolved && <span className="text-[9px] text-emerald-400">🔑</span>}
+            <span className="text-gray-500 text-[10px] border border-gray-700 rounded px-1.5 py-0.5 bg-gray-800">▼ Edit</span>
+          </div>
+        </button>
+      </div>
+    );
+  }
 
   const bgOptions = [
     { value: '__all__', label: 'All Organizations', tag: `${filteredBgs.length}`, tagColor: 'bg-gray-700 text-gray-300' },
@@ -260,11 +286,16 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
     <div className={`flex-1 min-w-0 bg-gray-900 border ${color} rounded-xl p-4 space-y-3`}>
       <div className="flex items-center justify-between">
         <p className={`text-xs font-bold uppercase tracking-wider ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>{label}</p>
-        {credsResolved && (
-          <span className="flex items-center gap-1 text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-1.5 py-0.5 rounded">
-            <Key size={8} /> CPS creds auto-filled
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {credsResolved && (
+            <span className="flex items-center gap-1 text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-1.5 py-0.5 rounded">
+              <Key size={8} /> CPS creds
+            </span>
+          )}
+          <button onClick={onToggleCollapse} className="text-[10px] text-gray-500 hover:text-gray-300 border border-gray-700 rounded px-1.5 py-0.5 bg-gray-800/60 transition-colors">
+            ▲ Collapse
+          </button>
+        </div>
       </div>
 
       {/* Property type tabs — per-side selection */}
@@ -398,6 +429,8 @@ export default function CpsComparisonPage() {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [diffRow, setDiffRow] = useState(null);
+  const [collapsedA, setCollapsedA] = useState(false);
+  const [collapsedB, setCollapsedB] = useState(false);
 
   // Load BGs on mount
   useEffect(() => {
@@ -663,6 +696,8 @@ export default function CpsComparisonPage() {
 
     setMultiResults(results);
     setComparing(false);
+    setCollapsedA(true);
+    setCollapsedB(true);
   };
 
   // Swap sides
@@ -805,6 +840,8 @@ export default function CpsComparisonPage() {
     setComparing(false);
     setFilter('all');
     setSearch('');
+    setCollapsedA(true);
+    setCollapsedB(true);
   };
 
   // Build diff — keys may contain "groupName::propKey" for grouped types
@@ -925,6 +962,8 @@ export default function CpsComparisonPage() {
           onLoadApps={(bgId, envId) => loadApps('A', bgId, envId)}
           onSelectApp={id => selectApp('A', id)}
           hideAppSelector={compareMode === 'multi'}
+          collapsed={collapsedA}
+          onToggleCollapse={() => setCollapsedA(v => !v)}
         />
 
         {/* Swap + Compare button column */}
@@ -963,6 +1002,8 @@ export default function CpsComparisonPage() {
           onLoadApps={(bgId, envId) => loadApps('B', bgId, envId)}
           onSelectApp={id => selectApp('B', id)}
           hideAppSelector={compareMode === 'multi'}
+          collapsed={collapsedB}
+          onToggleCollapse={() => setCollapsedB(v => !v)}
         />
       </div>
 
