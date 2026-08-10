@@ -29,6 +29,44 @@ function buildBaseUrl(targetType, appName, ch2IngressUrl) {
   return `https://${safe}.api.sfdcbt.net`;
 }
 
+// ─── POST /api/health/oauth2-token ───────────────────────────────────────────
+/**
+ * Server-side proxy for OAuth2 client_credentials token requests.
+ * Avoids CORS issues when the token endpoint doesn't allow browser origins.
+ *
+ * Body: { tokenUrl, clientId, clientSecret, grantType?, scope? }
+ * Response: { access_token, token_type, expires_in }
+ */
+router.post('/oauth2-token', async (req, res) => {
+  const { tokenUrl, clientId, clientSecret, grantType = 'client_credentials', scope } = req.body || {};
+  if (!tokenUrl || !clientId || !clientSecret) {
+    return res.status(400).json({ error: 'tokenUrl, clientId, and clientSecret are required' });
+  }
+  try {
+    const params = new URLSearchParams({ grant_type: grantType, client_id: clientId, client_secret: clientSecret });
+    if (scope) params.append('scope', scope);
+    const response = await axios.post(tokenUrl, params.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      httpsAgent,
+      timeout: 15000,
+      validateStatus: () => true,
+    });
+    if (response.status >= 400) {
+      const errMsg = response.data?.error_description || response.data?.error || response.data?.message || `HTTP ${response.status}`;
+      return res.status(response.status).json({ error: errMsg, raw: response.data });
+    }
+    const { access_token, token_type, expires_in } = response.data;
+    if (!access_token) {
+      return res.status(400).json({ error: 'Token endpoint did not return access_token', raw: response.data });
+    }
+    console.log(`[oauth2-token] Token fetched from ${tokenUrl} (expires_in=${expires_in})`);
+    return res.json({ access_token, token_type: token_type || 'Bearer', expires_in });
+  } catch (e) {
+    console.error('[oauth2-token] Error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 /**
  * POST /api/health/ping
  */
@@ -39,6 +77,7 @@ router.post('/ping', async (req, res) => {
     ch2IngressUrl,
     clientId,
     clientSecret,
+    bearerToken,        // JWT / OAuth2 Bearer token — sends Authorization: Bearer <token>
     transactionId = 'smokeTest',
     queryParams = '',   // optional: "key1=val1&key2=val2" appended to every ping URL
   } = req.body || {};
@@ -54,14 +93,16 @@ router.post('/ping', async (req, res) => {
     'Content-Type': 'application/json',
     'x-transaction-id': transactionId,
   };
+  if (bearerToken) outboundHeaders['Authorization'] = `Bearer ${bearerToken}`;
   if (clientId) outboundHeaders['client_id'] = clientId;
   if (clientSecret) outboundHeaders['client_secret'] = clientSecret;
 
   console.log('[Ping] Base URL:', base);
   console.log('[Ping] Headers being sent:', {
     'x-transaction-id': transactionId,
-    client_id: clientId ? `${clientId.slice(0, 6)}…` : '(not set)',
-    client_secret: clientSecret ? `${clientSecret.slice(0, 4)}… (len ${clientSecret.length})` : '(not set)',
+    ...(bearerToken ? { Authorization: `Bearer ${bearerToken.slice(0, 20)}… (len ${bearerToken.length})` } : {}),
+    ...(clientId ? { client_id: `${clientId.slice(0, 6)}…` } : {}),
+    ...(clientSecret ? { client_secret: `${clientSecret.slice(0, 4)}… (len ${clientSecret.length})` } : {}),
   });
 
   const attempts = [];

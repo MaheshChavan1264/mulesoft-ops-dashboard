@@ -201,6 +201,10 @@ router.get('/cloudhub1/:envId/:appName/properties', authMiddleware, async (req, 
 });
 
 // Control action for CloudHub 1.0 (start / stop / restart)
+// CH1 API status-change strategies (tried in order):
+//   1. POST /cloudhub/api/applications/{domain}/status  { status: 'start'|'stop'|'restart' }
+//   2. PUT  /cloudhub/api/applications/{domain}          { status: 'STARTED'|'STOPPED'|'RESTARTED' }
+//   3. Restart = stop (strategy 2) → wait 4s → start (strategy 2)
 router.post('/cloudhub1/:envId/:appName/action', authMiddleware, async (req, res) => {
   const { envId, appName } = req.params;
   const { action } = req.body; // 'start' | 'stop' | 'restart'
@@ -211,28 +215,49 @@ router.post('/cloudhub1/:envId/:appName/action', authMiddleware, async (req, res
   const client = createClient(req.anypointToken);
   const headers = { 'X-ANYPNT-ENV-ID': envId, 'X-ANYPNT-ORG-ID': orgId };
 
+  // Strategy 1: POST .../status with { status: 'start'|'stop'|'restart' }
+  // This is the canonical CH1 REST API status-change endpoint
+  const strategy1 = async (act) =>
+    client.post(`/cloudhub/api/applications/${appName}/status`, { status: act }, { headers });
+
+  // Strategy 2: PUT .../  with { status: 'STARTED'|'STOPPED'|'RESTARTED' }
+  const statusMap = { start: 'STARTED', stop: 'STOPPED', restart: 'RESTARTED' };
+  const strategy2 = async (act) =>
+    client.put(`/cloudhub/api/applications/${appName}`, { status: statusMap[act] || act.toUpperCase() }, { headers });
+
+  // Restart helper: execute a single-action fn for stop, wait, then start
+  const doRestart = async (fn) => {
+    await fn('stop');
+    await new Promise((r) => setTimeout(r, 4000));
+    await fn('start');
+  };
+
+  // Try strategy 1 first
   try {
-    // CH1 action endpoints
-    const response = await client.post(
-      `/cloudhub/api/applications/${appName}/${action}`, {}, { headers }
-    );
-    return res.json({ success: true, action, appName, data: response.data });
+    if (action === 'restart') {
+      // CH1 may not have a native restart — try direct first, then stop→start
+      try {
+        await strategy1('restart');
+      } catch {
+        await doRestart(strategy1);
+      }
+    } else {
+      await strategy1(action);
+    }
+    return res.json({ success: true, action, appName });
   } catch (e1) {
-    // Fallback: PUT with desiredStatus (some CH1 versions use this)
+    // Strategy 1 failed — try strategy 2 (PUT with status field)
     try {
       if (action === 'restart') {
-        await client.post(`/cloudhub/api/applications/${appName}/stop`, {}, { headers });
-        await new Promise((r) => setTimeout(r, 3000));
-        await client.post(`/cloudhub/api/applications/${appName}/start`, {}, { headers });
-        return res.json({ success: true, action, appName });
+        try {
+          await strategy2('restart');
+        } catch {
+          await doRestart(strategy2);
+        }
+      } else {
+        await strategy2(action);
       }
-      const statusMap = { start: 'Started', stop: 'Stopped' };
-      const response = await client.put(
-        `/cloudhub/api/applications/${appName}`,
-        { desiredStatus: statusMap[action] },
-        { headers }
-      );
-      return res.json({ success: true, action, appName, data: response.data });
+      return res.json({ success: true, action, appName });
     } catch (e2) {
       console.error(`CH1 action ${action} failed for ${appName}:`, e2.response?.data || e2.message);
       return res.status(e2.response?.status || 500).json({

@@ -564,7 +564,11 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
             || cdEntries.find(e => e.fn.endsWith('.json') && e.fn !== 'exchange.json')
             || cdEntries.find(e => e.fn.endsWith('.yaml') || e.fn.endsWith('.yml'))
             || cdEntries.find(e => e.fn.endsWith('.raml') && e.fn !== 'exchange.json');
-          if (!specEntry) return null;
+          if (!specEntry) {
+            console.warn('[ping-spec] No spec file found in ZIP. Entries:', cdEntries.map(e => e.fn).slice(0, 15).join(', '));
+            return null;
+          }
+          console.log(`[ping-spec] ZIP spec entry selected: "${specEntry.fn}" (method=${specEntry.compMethod}, size=${specEntry.uncompSize})`);
           const lh = specEntry.localOffset;
           const lfnLen   = buf.readUInt16LE(lh + 26);
           const lextraLen= buf.readUInt16LE(lh + 28);
@@ -621,9 +625,27 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
           if (oasFile) {
             specType = 'oas';
             let spec = null;
-            try { spec = JSON.parse(content); } catch {}
+            // Try JSON first; fall back to YAML (js-yaml) — OAS specs are commonly YAML
+            try { spec = JSON.parse(content); } catch {
+              try {
+                spec = require('js-yaml').load(content);
+                console.log('[ping-spec] OAS spec parsed as YAML');
+              } catch (yamlErr) {
+                console.warn('[ping-spec] YAML parse failed:', yamlErr.message);
+              }
+            }
             if (spec?.paths) {
-              const bp = spec.basePath || '';
+              // OAS 2 uses basePath; OAS 3 uses servers[].url — extract path portion
+              let bp = spec.basePath || '';
+              if (!bp && spec.servers?.[0]?.url) {
+                try {
+                  bp = new URL(spec.servers[0].url).pathname.replace(/\/+$/, '');
+                } catch {
+                  const su = spec.servers[0].url || '';
+                  bp = su.startsWith('/') ? su.replace(/\/+$/, '') : '';
+                }
+              }
+              console.log(`[ping-spec] OAS ${spec.openapi || spec.swagger || '?'}: ${Object.keys(spec.paths).length} path(s), basePath="${bp}"`);
               for (const [rawPath, pathItem] of Object.entries(spec.paths)) {
                 for (const meth of ['get','post','put','patch','delete','head','options']) {
                   const op = pathItem[meth];
@@ -636,15 +658,18 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
                       name: p.name, required: !!p.required,
                       type: p.schema?.type || p.type || 'string',
                       description: p.description || '',
-                      example: p.example != null ? String(p.example) : '',
+                      example: p.example != null ? String(p.example) : (p.schema?.example != null ? String(p.schema.example) : ''),
                     })),
                     headers: params.filter(p => p.in === 'header').map(p => ({
-                      name: p.name, required: !!p.required, type: p.type || 'string',
+                      name: p.name, required: !!p.required,
+                      type: p.schema?.type || p.type || 'string',
                       description: p.description || '', example: '',
                     })),
                   });
                 }
               }
+            } else if (spec) {
+              console.warn(`[ping-spec] OAS spec parsed but has no "paths". Top-level keys: ${Object.keys(spec).slice(0, 10).join(', ')}`);
             }
           } else if (ramlFile) {
             specType = 'raml';
