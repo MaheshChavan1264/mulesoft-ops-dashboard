@@ -172,40 +172,51 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
         return score;
       };
 
-      let found = false;
-      outer:
+      // Collect ALL unique assets across ALL search terms (don't stop on first hit).
+      // This ensures "-ch2-api" variants are also searched even if the base name
+      // already returned a result (which might be the wrong/non-spec asset).
+      const allFoundAssets = new Map(); // key: "groupId/assetId/version"
+
       for (const { orgParam } of searchStrategies) {
         for (const term of searchTerms) {
-          const params = { search: term, limit: 10, type: 'rest-api' };
-          if (orgParam) params.organizationId = orgParam;
-          const searchRes = await client.get('/exchange/api/v2/assets', { params });
-          const searchResults = Array.isArray(searchRes.data)
-            ? searchRes.data
-            : (searchRes.data?.assets || []);
+          try {
+            const params = { search: term, limit: 10, type: 'rest-api' };
+            if (orgParam) params.organizationId = orgParam;
+            const searchRes = await client.get('/exchange/api/v2/assets', { params });
+            const searchResults = Array.isArray(searchRes.data)
+              ? searchRes.data
+              : (searchRes.data?.assets || []);
 
-          if (searchResults.length > 0) {
-            // Score and sort results by relevance to the normalized app name
-            const scored = searchResults
-              .map(a => ({ a, score: scoreAsset(a) }))
-              .sort((x, y) => y.score - x.score);
-            const best = scored[0].a;
-            groupId  = best.groupId;
-            assetId  = best.assetId;
-            version  = best.version;
-            // Store extra candidates for multi-attempt fallback
-            req._extraCandidates = scored.slice(1).map(s => ({
-              groupId: s.a.groupId, assetId: s.a.assetId, version: s.a.version
-            }));
-            console.log(`[ping-spec] Resolved via search "${term}" (org=${orgParam || 'all'}): ${groupId}/${assetId}/${version} (${best.name}, score=${scored[0].score})`);
-            if (scored.length > 1) {
-              console.log(`[ping-spec] Extra candidates: ${scored.slice(1, 4).map(s => `${s.a.assetId}/${s.a.version}`).join(', ')}`);
+            for (const a of searchResults) {
+              const key = `${a.groupId}/${a.assetId}/${a.version}`;
+              if (!allFoundAssets.has(key)) allFoundAssets.set(key, a);
             }
-            found = true;
-            break outer;
-          }
+          } catch { /* skip failed search terms */ }
         }
+        // If we found anything in this org scope, no need to search all orgs
+        if (allFoundAssets.size > 0) break;
       }
-      if (!found) console.log('[ping-spec] Name search exhausted all strategies — no asset found');
+
+      if (allFoundAssets.size > 0) {
+        // Score all collected assets and sort by relevance
+        const scored = Array.from(allFoundAssets.values())
+          .map(a => ({ a, score: scoreAsset(a) }))
+          .sort((x, y) => y.score - x.score);
+
+        const best = scored[0].a;
+        groupId  = best.groupId;
+        assetId  = best.assetId;
+        version  = best.version;
+        req._extraCandidates = scored.slice(1).map(s => ({
+          groupId: s.a.groupId, assetId: s.a.assetId, version: s.a.version
+        }));
+        console.log(`[ping-spec] Best candidate: ${groupId}/${assetId}/${version} (${best.name}, score=${scored[0].score})`);
+        if (scored.length > 1) {
+          console.log(`[ping-spec] ${scored.length - 1} runner-up(s): ${scored.slice(1, 5).map(s => `${s.a.assetId}/${s.a.version}(${s.score})`).join(', ')}`);
+        }
+      } else {
+        console.log('[ping-spec] Name search exhausted all strategies — no asset found');
+      }
     } catch (searchErr) {
       console.warn('[ping-spec] Name search failed:', searchErr.message);
     }
