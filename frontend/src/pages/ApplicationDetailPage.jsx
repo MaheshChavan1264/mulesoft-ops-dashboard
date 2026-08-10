@@ -343,31 +343,36 @@ export default function ApplicationDetailPage() {
     }
   };
 
-  // Fetch Exchange ping spec once the app detail is loaded
-  // Defined BEFORE early returns to satisfy Rules of Hooks
-  useEffect(() => {
-    if (!app) return;
-    const ref = app.application?.ref;
+  // Fetch Exchange ping spec — also callable manually via Refresh button
+  const fetchPingSpec = useCallback((currentApp) => {
+    const a = currentApp || app;
+    if (!a) return;
+    const ref = a.application?.ref;
     const hasRef = ref?.groupId && ref?.artifactId && ref?.version;
-    // Always attempt — if ref is missing, backend will search by app name
     setPingSpecLoading(true);
+    setPingSpec(null);
     api.get('/exchange/ping-spec', {
       params: {
         ...(hasRef ? { groupId: ref.groupId, assetId: ref.artifactId, version: ref.version } : {}),
         orgId,
-        appName: app.name,   // fallback: backend searches Exchange by name
+        appName: a.name,   // fallback: backend searches Exchange by name
       }
     }).then(r => {
       setPingSpec(r.data);
       const total = r.data?.allEndpoints?.length ?? 0;
       const ping  = r.data?.pingEndpoints?.length ?? 0;
-      const label = ref?.artifactId || app.name;
+      const label = ref?.artifactId || a.name;
       console.log(`[pingSpec] ${label}: specType=${r.data?.specType}, total=${total} endpoints, ${ping} ping paths found`);
       if (total > 0 && ping === 0) {
         console.log(`[pingSpec] All paths:`, r.data.allEndpoints.map(e => `${e.method} ${e.path}`));
       }
     }).catch(err => { console.warn('[pingSpec] fetch failed:', err.message); setPingSpec(null); })
       .finally(() => setPingSpecLoading(false));
+  }, [app, orgId]);
+
+  // Auto-fetch when app loads
+  useEffect(() => {
+    if (app) fetchPingSpec(app);
   }, [app?.name, orgId]);  // dep on app.name so CH1 apps also trigger
 
   const isCH1 = app?._type === 'ch1';
@@ -1336,7 +1341,7 @@ export default function ApplicationDetailPage() {
                 <Globe size={14} className="text-blue-400" /> API Specification — Exchange
               </h2>
               <p className="text-slate-500 text-xs mt-0.5">
-                {pingSpecLoading ? 'Fetching spec from Exchange…' :
+                {pingSpecLoading ? 'Searching Exchange and parsing spec…' :
                   pingSpec ? <>
                     <span className="text-slate-400">{pingSpec.assetName}</span>
                     {' · '}{pingSpec.specType?.toUpperCase()} · {pingSpec.allEndpoints?.length ?? 0} endpoints
@@ -1348,12 +1353,18 @@ export default function ApplicationDetailPage() {
                   </> : 'No spec available — app may not have an Exchange asset linked'}
               </p>
             </div>
+            <button onClick={() => fetchPingSpec()} disabled={pingSpecLoading}
+              title="Re-fetch API spec from Exchange"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors disabled:opacity-50">
+              <RefreshCw size={11} className={pingSpecLoading ? 'animate-spin' : ''} />
+              {pingSpec ? 'Refresh' : 'Fetch Spec'}
+            </button>
           </div>
 
           {pingSpecLoading && (
             <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
               <RefreshCw size={18} className="animate-spin" />
-              <span className="text-sm">Fetching API spec from Exchange…</span>
+              <span className="text-sm">Searching Exchange and parsing API spec…</span>
             </div>
           )}
 
