@@ -115,9 +115,36 @@ router.get('/:groupId/:assetId/:version', authMiddleware, async (req, res) => {
  *   }
  */
 router.get('/ping-spec', authMiddleware, async (req, res) => {
-  const { groupId, assetId, version, orgId } = req.query;
+  let { groupId, assetId, version, orgId, appName } = req.query;
+
+  // If groupId/assetId/version not provided but appName is, search Exchange first
+  if ((!groupId || !assetId || !version) && appName && orgId) {
+    try {
+      const client = createClient(req.anypointToken);
+      const searchRes = await client.get('/exchange/api/v2/assets', {
+        params: { search: appName, organizationId: orgId, limit: 5, type: 'rest-api' }
+      });
+      // Response may be array or { assets: [...] }
+      const searchResults = Array.isArray(searchRes.data)
+        ? searchRes.data
+        : (searchRes.data?.assets || []);
+      if (searchResults.length > 0) {
+        const best = searchResults[0];
+        groupId  = best.groupId;
+        assetId  = best.assetId;
+        version  = best.version;
+        console.log(`[ping-spec] Resolved by name search: ${groupId}/${assetId}/${version}`);
+      }
+    } catch (searchErr) {
+      console.warn('[ping-spec] Name search failed:', searchErr.message);
+    }
+  }
+
   if (!groupId || !assetId || !version) {
-    return res.status(400).json({ error: 'groupId, assetId, and version are required' });
+    return res.status(404).json({
+      error: 'Could not resolve Exchange asset for this app. Ensure the app has an Exchange asset linked.',
+      specType: 'unknown', pingEndpoints: [], allEndpoints: []
+    });
   }
 
   try {

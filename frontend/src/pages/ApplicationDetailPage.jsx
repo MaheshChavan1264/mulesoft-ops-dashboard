@@ -346,22 +346,29 @@ export default function ApplicationDetailPage() {
   // Fetch Exchange ping spec once the app detail is loaded
   // Defined BEFORE early returns to satisfy Rules of Hooks
   useEffect(() => {
-    const ref = app?.application?.ref;
-    if (!ref?.groupId || !ref?.artifactId || !ref?.version) return;
+    if (!app) return;
+    const ref = app.application?.ref;
+    const hasRef = ref?.groupId && ref?.artifactId && ref?.version;
+    // Always attempt — if ref is missing, backend will search by app name
     setPingSpecLoading(true);
     api.get('/exchange/ping-spec', {
-      params: { groupId: ref.groupId, assetId: ref.artifactId, version: ref.version, orgId }
+      params: {
+        ...(hasRef ? { groupId: ref.groupId, assetId: ref.artifactId, version: ref.version } : {}),
+        orgId,
+        appName: app.name,   // fallback: backend searches Exchange by name
+      }
     }).then(r => {
       setPingSpec(r.data);
       const total = r.data?.allEndpoints?.length ?? 0;
       const ping  = r.data?.pingEndpoints?.length ?? 0;
-      console.log(`[pingSpec] ${ref.artifactId}: specType=${r.data?.specType}, total=${total} endpoints, ${ping} ping paths found`);
+      const label = ref?.artifactId || app.name;
+      console.log(`[pingSpec] ${label}: specType=${r.data?.specType}, total=${total} endpoints, ${ping} ping paths found`);
       if (total > 0 && ping === 0) {
         console.log(`[pingSpec] All paths:`, r.data.allEndpoints.map(e => `${e.method} ${e.path}`));
       }
     }).catch(err => { console.warn('[pingSpec] fetch failed:', err.message); setPingSpec(null); })
       .finally(() => setPingSpecLoading(false));
-  }, [app?.application?.ref?.artifactId, orgId]);
+  }, [app?.name, orgId]);  // dep on app.name so CH1 apps also trigger
 
   const isCH1 = app?._type === 'ch1';
 
