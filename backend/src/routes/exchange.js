@@ -182,7 +182,14 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
             groupId  = best.groupId;
             assetId  = best.assetId;
             version  = best.version;
+            // Store extra candidates for multi-attempt fallback
+            req._extraCandidates = scored.slice(1).map(s => ({
+              groupId: s.a.groupId, assetId: s.a.assetId, version: s.a.version
+            }));
             console.log(`[ping-spec] Resolved via search "${term}" (org=${orgParam || 'all'}): ${groupId}/${assetId}/${version} (${best.name}, score=${scored[0].score})`);
+            if (scored.length > 1) {
+              console.log(`[ping-spec] Extra candidates: ${scored.slice(1, 4).map(s => `${s.a.assetId}/${s.a.version}`).join(', ')}`);
+            }
             found = true;
             break outer;
           }
@@ -194,11 +201,21 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
     }
   }
 
-  if (!groupId || !assetId || !version) {
+  // Collect ALL candidate assets for multi-attempt parsing below
+  let assetCandidates = [];
+  if (groupId && assetId && version) {
+    assetCandidates = [{ groupId, assetId, version }];
+  } else {
     return res.status(404).json({
       error: 'Could not resolve Exchange asset for this app. Ensure the app has an Exchange asset linked.',
       specType: 'unknown', pingEndpoints: [], allEndpoints: []
     });
+  }
+
+  // If we resolved via name search, also collect runner-up candidates
+  // so we can try them if the top pick yields 0 endpoints
+  if (req._extraCandidates?.length) {
+    assetCandidates.push(...req._extraCandidates);
   }
 
   try {
@@ -207,15 +224,22 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
     const PING_KEYWORDS = ['ping', 'health', 'status', 'liveness', 'readiness', 'heartbeat'];
     const isPingPath = (path) => PING_KEYWORDS.some(k => (path || '').toLowerCase().includes(k));
 
-    // ── Step 1: Try the Exchange Portal Model API ─────────────────────────
-    // GET /exchange/api/v2/assets/{groupId}/{assetId}/{version}/portal/model
-    // This is the SAME endpoint the Exchange UI / API Console uses.
-    // Returns the fully parsed API model tree as JSON — no spec download needed.
     let assetName = assetId;
     let specType = 'unknown';
     let allEndpoints = [];
-    let modelParsed = false;
 
+    // ── Try each candidate until one yields endpoints ─────────────────────
+    for (const candidate of assetCandidates) {
+      groupId  = candidate.groupId;
+      assetId  = candidate.assetId;
+      version  = candidate.version;
+      assetName    = assetId;
+      specType     = 'unknown';
+      allEndpoints = [];
+      let modelParsed = false;
+
+    // ── Step 1: Try the Exchange Portal Model API ─────────────────────────
+    // GET /exchange/api/v2/assets/{groupId}/{assetId}/{version}/portal/model
     try {
       const modelRes = await client.get(
         `/exchange/api/v2/assets/${groupId}/${assetId}/${version}/portal/model`
@@ -596,10 +620,20 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
       }
     }
 
-    const pingEndpoints = allEndpoints.filter(e => isPingPath(e.path));
-    console.log(`[ping-spec] ${groupId}/${assetId}/${version} (${specType}): ${allEndpoints.length} endpoints, ${pingEndpoints.length} ping path(s)`);
+      // Done with this candidate — check if we got any endpoints
+      const pingEndpoints = allEndpoints.filter(e => isPingPath(e.path));
+      console.log(`[ping-spec] ${groupId}/${assetId}/${version} (${specType}): ${allEndpoints.length} endpoints, ${pingEndpoints.length} ping path(s)`);
+      if (allEndpoints.length > 0) {
+        return res.json({ specType, assetName, pingEndpoints, allEndpoints });
+      }
+      if (assetCandidates.length > 1) {
+        console.log(`[ping-spec] 0 endpoints for ${assetId}/${version}, trying next candidate…`);
+      }
+    } // end candidate loop
 
-    return res.json({ specType, assetName, pingEndpoints, allEndpoints });
+    // All candidates exhausted with 0 endpoints
+    console.log('[ping-spec] All candidates exhausted — returning empty spec');
+    return res.json({ specType: 'unknown', assetName, pingEndpoints: [], allEndpoints: [] });
 
   } catch (error) {
     console.error('[ping-spec] Error:', error.response?.data || error.message);
