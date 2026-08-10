@@ -205,6 +205,47 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
         if (allFoundAssets.size > 0) break;
       }
 
+      // ── Direct assetId variant probing ────────────────────────────────
+      // Exchange text search often misses assets whose display name differs from
+      // the assetId (e.g. "job-ldp-ripjar-bulk-clear-ch2-api"). Try fetching
+      // the likely API spec assetId variants directly — fast, reliable, no text search.
+      const assetIdVariants = [
+        `${normalizedName}-ch2-api`,
+        `${normalizedName}-ch1-api`,
+        `${normalizedName}-api`,
+        `${normalizedName}-ch2`,
+        `${normalizedName}-sapi-api`,
+        `${normalizedName}-xapi-api`,
+        `${normalizedName}-papi-api`,
+      ];
+
+      for (const variantId of assetIdVariants) {
+        // Try the org that owns the found assets first, then the deployment org
+        const orgIds = [...new Set(
+          [...allFoundAssets.values()].map(a => a.groupId).concat([orgId])
+        )];
+        for (const gId of orgIds) {
+          try {
+            const probe = await client.get(`/exchange/api/v2/assets/${gId}/${variantId}`);
+            const probeData = probe.data;
+            // Could be the asset metadata or a list of versions
+            const versions = probeData?.versions || (Array.isArray(probeData) ? probeData : [probeData]);
+            const latestVersion = versions[0]?.version || probeData?.version;
+            if (latestVersion) {
+              const key = `${gId}/${variantId}/${latestVersion}`;
+              if (!allFoundAssets.has(key)) {
+                allFoundAssets.set(key, {
+                  groupId: gId, assetId: variantId, version: latestVersion,
+                  name: probeData.name || variantId,
+                });
+                console.log(`[ping-spec] Direct probe found: ${gId}/${variantId}/${latestVersion}`);
+              }
+              break; // found for this variant, try next variant
+            }
+          } catch { /* 404 = doesn't exist, try next */ }
+        }
+      }
+
       if (allFoundAssets.size > 0) {
         // Score all collected assets and sort by relevance
         const scored = Array.from(allFoundAssets.values())
@@ -218,7 +259,7 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
         req._extraCandidates = scored.slice(1).map(s => ({
           groupId: s.a.groupId, assetId: s.a.assetId, version: s.a.version
         }));
-        console.log(`[ping-spec] Best candidate: ${groupId}/${assetId}/${version} (${best.name}, score=${scored[0].score})`);
+        console.log(`[ping-spec] Best candidate: ${groupId}/${assetId}/${version} (score=${scored[0].score})`);
         if (scored.length > 1) {
           console.log(`[ping-spec] ${scored.length - 1} runner-up(s): ${scored.slice(1, 5).map(s => `${s.a.assetId}/${s.a.version}(${s.score})`).join(', ')}`);
         }
