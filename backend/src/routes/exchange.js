@@ -133,8 +133,18 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
         .replace(/[-_.]v\d+(\.\d+)*$/i, '')                  // -v1, _v2, .v1.0
         .replace(/\bv\d+(\.\d+)*$/i, '');                    // bare v1
 
-      const searchTerms = [appName, normalizedName].filter((t, i, a) => t && a.indexOf(t) === i);
-      console.log(`[ping-spec] Searching Exchange by name: "${searchTerms.join('" / "')}" in org ${orgId}`);
+      // Build search terms: original name, normalized name, and common API spec
+      // naming variants (-api, -ch2-api, -ch1-api) since the Exchange asset
+      // for an app like "job-ldp-ripjar-bulk-clear-v1" is often published as
+      // "job-ldp-ripjar-bulk-clear-ch2-api" or "job-ldp-ripjar-bulk-clear-api".
+      const searchTerms = [
+        appName,
+        normalizedName,
+        `${normalizedName}-api`,
+        `${normalizedName}-ch2-api`,
+        `${normalizedName}-ch1-api`,
+      ].filter((t, i, a) => t && a.indexOf(t) === i);
+      console.log(`[ping-spec] Searching Exchange by name: "${searchTerms.slice(0, 2).join('" / "')}" (+api variants) in org ${orgId}`);
 
       // Search strategies: try deployment orgId first, then without org scope
       // (Exchange assets are often published to a root/parent BG, not the
