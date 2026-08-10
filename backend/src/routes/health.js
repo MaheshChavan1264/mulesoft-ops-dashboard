@@ -492,7 +492,7 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
  * Response: { clientId, clientSecret, contractStatus, appName, appId }
  */
 router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
-  const { orgId, envId, apiId } = req.body || {};
+  const { orgId, envId, apiId, envType } = req.body || {};
   if (!orgId || !envId || !apiId) {
     return res.status(400).json({ error: 'orgId, envId, and apiId are required' });
   }
@@ -591,10 +591,24 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       return res.json({ clientId: creds.clientId, clientSecret: creds.clientSecret, contractStatus: status, appName, appId });
     }
 
-    // 3. No existing contract at all — create one using the user's "ping" app
-    //    Prefer an app whose name contains "ping" (dedicated health-check app).
-    //    Fall back to the first app if none found.
-    const targetApp = userApps.find(a => (a.name || '').toLowerCase().includes('ping')) || userApps[0];
+    // 3. No existing contract at all — create one using the most appropriate user app.
+    //
+    // Selection priority (environment-aware):
+    //   • Production env  → app whose name contains BOTH "prod"  AND "ping"
+    //   • Non-prod env    → app whose name contains BOTH "uat"   AND "ping"
+    //   • Fallback #1     → app whose name contains "ping" (any env)
+    //   • Fallback #2     → first available app
+    //
+    const isProd = (envType || '').toLowerCase() === 'production';
+    const nameLo = (a) => (a.name || '').toLowerCase();
+
+    const targetApp =
+      (isProd
+        ? userApps.find(a => nameLo(a).includes('prod') && nameLo(a).includes('ping'))
+        : userApps.find(a => nameLo(a).includes('uat')  && nameLo(a).includes('ping'))
+      ) ||
+      userApps.find(a => nameLo(a).includes('ping')) ||
+      userApps[0];
     const targetAppId = targetApp.id;
     const targetAppName = targetApp.name || 'User App';
     console.log(`[auto-contract-creds] No existing contract found — creating for app "${targetAppName}" (${targetAppId})`);
