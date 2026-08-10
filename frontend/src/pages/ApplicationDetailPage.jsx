@@ -144,7 +144,7 @@ export default function ApplicationDetailPage() {
   const [actionLoading, setActionLoading] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const [actionResult, setActionResult] = useState(null);
-  const { getSecret, hasCredentials: hasCpsCsvCredentials } = useCpsCredentialStore();
+  const { getSecret, hasCredentials: hasCpsCsvCredentials, getAllCredentials } = useCpsCredentialStore();
   const [cpsCredsResolved, setCpsCredsResolved] = useState(false);
 
   // Feature 3: resolve BG name and env name for context badges
@@ -432,19 +432,44 @@ export default function ApplicationDetailPage() {
     setCpsCredsResolved(false);
 
     // ── Auto-resolve CPS credentials from the imported CSV ────────────────
-    // Mirrors the logic in CpsComparisonPage: look up the app's CPS clientId
-    // in the in-memory credential store, then POST the pair to the backend
-    // session so the CPS fetch carries the right OAuth credentials.
-    if (cpsClientId && hasCpsCsvCredentials) {
-      const secret = getSecret(cpsClientId);
-      if (secret) {
-        try {
-          const credKey = `${cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${orgId}`;
-          await api.post('/cps/credentials', {
-            credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } },
-          });
-          setCpsCredsResolved(true);
-        } catch { /* non-fatal — CPS fetch will fail with 401 if needed */ }
+    if (hasCpsCsvCredentials) {
+      const normBase = cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+      const urlBgKey = `${normBase}::${orgId}`;
+      let resolved = false;
+
+      // Strategy 1: look up the specific cpsClientId from ARM props
+      if (cpsClientId) {
+        const secret = getSecret(cpsClientId);
+        if (secret) {
+          try {
+            await api.post('/cps/credentials', { credentials: { [urlBgKey]: { clientId: cpsClientId, clientSecret: secret } } });
+            setCpsCredsResolved(true);
+            resolved = true;
+          } catch { /* non-fatal */ }
+        } else {
+          console.log(`[CPS auto-resolve] cpsClientId "${cpsClientId.slice(0,8)}…" not found in imported CSV`);
+        }
+      }
+
+      // Strategy 2: try ALL credentials from the store (URL-based key)
+      // Useful when the app's ARM props don't have cps.clientId or
+      // the clientId doesn't match the CSV format.
+      if (!resolved) {
+        const allCreds = getAllCredentials();
+        for (const { clientId, clientSecret } of allCreds) {
+          try {
+            // Post using URL-only key (shared across BGs for this server)
+            await api.post('/cps/credentials', { credentials: { [normBase]: { clientId, clientSecret } } });
+            setCpsCredsResolved(true);
+            resolved = true;
+            console.log(`[CPS auto-resolve] Used URL-based fallback with clientId "${clientId.slice(0,8)}…"`);
+            break; // only need one working set
+          } catch { /* try next */ }
+        }
+      }
+
+      if (!resolved) {
+        console.log('[CPS auto-resolve] No matching credentials found in CSV — will show 422 error');
       }
     }
 
@@ -888,9 +913,9 @@ export default function ApplicationDetailPage() {
                     <Key size={8} /> CPS creds auto-resolved
                   </span>
                 )}
-                {cpsClientId && hasCpsCsvCredentials && !cpsCredsResolved && !cpsData && (
-                  <span className="text-[10px] text-yellow-400/70">🔑 CSV loaded — will auto-resolve on load</span>
-                )}
+      {hasCpsCsvCredentials && !cpsCredsResolved && !cpsData && (
+        <span className="text-[10px] text-yellow-400/70">🔑 CSV loaded — will auto-resolve on load</span>
+      )}
               </div>
               <p className="text-slate-500 text-xs font-mono break-all">{cpsBaseUrl}</p>
               {/* Editable key + env overrides */}
