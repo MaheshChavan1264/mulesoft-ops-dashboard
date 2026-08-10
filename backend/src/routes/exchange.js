@@ -137,14 +137,22 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
       // naming variants (-api, -ch2-api, -ch1-api) since the Exchange asset
       // for an app like "job-ldp-ripjar-bulk-clear-v1" is often published as
       // "job-ldp-ripjar-bulk-clear-ch2-api" or "job-ldp-ripjar-bulk-clear-api".
+      // Build the first 3 and first 4 segments as shorter search terms.
+      // e.g. "job-ldp-ripjar-bulk-clear" → also try "job-ldp-ripjar" and "job-ldp-ripjar-bulk"
+      // This helps when Exchange search returns the exact-match asset but not the -ch2-api variant,
+      // since a shorter prefix search is more likely to return multiple related assets.
+      const parts = normalizedName.split('-').filter(Boolean);
+      const prefix3 = parts.length >= 3 ? parts.slice(0, 3).join('-') : null;
+      const prefix4 = parts.length >= 4 ? parts.slice(0, 4).join('-') : null;
+
       const searchTerms = [
         appName,
         normalizedName,
+        prefix4,
+        prefix3,
         `${normalizedName}-api`,
-        `${normalizedName}-ch2-api`,
-        `${normalizedName}-ch1-api`,
       ].filter((t, i, a) => t && a.indexOf(t) === i);
-      console.log(`[ping-spec] Searching Exchange by name: "${searchTerms.slice(0, 2).join('" / "')}" (+api variants) in org ${orgId}`);
+      console.log(`[ping-spec] Searching Exchange by: "${searchTerms.slice(0, 3).join('", "')}" (+variants) in org ${orgId}`);
 
       // Search strategies: try deployment orgId first, then without org scope
       // (Exchange assets are often published to a root/parent BG, not the
