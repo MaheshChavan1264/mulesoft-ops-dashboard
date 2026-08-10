@@ -136,30 +136,59 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
       const searchTerms = [appName, normalizedName].filter((t, i, a) => t && a.indexOf(t) === i);
       console.log(`[ping-spec] Searching Exchange by name: "${searchTerms.join('" / "')}" in org ${orgId}`);
 
-      let found = false;
-      for (const term of searchTerms) {
-        const searchRes = await client.get('/exchange/api/v2/assets', {
-          params: { search: term, organizationId: orgId, limit: 5, type: 'rest-api' }
-        });
-        const searchResults = Array.isArray(searchRes.data)
-          ? searchRes.data
-          : (searchRes.data?.assets || []);
+      // Search strategies: try deployment orgId first, then without org scope
+      // (Exchange assets are often published to a root/parent BG, not the
+      //  child BG where the app is deployed — so unscoped search is needed)
+      const searchStrategies = [
+        { orgParam: orgId },       // 1. deployment BG
+        { orgParam: undefined },   // 2. all orgs the user has access to
+      ];
 
-        if (searchResults.length > 0) {
-          // Prefer asset whose assetId or name closely matches the normalized app name
-          const best = searchResults.find(a =>
-            (a.assetId || '').toLowerCase().includes(normalizedName.split('-').slice(0, 3).join('-')) ||
-            (a.name || '').toLowerCase().includes(normalizedName.replace(/-/g, ' ').split(' ').slice(0, 3).join(' '))
-          ) || searchResults[0];
-          groupId  = best.groupId;
-          assetId  = best.assetId;
-          version  = best.version;
-          console.log(`[ping-spec] Resolved by name search "${term}": ${groupId}/${assetId}/${version} (${best.name})`);
-          found = true;
-          break;
+      const scoreAsset = (a) => {
+        const aid = (a.assetId || '').toLowerCase();
+        const nm  = normalizedName;
+        const parts = nm.split('-').filter(Boolean);
+        let score = 0;
+        // Exact assetId match
+        if (aid === nm) score += 10;
+        // assetId starts with normalized name
+        else if (aid.startsWith(nm)) score += 8;
+        // assetId contains the first 3 parts of normalized name
+        else if (parts.length >= 3 && aid.includes(parts.slice(0, 3).join('-'))) score += 6;
+        // First 2 parts match
+        else if (parts.length >= 2 && aid.includes(parts.slice(0, 2).join('-'))) score += 4;
+        // Single first part
+        else if (parts.length >= 1 && aid.startsWith(parts[0])) score += 2;
+        return score;
+      };
+
+      let found = false;
+      outer:
+      for (const { orgParam } of searchStrategies) {
+        for (const term of searchTerms) {
+          const params = { search: term, limit: 10, type: 'rest-api' };
+          if (orgParam) params.organizationId = orgParam;
+          const searchRes = await client.get('/exchange/api/v2/assets', { params });
+          const searchResults = Array.isArray(searchRes.data)
+            ? searchRes.data
+            : (searchRes.data?.assets || []);
+
+          if (searchResults.length > 0) {
+            // Score and sort results by relevance to the normalized app name
+            const scored = searchResults
+              .map(a => ({ a, score: scoreAsset(a) }))
+              .sort((x, y) => y.score - x.score);
+            const best = scored[0].a;
+            groupId  = best.groupId;
+            assetId  = best.assetId;
+            version  = best.version;
+            console.log(`[ping-spec] Resolved via search "${term}" (org=${orgParam || 'all'}): ${groupId}/${assetId}/${version} (${best.name}, score=${scored[0].score})`);
+            found = true;
+            break outer;
+          }
         }
       }
-      if (!found) console.log('[ping-spec] Name search found no results');
+      if (!found) console.log('[ping-spec] Name search exhausted all strategies — no asset found');
     } catch (searchErr) {
       console.warn('[ping-spec] Name search failed:', searchErr.message);
     }
