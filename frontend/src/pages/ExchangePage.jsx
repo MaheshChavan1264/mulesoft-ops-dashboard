@@ -1,9 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from 'react-router-dom';
-import { Search, Package, RefreshCw, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Search, Package, RefreshCw, ExternalLink, ChevronLeft, ChevronRight,
+  Globe, FileText, Tag, User, Calendar, Link2, SlidersHorizontal, Activity,
+  Code2, Copy, Check, AlertTriangle,
+} from 'lucide-react';
 import Select from '../components/Select';
+import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import api from '../services/api';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const ASSET_TYPES = [
   { value: '', label: 'All Types' },
@@ -13,339 +20,545 @@ const ASSET_TYPES = [
   { value: 'mule-application', label: 'Mule Application' },
   { value: 'mule-plugin', label: 'Connector / Plugin' },
   { value: 'template', label: 'Template' },
-  { value: 'example', label: 'Example' }
+  { value: 'example', label: 'Example' },
 ];
 
-const typeColor = (type) => {
-  const map = {
-    'rest-api': 'bg-blue-500/20 text-blue-400',
-    'soap-api': 'bg-purple-500/20 text-purple-400',
-    'http-api': 'bg-cyan-500/20 text-cyan-400',
-    'mule-application': 'bg-green-500/20 text-green-400',
-    'mule-plugin': 'bg-orange-500/20 text-orange-400',
-    template: 'bg-yellow-500/20 text-yellow-400',
-    example: 'bg-pink-500/20 text-pink-400'
-  };
-  return map[type] || 'bg-gray-500/20 text-gray-400';
+const typeColor = (type) => ({
+  'rest-api':          'bg-blue-500/20 text-blue-400',
+  'soap-api':          'bg-purple-500/20 text-purple-400',
+  'http-api':          'bg-cyan-500/20 text-cyan-400',
+  'mule-application':  'bg-green-500/20 text-green-400',
+  'mule-plugin':       'bg-orange-500/20 text-orange-400',
+  template:            'bg-yellow-500/20 text-yellow-400',
+  example:             'bg-pink-500/20 text-pink-400',
+}[type] || 'bg-gray-500/20 text-gray-400');
+
+const METHOD_COLOR = {
+  GET:    'bg-blue-950/40 text-blue-300 border-blue-700/40',
+  POST:   'bg-green-950/40 text-green-300 border-green-700/40',
+  PUT:    'bg-yellow-950/40 text-yellow-300 border-yellow-700/40',
+  DELETE: 'bg-red-950/40 text-red-300 border-red-700/40',
+  PATCH:  'bg-orange-950/40 text-orange-300 border-orange-700/40',
 };
 
+function CopyBtn({ text }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button onClick={() => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }}
+      className="text-gray-600 hover:text-gray-300 p-0.5 transition-colors">
+      {done ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+    </button>
+  );
+}
+
 const LIMIT = 100;
+
+// ─── ExchangePage ─────────────────────────────────────────────────────────────
 
 export default function ExchangePage() {
   const { orgId: rootOrgId } = useAuth();
   const location = useLocation();
 
-  const [businessGroups, setBusinessGroups] = useState([]);
+  // ── BG state ─────────────────────────────────────────────────────────────
+  const [allBgs, setAllBgs] = useState([]);
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [bgLoading, setBgLoading] = useState(true);
+  const [showBgFilter, setShowBgFilter] = useState(false);
 
+  // ── Asset list state ──────────────────────────────────────────────────────
   const [assets, setAssets] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [assetType, setAssetType] = useState('');
   const [offset, setOffset] = useState(0);
+
+  // ── Asset detail state ────────────────────────────────────────────────────
   const [selected, setSelected] = useState(null);
+  const [detailTab, setDetailTab] = useState('overview');
+  const [assetDetail, setAssetDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [pingSpec, setPingSpec] = useState(null);
+  const [pingSpecLoading, setPingSpecLoading] = useState(false);
+
+  // For navigation from AppDetailPage
   const [pendingAssetId, setPendingAssetId] = useState(null);
   const [pendingGroupId, setPendingGroupId] = useState(null);
 
-  // Load business groups on mount
+  // ── Load BGs ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    loadBusinessGroups();
+    api.get('/organizations/business-groups').then(r => {
+      const groups = r.data?.data || [];
+      setAllBgs(groups);
+      const root = groups.find(g => !g.parentId) || groups[0];
+      if (root && !location.state?.groupId) setSelectedOrgId(root.id);
+    }).catch(() => { setSelectedOrgId(rootOrgId); }).finally(() => setBgLoading(false));
   }, [rootOrgId]);
 
-  // Handle navigation state from ApplicationDetailPage
+  // ── Handle navigation state from AppDetailPage ────────────────────────────
   useEffect(() => {
     const state = location.state;
     if (state?.assetId) {
       setPendingAssetId(state.assetId);
       setPendingGroupId(state.groupId || null);
       setSearch(state.assetId);
-      // Pre-select the BG that matches the groupId
       if (state.groupId) setSelectedOrgId(state.groupId);
     }
   }, []);
 
   useEffect(() => {
-    if (selectedOrgId !== undefined && !bgLoading) {
-      setOffset(0);
-      loadAssets(0);
-    }
+    if (!bgLoading) { setOffset(0); loadAssets(0); }
   }, [search, assetType, selectedOrgId, bgLoading]);
 
-  const loadBusinessGroups = async () => {
-    setBgLoading(true);
-    try {
-      const res = await api.get('/organizations/business-groups');
-      const groups = res.data.data || [];
-      setBusinessGroups(groups);
-      // Default to root org
-      const root = groups.find(g => !g.parentId) || groups[0];
-      if (root && !location.state?.groupId) setSelectedOrgId(root.id);
-    } catch {
-      setSelectedOrgId(rootOrgId);
-    }
-    setBgLoading(false);
-  };
-
-  const loadAssets = async (off) => {
+  // ── Load assets ───────────────────────────────────────────────────────────
+  const loadAssets = useCallback(async (off) => {
     setLoading(true);
     try {
       const res = await api.get('/exchange/search', {
-        params: {
-          search: search || undefined,
-          type: assetType || undefined,
-          organizationId: selectedOrgId || undefined,
-          offset: off,
-          limit: LIMIT
-        }
+        params: { search: search || undefined, type: assetType || undefined,
+          organizationId: selectedOrgId || undefined, offset: off, limit: LIMIT }
       });
       const data = res.data;
       const list = Array.isArray(data) ? data : (data.assets || data.data || []);
       setAssets(list);
       setTotal(data.total || list.length);
 
-      // Auto-select matching asset if navigated from app detail
       if (pendingAssetId && off === 0) {
-        const match = list.find(a =>
-          a.assetId === pendingAssetId && (!pendingGroupId || a.groupId === pendingGroupId)
-        ) || list.find(a => a.assetId === pendingAssetId)
+        const match = list.find(a => a.assetId === pendingAssetId && (!pendingGroupId || a.groupId === pendingGroupId))
+          || list.find(a => a.assetId === pendingAssetId)
           || (list.length === 1 ? list[0] : null);
-        if (match) {
-          setSelected(match);
-          setPendingAssetId(null);
-        }
+        if (match) { selectAsset(match); setPendingAssetId(null); }
       }
-    } catch {
-      setAssets([]);
-      setTotal(0);
-    }
+    } catch { setAssets([]); setTotal(0); }
     setLoading(false);
-  };
+  }, [search, assetType, selectedOrgId, pendingAssetId, pendingGroupId]);
 
-  const prevPage = () => {
-    const newOffset = Math.max(0, offset - LIMIT);
-    setOffset(newOffset);
-    loadAssets(newOffset);
-  };
+  // ── Select asset + fetch detail & spec ────────────────────────────────────
+  const selectAsset = useCallback(async (asset) => {
+    setSelected(asset);
+    setDetailTab('overview');
+    setAssetDetail(null);
+    setPingSpec(null);
 
-  const nextPage = () => {
-    const newOffset = offset + LIMIT;
-    setOffset(newOffset);
-    loadAssets(newOffset);
-  };
+    // Fetch full asset details
+    setDetailLoading(true);
+    try {
+      const r = await api.get(`/exchange/${asset.groupId}/${asset.assetId}/${asset.version}`);
+      setAssetDetail(r.data);
+    } catch {}
+    setDetailLoading(false);
 
-  const currentPage = Math.floor(offset / LIMIT) + 1;
-  const totalPages = Math.ceil(total / LIMIT);
+    // Fetch API spec for REST/HTTP APIs
+    if (['rest-api', 'http-api', 'soap-api'].includes(asset.type)) {
+      setPingSpecLoading(true);
+      try {
+        const r = await api.get('/exchange/ping-spec', {
+          params: { groupId: asset.groupId, assetId: asset.assetId,
+            version: asset.version, orgId: asset.groupId, appName: asset.name || asset.assetId }
+        });
+        setPingSpec(r.data);
+      } catch {}
+      setPingSpecLoading(false);
+    }
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Filtered BGs (respects BgFilterModal)
+  const filteredBgs = applyBgFilter(allBgs);
+  const filterActive = filteredBgs.length < allBgs.length;
 
   const bgOptions = [
-    { value: '', label: 'All Organizations', tag: 'ALL', tagColor: 'bg-gray-700 text-gray-400' },
-    ...businessGroups.map(g => ({
+    { value: '', label: 'All Organizations', tag: `${filteredBgs.length}`, tagColor: 'bg-gray-700 text-gray-300' },
+    ...filteredBgs.map(g => ({
       value: g.id, label: g.name, indent: !!g.parentId,
       tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400'
     }))
   ];
 
-  const selectedBgName = businessGroups.find(g => g.id === selectedOrgId)?.name
+  const selectedBgName = allBgs.find(g => g.id === selectedOrgId)?.name
     || (selectedOrgId ? selectedOrgId : 'All Organizations');
 
+  const currentPage = Math.floor(offset / LIMIT) + 1;
+  const totalPages = Math.ceil(total / LIMIT);
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-white">Exchange Assets</h1>
-        <p className="text-gray-400 text-sm mt-1">
-          Browse assets in <span className="text-blue-400">{selectedBgName}</span>
-          {total > 0 && <span className="text-gray-600"> — {total} total</span>}
-        </p>
+    <div className="space-y-5">
+      {showBgFilter && (
+        <BgFilterModal businessGroups={allBgs} onClose={() => setShowBgFilter(false)} onSaved={() => {}} />
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-white">Exchange Assets</h1>
+          <p className="text-gray-400 text-sm mt-1">
+            Browse in <span className="text-blue-400">{selectedBgName}</span>
+            {total > 0 && <span className="text-gray-600 ml-1">— {total} total</span>}
+          </p>
+        </div>
       </div>
 
-      {/* BG selector + Search + Type filter */}
-      <div className="flex flex-wrap gap-3">
-        {/* Business Group selector */}
-        <div className="w-56">
-          <Select
-            value={selectedOrgId}
-            onChange={(v) => { setSelectedOrgId(v); setOffset(0); setSelected(null); }}
-            options={bgOptions}
-            placeholder="Select organization..."
-            searchable={businessGroups.length > 5}
-            disabled={bgLoading}
-          />
+      {/* Filters row */}
+      <div className="flex flex-wrap gap-3 items-center">
+        {/* BG selector */}
+        <div className="w-52">
+          <Select value={selectedOrgId}
+            onChange={v => { setSelectedOrgId(v); setOffset(0); setSelected(null); }}
+            options={bgOptions} placeholder="Select organization..."
+            searchable={filteredBgs.length > 5} disabled={bgLoading} />
         </div>
+        {/* BG Filter button */}
+        <button onClick={() => setShowBgFilter(true)}
+          className={`flex items-center gap-1.5 text-xs px-2.5 py-2 rounded-lg border transition-all ${
+            filterActive ? 'bg-blue-600/20 border-blue-600/50 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
+          }`}>
+          <SlidersHorizontal size={12} />
+          {filterActive ? `${filteredBgs.length}/${allBgs.length} BGs` : 'Filter BGs'}
+        </button>
+        {/* Search */}
         <div className="relative flex-1 min-w-48">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search assets..."
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-          />
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
         </div>
-        <select
-          value={assetType}
-          onChange={(e) => setAssetType(e.target.value)}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-        >
-          {ASSET_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
+        {/* Type filter */}
+        <select value={assetType} onChange={e => setAssetType(e.target.value)}
+          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+          {ASSET_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <button
-          onClick={() => { setOffset(0); loadAssets(0); }}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg"
-        >
+        <button onClick={() => { setOffset(0); loadAssets(0); }}
+          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg transition-colors">
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Asset list */}
-        <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
-            <h3 className="text-white font-semibold">
+      {/* Main layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+
+        {/* ── Asset list (2/5) ─────────────────────────────── */}
+        <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
+            <h3 className="text-white font-semibold text-sm">
               Assets {total > 0 && (
-                <span className="text-gray-400 font-normal text-sm">
+                <span className="text-gray-400 font-normal text-xs ml-1">
                   ({assets.length}{total > assets.length ? ` of ${total}` : ''})
                 </span>
               )}
             </h3>
             {totalPages > 1 && (
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <button onClick={prevPage} disabled={offset === 0} className="p-1 hover:text-white disabled:opacity-30">
-                  <ChevronLeft size={16} />
+              <div className="flex items-center gap-1 text-sm text-gray-400">
+                <button onClick={() => { const n = Math.max(0, offset - LIMIT); setOffset(n); loadAssets(n); }}
+                  disabled={offset === 0} className="p-1 hover:text-white disabled:opacity-30">
+                  <ChevronLeft size={15} />
                 </button>
-                <span>{currentPage} / {totalPages}</span>
-                <button onClick={nextPage} disabled={currentPage >= totalPages} className="p-1 hover:text-white disabled:opacity-30">
-                  <ChevronRight size={16} />
+                <span className="text-xs">{currentPage}/{totalPages}</span>
+                <button onClick={() => { const n = offset + LIMIT; setOffset(n); loadAssets(n); }}
+                  disabled={currentPage >= totalPages} className="p-1 hover:text-white disabled:opacity-30">
+                  <ChevronRight size={15} />
                 </button>
               </div>
             )}
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-500"></div>
+            <div className="flex items-center justify-center py-20 flex-1">
+              <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-500" />
             </div>
           ) : (
-            <div className="divide-y divide-gray-800 max-h-[600px] overflow-y-auto">
+            <div className="divide-y divide-gray-800 overflow-y-auto flex-1 max-h-[640px]">
               {assets.map((asset, i) => (
-                <button
-                  key={`${asset.groupId}-${asset.assetId}-${i}`}
-                  onClick={() => setSelected(asset)}
-                  className={`w-full flex items-start gap-3 px-5 py-4 hover:bg-gray-800/50 text-left transition-colors ${
-                    selected?.assetId === asset.assetId ? 'bg-blue-600/10 border-l-2 border-blue-500' : ''
-                  }`}
-                >
+                <button key={`${asset.groupId}-${asset.assetId}-${i}`}
+                  onClick={() => selectAsset(asset)}
+                  className={`w-full flex items-start gap-3 px-4 py-3.5 hover:bg-gray-800/50 text-left transition-colors ${
+                    selected?.assetId === asset.assetId && selected?.groupId === asset.groupId
+                      ? 'bg-blue-600/10 border-l-2 border-blue-500' : ''
+                  }`}>
                   <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Package size={14} className="text-blue-400" />
+                    <Package size={13} className="text-blue-400" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-white text-sm font-medium truncate">{asset.name || asset.assetId}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${typeColor(asset.type)}`}>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${typeColor(asset.type)}`}>
                         {asset.type}
                       </span>
                     </div>
-                    <p className="text-gray-500 text-xs mt-0.5 truncate">{asset.groupId}/{asset.assetId}</p>
+                    <p className="text-gray-600 text-[10px] mt-0.5 truncate font-mono">{asset.assetId}</p>
                     {asset.description && (
-                      <p className="text-gray-400 text-xs mt-1 line-clamp-2">{asset.description}</p>
+                      <p className="text-gray-500 text-xs mt-0.5 line-clamp-1">{asset.description}</p>
                     )}
                   </div>
-                  <span className="text-xs text-gray-500 flex-shrink-0">v{asset.version}</span>
+                  <span className="text-[10px] text-gray-500 flex-shrink-0 mt-1">v{asset.version}</span>
                 </button>
               ))}
               {assets.length === 0 && (
-                <div className="px-5 py-16 text-center text-gray-500 text-sm">
-                  No assets found. Try a different search term, type, or organization.
+                <div className="px-4 py-16 text-center text-gray-500 text-sm">
+                  No assets found. Try a different search, type, or organization.
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* Asset Detail panel */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          {selected ? (
-            <div className="h-full flex flex-col">
+        {/* ── Asset Detail panel (3/5) ─────────────────────── */}
+        <div className="lg:col-span-3 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex flex-col min-h-[500px]">
+          {!selected ? (
+            <div className="flex flex-col items-center justify-center flex-1 py-24 gap-3 text-gray-500 text-sm">
+              <Package size={40} className="text-gray-700" />
+              <p>Select an asset to view details</p>
+            </div>
+          ) : (
+            <>
               {/* Detail header */}
-              <div className="px-5 py-4 border-b border-gray-800">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-white font-semibold">{selected.name || selected.assetId}</h3>
-                    <span className={`text-xs px-2 py-0.5 rounded font-medium mt-1 inline-block ${typeColor(selected.type)}`}>
-                      {selected.type}
-                    </span>
+              <div className="px-5 py-4 border-b border-gray-800 flex-shrink-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-white font-bold text-base">{selected.name || selected.assetId}</h3>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${typeColor(selected.type)}`}>
+                        {selected.type}
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded border font-medium ${
+                        selected.status === 'published'
+                          ? 'bg-emerald-950/40 text-emerald-400 border-emerald-700/40'
+                          : 'bg-yellow-950/40 text-yellow-400 border-yellow-700/40'
+                      }`}>{selected.status || 'published'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="font-mono text-xs text-gray-500">{selected.assetId}</span>
+                      <span className="text-gray-700 text-xs">·</span>
+                      <span className="text-xs text-gray-500">v{selected.version}</span>
+                      {selected.minMuleVersion && (
+                        <>
+                          <span className="text-gray-700 text-xs">·</span>
+                          <span className="text-xs text-gray-500">Min Mule: {selected.minMuleVersion}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <a
-                    href={`https://anypoint.mulesoft.com/exchange/${selected.groupId}/${selected.assetId}/`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-400 hover:text-blue-300 flex-shrink-0"
-                    title="Open in Anypoint Exchange"
-                  >
-                    <ExternalLink size={16} />
+                  <a href={`https://anypoint.mulesoft.com/exchange/${selected.groupId}/${selected.assetId}/`}
+                    target="_blank" rel="noreferrer"
+                    className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 flex-shrink-0 border border-blue-800/40 px-2.5 py-1.5 rounded-lg bg-blue-950/20 transition-colors">
+                    <ExternalLink size={12} /> Open in Exchange
                   </a>
+                </div>
+
+                {/* Tab bar */}
+                <div className="flex gap-1 mt-3 bg-gray-800/50 rounded-lg p-0.5 w-fit">
+                  {[
+                    { id: 'overview', label: 'Overview', icon: Globe },
+                    ...(['rest-api', 'http-api'].includes(selected.type) ? [{ id: 'api', label: 'API Spec', icon: Code2 }] : []),
+                    { id: 'files', label: 'Files', icon: FileText },
+                  ].map(t => (
+                    <button key={t.id} onClick={() => setDetailTab(t.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                        detailTab === t.id ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-gray-200'
+                      }`}>
+                      <t.icon size={11} /> {t.label}
+                      {t.id === 'api' && pingSpec?.allEndpoints?.length > 0 && (
+                        <span className="bg-blue-500/30 text-blue-300 text-[9px] px-1 rounded">{pingSpec.allEndpoints.length}</span>
+                      )}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Detail body */}
-              <div className="p-5 space-y-2.5 text-sm overflow-y-auto flex-1">
-                {selected.description && (
-                  <div className="mb-3">
-                    <p className="text-gray-400 text-xs mb-1">Description</p>
-                    <p className="text-gray-200 text-sm">{selected.description}</p>
+              {/* ── OVERVIEW tab ────────────────────────────── */}
+              {detailTab === 'overview' && (
+                <div className="overflow-y-auto flex-1 p-5 space-y-4">
+                  {detailLoading && (
+                    <div className="flex items-center justify-center py-10 text-gray-500">
+                      <RefreshCw size={16} className="animate-spin mr-2" /> Loading details…
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  {(selected.description || assetDetail?.description) && (
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1.5">Description</p>
+                      <p className="text-gray-300 text-sm leading-relaxed">
+                        {assetDetail?.description || selected.description}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Key metadata grid */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'Asset ID', value: selected.assetId, mono: true, copy: true },
+                      { label: 'Group ID', value: selected.groupId, mono: true, copy: true },
+                      { label: 'Version', value: selected.version },
+                      { label: 'Type', value: selected.type },
+                      { label: 'Status', value: selected.status || 'published' },
+                      { label: 'Min Mule Version', value: selected.minMuleVersion },
+                      { label: 'Created By', value: selected.createdBy?.username || assetDetail?.createdBy?.username },
+                      { label: 'Created', value: selected.createdAt ? new Date(selected.createdAt).toLocaleDateString() : null },
+                      { label: 'Updated', value: selected.updatedAt ? new Date(selected.updatedAt).toLocaleDateString() : null },
+                    ].filter(r => r.value).map(({ label, value, mono, copy }) => (
+                      <div key={label} className="bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-2.5">
+                        <p className="text-[9px] text-gray-500 uppercase tracking-wider font-bold mb-0.5">{label}</p>
+                        <div className="flex items-center gap-1">
+                          <p className={`text-xs break-all ${mono ? 'font-mono text-gray-300' : 'text-white'}`}>{value}</p>
+                          {copy && <CopyBtn text={String(value)} />}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Asset ID</span>
-                  <span className="text-white font-mono text-xs">{selected.assetId}</span>
+
+                  {/* Tags / Labels */}
+                  {(selected.labels?.length > 0 || assetDetail?.labels?.length > 0) && (
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1.5 flex items-center gap-1">
+                        <Tag size={10} /> Tags
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(assetDetail?.labels || selected.labels || []).map((l, i) => (
+                          <span key={i} className="bg-gray-800 text-gray-300 text-xs px-2 py-0.5 rounded border border-gray-700/50">{l}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Categories */}
+                  {assetDetail?.categories?.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1.5">Categories</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {assetDetail.categories.map((c, i) => (
+                          <span key={i} className="bg-blue-950/30 text-blue-300 text-xs px-2 py-0.5 rounded border border-blue-800/40">
+                            {c.key}: {c.value}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Contact info */}
+                  {(assetDetail?.contactName || assetDetail?.contactEmail) && (
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1.5 flex items-center gap-1">
+                        <User size={10} /> Contact
+                      </p>
+                      <div className="bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-2">
+                        {assetDetail.contactName && <p className="text-white text-sm">{assetDetail.contactName}</p>}
+                        {assetDetail.contactEmail && <p className="text-blue-400 text-xs">{assetDetail.contactEmail}</p>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Portal link */}
+                  <div className="pt-2 border-t border-gray-800">
+                    <a href={`https://anypoint.mulesoft.com/exchange/${selected.groupId}/${selected.assetId}/${selected.version}/`}
+                      target="_blank" rel="noreferrer"
+                      className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                      <Link2 size={11} /> View full documentation on Exchange
+                    </a>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Group ID</span>
-                  <span className="text-gray-400 font-mono text-xs truncate max-w-36">{selected.groupId}</span>
+              )}
+
+              {/* ── API SPEC tab ─────────────────────────────── */}
+              {detailTab === 'api' && (
+                <div className="overflow-y-auto flex-1 p-5 space-y-4">
+                  {pingSpecLoading && (
+                    <div className="flex items-center justify-center py-10 text-gray-500">
+                      <RefreshCw size={16} className="animate-spin mr-2" /> Fetching API spec…
+                    </div>
+                  )}
+
+                  {!pingSpecLoading && pingSpec && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-white text-sm font-semibold">{pingSpec.assetName}</p>
+                          <p className="text-gray-500 text-xs mt-0.5">
+                            {pingSpec.specType?.toUpperCase()} · {pingSpec.allEndpoints?.length ?? 0} endpoints
+                            {pingSpec.pingEndpoints?.length > 0 && (
+                              <span className="ml-2 text-emerald-400 font-medium">· {pingSpec.pingEndpoints.length} ping/health endpoints</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      {pingSpec.allEndpoints?.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {pingSpec.allEndpoints.map((ep, i) => {
+                            const isPing = pingSpec.pingEndpoints?.some(p => p.path === ep.path && p.method === ep.method);
+                            return (
+                              <div key={i} className={`rounded-lg border px-3 py-2.5 ${isPing ? 'bg-emerald-950/15 border-emerald-800/40' : 'bg-gray-800/40 border-gray-700/30'}`}>
+                                <div className="flex items-center gap-2.5 flex-wrap">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${METHOD_COLOR[ep.method] || 'bg-gray-800/60 text-gray-300 border-gray-700/40'}`}>
+                                    {ep.method}
+                                  </span>
+                                  <span className={`font-mono text-xs ${isPing ? 'text-emerald-300' : 'text-gray-200'}`}>{ep.path}</span>
+                                  {isPing && <span className="text-[9px] text-emerald-500 font-medium">● health</span>}
+                                  {ep.description && <span className="text-gray-500 text-[10px] ml-auto truncate max-w-xs">{ep.description}</span>}
+                                </div>
+                                {ep.queryParams?.length > 0 && (
+                                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                    <span className="text-[9px] text-gray-600 uppercase font-bold">Query:</span>
+                                    {ep.queryParams.map(p => (
+                                      <span key={p.name} title={p.description}
+                                        className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${
+                                          p.required ? 'bg-orange-950/30 text-orange-300 border-orange-700/40'
+                                                     : 'bg-gray-800/60 text-gray-500 border-gray-700/40'
+                                        }`}>
+                                        {p.name}{p.required ? '*' : ''}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : !pingSpecLoading && (
+                        <div className="flex items-start gap-3 bg-gray-800/40 border border-gray-700/30 rounded-xl px-4 py-3">
+                          <AlertTriangle size={14} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                          <p className="text-gray-400 text-xs">
+                            No endpoints found in spec. The backend server may need to be restarted to apply the latest spec parsing fixes.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Version</span>
-                  <span className="text-white">{selected.version}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Status</span>
-                  <span className={`capitalize ${selected.status === 'published' ? 'text-green-400' : 'text-yellow-400'}`}>
-                    {selected.status || '—'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Created By</span>
-                  <span className="text-white">{selected.createdBy?.username || '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Created</span>
-                  <span className="text-white text-xs">
-                    {selected.createdAt ? new Date(selected.createdAt).toLocaleDateString() : '—'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Updated</span>
-                  <span className="text-white text-xs">
-                    {selected.updatedAt ? new Date(selected.updatedAt).toLocaleDateString() : '—'}
-                  </span>
-                </div>
-                {selected.labels && selected.labels.length > 0 && (
-                  <div>
-                    <p className="text-gray-400 text-xs mb-1.5">Labels</p>
-                    <div className="flex flex-wrap gap-1">
-                      {selected.labels.map((l, i) => (
-                        <span key={i} className="bg-gray-800 text-gray-300 text-xs px-2 py-0.5 rounded">{l}</span>
+              )}
+
+              {/* ── FILES tab ────────────────────────────────── */}
+              {detailTab === 'files' && (
+                <div className="overflow-y-auto flex-1 p-5 space-y-3">
+                  {detailLoading ? (
+                    <div className="flex items-center justify-center py-10 text-gray-500">
+                      <RefreshCw size={16} className="animate-spin mr-2" /> Loading…
+                    </div>
+                  ) : (assetDetail?.files?.length > 0) ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Available Files</p>
+                      {assetDetail.files.map((f, i) => (
+                        <div key={i} className="flex items-center justify-between bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-2.5">
+                          <div>
+                            <p className="text-white text-xs font-medium">{f.classifier || f.packaging || '—'}</p>
+                            <p className="text-gray-500 text-[10px] font-mono">{f.packaging}</p>
+                          </div>
+                          {f.externalLink && (
+                            <a href={f.externalLink} target="_blank" rel="noreferrer"
+                              className="text-blue-400 hover:text-blue-300 text-[10px] flex items-center gap-1 border border-blue-800/40 px-2 py-1 rounded bg-blue-950/20">
+                              <ExternalLink size={10} /> Download
+                            </a>
+                          )}
+                        </div>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full py-24 text-gray-500 text-sm">
-              Select an asset to view details
-            </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm text-center py-8">No file information available</p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
