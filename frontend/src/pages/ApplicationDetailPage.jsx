@@ -370,10 +370,8 @@ export default function ApplicationDetailPage() {
       .finally(() => setPingSpecLoading(false));
   }, [app, orgId]);
 
-  // Auto-fetch when app loads
-  useEffect(() => {
-    if (app) fetchPingSpec(app);
-  }, [app?.name, orgId]);  // dep on app.name so CH1 apps also trigger
+  // Don't auto-fetch — load only when user clicks the API Spec tab
+  // (avoids slow Exchange searches on every app detail page open)
 
   const isCH1 = app?._type === 'ch1';
 
@@ -677,6 +675,7 @@ export default function ApplicationDetailPage() {
             setTab(t.id);
             if (t.id === 'cps' && !cpsData && !cpsLoading) loadCpsData();
             if (t.id === 'contracts' && contracts === null && !contractsLoading) loadContracts();
+            if (t.id === 'apispec' && pingSpec === null && !pingSpecLoading) fetchPingSpec();
           }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.id?'bg-slate-700/80 text-white shadow-md':'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'}`}>
             {t.id === 'cps' && <Key size={11} />}
