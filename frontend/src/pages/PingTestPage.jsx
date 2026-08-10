@@ -300,6 +300,7 @@ export default function PingTestPage() {
     try {
       const contractRes = await api.post('/health/auto-contract-creds', {
         orgId: bgId, envId, apiId: prevResult.apiInstanceId,
+        envType: app.environment?.type || '',
       });
       const cd = contractRes.data;
       if (cd.contractStatus === 'approved' && cd.clientId && cd.clientSecret) {

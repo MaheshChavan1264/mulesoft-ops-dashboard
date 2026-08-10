@@ -365,6 +365,7 @@ function BulkPingModal({ apps, onClose }) {
               try {
                 const contractRes = await api.post('/health/auto-contract-creds', {
                   orgId: bgId, envId, apiId: apiInstanceId,
+                  envType: app.environment?.type || '',
                 });
                 const cd = contractRes.data;
                 // Only use credentials if the contract is APPROVED.
