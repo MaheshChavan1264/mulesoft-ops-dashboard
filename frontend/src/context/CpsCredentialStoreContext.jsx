@@ -66,6 +66,11 @@ export function CpsCredentialStoreProvider({ children }) {
     }
     return null;
   }, [credentialMap]);
+  /** Return all { clientId, clientSecret } pairs — used for URL-based fallback resolution. */
+  const getAllCredentials = useCallback(
+    () => Array.from(credentialMap.entries()).map(([id, secret]) => ({ clientId: id, clientSecret: secret })),
+    [credentialMap]
+  );
 
   return (
     <CpsCredentialStoreContext.Provider value={{
@@ -76,6 +81,7 @@ export function CpsCredentialStoreProvider({ children }) {
       getSecret,
       hasCredential,
       resolveFromCandidates,
+      getAllCredentials,
     }}>
       {children}
     </CpsCredentialStoreContext.Provider>
