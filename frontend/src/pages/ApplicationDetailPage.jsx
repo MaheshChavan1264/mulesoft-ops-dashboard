@@ -343,26 +343,27 @@ export default function ApplicationDetailPage() {
     }
   };
 
-  // Fetch Exchange ping spec — also callable manually via Refresh button
+  // Fetch Exchange ping spec — also callable manually via Refresh button.
+  // NOTE: app.application.ref points to the *deployed Mule artifact* in Exchange
+  // (e.g. job-ldp-ripjar-bulk-clear/1.0.3), NOT the API specification asset
+  // (e.g. job-ldp-ripjar-bulk-clear-ch2-api/1.0.0). Always use appName so the
+  // backend can run its name-normalisation + variant-probing to find the correct
+  // API spec asset, regardless of what ref.artifactId points to.
   const fetchPingSpec = useCallback((currentApp) => {
     const a = currentApp || app;
     if (!a) return;
-    const ref = a.application?.ref;
-    const hasRef = ref?.groupId && ref?.artifactId && ref?.version;
     setPingSpecLoading(true);
     setPingSpec(null);
     api.get('/exchange/ping-spec', {
       params: {
-        ...(hasRef ? { groupId: ref.groupId, assetId: ref.artifactId, version: ref.version } : {}),
         orgId,
-        appName: a.name,   // fallback: backend searches Exchange by name
+        appName: a.name,   // backend always searches Exchange by name
       }
     }).then(r => {
       setPingSpec(r.data);
       const total = r.data?.allEndpoints?.length ?? 0;
       const ping  = r.data?.pingEndpoints?.length ?? 0;
-      const label = ref?.artifactId || a.name;
-      console.log(`[pingSpec] ${label}: specType=${r.data?.specType}, total=${total} endpoints, ${ping} ping paths found`);
+      console.log(`[pingSpec] ${a.name}: specType=${r.data?.specType}, total=${total} endpoints, ${ping} ping paths found`);
       if (total > 0 && ping === 0) {
         console.log(`[pingSpec] All paths:`, r.data.allEndpoints.map(e => `${e.method} ${e.path}`));
       }
@@ -547,8 +548,8 @@ export default function ApplicationDetailPage() {
     { id:'infrastructure', label:'Schedulers & Object Store' },
     ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config' }] : []),
     { id:'contracts', label:'Contracts' },
-    { id:'ping', label:'Ping Test', badge: pingSpec?.pingEndpoints?.length > 0 ? pingSpec.pingEndpoints.length : undefined },
     { id:'apispec', label:'API Spec', badge: pingSpec?.allEndpoints?.length > 0 ? pingSpec.allEndpoints.length : undefined },
+    { id:'ping', label:'Ping Test', badge: pingSpec?.pingEndpoints?.length > 0 ? pingSpec.pingEndpoints.length : undefined },
     { id:'raw', label:'Raw JSON' },
   ];
 
