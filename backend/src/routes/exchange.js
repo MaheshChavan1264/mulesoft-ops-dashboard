@@ -117,24 +117,49 @@ router.get('/:groupId/:assetId/:version', authMiddleware, async (req, res) => {
 router.get('/ping-spec', authMiddleware, async (req, res) => {
   let { groupId, assetId, version, orgId, appName } = req.query;
 
-  // If groupId/assetId/version not provided but appName is, search Exchange first
+  // If groupId/assetId/version not provided but appName is, search Exchange.
+  // Normalize the app name to strip deployment suffixes before searching:
+  //   sapi-workday-ar-refunds-v1-uw2-up  →  sapi-workday-ar-refunds
+  //   xapi-coupa-ask-procurement-v1-uw2-ut  →  xapi-coupa-ask-procurement
   if ((!groupId || !assetId || !version) && appName && orgId) {
     try {
       const client = createClient(req.anypointToken);
-      const searchRes = await client.get('/exchange/api/v2/assets', {
-        params: { search: appName, organizationId: orgId, limit: 5, type: 'rest-api' }
-      });
-      // Response may be array or { assets: [...] }
-      const searchResults = Array.isArray(searchRes.data)
-        ? searchRes.data
-        : (searchRes.data?.assets || []);
-      if (searchResults.length > 0) {
-        const best = searchResults[0];
-        groupId  = best.groupId;
-        assetId  = best.assetId;
-        version  = best.version;
-        console.log(`[ping-spec] Resolved by name search: ${groupId}/${assetId}/${version}`);
+
+      // Strip version + region + env deployment suffixes for a cleaner search term
+      const normalizedName = appName
+        .toLowerCase()
+        .replace(/-[a-z]{2,4}\d+[-_][a-z]{2,5}\d*$/i, '')  // -uw2-up, -eu2-ut
+        .replace(/-[a-z]{2,3}\d+$/i, '')                     // -uw2, -eu2
+        .replace(/[-_.]v\d+(\.\d+)*$/i, '')                  // -v1, _v2, .v1.0
+        .replace(/\bv\d+(\.\d+)*$/i, '');                    // bare v1
+
+      const searchTerms = [appName, normalizedName].filter((t, i, a) => t && a.indexOf(t) === i);
+      console.log(`[ping-spec] Searching Exchange by name: "${searchTerms.join('" / "')}" in org ${orgId}`);
+
+      let found = false;
+      for (const term of searchTerms) {
+        const searchRes = await client.get('/exchange/api/v2/assets', {
+          params: { search: term, organizationId: orgId, limit: 5, type: 'rest-api' }
+        });
+        const searchResults = Array.isArray(searchRes.data)
+          ? searchRes.data
+          : (searchRes.data?.assets || []);
+
+        if (searchResults.length > 0) {
+          // Prefer asset whose assetId or name closely matches the normalized app name
+          const best = searchResults.find(a =>
+            (a.assetId || '').toLowerCase().includes(normalizedName.split('-').slice(0, 3).join('-')) ||
+            (a.name || '').toLowerCase().includes(normalizedName.replace(/-/g, ' ').split(' ').slice(0, 3).join(' '))
+          ) || searchResults[0];
+          groupId  = best.groupId;
+          assetId  = best.assetId;
+          version  = best.version;
+          console.log(`[ping-spec] Resolved by name search "${term}": ${groupId}/${assetId}/${version} (${best.name})`);
+          found = true;
+          break;
+        }
       }
+      if (!found) console.log('[ping-spec] Name search found no results');
     } catch (searchErr) {
       console.warn('[ping-spec] Name search failed:', searchErr.message);
     }
