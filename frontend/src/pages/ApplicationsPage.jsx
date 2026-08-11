@@ -716,8 +716,21 @@ export default function ApplicationsPage() {
     if (!filterEnv || environments.length === 0) return;
     if (!environments.some(e => e.id === filterEnv)) setFilterEnv('');
   }, [environments]);
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterType, setFilterType] = useState('');
+  // Persist status and type filters
+  const [filterStatus, setFilterStatus] = useState(
+    () => localStorage.getItem('mule_dashboard_filter_status') || ''
+  );
+  useEffect(() => {
+    if (filterStatus) localStorage.setItem('mule_dashboard_filter_status', filterStatus);
+    else localStorage.removeItem('mule_dashboard_filter_status');
+  }, [filterStatus]);
+  const [filterType, setFilterType] = useState(
+    () => localStorage.getItem('mule_dashboard_filter_type') || ''
+  );
+  useEffect(() => {
+    if (filterType) localStorage.setItem('mule_dashboard_filter_type', filterType);
+    else localStorage.removeItem('mule_dashboard_filter_type');
+  }, [filterType]);
   const [error, setError] = useState('');
   const [showExport, setShowExport] = useState(false);
   const [showBulkPing, setShowBulkPing] = useState(false);
@@ -1206,7 +1219,16 @@ export default function ApplicationsPage() {
         </div>
         <Select
           value={selectedBg}
-          onChange={(v) => { setSelectedBg(v); setSearch(''); setFilterEnv(''); setFilterStatus(''); setFilterType(''); }}
+          onChange={(v) => {
+            setSelectedBg(v);
+            setSearch('');
+            setFilterEnv('');
+            setFilterStatus('');
+            setFilterType('');
+            localStorage.removeItem('mule_dashboard_filter_status');
+            localStorage.removeItem('mule_dashboard_filter_type');
+            localStorage.removeItem('mule_dashboard_filter_env');
+          }}
           options={bgOptions}
           placeholder="Select business group..."
           searchable={visibleGroups.length > 5}
