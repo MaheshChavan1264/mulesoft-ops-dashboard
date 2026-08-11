@@ -3,8 +3,6 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Server,
-  Globe,
-  Layers,
   ShieldCheck,
   Package,
   Activity,
@@ -15,8 +13,6 @@ import {
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/applications', icon: Server, label: 'Applications' },
-  { to: '/environments', icon: Globe, label: 'Environments' },
-  { to: '/business-groups', icon: Layers, label: 'Business Groups' },
   { to: '/api-manager', icon: ShieldCheck, label: 'API Manager' },
   { to: '/exchange', icon: Package, label: 'Exchange Assets' },
   { to: '/ping-test', icon: Activity, label: 'Ping Test' },

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, ChevronDown, ChevronRight, CheckCircle2, XCircle,
   AlertCircle, Globe, ShieldCheck, ArrowLeft, Download, RefreshCw,
-  UploadCloud, X,
+  UploadCloud, X, Lock,
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -88,6 +88,18 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                   {result.error.length > 80 ? result.error.slice(0, 77) + '…' : result.error}
                 </p>
               )}
+              {/* JWT auto-used badge */}
+              {result._jwtUsed && (
+                <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-700/40 text-indigo-400 rounded font-medium">
+                  <Lock size={8} /> JWT auto
+                </span>
+              )}
+              {/* JWT may be needed hint */}
+              {result.status === 'PARTIAL' && !result._jwtUsed && (result.httpStatus === 401 || result.httpStatus === 400) && (
+                <span className="inline-flex items-center gap-0.5 text-[9px] text-indigo-400/60">
+                  <Lock size={8} /> may need JWT
+                </span>
+              )}
             </div>
           ) : <span className="text-gray-600 text-xs">—</span>}
         </td>
@@ -171,6 +183,12 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
         <tr className="border-t border-gray-800/40 bg-gray-900/40">
           <td colSpan={7} className="px-6 py-4">
             <div className="space-y-3 text-sm">
+              {result._jwtUsed && (
+                <div className="flex items-center gap-2 bg-indigo-950/30 border border-indigo-800/40 rounded-lg px-3 py-2 text-indigo-400 text-xs">
+                  <Lock size={12} className="flex-shrink-0" />
+                  JWT Bearer token was auto-fetched from CPS and used for this ping
+                </div>
+              )}
               {autoResolved && (
                 <div className="flex items-start gap-3">
                   <ShieldCheck size={13} className="text-emerald-400 flex-shrink-0 mt-0.5" />
@@ -200,14 +218,53 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                   </div>
                 </div>
               )}
-              {result.payload && (
-                <div>
-                  <span className="text-gray-400 text-xs font-medium uppercase tracking-wider block mb-1.5">Response Payload</span>
-                  <pre className="bg-[#0B0F17] rounded-lg px-4 py-3 text-xs text-emerald-400/90 overflow-auto max-h-32 font-mono border border-gray-800/60 leading-relaxed">
-                    {typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2)}
-                  </pre>
-                </div>
-              )}
+              {result.payload && (() => {
+                const endpoints = result.payload?.pingResponse?.endpoints;
+                const summary = result.payload?.pingResponse?.summary;
+                if (endpoints?.length > 0) {
+                  const ok = endpoints.filter(e => (e.status || '').toLowerCase() === 'success').length;
+                  return (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">Endpoint Health</span>
+                        <div className="flex items-center gap-2 text-[10px]">
+                          <span className="text-emerald-400 font-semibold">✓ {ok}</span>
+                          {endpoints.length - ok > 0 && <span className="text-red-400 font-semibold">✗ {endpoints.length - ok}</span>}
+                          {summary?.serviceName && <span className="text-gray-600 font-mono">{summary.serviceName}</span>}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        {endpoints.map((ep, i) => {
+                          const isOk = (ep.status || '').toLowerCase() === 'success';
+                          return (
+                            <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border ${isOk ? 'bg-emerald-950/20 border-emerald-800/30' : 'bg-red-950/20 border-red-800/30'}`}>
+                              <span className="text-[11px] flex-shrink-0 mt-0.5">{isOk ? '✅' : '❌'}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-medium text-gray-200">{ep.serviceName}</span>
+                                  {ep.endpointName && <span className="text-[10px] text-gray-500">· {ep.endpointName}</span>}
+                                </div>
+                                {ep.apiUser && <p className="text-[10px] text-gray-600 font-mono mt-0.5">{ep.apiUser}</p>}
+                                <p className={`text-[10px] mt-0.5 ${isOk ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                                  {ep.message}{ep.domain ? ` · ${ep.domain}` : ''}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div>
+                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider block mb-1.5">Response Payload</span>
+                    <pre className="bg-[#0B0F17] rounded-lg px-4 py-3 text-xs text-emerald-400/90 overflow-auto max-h-32 font-mono border border-gray-800/60 leading-relaxed">
+                      {typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2)}
+                    </pre>
+                  </div>
+                );
+              })()}
               {result.attempts?.length > 0 && (
                 <div>
                   <span className="text-gray-400 text-xs font-medium uppercase tracking-wider block mb-1.5">
@@ -453,7 +510,15 @@ export default function PingTestPage() {
     URL.revokeObjectURL(url);
   }, [testedApps, results, autoResolvedMap]);
 
-  const displayApps = showAll ? apps : testedApps;
+  // ─── Status filter ───────────────────────────────────────────────────────
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const filteredApps = useMemo(() => {
+    const base = showAll ? apps : testedApps;
+    if (statusFilter === 'ALL') return base;
+    return base.filter(a => results[a.id]?.status === statusFilter);
+  }, [showAll, apps, testedApps, results, statusFilter]);
+
+  const displayApps = filteredApps;
   const done = testedApps.length;
   const successCount = testedApps.filter(a => results[a.id]?.status === 'SUCCESS').length;
   const partialCount = testedApps.filter(a => results[a.id]?.status === 'PARTIAL').length;
@@ -575,12 +640,26 @@ export default function PingTestPage() {
               </span>
             )}
           </div>
-          <button onClick={() => setShowAll(v => !v)}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${
-              showAll ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-cyan-600/20 border-cyan-600/60 text-cyan-300'
-            }`}>
-            {showAll ? 'Show tested only' : `✓ Showing tested (${done})`}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {/* Status filter chips */}
+            {[
+              { key: 'ALL', label: 'All', cls: 'text-slate-400 border-slate-700 hover:border-slate-500' },
+              { key: 'SUCCESS', label: '✓ Healthy', cls: 'text-emerald-400 border-emerald-800/50 hover:border-emerald-600' },
+              { key: 'PARTIAL', label: '~ Partial', cls: 'text-yellow-400 border-yellow-800/50 hover:border-yellow-600' },
+              { key: 'FAILED', label: '✗ Failed', cls: 'text-red-400 border-red-800/50 hover:border-red-600' },
+            ].map(f => (
+              <button key={f.key} onClick={() => setStatusFilter(f.key)}
+                className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${f.cls} ${statusFilter === f.key ? 'bg-gray-800/80 ring-1 ring-inset ring-current' : 'bg-transparent'}`}>
+                {f.label}
+              </button>
+            ))}
+            <button onClick={() => setShowAll(v => !v)}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${
+                showAll ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-cyan-600/20 border-cyan-600/60 text-cyan-300'
+              }`}>
+              {showAll ? 'Show tested only' : `✓ Showing tested (${done})`}
+            </button>
+          </div>
         </div>
       )}
 

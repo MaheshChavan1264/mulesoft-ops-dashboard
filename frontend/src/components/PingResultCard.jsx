@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight, RefreshCw, Globe } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight, RefreshCw, Globe, Lock } from 'lucide-react';
 
 const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
 
@@ -135,6 +135,20 @@ export default function PingResultCard({ app, result, loading, selected, onToggl
               </div>
             )}
           </div>
+
+          {/* JWT auto-used indicator */}
+          {result._jwtUsed && (
+            <div className="flex items-center gap-1.5 text-indigo-400 text-xs bg-indigo-950/30 border border-indigo-800/40 rounded-lg px-2.5 py-1.5">
+              <Lock size={11} /> JWT Bearer token was auto-fetched from CPS and used for this ping
+            </div>
+          )}
+
+          {/* JWT may be required hint (PARTIAL + 401/400, no JWT yet) */}
+          {result.status === 'PARTIAL' && !result._jwtUsed && (result.httpStatus === 401 || result.httpStatus === 400) && (
+            <div className="flex items-center gap-1.5 text-indigo-400/70 text-xs">
+              <Lock size={11} /> May require JWT token — open App Detail to auto-fetch
+            </div>
+          )}
 
           {/* Error message */}
           {result.error && (

@@ -8,8 +8,15 @@ const { createClient } = require('../utils/anypointClient');
 // Agent that tolerates self-signed / internal-CA certs
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-const PING_PATHS = ['/api/v1/ping', '/api/v2/ping', '/api/ping', '/ping'];
-const PING_TIMEOUT_MS = 10000; // 10 s
+const PING_PATHS = [
+  '/api/v1/ping',
+  '/api/v2/ping',
+  '/v1/ping',        // some PAPIs use /v1/ping without /api prefix
+  '/v2/ping',        // some PAPIs use /v2/ping without /api prefix
+  '/api/ping',
+  '/ping',
+];
+const PING_TIMEOUT_MS = 30000; // 30 s — some apps (e.g. PAPIs calling Oracle) need more time
 
 function buildBaseUrl(targetType, appName, ch2IngressUrl) {
   const safe = (appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
@@ -176,14 +183,29 @@ router.post('/ping', async (req, res) => {
         payloadStr.toUpperCase().includes('ENDPT_FAILURE') ||
         isAppLevel404;
 
+      // ── 5xx with meaningful app body → app is reachable (PARTIAL) ────────
+      // Some apps return 500 with a rich pingResponse/endpoints body when a
+      // downstream service fails — the app itself IS reachable.
+      const hasMeaningfulBody = payload && typeof payload === 'object' && (
+        payload.pingResponse ||   // structured ping connectivity result
+        payload.endpoints ||       // endpoint health list
+        payload.summary ||         // health summary object
+        (Array.isArray(payload.errors) && payload.errors.length > 0)
+      );
+
       if (httpStatus < 500 && !isNoListener) {
         // This path returned a definitive response (2xx success, or 401/403
         // meaning the app IS reachable but credentials are wrong).
         const status =
           httpStatus >= 200 && httpStatus < 300 ? 'SUCCESS' :
           httpStatus >= 400 && httpStatus < 500 ? 'PARTIAL' : 'FAILED';
-
         return res.json({ status, activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts });
+      }
+
+      // 5xx with meaningful app-level body → app is reachable (PARTIAL)
+      if (httpStatus >= 500 && !isNoListener && hasMeaningfulBody) {
+        console.log(`[Ping] ${url} → ${httpStatus} with meaningful pingResponse body — marking PARTIAL (app reachable, downstream error)`);
+        return res.json({ status: 'PARTIAL', activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts });
       }
     } catch (err) {
       const responseTimeMs = Date.now() - t0;

@@ -80,7 +80,7 @@ router.get('/business-groups', authMiddleware, async (req, res) => {
   try {
     // Fast path: session already has the full memberOrgs list from /accounts/api/me
     if (req.memberOrgs && req.memberOrgs.length > 0) {
-      console.log(`Business groups from session: ${req.memberOrgs.length}`);
+      //"console.log(`Business groups from session: ${req.memberOrgs.length}`);
       return res.json({ total: req.memberOrgs.length, data: req.memberOrgs });
     }
 
