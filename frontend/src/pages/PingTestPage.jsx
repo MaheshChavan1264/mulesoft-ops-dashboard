@@ -221,47 +221,52 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               {result.payload && (() => {
                 const endpoints = result.payload?.pingResponse?.endpoints;
                 const summary = result.payload?.pingResponse?.summary;
-                if (endpoints?.length > 0) {
-                  const ok = endpoints.filter(e => (e.status || '').toLowerCase() === 'success').length;
-                  return (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">Endpoint Health</span>
-                        <div className="flex items-center gap-2 text-[10px]">
-                          <span className="text-emerald-400 font-semibold">✓ {ok}</span>
-                          {endpoints.length - ok > 0 && <span className="text-red-400 font-semibold">✗ {endpoints.length - ok}</span>}
-                          {summary?.serviceName && <span className="text-gray-600 font-mono">{summary.serviceName}</span>}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        {endpoints.map((ep, i) => {
-                          const isOk = (ep.status || '').toLowerCase() === 'success';
-                          return (
-                            <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border ${isOk ? 'bg-emerald-950/20 border-emerald-800/30' : 'bg-red-950/20 border-red-800/30'}`}>
-                              <span className="text-[11px] flex-shrink-0 mt-0.5">{isOk ? '✅' : '❌'}</span>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-medium text-gray-200">{ep.serviceName}</span>
-                                  {ep.endpointName && <span className="text-[10px] text-gray-500">· {ep.endpointName}</span>}
-                                </div>
-                                {ep.apiUser && <p className="text-[10px] text-gray-600 font-mono mt-0.5">{ep.apiUser}</p>}
-                                <p className={`text-[10px] mt-0.5 ${isOk ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
-                                  {ep.message}{ep.domain ? ` · ${ep.domain}` : ''}
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                }
+                const payloadStr = typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2);
                 return (
-                  <div>
-                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider block mb-1.5">Response Payload</span>
-                    <pre className="bg-[#0B0F17] rounded-lg px-4 py-3 text-xs text-emerald-400/90 overflow-auto max-h-32 font-mono border border-gray-800/60 leading-relaxed">
-                      {typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2)}
-                    </pre>
+                  <div className="space-y-3">
+                    {/* Structured endpoint health table when pingResponse.endpoints exists */}
+                    {endpoints?.length > 0 && (() => {
+                      const ok = endpoints.filter(e => (e.status || '').toLowerCase() === 'success').length;
+                      return (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">Endpoint Health</span>
+                            <div className="flex items-center gap-2 text-[10px]">
+                              <span className="text-emerald-400 font-semibold">✓ {ok}</span>
+                              {endpoints.length - ok > 0 && <span className="text-red-400 font-semibold">✗ {endpoints.length - ok}</span>}
+                              {summary?.serviceName && <span className="text-gray-600 font-mono">{summary.serviceName}</span>}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            {endpoints.map((ep, i) => {
+                              const isOk = (ep.status || '').toLowerCase() === 'success';
+                              return (
+                                <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border ${isOk ? 'bg-emerald-950/20 border-emerald-800/30' : 'bg-red-950/20 border-red-800/30'}`}>
+                                  <span className="text-[11px] flex-shrink-0 mt-0.5">{isOk ? '✅' : '❌'}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-medium text-gray-200">{ep.serviceName}</span>
+                                      {ep.endpointName && <span className="text-[10px] text-gray-500">· {ep.endpointName}</span>}
+                                    </div>
+                                    {ep.apiUser && <p className="text-[10px] text-gray-600 font-mono mt-0.5">{ep.apiUser}</p>}
+                                    <p className={`text-[10px] mt-0.5 ${isOk ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                                      {ep.message}{ep.domain ? ` · ${ep.domain}` : ''}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* Full raw JSON — always visible */}
+                    <div>
+                      <span className="text-gray-400 text-xs font-medium uppercase tracking-wider block mb-1.5">Response Body</span>
+                      <pre className="bg-[#0B0F17] rounded-lg px-4 py-3 text-xs text-emerald-400/90 overflow-auto font-mono border border-gray-800/60 leading-relaxed whitespace-pre-wrap break-all">
+                        {payloadStr}
+                      </pre>
+                    </div>
                   </div>
                 );
               })()}

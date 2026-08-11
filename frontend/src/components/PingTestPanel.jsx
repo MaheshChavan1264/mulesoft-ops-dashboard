@@ -537,89 +537,62 @@ export default function PingTestPanel({
               </tbody>
             </table>
             {result.payload && (() => {
-              // If the response contains structured pingResponse.endpoints, render a rich health table
               const endpoints = result.payload?.pingResponse?.endpoints;
               const summary = result.payload?.pingResponse?.summary;
-              if (endpoints?.length > 0) {
-                const ok = endpoints.filter(e => (e.status || '').toLowerCase() === 'success').length;
-                const fail = endpoints.length - ok;
-                return (
-                  <div className="border-t border-slate-800/40 px-5 py-4 space-y-3">
-                    {/* Summary row */}
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase flex items-center gap-1.5">
-                        <Activity size={9} /> Endpoint Health ({endpoints.length})
-                      </p>
-                      <div className="flex items-center gap-2 text-[10px]">
-                        <span className="text-emerald-400 font-semibold">✓ {ok} ok</span>
-                        {fail > 0 && <span className="text-red-400 font-semibold">✗ {fail} failed</span>}
-                        {summary?.serviceName && <span className="text-slate-600 font-mono">{summary.serviceName}</span>}
-                      </div>
-                    </div>
-                    {/* Endpoint list */}
-                    <div className="space-y-1.5">
-                      {endpoints.map((ep, i) => {
-                        const isOk = (ep.status || '').toLowerCase() === 'success';
-                        return (
-                          <div key={i} className={`flex items-start gap-2.5 rounded-lg px-3 py-2 border ${isOk ? 'bg-emerald-950/20 border-emerald-800/30' : 'bg-red-950/20 border-red-800/30'}`}>
-                            <span className="text-[11px] mt-0.5 flex-shrink-0">{isOk ? '✅' : '❌'}</span>
-                            <div className="flex-1 min-w-0 space-y-0.5">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-xs font-medium text-slate-200">{ep.serviceName}</span>
-                                {ep.endpointName && <span className="text-[10px] text-slate-500">· {ep.endpointName}</span>}
-                              </div>
-                              {ep.apiUser && <p className="text-[10px] text-slate-600 font-mono">{ep.apiUser}</p>}
-                              <p className={`text-[10px] ${isOk ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
-                                {ep.message}{ep.domain ? ` · ${ep.domain}` : ''}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              }
-              // Default: raw JSON payload
+              const payloadStr = typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2);
               return (
-                <div className="border-t border-slate-800/40 px-5 py-4">
-                  <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase mb-2">Response Payload</p>
-                  <pre className="bg-[#0B0F17] rounded-xl px-4 py-3 text-xs text-emerald-400/90 overflow-auto max-h-40 font-mono leading-relaxed border border-slate-800/60">
-                    {typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2)}
-                  </pre>
+                <div className="border-t border-slate-800/40 space-y-0">
+                  {/* Structured endpoint health table when pingResponse.endpoints exists */}
+                  {endpoints?.length > 0 && (() => {
+                    const ok = endpoints.filter(e => (e.status || '').toLowerCase() === 'success').length;
+                    const fail = endpoints.length - ok;
+                    return (
+                      <div className="px-5 py-4 space-y-3 border-b border-slate-800/40">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase flex items-center gap-1.5">
+                            <Activity size={9} /> Endpoint Health ({endpoints.length})
+                          </p>
+                          <div className="flex items-center gap-2 text-[10px]">
+                            <span className="text-emerald-400 font-semibold">✓ {ok} ok</span>
+                            {fail > 0 && <span className="text-red-400 font-semibold">✗ {fail} failed</span>}
+                            {summary?.serviceName && <span className="text-slate-600 font-mono">{summary.serviceName}</span>}
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          {endpoints.map((ep, i) => {
+                            const isOk = (ep.status || '').toLowerCase() === 'success';
+                            return (
+                              <div key={i} className={`flex items-start gap-2.5 rounded-lg px-3 py-2 border ${isOk ? 'bg-emerald-950/20 border-emerald-800/30' : 'bg-red-950/20 border-red-800/30'}`}>
+                                <span className="text-[11px] mt-0.5 flex-shrink-0">{isOk ? '✅' : '❌'}</span>
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-xs font-medium text-slate-200">{ep.serviceName}</span>
+                                    {ep.endpointName && <span className="text-[10px] text-slate-500">· {ep.endpointName}</span>}
+                                  </div>
+                                  {ep.apiUser && <p className="text-[10px] text-slate-600 font-mono">{ep.apiUser}</p>}
+                                  <p className={`text-[10px] ${isOk ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                                    {ep.message}{ep.domain ? ` · ${ep.domain}` : ''}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {/* Full raw JSON — always visible */}
+                  <div className="px-5 py-4">
+                    <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase mb-2">Response Body</p>
+                    <pre className="bg-[#0B0F17] rounded-xl px-4 py-3 text-xs text-emerald-400/90 overflow-auto font-mono leading-relaxed border border-slate-800/60 whitespace-pre-wrap break-all">
+                      {payloadStr}
+                    </pre>
+                  </div>
                 </div>
               );
             })()}
             {result.error && <div className="border-t border-slate-800/40 px-5 py-3 flex items-center gap-2 text-red-400 text-xs"><XCircle size={12} className="flex-shrink-0" />{result.error}</div>}
           </div>
-          {/* ── cURL Equivalent ── */}
-          {result.activeEndpoint && (
-            <div className="bg-slate-900/60 border border-slate-800/60 rounded-2xl overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800/40">
-                <span className="text-[10px] font-bold tracking-wider text-slate-500 uppercase flex items-center gap-1.5">
-                  <Terminal size={11} /> cURL Equivalent
-                </span>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(buildCurl(result.activeEndpoint, false));
-                    setCopiedCurl(true);
-                    setTimeout(() => setCopiedCurl(false), 2000);
-                  }}
-                  className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-slate-800/60 border border-slate-700/40 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors font-medium">
-                  {copiedCurl ? <><Check size={9} className="text-emerald-400" /> Copied!</> : <><Copy size={9} /> Copy cURL</>}
-                </button>
-              </div>
-              <pre className="px-5 py-4 text-[11px] text-emerald-400/90 font-mono leading-relaxed overflow-x-auto bg-[#0B0F17]/60 whitespace-pre select-all">
-                {buildCurl(result.activeEndpoint, true)}
-              </pre>
-              <div className="px-5 py-2 border-t border-slate-800/40">
-                <p className="text-[10px] text-slate-600">
-                  🔒 Secrets masked in preview — <strong className="text-slate-500">Copy cURL</strong> copies with full credentials
-                </p>
-              </div>
-            </div>
-          )}
-
           {result.attempts?.length > 0 && (
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl overflow-hidden">
               <button onClick={() => setShowAttempts(!showAttempts)}

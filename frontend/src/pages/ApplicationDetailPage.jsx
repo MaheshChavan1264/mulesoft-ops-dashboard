@@ -869,7 +869,8 @@ export default function ApplicationDetailPage() {
             </GlassCard>
 
             <GlassCard icon={Clock} title="Schedulers" count={allSchedulers.length} accent="purple" noPad>
-            {/* Show "Load Secure Props" button when non-secure fetch left placeholders unresolved */}
+            {/* Show "Get Cron Expressions" button when there are unresolved ${...} placeholders
+                and CPS is configured for this app (even if cps.secure.properties wasn't auto-discovered) */}
             {(() => {
               const hasUnresolved = allSchedulers.some(s => {
                 const expr = s.expression || s.schedule?.expression || '';
@@ -877,19 +878,41 @@ export default function ApplicationDetailPage() {
                 const propName = expr.slice(2, -1);
                 return !cpsSchedulerProps[propName] && !cpsSchedulerProps[propName.toLowerCase()] && !allProps[propName];
               });
-              const secureKeys = cpsSchedulerProps['cps.secure.properties'];
-              if (!hasUnresolved || !secureKeys) return null;
+              // Show whenever there are unresolved placeholders AND CPS is configured
+              if (!hasUnresolved || !cpsBaseUrl) return null;
               return (
                 <div className="px-5 py-2.5 border-b border-slate-800/40 flex items-center justify-between bg-purple-950/10">
                   <p className="text-[10px] text-purple-400/80 flex items-center gap-1.5">
-                    <Key size={9} /> Some cron expressions may be in CPS secure properties
+                    <Key size={9} /> Some cron expressions may be in CPS properties
                   </p>
                   <button
                     disabled={cpsSecureSchedulerLoading}
                     onClick={async () => {
-                      if (!cpsBaseUrl || !secureKeys) return;
                       setCpsSecureSchedulerLoading(true);
                       try {
+                        // Step 1: If cps.secure.properties key is not yet known, fetch non-secure to discover it
+                        let secureKeys = cpsSchedulerProps['cps.secure.properties'];
+                        if (!secureKeys) {
+                          try {
+                            const nsRes = await api.get('/cps/fetch', {
+                              params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: effectiveCpsKey, environment: effectiveCpsEnv, bgOrgId: orgId }
+                            });
+                            const data = nsRes.data;
+                            let flat = {};
+                            if (Array.isArray(data?.responses)) data.responses.forEach(r => Object.assign(flat, r.properties || {}));
+                            else if (Array.isArray(data)) data.forEach(r => { if (r?.properties) Object.assign(flat, r.properties); });
+                            else if (data && typeof data === 'object') {
+                              const fv = Object.values(data)[0];
+                              flat = (fv && typeof fv === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
+                            }
+                            if (Object.keys(flat).length > 0) {
+                              setCpsSchedulerProps(prev => ({ ...prev, ...flat }));
+                              secureKeys = flat['cps.secure.properties'];
+                            }
+                          } catch { /* continue */ }
+                        }
+                        if (!secureKeys) { setCpsSecureSchedulerLoading(false); return; }
+                        // Step 2: Fetch secure properties using the discovered keys
                         const sr = await api.get('/cps/fetch', {
                           params: { baseUrl: cpsBaseUrl, type: 'secure', environment: effectiveCpsEnv, keys: secureKeys, bgOrgId: orgId }
                         });
