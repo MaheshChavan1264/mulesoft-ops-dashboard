@@ -167,7 +167,7 @@ export default function PingResultCard({ app, result, loading, selected, onToggl
                 Response Payload
               </button>
               {showPayload && (
-                <pre className="mt-2 bg-[#0B0F17] rounded-lg px-3 py-2.5 text-xs text-emerald-400/90 overflow-auto max-h-36 font-mono border border-gray-800/60 leading-relaxed">
+                <pre className="mt-2 bg-[#0B0F17] rounded-lg px-3 py-2.5 text-xs text-emerald-400/90 overflow-auto font-mono border border-gray-800/60 leading-relaxed whitespace-pre-wrap break-all">
                   {typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2)}
                 </pre>
               )}

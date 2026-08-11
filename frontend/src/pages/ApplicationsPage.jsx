@@ -704,7 +704,18 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(false);
   const [bgLoading, setBgLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterEnv, setFilterEnv] = useState('');
+  // Persist selected environment across navigation (like selectedBg)
+  const [filterEnv, setFilterEnv] = useState(
+    () => localStorage.getItem('mule_dashboard_filter_env') || ''
+  );
+  useEffect(() => {
+    if (filterEnv) localStorage.setItem('mule_dashboard_filter_env', filterEnv);
+    else localStorage.removeItem('mule_dashboard_filter_env');
+  }, [filterEnv]);
+  useEffect(() => {
+    if (!filterEnv || environments.length === 0) return;
+    if (!environments.some(e => e.id === filterEnv)) setFilterEnv('');
+  }, [environments]);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
   const [error, setError] = useState('');
@@ -805,7 +816,6 @@ export default function ApplicationsPage() {
         setApps(cached.apps);
         setEnvironments(cached.envs);
         setError(cached.apps.length === 0 ? 'No applications found.' : '');
-        setFilterEnv('');
         setSelectedIds(new Set());
         return; // instant — no network call
       }
@@ -814,7 +824,6 @@ export default function ApplicationsPage() {
 
     setLoading(true);
     setError('');
-    setFilterEnv('');
     setSelectedIds(new Set());
     try {
       const params = forceRefresh ? { params: { refresh: 'true' } } : {};
@@ -1197,7 +1206,7 @@ export default function ApplicationsPage() {
         </div>
         <Select
           value={selectedBg}
-          onChange={(v) => { setSelectedBg(v); setSearch(''); setFilterStatus(''); setFilterType(''); }}
+          onChange={(v) => { setSelectedBg(v); setSearch(''); setFilterEnv(''); setFilterStatus(''); setFilterType(''); }}
           options={bgOptions}
           placeholder="Select business group..."
           searchable={visibleGroups.length > 5}
