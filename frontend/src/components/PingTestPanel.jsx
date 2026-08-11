@@ -547,7 +547,7 @@ export default function PingTestPanel({
                 <div className="border-t border-slate-800/40 space-y-0">
                   {/* Structured endpoint health table when pingResponse.endpoints exists */}
                   {Array.isArray(endpoints) && endpoints.length > 0 && (() => {
-                    const ok = endpoints.filter(e => (e.status || '').toLowerCase() === 'success').length;
+                    const ok = endpoints.filter(e => e && (e.status || '').toLowerCase() === 'success').length;
                     const fail = endpoints.length - ok;
                     return (
                       <div className="px-5 py-4 space-y-3 border-b border-slate-800/40">
@@ -563,6 +563,7 @@ export default function PingTestPanel({
                         </div>
                         <div className="space-y-1.5">
                           {endpoints.map((ep, i) => {
+                            if (!ep) return null;
                             const isOk = (ep.status || '').toLowerCase() === 'success';
                             return (
                               <div key={i} className={`flex items-start gap-2.5 rounded-lg px-3 py-2 border ${isOk ? 'bg-emerald-950/20 border-emerald-800/30' : 'bg-red-950/20 border-red-800/30'}`}>
