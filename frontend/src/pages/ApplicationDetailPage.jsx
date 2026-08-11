@@ -582,9 +582,12 @@ export default function ApplicationDetailPage() {
       }
 
       // Store secure/binary keys for on-demand fetching; do NOT auto-fetch them
+      // Also store the raw API response for clipboard copying
       setCpsData({
         nonSecure: flatNs,
+        rawNsResponse: nsRaw,   // original CPS API response (unmodified)
         secureGroups: [],
+        rawSecureResponse: null,
         binaryList: [],
         secureKeys: flatNs['cps.secure.properties'] || '',
         binaryKeys: flatNs['cps.secure.binaries'] || '',
@@ -1112,7 +1115,11 @@ export default function ApplicationDetailPage() {
               {cpsData && Object.keys(cpsData.nonSecure).length > 0 && (
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(JSON.stringify(cpsData.nonSecure, null, 2));
+                    // Copy the original raw CPS API response (not the parsed flat object)
+                    const raw = cpsData.rawNsResponse;
+                    navigator.clipboard.writeText(
+                      typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
+                    );
                     setCopiedCpsNs(true);
                     setTimeout(() => setCopiedCpsNs(false), 2000);
                   }}
@@ -1123,9 +1130,11 @@ export default function ApplicationDetailPage() {
               {cpsData && cpsData.secureGroups.length > 0 && (
                 <button
                   onClick={() => {
-                    const merged = {};
-                    cpsData.secureGroups.forEach(g => Object.assign(merged, g.properties || {}));
-                    navigator.clipboard.writeText(JSON.stringify(merged, null, 2));
+                    // Copy the original raw secure CPS API response
+                    const raw = cpsData.rawSecureResponse;
+                    navigator.clipboard.writeText(
+                      typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
+                    );
                     setCopiedCpsSec(true);
                     setTimeout(() => setCopiedCpsSec(false), 2000);
                   }}
@@ -1284,7 +1293,7 @@ export default function ApplicationDetailPage() {
                         const groups = Array.isArray(raw?.responses) ? raw.responses
                           : Array.isArray(raw?.properties) ? raw.properties
                           : Array.isArray(raw) ? raw : [];
-                        setCpsData((prev) => ({ ...prev, secureGroups: groups }));
+                        setCpsData((prev) => ({ ...prev, secureGroups: groups, rawSecureResponse: raw }));
                       } catch (e) {
                         // show error in the secure section
                         setCpsData((prev) => ({ ...prev, secureGroups: [{ key: '__error__', _error: e.response?.data?.error || e.message }] }));
