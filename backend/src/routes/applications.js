@@ -363,8 +363,9 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
             environment: { id: env.id, name: env.name, type: env.type },
             deploymentType: 'CloudHub 2.0',
             lastModifiedDate: app.lastModifiedDate || app.updatedAt,
-            muleVersion: app.target?.deploymentSettings?.runtimeVersion,
-            replicas: app.target?.deploymentSettings?.resources?.cpu?.reserved
+            // CH2 list API returns version at top-level, NOT inside target.deploymentSettings
+            muleVersion: app.currentRuntimeVersion || app.lastSuccessfulRuntimeVersion,
+            replicas: app.target?.replicas
           });
         });
       } catch (e) {
@@ -393,7 +394,9 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
               environment: { id: env.id, name: env.name, type: env.type },
               deploymentType: 'CloudHub 1.0',
               lastModifiedDate: app.lastUpdateTime ? new Date(app.lastUpdateTime).toISOString() : null,
-              muleVersion: app.muleVersion?.version,
+              muleVersion: typeof app.muleVersion === 'string'
+                ? app.muleVersion
+                : app.muleVersion?.version,
               workers: app.workers
             });
           }

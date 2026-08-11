@@ -3,10 +3,6 @@ import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, C
 import api from '../services/api';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
-import CredentialImportButton from './CredentialImportButton';
-
-const API_MGR_ORG_KEY = 'mule_dashboard_api_mgr_org_id';
-
 export default function PingTestPanel({
   appName, isCH1, ch2IngressUrl, orgId, envId,
   defaultClientId = '', defaultClientSecret = '',
@@ -31,7 +27,6 @@ export default function PingTestPanel({
   const [tokenError, setTokenError] = useState(null);
   const [tokenExpiresIn, setTokenExpiresIn] = useState(null);
   const [showTokenHelper, setShowTokenHelper] = useState(false);
-  const [autoConfiguringJwt, setAutoConfiguringJwt] = useState(false);
   const [gettingJwt, setGettingJwt] = useState(false);
   const [jwtError, setJwtError] = useState(null);
   const [jwtTokenUrl, setJwtTokenUrl] = useState(''); // stored once found, reused on refresh
@@ -42,15 +37,6 @@ export default function PingTestPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showAttempts, setShowAttempts] = useState(false);
-
-  const [apiMgrOrgId, setApiMgrOrgId] = useState(() => localStorage.getItem(API_MGR_ORG_KEY) || '');
-  const [showApiMgrInput, setShowApiMgrInput] = useState(false);
-
-  const saveApiMgrOrgId = (val) => {
-    setApiMgrOrgId(val);
-    if (val.trim()) localStorage.setItem(API_MGR_ORG_KEY, val.trim());
-    else localStorage.removeItem(API_MGR_ORG_KEY);
-  };
 
   const flattenCpsProps = (data) => {
     if (!data) return {};
@@ -80,7 +66,6 @@ export default function PingTestPanel({
     setAutoResolved(null);
     try {
       const body = { orgId, envId, appName };
-      if (apiMgrOrgId.trim() && apiMgrOrgId.trim() !== orgId) body.apiMgrOrgId = apiMgrOrgId.trim();
       if (cpsBaseUrl && cpsKey) {
         if (cpsClientId && hasCpsCreds) {
           const secret = getCpsSecret(cpsClientId);
@@ -124,7 +109,7 @@ export default function PingTestPanel({
       }
     } catch (err) { setAutoResolved({ error: err.message }); }
     setAutoResolving(false);
-  }, [hasCredentials, orgId, envId, appName, apiMgrOrgId, resolveFromCandidates]);
+  }, [hasCredentials, orgId, envId, appName, resolveFromCandidates]);
 
   const fetchOAuth2Token = async () => {
     if (!tokenUrl || !tokenClientId || !tokenClientSecret) return;
@@ -212,11 +197,6 @@ export default function PingTestPanel({
       setGettingJwt(false);
     }
   };
-
-  // isJwtRequired: show banner on PARTIAL (any 4xx reachable response)
-  const isJwtRequired = (r) => r?.status === 'PARTIAL';
-  // autoConfigureJwt: banner button now just calls getJwtToken directly
-  const autoConfigureJwt = async () => { setAutoConfiguringJwt(true); await getJwtToken(); setAutoConfiguringJwt(false); };
 
   const targetType = isCH1 ? 'CH1' : 'CH2';
   const displayBase = isCH1 ? `https://${appName}.api.sfdcbt.net` : ch2IngressUrl || '(no ingress URL detected)';
@@ -412,7 +392,6 @@ export default function PingTestPanel({
           <div className="space-y-2 pt-1 border-t border-slate-800/40">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <CredentialImportButton compact />
                 {hasCredentials && (
                   <>
                     <button onClick={autoFillCredentials} disabled={autoResolving || !orgId || !envId}
@@ -421,20 +400,6 @@ export default function PingTestPanel({
                       {autoResolving ? <><RefreshCw size={9} className="animate-spin" /> Resolving…</> : <><Wand2 size={9} /> Auto-fill from API Manager</>}
                     </button>
                   </>
-                )}
-                {/* Get JWT Token — one-click CPS scan + OAuth2 token fetch */}
-                {cpsBaseUrl && (
-                  <button onClick={getJwtToken} disabled={gettingJwt}
-                    title="Scan CPS for OAuth2 token URL, fetch JWT and switch to Bearer Token mode"
-                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-indigo-500/10 border border-indigo-700/40 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition-colors disabled:opacity-50 font-medium">
-                    {gettingJwt ? <><RefreshCw size={9} className="animate-spin" /> Getting JWT…</> : <><Lock size={9} /> Get JWT Token</>}
-                  </button>
-                )}
-                {hasCredentials && (
-                  <button onClick={() => setShowApiMgrInput(v => !v)}
-                    className={`text-[10px] px-1.5 py-1 rounded border transition-colors ${apiMgrOrgId.trim() ? 'bg-blue-500/10 border-blue-700/40 text-blue-400' : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300'}`}>
-                    {apiMgrOrgId.trim() ? '🏢 API Mgr BG set' : '⚙ API Mgr BG'}
-                  </button>
                 )}
               </div>
               {autoResolved && !autoResolved.error && (
@@ -453,16 +418,6 @@ export default function PingTestPanel({
               {autoResolved?.error && <span className="text-[10px] text-yellow-500/80">{autoResolved.error}</span>}
               {jwtError && <span className="text-[10px] text-red-400/80 flex items-center gap-1"><XCircle size={9} /> {jwtError}</span>}
             </div>
-            {hasCredentials && showApiMgrInput && (
-              <div className="bg-slate-800/40 border border-slate-700/40 rounded-lg px-3 py-2.5 space-y-1.5">
-                <p className="text-[10px] text-slate-400">If your API Manager is in a <strong className="text-slate-300">different Business Group</strong>, enter that BG Org ID below. Saved for all ping tests.</p>
-                <div className="flex items-center gap-2">
-                  <input value={apiMgrOrgId} onChange={e => saveApiMgrOrgId(e.target.value)} placeholder={`Default: ${orgId}`}
-                    className="flex-1 bg-slate-800 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono placeholder-slate-600 focus:outline-none focus:border-blue-600/50" />
-                  {apiMgrOrgId.trim() && <button onClick={() => saveApiMgrOrgId('')} className="text-slate-500 hover:text-red-400 text-[10px] px-2 py-1.5 rounded border border-slate-700 hover:border-red-700/40 transition-colors">Clear</button>}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -490,22 +445,16 @@ export default function PingTestPanel({
             </div>
             {result.responseTimeMs != null && <span className={`font-mono text-sm font-bold ${latencyColor(result.responseTimeMs)}`}>{result.responseTimeMs}ms</span>}
           </div>
-          {/* JWT auto-configure banner — shown when 401/403 with token indicators */}
-          {isJwtRequired(result) && authMode === 'client-credentials' && (
-            <div className="flex items-start justify-between gap-4 bg-indigo-950/30 border border-indigo-800/40 rounded-xl px-4 py-3">
-              <div className="flex items-start gap-3">
-                <Lock size={14} className="text-indigo-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-indigo-300 text-sm font-medium">JWT / Bearer Auth Required</p>
-                  <p className="text-indigo-500/80 text-xs mt-1">
-                    The API returned <strong className="text-indigo-300">{result.httpStatus}</strong> — this app likely requires a Bearer Token (JWT).
-                    Click to auto-configure: scans CPS for the Okta OAuth2 token URL and pre-fills your current client credentials.
-                  </p>
-                </div>
-              </div>
-              <button onClick={autoConfigureJwt} disabled={autoConfiguringJwt}
-                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors">
-                {autoConfiguringJwt ? <><RefreshCw size={10} className="animate-spin" /> Configuring…</> : <><Zap size={10} /> Auto-Configure JWT</>}
+          {/* Get JWT Token — shown contextually when ping returns 4xx (JWT may be required) */}
+          {result?.status === 'PARTIAL' && cpsBaseUrl && authMode === 'client-credentials' && (
+            <div className="flex items-center justify-between gap-3 bg-slate-800/40 border border-slate-700/40 rounded-xl px-4 py-2.5">
+              <p className="text-slate-400 text-xs">
+                App returned <span className="text-yellow-300 font-mono font-bold">{result.httpStatus}</span> — JWT Bearer authentication may be required.
+              </p>
+              <button onClick={getJwtToken} disabled={gettingJwt || !clientId || !clientSecret}
+                title={!clientId || !clientSecret ? 'Auto-fill credentials first, then click to get JWT' : 'Scan CPS for OAuth2 token URL and fetch JWT Bearer token'}
+                className="flex-shrink-0 flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-indigo-500/10 border border-indigo-700/40 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition-colors disabled:opacity-50 font-medium">
+                {gettingJwt ? <><RefreshCw size={9} className="animate-spin" /> Getting JWT…</> : <><Lock size={9} /> Get JWT Token</>}
               </button>
             </div>
           )}

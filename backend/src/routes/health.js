@@ -145,15 +145,36 @@ router.post('/ping', async (req, res) => {
       // in these cases skip to the next path rather than stopping early.
       //
       // Rules (any of the following → skip):
-      //   1. HTTP 404 — path not found on the Mule app; try the next path
+      //   1. HTTP 404 — path not found on the Mule app
       //   2. Mule "No listener for endpoint" text
       //   3. "No flow" text (older Mule runtimes)
       //   4. "resource not found" text
+      //   5. ENDPT_FAILURE text — Mule app-level 404 wrapped inside HTTP 200
+      //   6. Structured app-level 404: { "error": [{ "code": "404", "status": "NOT_FOUND" }] }
+      //      Some Mule apps return HTTP 200 with a JSON body containing an error object
+      //      whose code is "404" — treat this as "path not found" and try the next path.
+      const isAppLevel404 = (() => {
+        if (!payload || typeof payload !== 'object') return false;
+        const errors = Array.isArray(payload.error) ? payload.error
+          : (payload.error && typeof payload.error === 'object' ? [payload.error] : []);
+        return errors.some(e =>
+          String(e?.code) === '404' ||
+          e?.status === 'NOT_FOUND' ||
+          String(e?.description?.[0]?.message || '').toUpperCase().includes('ENDPT_FAILURE')
+        );
+      })();
+
+      if (isAppLevel404) {
+        console.log(`[Ping] ${url} → 200 but app-level 404 detected (ENDPT_FAILURE/NOT_FOUND) — skipping to next path`);
+      }
+
       const isNoListener =
         httpStatus === 404 ||
         payloadStr.toLowerCase().includes('no listener for endpoint') ||
         payloadStr.toLowerCase().includes('no flow') ||
-        payloadStr.toLowerCase().includes('resource not found');
+        payloadStr.toLowerCase().includes('resource not found') ||
+        payloadStr.toUpperCase().includes('ENDPT_FAILURE') ||
+        isAppLevel404;
 
       if (httpStatus < 500 && !isNoListener) {
         // This path returned a definitive response (2xx success, or 401/403
