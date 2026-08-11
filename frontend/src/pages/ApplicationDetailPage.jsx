@@ -570,7 +570,12 @@ export default function ApplicationDetailPage() {
       if (propsArray) {
         const match = propsArray.find((p) => p.key === useKey) || propsArray[0];
         const inner = match?.properties || match;
-        flatNs = (inner && typeof inner === 'object' && !Array.isArray(inner)) ? inner : {};
+        if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+          flatNs = inner;
+        } else if (Array.isArray(inner)) {
+          // Handle array of {key, value} pairs: [{key:"api.id", value:"12345"}, ...]
+          inner.forEach(p => { if (p?.key != null) flatNs[String(p.key)] = p.value ?? p.val ?? ''; });
+        }
       } else if (nsRaw && typeof nsRaw === 'object') {
         // Flat map or top-level object — if the first value is an object, try to unwrap
         const firstVal = Object.values(nsRaw)[0];
