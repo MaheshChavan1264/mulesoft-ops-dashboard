@@ -539,11 +539,14 @@ export default function PingTestPanel({
             {result.payload && (() => {
               const endpoints = result.payload?.pingResponse?.endpoints;
               const summary = result.payload?.pingResponse?.summary;
-              const payloadStr = typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2);
+              const payloadStr = (() => {
+                if (typeof result.payload === 'string') return result.payload;
+                try { return JSON.stringify(result.payload, null, 2); } catch { return String(result.payload); }
+              })();
               return (
                 <div className="border-t border-slate-800/40 space-y-0">
                   {/* Structured endpoint health table when pingResponse.endpoints exists */}
-                  {endpoints?.length > 0 && (() => {
+                  {Array.isArray(endpoints) && endpoints.length > 0 && (() => {
                     const ok = endpoints.filter(e => (e.status || '').toLowerCase() === 'success').length;
                     const fail = endpoints.length - ok;
                     return (
@@ -593,7 +596,7 @@ export default function PingTestPanel({
             })()}
             {result.error && <div className="border-t border-slate-800/40 px-5 py-3 flex items-center gap-2 text-red-400 text-xs"><XCircle size={12} className="flex-shrink-0" />{result.error}</div>}
           </div>
-          {result.attempts?.length > 0 && (
+          {Array.isArray(result.attempts) && result.attempts.length > 0 && (
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl overflow-hidden">
               <button onClick={() => setShowAttempts(!showAttempts)}
                 className="w-full flex items-center justify-between px-5 py-3 text-slate-400 hover:text-white text-xs font-semibold transition-colors">
