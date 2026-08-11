@@ -425,9 +425,67 @@ function BulkPingModal({ apps, onClose }) {
     setRunning(true);
     const collectedResults = {};
 
+    // ── Auto-fetch JWT for a single app (CPS non-secure → secure scan) ──────
+    const fetchJwtForApp = async (app, appClientId, appClientSecret) => {
+      if (!appClientId || !appClientSecret) return null;
+      const bgId = app._bgId;
+      const envId = app.environment?.id;
+      try {
+        let cpsBaseUrl = '', cpsKey = '', cpsEnv = '';
+        try {
+          const r = await api.get(`/applications/cloudhub2/${bgId}/${envId}/${app.id}`);
+          const ds = r.data?.target?.deploymentSettings || {};
+          const appCfg = r.data?.application?.configuration || {};
+          const ps = appCfg['mule.agent.application.properties.service'] || {};
+          const rp = { ...r.data?.properties, ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || {}) };
+          cpsBaseUrl = rp['cps.configServerBaseUrl'] || rp['config.server.base.url'] || '';
+          cpsKey = rp['cps.projectName'] || rp['cloudhub.api.name'] || app.name;
+          cpsEnv = rp['cps.prefix'] || rp['cps.environment'] || '';
+        } catch { return null; }
+        if (!cpsBaseUrl || !cpsKey) return null;
+        const findOAuth2Url = (props) => {
+          for (const [k, v] of Object.entries(props || {})) {
+            const val = String(v || '');
+            if (val.startsWith('http') && (val.includes('/oauth2/') || val.includes('okta.com') ||
+              (val.includes('/token') && (k.toLowerCase().includes('jwt') || k.toLowerCase().includes('oauth') || k.toLowerCase().includes('auth'))))) return val;
+          }
+          return null;
+        };
+        const flatCps = (data) => {
+          let p = {};
+          if (Array.isArray(data?.responses)) data.responses.forEach(r => Object.assign(p, r.properties || {}));
+          else if (Array.isArray(data)) data.forEach(r => { if (r?.properties) Object.assign(p, r.properties); });
+          else if (data && typeof data === 'object') {
+            const fv = Object.values(data)[0];
+            p = (fv && typeof fv === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
+          }
+          return p;
+        };
+        let tokenUrl = null;
+        try {
+          const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: bgId } });
+          const nsProps = flatCps(nsRes.data);
+          tokenUrl = findOAuth2Url(nsProps);
+          if (!tokenUrl) {
+            const secKeys = (nsProps['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean);
+            const jwtKey = secKeys.find(k => k.toLowerCase().includes('jwt') || k.toLowerCase().includes('auth'));
+            if (jwtKey) {
+              const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: jwtKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: bgId } });
+              const groups = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data) ? sr.data : [];
+              for (const g of groups) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } }
+            }
+          }
+        } catch { return null; }
+        if (!tokenUrl) return null;
+        const tr = await api.post('/health/oauth2-token', { tokenUrl, clientId: appClientId, clientSecret: appClientSecret });
+        return tr.data?.access_token || null;
+      } catch { return null; }
+    };
+
     /**
      * Ping a single app and return its result.
      * Fetches CH2 ingress URL on-demand, uses resolved or manual credentials.
+     * If initial ping returns 4xx and CPS is configured, auto-fetches JWT and retries.
      */
     const pingApp = async (app) => {
       const isCH1 = app.deploymentType !== 'CloudHub 2.0';
@@ -474,6 +532,24 @@ function BulkPingModal({ apps, onClose }) {
           clientSecret: useClientSecret,
           transactionId: transactionId.trim() || 'smokeTest',
         });
+
+        // If ping returned 4xx (PARTIAL), try auto-fetching JWT and retrying
+        if (data.status === 'PARTIAL' && data.httpStatus >= 400 && data.httpStatus < 500 && !isCH1) {
+          const jwt = await fetchJwtForApp(app, useClientId, useClientSecret);
+          if (jwt) {
+            try {
+              const jwtData = await api.post('/health/ping', {
+                targetType: 'CH2',
+                appName: app.name,
+                ch2IngressUrl,
+                bearerToken: jwt,
+                transactionId: transactionId.trim() || 'smokeTest',
+              });
+              return { appId: app.id, result: { ...jwtData.data, _jwtUsed: true } };
+            } catch { /* fall through to original result */ }
+          }
+        }
+
         return { appId: app.id, result: data };
       } catch (err) {
         return { appId: app.id, result: { status: 'FAILED', error: err.message } };
@@ -613,8 +689,16 @@ export default function ApplicationsPage() {
   const navigate = useNavigate();
 
   const [allBusinessGroups, setAllBusinessGroups] = useState([]);
-  const [selectedBg, setSelectedBg] = useState('');
+  // Persist BG selection in localStorage so it survives navigation
+  const [selectedBg, setSelectedBg] = useState(
+    () => localStorage.getItem('mule_dashboard_selected_bg') || ''
+  );
   const [showBgFilter, setShowBgFilter] = useState(false);
+
+  // Keep localStorage in sync whenever selectedBg changes
+  useEffect(() => {
+    if (selectedBg) localStorage.setItem('mule_dashboard_selected_bg', selectedBg);
+  }, [selectedBg]);
   const [environments, setEnvironments] = useState([]);
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -688,7 +772,10 @@ export default function ApplicationsPage() {
       const cached = getCached(cacheKey);
       if (cached) {
         setAllBusinessGroups(cached);
-        setSelectedBg('__all__');
+        // Restore saved BG (validate it's in the cached group list)
+        const savedBg = localStorage.getItem('mule_dashboard_selected_bg');
+        const isValidSaved = savedBg && (savedBg === '__all__' || cached.some(g => g.id === savedBg));
+        setSelectedBg(isValidSaved ? savedBg : '__all__');
         setBgLoading(false);
         return;
       }
@@ -696,7 +783,10 @@ export default function ApplicationsPage() {
       const groups = res.data.data || [];
       setCached(cacheKey, groups);
       setAllBusinessGroups(groups);
-      setSelectedBg('__all__');
+      // Restore previously selected BG if it's still valid; otherwise default to '__all__'
+      const savedBg = localStorage.getItem('mule_dashboard_selected_bg');
+      const isValidSaved = savedBg && (savedBg === '__all__' || groups.some(g => g.id === savedBg));
+      setSelectedBg(isValidSaved ? savedBg : '__all__');
     } catch { setSelectedBg(orgId); }
     setBgLoading(false);
   };

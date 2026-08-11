@@ -466,7 +466,7 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
         // OAS: model.paths{}
         if (!modelParsed && model.paths) {
           specType = 'oas';
-          const bp = model.basePath || '';
+          const bp = (model.basePath || '').replace(/\/+$/, '');
           const extractOasParams = (params = [], inFilter) =>
             params.filter(p => p.in === inFilter).map(p => ({
               name: p.name,
@@ -476,7 +476,8 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
               example: p.example != null ? String(p.example) : (p.schema?.example != null ? String(p.schema.example) : ''),
             }));
           for (const [rawPath, pathItem] of Object.entries(model.paths)) {
-            const fullPath = bp + rawPath;
+            const normalizedRaw = ('/' + rawPath.replace(/^\/+/, '')).replace(/\/\//g, '/');
+            const fullPath = (bp + normalizedRaw).replace(/\/\//g, '/');
             for (const meth of ['get','post','put','patch','delete','head','options']) {
               const op = pathItem[meth];
               if (!op) continue;
@@ -636,7 +637,8 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
             }
             if (spec?.paths) {
               // OAS 2 uses basePath; OAS 3 uses servers[].url — extract path portion
-              let bp = spec.basePath || '';
+              // Always strip trailing slashes to avoid double-slash (e.g. /api/v2//ping)
+              let bp = (spec.basePath || '').replace(/\/+$/, '');
               if (!bp && spec.servers?.[0]?.url) {
                 try {
                   bp = new URL(spec.servers[0].url).pathname.replace(/\/+$/, '');
@@ -647,12 +649,14 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
               }
               console.log(`[ping-spec] OAS ${spec.openapi || spec.swagger || '?'}: ${Object.keys(spec.paths).length} path(s), basePath="${bp}"`);
               for (const [rawPath, pathItem] of Object.entries(spec.paths)) {
+                // Normalize path: ensure rawPath starts with / and no double slashes
+                const normalizedPath = ('/' + rawPath.replace(/^\/+/, '')).replace(/\/\//g, '/');
                 for (const meth of ['get','post','put','patch','delete','head','options']) {
                   const op = pathItem[meth];
                   if (!op) continue;
                   const params = [...(pathItem.parameters || []), ...(op.parameters || [])];
                   allEndpoints.push({
-                    path: bp + rawPath, method: meth.toUpperCase(),
+                    path: (bp + normalizedPath).replace(/\/\//g, '/'), method: meth.toUpperCase(),
                     description: op.summary || op.description || '',
                     queryParams: params.filter(p => p.in === 'query').map(p => ({
                       name: p.name, required: !!p.required,

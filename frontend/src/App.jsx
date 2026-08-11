@@ -8,8 +8,6 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ApplicationsPage from './pages/ApplicationsPage';
 import ApplicationDetailPage from './pages/ApplicationDetailPage';
-import EnvironmentsPage from './pages/EnvironmentsPage';
-import BusinessGroupsPage from './pages/BusinessGroupsPage';
 import ApiManagerPage from './pages/ApiManagerPage';
 import ExchangePage from './pages/ExchangePage';
 import PingTestPage from './pages/PingTestPage';
@@ -46,8 +44,6 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="applications" element={<ApplicationsPage />} />
             <Route path="applications/:orgId/:envId/:appId" element={<ApplicationDetailPage />} />
-            <Route path="environments" element={<EnvironmentsPage />} />
-            <Route path="business-groups" element={<BusinessGroupsPage />} />
             <Route path="api-manager" element={<ApiManagerPage />} />
             <Route path="exchange" element={<ExchangePage />} />
             <Route path="ping-test" element={<PingTestPage />} />

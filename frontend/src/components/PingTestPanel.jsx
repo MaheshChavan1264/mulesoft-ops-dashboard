@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X } from 'lucide-react';
+import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X, Copy, Check, Terminal } from 'lucide-react';
 import api from '../services/api';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
@@ -30,6 +30,7 @@ export default function PingTestPanel({
   const [gettingJwt, setGettingJwt] = useState(false);
   const [jwtError, setJwtError] = useState(null);
   const [jwtTokenUrl, setJwtTokenUrl] = useState(''); // stored once found, reused on refresh
+  const [copiedCurl, setCopiedCurl] = useState(false);
 
   const [transactionId, setTransactionId] = useState('smokeTest');
   const [queryParams, setQueryParams] = useState('');
@@ -37,6 +38,7 @@ export default function PingTestPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showAttempts, setShowAttempts] = useState(false);
+  const [configOpen, setConfigOpen] = useState(true); // auto-collapses after ping completes
 
   const flattenCpsProps = (data) => {
     if (!data) return {};
@@ -198,9 +200,32 @@ export default function PingTestPanel({
     }
   };
 
+  // Build the curl command from current credentials and a given URL
+  const buildCurl = (url, maskSecrets = false) => {
+    const lines = [`curl -X GET \\`, `  "${url}" \\`];
+    lines.push(`  -H "x-transaction-id: ${transactionId || 'smokeTest'}" \\`);
+    if (authMode === 'bearer-token' && bearerToken) {
+      const tok = maskSecrets ? `${bearerToken.slice(0, 20)}…` : bearerToken;
+      lines.push(`  -H "Authorization: Bearer ${tok}"`);
+    } else {
+      if (clientId) lines.push(`  -H "client_id: ${clientId}" \\`);
+      if (clientSecret) {
+        const sec = maskSecrets ? `${clientSecret.slice(0, 4)}…` : clientSecret;
+        lines.push(`  -H "client_secret: ${sec}"`);
+      } else if (clientId) {
+        // remove trailing backslash from last line
+        lines[lines.length - 1] = lines[lines.length - 1].replace(/ \\$/, '');
+      }
+    }
+    // Ensure last line has no trailing backslash
+    lines[lines.length - 1] = lines[lines.length - 1].replace(/ \\$/, '');
+    return lines.join('\n');
+  };
+
   const targetType = isCH1 ? 'CH1' : 'CH2';
   const displayBase = isCH1 ? `https://${appName}.api.sfdcbt.net` : ch2IngressUrl || '(no ingress URL detected)';
 
+  // Auto-collapse config panel when ping completes
   const runPing = async () => {
     setLoading(true); setResult(null); setError(null); setShowAttempts(false);
     try {
@@ -215,7 +240,10 @@ export default function PingTestPanel({
       });
       setResult(data);
     } catch (err) { setError(err.response?.data?.error || err.message || 'Ping request failed'); }
-    finally { setLoading(false); }
+    finally {
+      setLoading(false);
+      setConfigOpen(false); // collapse config after ping completes
+    }
   };
 
   const badgeConfig = {
@@ -231,34 +259,69 @@ export default function PingTestPanel({
 
   return (
     <div className="space-y-5">
-      <div className="bg-slate-900/60 border border-slate-800/60 rounded-2xl px-5 py-4 space-y-4">
+      <div className="bg-slate-900/60 border border-slate-800/60 rounded-2xl overflow-hidden">
 
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="space-y-1.5 flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Activity size={13} className="text-cyan-400" />
-              <span className="text-white text-sm font-semibold">Ping / Health Check</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${isCH1 ? 'bg-purple-950/50 text-purple-300 border-purple-700/50' : 'bg-blue-950/50 text-blue-300 border-blue-700/50'}`}>
-                {isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'}
+        {/* ── Header bar — always visible ── */}
+        <div className="flex items-center justify-between gap-3 px-5 py-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+            <Activity size={13} className="text-cyan-400 flex-shrink-0" />
+            <span className="text-white text-sm font-semibold">Ping / Health Check</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border flex-shrink-0 ${isCH1 ? 'bg-purple-950/50 text-purple-300 border-purple-700/50' : 'bg-blue-950/50 text-blue-300 border-blue-700/50'}`}>
+              {isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'}
+            </span>
+            {authMode === 'bearer-token' && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border bg-indigo-950/50 text-indigo-300 border-indigo-700/50 flex items-center gap-1 flex-shrink-0">
+                <Lock size={8} /> JWT Auth
               </span>
-              {authMode === 'bearer-token' && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border bg-indigo-950/50 text-indigo-300 border-indigo-700/50 flex items-center gap-1">
-                  <Lock size={8} /> JWT Auth
-                </span>
-              )}
-            </div>
+            )}
+            {/* Compact credential summary when collapsed */}
+            {!configOpen && (
+              <span className="text-[10px] text-slate-500 font-mono truncate max-w-xs hidden sm:block">
+                {authMode === 'bearer-token' && bearerToken
+                  ? `🔒 Bearer …${bearerToken.slice(-10)}`
+                  : clientId ? `🔑 ${clientId.slice(0, 8)}…` : '(no credentials)'}
+                {queryParams && ` · ?${queryParams.slice(0, 20)}${queryParams.length > 20 ? '…' : ''}`}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {(ch2IngressUrl || isCH1) && (
+              <button
+                onClick={() => {
+                  const url = result?.activeEndpoint || `${displayBase}/api/v1/ping${queryParams ? `?${queryParams}` : ''}`;
+                  navigator.clipboard.writeText(buildCurl(url, false));
+                  setCopiedCurl(true);
+                  setTimeout(() => setCopiedCurl(false), 2000);
+                }}
+                title="Copy cURL"
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800/60 hover:bg-slate-700 border border-slate-700/40 text-slate-400 hover:text-white text-xs font-medium rounded-xl transition-colors">
+                {copiedCurl ? <><Check size={12} className="text-emerald-400" /> Copied!</> : <><Terminal size={12} /> Copy cURL</>}
+              </button>
+            )}
+            <button onClick={runPing} disabled={loading || (!isCH1 && !ch2IngressUrl)}
+              className="flex items-center gap-2 px-4 py-2 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors">
+              {loading ? <><RefreshCw size={14} className="animate-spin" /> Pinging…</> : <><Wifi size={14} /> Run Ping Test</>}
+            </button>
+            {/* Expand / collapse config */}
+            <button onClick={() => setConfigOpen(v => !v)}
+              title={configOpen ? 'Collapse config' : 'Expand config'}
+              className="p-2 rounded-xl text-slate-500 hover:text-white hover:bg-slate-800/60 border border-transparent hover:border-slate-700/40 transition-all">
+              {configOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+            </button>
+          </div>
+        </div>
+
+        {/* ── Collapsible config body ── */}
+        {configOpen && (
+        <div className="px-5 pb-4 space-y-4 border-t border-slate-800/60 pt-4">
+          {/* Base URL + tries hint */}
+          <div className="space-y-1">
             <div className="flex items-center gap-1.5">
               <Globe size={11} className="text-slate-500" />
               <span className="text-slate-400 text-xs font-mono break-all">{displayBase}</span>
             </div>
             <p className="text-slate-600 text-[11px]">Tries: <span className="text-slate-500">/api/v1/ping → /api/v2/ping → /api/ping → /ping</span></p>
           </div>
-          <button onClick={runPing} disabled={loading || (!isCH1 && !ch2IngressUrl)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
-            {loading ? <><RefreshCw size={14} className="animate-spin" /> Pinging…</> : <><Wifi size={14} /> Run Ping Test</>}
-          </button>
-        </div>
 
         {/* Exchange spec hint */}
         {(pingSpecLoading || pingSpec) && (
@@ -387,7 +450,9 @@ export default function PingTestPanel({
           )}
         </div>
 
-        {/* CSV import + auto-fill (client-credentials mode only) */}
+        </div>)} {/* end collapsible config body */}
+
+        {/* CSV import + auto-fill (client-credentials mode only) — always visible */}
         {authMode === 'client-credentials' && (
           <div className="space-y-2 pt-1 border-t border-slate-800/40">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -400,6 +465,15 @@ export default function PingTestPanel({
                       {autoResolving ? <><RefreshCw size={9} className="animate-spin" /> Resolving…</> : <><Wand2 size={9} /> Auto-fill from API Manager</>}
                     </button>
                   </>
+                )}
+                {/* Get JWT Token — appears after ping returns PARTIAL (JWT required) */}
+                {result?.status === 'PARTIAL' && cpsBaseUrl && (
+                  <button onClick={getJwtToken}
+                    disabled={gettingJwt || !clientId || !clientSecret}
+                    title={!clientId || !clientSecret ? 'Auto-fill credentials first, then click to get JWT' : 'Scan CPS for OAuth2 token URL and fetch JWT Bearer token'}
+                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-indigo-500/10 border border-indigo-700/40 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition-colors disabled:opacity-50 font-medium">
+                    {gettingJwt ? <><RefreshCw size={9} className="animate-spin" /> Getting JWT…</> : <><Lock size={9} /> Get JWT Token</>}
+                  </button>
                 )}
               </div>
               {autoResolved && !autoResolved.error && (
@@ -445,19 +519,6 @@ export default function PingTestPanel({
             </div>
             {result.responseTimeMs != null && <span className={`font-mono text-sm font-bold ${latencyColor(result.responseTimeMs)}`}>{result.responseTimeMs}ms</span>}
           </div>
-          {/* Get JWT Token — shown contextually when ping returns 4xx (JWT may be required) */}
-          {result?.status === 'PARTIAL' && cpsBaseUrl && authMode === 'client-credentials' && (
-            <div className="flex items-center justify-between gap-3 bg-slate-800/40 border border-slate-700/40 rounded-xl px-4 py-2.5">
-              <p className="text-slate-400 text-xs">
-                App returned <span className="text-yellow-300 font-mono font-bold">{result.httpStatus}</span> — JWT Bearer authentication may be required.
-              </p>
-              <button onClick={getJwtToken} disabled={gettingJwt || !clientId || !clientSecret}
-                title={!clientId || !clientSecret ? 'Auto-fill credentials first, then click to get JWT' : 'Scan CPS for OAuth2 token URL and fetch JWT Bearer token'}
-                className="flex-shrink-0 flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-indigo-500/10 border border-indigo-700/40 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition-colors disabled:opacity-50 font-medium">
-                {gettingJwt ? <><RefreshCw size={9} className="animate-spin" /> Getting JWT…</> : <><Lock size={9} /> Get JWT Token</>}
-              </button>
-            </div>
-          )}
 
           <div className="bg-slate-900/60 border border-slate-800/60 rounded-2xl overflow-hidden">
             <table className="w-full text-sm">
@@ -475,16 +536,90 @@ export default function PingTestPanel({
                 ))}
               </tbody>
             </table>
-            {result.payload && (
-              <div className="border-t border-slate-800/40 px-5 py-4">
-                <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase mb-2">Response Payload</p>
-                <pre className="bg-[#0B0F17] rounded-xl px-4 py-3 text-xs text-emerald-400/90 overflow-auto max-h-40 font-mono leading-relaxed border border-slate-800/60">
-                  {typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2)}
-                </pre>
-              </div>
-            )}
+            {result.payload && (() => {
+              // If the response contains structured pingResponse.endpoints, render a rich health table
+              const endpoints = result.payload?.pingResponse?.endpoints;
+              const summary = result.payload?.pingResponse?.summary;
+              if (endpoints?.length > 0) {
+                const ok = endpoints.filter(e => (e.status || '').toLowerCase() === 'success').length;
+                const fail = endpoints.length - ok;
+                return (
+                  <div className="border-t border-slate-800/40 px-5 py-4 space-y-3">
+                    {/* Summary row */}
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase flex items-center gap-1.5">
+                        <Activity size={9} /> Endpoint Health ({endpoints.length})
+                      </p>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <span className="text-emerald-400 font-semibold">✓ {ok} ok</span>
+                        {fail > 0 && <span className="text-red-400 font-semibold">✗ {fail} failed</span>}
+                        {summary?.serviceName && <span className="text-slate-600 font-mono">{summary.serviceName}</span>}
+                      </div>
+                    </div>
+                    {/* Endpoint list */}
+                    <div className="space-y-1.5">
+                      {endpoints.map((ep, i) => {
+                        const isOk = (ep.status || '').toLowerCase() === 'success';
+                        return (
+                          <div key={i} className={`flex items-start gap-2.5 rounded-lg px-3 py-2 border ${isOk ? 'bg-emerald-950/20 border-emerald-800/30' : 'bg-red-950/20 border-red-800/30'}`}>
+                            <span className="text-[11px] mt-0.5 flex-shrink-0">{isOk ? '✅' : '❌'}</span>
+                            <div className="flex-1 min-w-0 space-y-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-medium text-slate-200">{ep.serviceName}</span>
+                                {ep.endpointName && <span className="text-[10px] text-slate-500">· {ep.endpointName}</span>}
+                              </div>
+                              {ep.apiUser && <p className="text-[10px] text-slate-600 font-mono">{ep.apiUser}</p>}
+                              <p className={`text-[10px] ${isOk ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                                {ep.message}{ep.domain ? ` · ${ep.domain}` : ''}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              }
+              // Default: raw JSON payload
+              return (
+                <div className="border-t border-slate-800/40 px-5 py-4">
+                  <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase mb-2">Response Payload</p>
+                  <pre className="bg-[#0B0F17] rounded-xl px-4 py-3 text-xs text-emerald-400/90 overflow-auto max-h-40 font-mono leading-relaxed border border-slate-800/60">
+                    {typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2)}
+                  </pre>
+                </div>
+              );
+            })()}
             {result.error && <div className="border-t border-slate-800/40 px-5 py-3 flex items-center gap-2 text-red-400 text-xs"><XCircle size={12} className="flex-shrink-0" />{result.error}</div>}
           </div>
+          {/* ── cURL Equivalent ── */}
+          {result.activeEndpoint && (
+            <div className="bg-slate-900/60 border border-slate-800/60 rounded-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800/40">
+                <span className="text-[10px] font-bold tracking-wider text-slate-500 uppercase flex items-center gap-1.5">
+                  <Terminal size={11} /> cURL Equivalent
+                </span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(buildCurl(result.activeEndpoint, false));
+                    setCopiedCurl(true);
+                    setTimeout(() => setCopiedCurl(false), 2000);
+                  }}
+                  className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-slate-800/60 border border-slate-700/40 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors font-medium">
+                  {copiedCurl ? <><Check size={9} className="text-emerald-400" /> Copied!</> : <><Copy size={9} /> Copy cURL</>}
+                </button>
+              </div>
+              <pre className="px-5 py-4 text-[11px] text-emerald-400/90 font-mono leading-relaxed overflow-x-auto bg-[#0B0F17]/60 whitespace-pre select-all">
+                {buildCurl(result.activeEndpoint, true)}
+              </pre>
+              <div className="px-5 py-2 border-t border-slate-800/40">
+                <p className="text-[10px] text-slate-600">
+                  🔒 Secrets masked in preview — <strong className="text-slate-500">Copy cURL</strong> copies with full credentials
+                </p>
+              </div>
+            </div>
+          )}
+
           {result.attempts?.length > 0 && (
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl overflow-hidden">
               <button onClick={() => setShowAttempts(!showAttempts)}
