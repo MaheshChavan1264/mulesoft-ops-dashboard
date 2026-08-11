@@ -278,7 +278,8 @@ export default function ApplicationDetailPage() {
   }, [orgId, envId, app, hasCpsCsvCredentials, getSecret]);
 
   // CPS state
-  const [copiedCps, setCopiedCps] = useState(false);
+  const [copiedCpsNs, setCopiedCpsNs] = useState(false);
+  const [copiedCpsSec, setCopiedCpsSec] = useState(false);
   const [cpsLoading, setCpsLoading] = useState(false);
   const [cpsData, setCpsData] = useState(null);
   const [cpsError, setCpsError] = useState('');
@@ -1108,18 +1109,28 @@ export default function ApplicationDetailPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {cpsData && (
+              {cpsData && Object.keys(cpsData.nonSecure).length > 0 && (
                 <button
                   onClick={() => {
-                    // Merge non-secure + all secure groups into one JSON
-                    const merged = { ...cpsData.nonSecure };
-                    cpsData.secureGroups.forEach(g => Object.assign(merged, g.properties || {}));
-                    navigator.clipboard.writeText(JSON.stringify(merged, null, 2));
-                    setCopiedCps(true);
-                    setTimeout(() => setCopiedCps(false), 2000);
+                    navigator.clipboard.writeText(JSON.stringify(cpsData.nonSecure, null, 2));
+                    setCopiedCpsNs(true);
+                    setTimeout(() => setCopiedCpsNs(false), 2000);
                   }}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 rounded-lg transition-colors">
-                  {copiedCps ? <><Check size={11} className="text-emerald-400" /> Copied!</> : <><Copy size={11} /> Copy JSON</>}
+                  {copiedCpsNs ? <><Check size={11} className="text-emerald-400" /> Copied!</> : <><Copy size={11} /> Non-Secure</>}
+                </button>
+              )}
+              {cpsData && cpsData.secureGroups.length > 0 && (
+                <button
+                  onClick={() => {
+                    const merged = {};
+                    cpsData.secureGroups.forEach(g => Object.assign(merged, g.properties || {}));
+                    navigator.clipboard.writeText(JSON.stringify(merged, null, 2));
+                    setCopiedCpsSec(true);
+                    setTimeout(() => setCopiedCpsSec(false), 2000);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-400 hover:text-purple-300 bg-purple-950/40 border border-purple-800/40 rounded-lg transition-colors">
+                  {copiedCpsSec ? <><Check size={11} className="text-purple-400" /> Copied!</> : <><Copy size={11} /> Secure</>}
                 </button>
               )}
               <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors"><RefreshCw size={11}/> {cpsData ? 'Refresh' : 'Load'}</button>
