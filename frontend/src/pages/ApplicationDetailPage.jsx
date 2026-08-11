@@ -167,6 +167,13 @@ export default function ApplicationDetailPage() {
     }).catch(() => {});
   }, [orgId, envId]);
 
+  // CH2 schedulers from dedicated /schedulers endpoint
+  const [ch2Schedulers, setCh2Schedulers] = useState(null);
+  const [schedulersLoading, setSchedulersLoading] = useState(false);
+  // CPS properties fetched specifically to resolve ${...} placeholders in scheduler expressions
+  const [cpsSchedulerProps, setCpsSchedulerProps] = useState({});
+  const [cpsSecureSchedulerLoading, setCpsSecureSchedulerLoading] = useState(false);
+
   // Ping spec from Exchange (auto-fetched when app has application.ref)
   const [pingSpec, setPingSpec] = useState(null);
   const [pingSpecLoading, setPingSpecLoading] = useState(false);
@@ -311,6 +318,61 @@ export default function ApplicationDetailPage() {
     setLoading(false);
   }, [orgId, envId, appId]);
 
+  // Load CH2 schedulers from dedicated endpoint when infrastructure tab is opened.
+  // If any scheduler expression is a ${...} placeholder, also silently fetch
+  // CPS non-secure properties to resolve the actual cron values.
+  const loadCh2Schedulers = useCallback(async () => {
+    if (app?._type === 'ch1' || ch2Schedulers !== null) return;
+    setSchedulersLoading(true);
+    try {
+      const res = await api.get(`/applications/cloudhub2/${orgId}/${envId}/${appId}/schedulers`);
+      const items = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+      setCh2Schedulers(items);
+
+      // Auto-resolve CPS properties for ${...} placeholder expressions
+      const hasPlaceholders = items.some(s =>
+        (s.expression || s.schedule?.expression || '').includes('${')
+      );
+      if (hasPlaceholders) {
+        // Extract CPS config from app ARM props
+        const appDs = app.target?.deploymentSettings || {};
+        const appCfg2 = app.application?.configuration || {};
+        const ps2 = appCfg2['mule.agent.application.properties.service'] || {};
+        const rp = { ...ps2.properties, ...appDs.properties, ...appDs.environmentVariables, ...app.properties };
+        const cpsBUrl = rp['cps.configServerBaseUrl'] || rp['config.server.base.url'];
+        const cpsK = rp['cps.projectName'] || rp['cloudhub.api.name'] || app.name;
+        const cpsE = rp['cps.prefix'] || rp['cps.environment'];
+        const cpsCId = rp['cps.clientId'] || rp['cps.client_id'] || rp['cps.client.id'] || rp['cps.apiClientId'];
+        if (cpsBUrl && cpsK) {
+          try {
+            // Post CPS credentials if available
+            if (cpsCId) {
+              try {
+                const normBase = cpsBUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+                await api.post('/cps/credentials', { credentials: { [`${normBase}::${orgId}`]: {} } });
+              } catch { /* non-fatal */ }
+            }
+            const cpsRes = await api.get('/cps/fetch', {
+              params: { baseUrl: cpsBUrl, type: 'non-secure', keys: cpsK, ...(cpsE && { environment: cpsE }), bgOrgId: orgId }
+            });
+            const data = cpsRes.data;
+            let flat = {};
+            if (Array.isArray(data?.responses)) data.responses.forEach(r => Object.assign(flat, r.properties || {}));
+            else if (Array.isArray(data)) data.forEach(r => { if (r?.properties) Object.assign(flat, r.properties); });
+            else if (data && typeof data === 'object') {
+              const fv = Object.values(data)[0];
+              flat = (fv && typeof fv === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
+            }
+            if (Object.keys(flat).length > 0) setCpsSchedulerProps(flat);
+          } catch { /* CPS not available — placeholders will show as unresolved */ }
+        }
+      }
+    } catch {
+      setCh2Schedulers([]);
+    }
+    setSchedulersLoading(false);
+  }, [orgId, envId, appId, ch2Schedulers, app]);
+
   useEffect(() => { if (orgId && envId && appId) load(); }, [load]);
 
   const requestAction = (action) => {
@@ -392,13 +454,17 @@ export default function ApplicationDetailPage() {
   const schedSvc = appCfg['mule.agent.scheduling.service'] || {};
   const runtimeProps = propsSvc.properties || {};
   const secureProps = propsSvc.secureProperties || {};
-  const allSchedulers = isCH1?(app._ch1Schedules||[]):(schedSvc.schedulers||[]);
+  // CH2: use dedicated /schedulers endpoint result; fallback to configuration-embedded schedulers
+  // CH1: use schedules fetched at load time
+  const allSchedulers = isCH1
+    ? (app._ch1Schedules || [])
+    : (ch2Schedulers ?? schedSvc.schedulers ?? []);
   const schedulers = schedulerSearch
     ? allSchedulers.filter((s) => {
         const q = schedulerSearch.toLowerCase();
         const flow = (s.flow || s.flowName || s.name || '').toLowerCase();
-        const cron = (s.schedule?.cronExpression || s.expression || s.cronExpression || '').toLowerCase();
-        const freq = String(s.frequency || s.schedule?.period || '').toLowerCase();
+      const cron = (s.schedule?.cronExpression || s.schedule?.expression || s.expression || s.cronExpression || '').toLowerCase();
+      const freq = String(s.frequency || s.schedule?.frequency || s.schedule?.period || '').toLowerCase();
         return flow.includes(q) || cron.includes(q) || freq.includes(q);
       })
     : allSchedulers;
@@ -674,6 +740,7 @@ export default function ApplicationDetailPage() {
           <button key={t.id}
             onClick={() => {
             setTab(t.id);
+            if (t.id === 'infrastructure' && app?._type !== 'ch1' && ch2Schedulers === null && !schedulersLoading) loadCh2Schedulers();
             if (t.id === 'cps' && !cpsData && !cpsLoading) loadCpsData();
             if (t.id === 'contracts' && contracts === null && !contractsLoading) loadContracts();
             if (t.id === 'apispec' && pingSpec === null && !pingSpecLoading) fetchPingSpec();
@@ -802,6 +869,48 @@ export default function ApplicationDetailPage() {
             </GlassCard>
 
             <GlassCard icon={Clock} title="Schedulers" count={allSchedulers.length} accent="purple" noPad>
+            {/* Show "Load Secure Props" button when non-secure fetch left placeholders unresolved */}
+            {(() => {
+              const hasUnresolved = allSchedulers.some(s => {
+                const expr = s.expression || s.schedule?.expression || '';
+                if (!expr.startsWith('${')) return false;
+                const propName = expr.slice(2, -1);
+                return !cpsSchedulerProps[propName] && !cpsSchedulerProps[propName.toLowerCase()] && !allProps[propName];
+              });
+              const secureKeys = cpsSchedulerProps['cps.secure.properties'];
+              if (!hasUnresolved || !secureKeys) return null;
+              return (
+                <div className="px-5 py-2.5 border-b border-slate-800/40 flex items-center justify-between bg-purple-950/10">
+                  <p className="text-[10px] text-purple-400/80 flex items-center gap-1.5">
+                    <Key size={9} /> Some cron expressions may be in CPS secure properties
+                  </p>
+                  <button
+                    disabled={cpsSecureSchedulerLoading}
+                    onClick={async () => {
+                      if (!cpsBaseUrl || !secureKeys) return;
+                      setCpsSecureSchedulerLoading(true);
+                      try {
+                        const sr = await api.get('/cps/fetch', {
+                          params: { baseUrl: cpsBaseUrl, type: 'secure', environment: effectiveCpsEnv, keys: secureKeys, bgOrgId: orgId }
+                        });
+                        const data = sr.data;
+                        const groups = Array.isArray(data?.responses) ? data.responses
+                          : Array.isArray(data?.properties) ? data.properties
+                          : Array.isArray(data) ? data : [];
+                        const merged = {};
+                        groups.forEach(g => Object.assign(merged, g.properties || {}));
+                        if (Object.keys(merged).length > 0) setCpsSchedulerProps(prev => ({ ...prev, ...merged }));
+                      } catch { /* silently fail — button stays visible for retry */ }
+                      setCpsSecureSchedulerLoading(false);
+                    }}
+                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-purple-600/20 border border-purple-700/40 text-purple-400 hover:bg-purple-600/30 rounded-lg transition-colors disabled:opacity-50 font-medium flex-shrink-0">
+                    {cpsSecureSchedulerLoading
+                      ? <><RefreshCw size={9} className="animate-spin" /> Loading…</>
+                      : <><Key size={9} /> Get Cron Expressions</>}
+                  </button>
+                </div>
+              );
+            })()}
             {allSchedulers.length>0 && (
               <div className="px-5 pt-4 pb-3 border-b border-slate-800/40">
                 <div className="relative">
@@ -834,8 +943,28 @@ export default function ApplicationDetailPage() {
                 </thead>
                 <tbody>
                   {schedulers.map((s,i) => {
-                    const cron = s.schedule?.cronExpression||s.expression||s.cronExpression;
-                    const freq = s.frequency||(s.schedule?.period>0?s.schedule.period:null);
+                    // CH2 uses s.schedule.expression; CH1 uses s.schedule.cronExpression or s.expression
+                    const rawCron = s.schedule?.cronExpression ||
+                                    s.schedule?.expression ||
+                                    s.expression ||
+                                    s.cronExpression;
+                    // Resolve ${propName} placeholders: check runtime props first, then CPS props
+                    const resolvedCron = rawCron?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
+                      allProps[propName] ||
+                      allProps[propName.toLowerCase()] ||
+                      cpsSchedulerProps[propName] ||
+                      cpsSchedulerProps[propName.toLowerCase()] ||
+                      cpsData?.nonSecure?.[propName] ||
+                      match
+                    );
+                    const isUnresolvedPlaceholder = rawCron?.startsWith('${') && resolvedCron === rawCron;
+                    const wasResolved = rawCron !== resolvedCron;
+                    const cron = resolvedCron; // display the resolved value
+                    // CH2 fixed-frequency: s.schedule.frequency; CH1: s.frequency or s.schedule.period
+                    const freq = s.frequency ||
+                                 s.schedule?.frequency ||
+                                 (s.schedule?.period > 0 ? s.schedule.period : null);
+                    const timeUnit = s.timeUnit || s.schedule?.timeUnit;
                     const active = s.enabled!==false;
                     return (
                       <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
@@ -846,8 +975,19 @@ export default function ApplicationDetailPage() {
                           </div>
                         </td>
                         <td className="px-5 py-4 align-top">
-                          {cron ? <MetaTag color="cyan">{cron}</MetaTag>
-                            : freq ? <MetaTag color="blue">{freq} {s.timeUnit||s.schedule?.timeUnit}</MetaTag>
+                          {cron && !isUnresolvedPlaceholder ? (
+                            <div className="space-y-1">
+                              <MetaTag color="cyan">{cron}</MetaTag>
+                              {wasResolved && (
+                                <p className="text-[10px] text-slate-600 font-mono" title="Property placeholder resolved from app properties">{rawCron}</p>
+                              )}
+                            </div>
+                          ) : isUnresolvedPlaceholder ? (
+                            <div className="space-y-1">
+                              <MetaTag color="gray">{rawCron}</MetaTag>
+                              <p className="text-[10px] text-yellow-600/80">⚠ property not in runtime props — check CPS</p>
+                            </div>
+                          ) : freq ? <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
                             : <span className="text-slate-700 text-xs">—</span>}
                         </td>
                         <td className="px-5 py-4 align-top">
