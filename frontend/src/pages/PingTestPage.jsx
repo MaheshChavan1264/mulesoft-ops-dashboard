@@ -40,9 +40,11 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
 
   return (
     <>
-      <tr className="border-t border-gray-800 hover:bg-gray-800/20 transition-colors">
+      <tr
+        onClick={() => result && setExpandedId(isExpanded ? null : rowKey)}
+        className={`border-t border-gray-800 transition-colors ${result ? 'cursor-pointer hover:bg-gray-800/30' : 'hover:bg-gray-800/20'}`}>
         {/* App name */}
-        <td className="px-4 py-3">
+        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_BADGE[app.environment?.type] || 'bg-gray-400'}`} />
             <div>
@@ -188,10 +190,9 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               </button>
             )}
             {result && (
-              <button onClick={() => setExpandedId(isExpanded ? null : rowKey)}
-                className="text-gray-500 hover:text-gray-300 transition-colors p-1">
+              <span className="text-gray-600 p-1" title={isExpanded ? 'Click row to collapse' : 'Click row to expand'}>
                 {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-              </button>
+              </span>
             )}
           </div>
         </td>
