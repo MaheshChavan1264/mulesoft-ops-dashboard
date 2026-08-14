@@ -716,11 +716,29 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
         if (autoTier) tierId = autoTier.id;
       } catch { /* no tiers required */ }
 
-      // Try to create a contract — if IDP conflict, cycle through remaining apps
-      const candidateApps = [
-        targetApp,
-        ...userApps.filter(a => a.id !== targetApp.id)
+      // Try to create a contract — if IDP conflict, cycle through remaining apps.
+      // Maintain priority order: targetApp first, then same-env-type ping apps,
+      // then any ping apps, then everything else — so we always try the most
+      // appropriate app for this environment before falling back to generics.
+      const otherApps = userApps.filter(a => String(a.id) !== String(targetApp.id));
+      const sortedOthers = [
+        // Same env-type + ping first (e.g. another "prod-ping-*" app)
+        ...otherApps.filter(a => isProd
+          ? (nameLo(a).includes('prod') && nameLo(a).includes('ping'))
+          : (nameLo(a).includes('uat') && nameLo(a).includes('ping'))
+        ),
+        // Any other ping apps next
+        ...otherApps.filter(a =>
+          nameLo(a).includes('ping') &&
+          !(isProd
+            ? (nameLo(a).includes('prod') && nameLo(a).includes('ping'))
+            : (nameLo(a).includes('uat') && nameLo(a).includes('ping'))
+          )
+        ),
+        // Everything else last
+        ...otherApps.filter(a => !nameLo(a).includes('ping')),
       ];
+      const candidateApps = [targetApp, ...sortedOthers];
       let created = false;
       let lastErr = null;
 
