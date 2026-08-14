@@ -223,7 +223,7 @@ export default function PingTestPanel({
   };
 
   const targetType = isCH1 ? 'CH1' : 'CH2';
-  const displayBase = isCH1 ? `https://${appName}.api.sfdcbt.net` : ch2IngressUrl || '(no ingress URL detected)';
+  const displayBase = isCH1 ? `https://${appName}.internalapi.sfdcbt.net` : ch2IngressUrl || '(no ingress URL detected)';
 
   // Auto-collapse config panel when ping completes
   const runPing = async () => {
