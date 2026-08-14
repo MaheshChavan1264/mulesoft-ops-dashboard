@@ -441,9 +441,10 @@ export default function CpsComparisonPage() {
         // Default both sides to "All Organizations"
         setSideA(prev => ({ ...prev, bgId: '__all__' }));
         setSideB(prev => ({ ...prev, bgId: '__all__' }));
-        // Load apps for all BGs on mount
-        loadApps('A', '__all__', '__all__');
-        loadApps('B', '__all__', '__all__');
+        // Load apps for all BGs on mount — pass fresh bgs directly
+        // (allBgs state won't be set yet when these run)
+        loadApps('A', '__all__', '__all__', bgs);
+        loadApps('B', '__all__', '__all__', bgs);
       })
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -467,11 +468,12 @@ export default function CpsComparisonPage() {
     }
   }, [updateSide]);
 
-  const loadApps = useCallback(async (side, bgId, envId) => {
+  const loadApps = useCallback(async (side, bgId, envId, bgsOverride) => {
     if (!bgId) return;
     updateSide(side, { loadingApps: true, apps: [] });
     try {
-      const visible = applyBgFilter(allBgs);
+      // Use bgsOverride when called on mount (before allBgs state has updated)
+      const visible = applyBgFilter(bgsOverride || allBgs);
       // Determine which BG IDs to fetch from
       const bgIds = bgId === '__all__'
         ? (visible.length > 0 ? visible.map(g => g.id) : [])
