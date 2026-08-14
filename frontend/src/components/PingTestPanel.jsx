@@ -32,7 +32,7 @@ export default function PingTestPanel({
   const [jwtTokenUrl, setJwtTokenUrl] = useState(''); // stored once found, reused on refresh
   const [copiedCurl, setCopiedCurl] = useState(false);
 
-  const [transactionId, setTransactionId] = useState('smokeTest');
+  const [transactionId, setTransactionId] = useState('');
   const [queryParams, setQueryParams] = useState('');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -222,11 +222,21 @@ export default function PingTestPanel({
     return lines.join('\n');
   };
 
+  const generateTxId = () => {
+    try { return crypto.randomUUID(); } catch {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  };
+
   const targetType = isCH1 ? 'CH1' : 'CH2';
   const displayBase = isCH1 ? `https://${appName}.internalapi.sfdcbt.net` : ch2IngressUrl || '(no ingress URL detected)';
 
   // Auto-collapse config panel when ping completes
   const runPing = async () => {
+    const txId = generateTxId();
+    setTransactionId(txId); // update field + curl command with the generated UUID
     setLoading(true); setResult(null); setError(null); setShowAttempts(false);
     try {
       const { data } = await api.post('/health/ping', {
@@ -235,7 +245,7 @@ export default function PingTestPanel({
         ...(authMode === 'bearer-token'
           ? { bearerToken: bearerToken.trim() || undefined }
           : { clientId: clientId.trim() || undefined, clientSecret: clientSecret.trim() || undefined }),
-        transactionId: transactionId.trim() || 'smokeTest',
+        transactionId: txId,
         queryParams: queryParams.trim() || undefined,
       });
       setResult(data);

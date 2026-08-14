@@ -440,6 +440,15 @@ export default function PingTestPage() {
     }
   }, [results]);
 
+  // Generate a unique transaction ID for each ping
+  const generateTxId = () => {
+    try { return crypto.randomUUID(); } catch {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  };
+
   // ─── Retry ping (uses already-resolved credentials from autoResolvedMap) ──
 
   const retryApp = useCallback(async (app) => {
@@ -468,7 +477,7 @@ export default function PingTestPage() {
         ch2IngressUrl,
         clientId: auto?.clientId || undefined,
         clientSecret: auto?.clientSecret || undefined,
-        transactionId: 'smokeTest',
+        transactionId: generateTxId(),
       });
       setResults(prev => ({ ...prev, [appId]: data }));
     } catch (err) {
