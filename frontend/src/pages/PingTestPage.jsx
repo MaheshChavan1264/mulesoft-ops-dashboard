@@ -309,6 +309,8 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
   );
 }
 
+const SESSION_KEY = 'pingTestResults_v1';
+
 // ─── PingTestPage ─────────────────────────────────────────────────────────────
 
 export default function PingTestPage() {
@@ -331,6 +333,7 @@ export default function PingTestPage() {
   const [csvFileName, setCsvFileName] = useState('');
 
   // Load preloaded results from bulk ping modal (passed via location.state)
+  // OR restore from sessionStorage (survives navigation)
   useEffect(() => {
     const state = location.state;
     if (state?.preloadedResults && state?.preloadedApps) {
@@ -338,7 +341,48 @@ export default function PingTestPage() {
       setApps(state.preloadedApps);
       setAutoResolvedMap(state.autoResolvedMap || {});
       window.history.replaceState({}, '');
+      // Persist so they survive navigation away and back
+      try {
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+          results: state.preloadedResults,
+          apps: state.preloadedApps,
+          autoResolvedMap: state.autoResolvedMap || {},
+        }));
+      } catch {}
+    } else {
+      // Restore from sessionStorage if no fresh state was passed
+      try {
+        const saved = sessionStorage.getItem(SESSION_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.results && parsed.apps) {
+            setResults(parsed.results);
+            setApps(parsed.apps);
+            setAutoResolvedMap(parsed.autoResolvedMap || {});
+          }
+        }
+      } catch {}
     }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep sessionStorage in sync with live state (retry / batch updates)
+  useEffect(() => {
+    if (apps.length > 0) {
+      try {
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ results, apps, autoResolvedMap }));
+      } catch {}
+    }
+  }, [results, apps, autoResolvedMap]);
+
+  const clearResults = useCallback(() => {
+    setResults({});
+    setApps([]);
+    setAutoResolvedMap({});
+    setCsvMatchedNames(null);
+    setCsvFileName('');
+    setStatusFilter('ALL');
+    setExpandedId(null);
+    sessionStorage.removeItem(SESSION_KEY);
   }, []);
 
   const testedApps = useMemo(() => {
@@ -588,6 +632,12 @@ export default function PingTestPage() {
             <button onClick={exportCsv}
               className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 rounded-lg transition-colors">
               <Download size={13} /> Export CSV
+            </button>
+          )}
+          {hasResults && (
+            <button onClick={clearResults}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 bg-red-950/40 border border-red-800/50 rounded-lg transition-colors">
+              <X size={13} /> Clear Results
             </button>
           )}
           <button onClick={() => navigate('/applications')}
