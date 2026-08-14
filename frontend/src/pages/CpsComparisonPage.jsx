@@ -407,7 +407,7 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
 const INIT_SIDE = { bgId: '', envId: '__all__', envs: [], apps: [], appId: '', selectedAppIds: [], loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false };
 
 export default function CpsComparisonPage() {
-  const { getSecret, hasCredentials } = useCpsCredentialStore();
+  const { getSecret, hasCredentials, getAllCredentials } = useCpsCredentialStore();
   const [allBgs, setAllBgs] = useState([]);
   const [showBgFilter, setShowBgFilter] = useState(false);
   const [compareMode, setCompareMode] = useState('single'); // 'single' | 'multi'
@@ -432,10 +432,21 @@ export default function CpsComparisonPage() {
   const [collapsedA, setCollapsedA] = useState(false);
   const [collapsedB, setCollapsedB] = useState(false);
 
-  // Load BGs on mount
+  // Load BGs on mount and default to "All Organizations"
   useEffect(() => {
-    api.get('/organizations/business-groups').then(r => setAllBgs(r.data.data || [])).catch(() => {});
-  }, []);
+    api.get('/organizations/business-groups')
+      .then(r => {
+        const bgs = r.data.data || [];
+        setAllBgs(bgs);
+        // Default both sides to "All Organizations"
+        setSideA(prev => ({ ...prev, bgId: '__all__' }));
+        setSideB(prev => ({ ...prev, bgId: '__all__' }));
+        // Load apps for all BGs on mount
+        loadApps('A', '__all__', '__all__');
+        loadApps('B', '__all__', '__all__');
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateSide = useCallback((side, updates) => {
     (side === 'A' ? setSideA : setSideB)(prev => ({ ...prev, ...updates }));
@@ -514,17 +525,38 @@ export default function CpsComparisonPage() {
       const extracted = extractCpsProps(detail);
 
       // Auto-resolve CPS credentials from the imported CPS CSV
+      // Strategy 1: specific cpsClientId (skip if masked as ****)
+      // Strategy 2: store ALL CSV credentials so backend can try each on 401
       let credsResolved = false;
-      if (extracted.cpsClientId && extracted.cpsBaseUrl && hasCredentials) {
-        const clientSecret = getSecret(extracted.cpsClientId);
-        if (clientSecret) {
-          try {
-            const credKey = `${extracted.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${resolvedBgId}`;
-            await api.post('/cps/credentials', {
-              credentials: { [credKey]: { clientId: extracted.cpsClientId, clientSecret } }
-            });
-            credsResolved = true;
-          } catch { /* non-fatal */ }
+      if (extracted.cpsBaseUrl && hasCredentials) {
+        const normBase = extracted.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+        const isMasked = v => !v || /^\*+$/.test(v.trim());
+
+        if (extracted.cpsClientId && !isMasked(extracted.cpsClientId)) {
+          // Strategy 1: exact clientId match from CSV
+          const clientSecret = getSecret(extracted.cpsClientId);
+          if (clientSecret) {
+            try {
+              await api.post('/cps/credentials', {
+                credentials: { [`${normBase}::${resolvedBgId}`]: { clientId: extracted.cpsClientId, clientSecret } }
+              });
+              credsResolved = true;
+            } catch { /* non-fatal */ }
+          }
+        }
+
+        if (!credsResolved) {
+          // Strategy 2: store ALL CSV credentials under url::clientId keys
+          // Backend will try each on 401 and promote the first working one
+          const allCreds = getAllCredentials();
+          for (const { clientId, clientSecret } of allCreds) {
+            try {
+              await api.post('/cps/credentials', {
+                credentials: { [`${normBase}::${clientId}`]: { clientId, clientSecret } }
+              });
+            } catch { /* non-fatal */ }
+          }
+          if (allCreds.length > 0) credsResolved = true;
         }
       }
 
