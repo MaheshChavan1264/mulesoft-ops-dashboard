@@ -225,8 +225,8 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 return (
                   <div className="space-y-3">
                     {/* Structured endpoint health table when pingResponse.endpoints exists */}
-                    {endpoints?.length > 0 && (() => {
-                      const ok = endpoints.filter(e => (e.status || '').toLowerCase() === 'success').length;
+                    {Array.isArray(endpoints) && endpoints.length > 0 && (() => {
+                      const ok = endpoints.filter(e => e && (e.status || '').toLowerCase() === 'success').length;
                       return (
                         <div>
                           <div className="flex items-center justify-between mb-2">
@@ -239,6 +239,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                           </div>
                           <div className="space-y-1">
                             {endpoints.map((ep, i) => {
+                              if (!ep) return null;
                               const isOk = (ep.status || '').toLowerCase() === 'success';
                               return (
                                 <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border ${isOk ? 'bg-emerald-950/20 border-emerald-800/30' : 'bg-red-950/20 border-red-800/30'}`}>
