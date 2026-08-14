@@ -785,7 +785,12 @@ export default function ApplicationsPage() {
   }, []);
 
   useEffect(() => { if (orgId) loadBusinessGroups(); }, [orgId]);
-  useEffect(() => { if (selectedBg) loadApps(selectedBg); }, [selectedBg]);
+  // Only re-load when selectedBg changes AND BGs are already loaded.
+  // On initial mount, loadBusinessGroups calls loadApps directly with fresh BGs,
+  // so this effect should only fire for subsequent user-driven BG changes.
+  useEffect(() => {
+    if (selectedBg && allBusinessGroups.length > 0) loadApps(selectedBg);
+  }, [selectedBg]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setSelectedIds(new Set()); }, [selectedBg]);
 
   const loadBusinessGroups = async () => {
@@ -799,24 +804,31 @@ export default function ApplicationsPage() {
         // Restore saved BG (validate it's in the cached group list)
         const savedBg = localStorage.getItem('mule_dashboard_selected_bg');
         const isValidSaved = savedBg && (savedBg === '__all__' || cached.some(g => g.id === savedBg));
-        setSelectedBg(isValidSaved ? savedBg : '__all__');
+        const newBg = isValidSaved ? savedBg : '__all__';
+        setSelectedBg(newBg);
         setBgLoading(false);
+        // Call loadApps with fresh BGs directly — avoids stale allBusinessGroups closure
+        await loadApps(newBg, false, cached);
         return;
       }
       const res = await api.get('/organizations/business-groups');
       const groups = res.data.data || [];
       setCached(cacheKey, groups);
       setAllBusinessGroups(groups);
-      // Restore previously selected BG if it's still valid; otherwise default to '__all__'
       const savedBg = localStorage.getItem('mule_dashboard_selected_bg');
       const isValidSaved = savedBg && (savedBg === '__all__' || groups.some(g => g.id === savedBg));
-      setSelectedBg(isValidSaved ? savedBg : '__all__');
+      const newBg = isValidSaved ? savedBg : '__all__';
+      setSelectedBg(newBg);
+      // Call loadApps with fresh BGs directly — avoids stale allBusinessGroups closure
+      await loadApps(newBg, false, groups);
     } catch { setSelectedBg(orgId); }
     setBgLoading(false);
   };
 
-  const loadApps = async (bgId, forceRefresh = false) => {
-    const visible = applyBgFilter(allBusinessGroups);
+  const loadApps = async (bgId, forceRefresh = false, bgsOverride) => {
+    // bgsOverride: pass fresh BGs when called directly from loadBusinessGroups
+    // to avoid stale closure when allBusinessGroups state hasn't updated yet
+    const visible = applyBgFilter(bgsOverride || allBusinessGroups);
     const bgIds = bgId === '__all__'
       ? (visible.length > 0 ? visible.map(g => g.id) : [orgId])
       : [bgId];

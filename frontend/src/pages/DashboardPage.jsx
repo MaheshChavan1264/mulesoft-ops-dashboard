@@ -5,6 +5,7 @@ import StatCard from '../components/StatCard';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import api from '../services/api';
+import { getCached, setCached } from '../services/apiCache';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar, XAxis, YAxis
@@ -31,10 +32,19 @@ export default function DashboardPage() {
   const loadBusinessGroups = async () => {
     setBgLoading(true);
     try {
+      // Reuse the same BG cache as ApplicationsPage
+      const cacheKey = `bgs:${orgId}`;
+      const cached = getCached(cacheKey);
+      if (cached) {
+        setAllBusinessGroups(cached);
+        setSelectedBg('__all__');
+        setBgLoading(false);
+        return;
+      }
       const res = await api.get('/organizations/business-groups');
       const groups = res.data.data || [];
+      setCached(cacheKey, groups);
       setAllBusinessGroups(groups);
-      // Default to "All" so aggregated data shows from the start
       setSelectedBg('__all__');
     } catch {
       setSelectedBg(orgId);
@@ -43,14 +53,27 @@ export default function DashboardPage() {
   };
 
   const loadData = async (bgId) => {
-    setLoading(true);
-    const visible = applyBgFilter(allBusinessGroups);
-    const rootOrg = allBusinessGroups.find((g) => !g.parentId);
+    // Check cache first (dashboard data cached for 5 minutes)
+    const bgsCopy = allBusinessGroups;
+    const visible = applyBgFilter(bgsCopy);
+    const rootOrg = bgsCopy.find((g) => !g.parentId);
     const exchangeOrgId = rootOrg?.id || orgId;
+    const bgIds = bgId === '__all__'
+      ? (visible.length > 0 ? visible.map(g => g.id) : [orgId])
+      : [bgId];
+    const cacheKey = `dashboard:${bgId}:${bgIds.join(',')}`;
+    const cached = getCached(cacheKey);
+    if (cached) {
+      setMetrics(cached.metrics);
+      setEnvironments(cached.environments);
+      setExchangeSummary(cached.exchangeSummary);
+      return;
+    }
+
+    setLoading(true);
 
     if (bgId === '__all__') {
       // Load metrics from all visible BGs in parallel, then aggregate
-      const bgIds = visible.length > 0 ? visible.map(g => g.id) : [orgId];
       const [metricsResults, envsResults, exchangeRes] = await Promise.all([
         Promise.allSettled(bgIds.map(id => api.get(`/metrics/summary/${id}`))),
         Promise.allSettled(bgIds.map(id => api.get(`/environments/${id}`))),
@@ -80,10 +103,12 @@ export default function DashboardPage() {
         }
       });
       aggregated.environments = mergedEnvs.length;
+      const exchSummary = exchangeRes?.data?.assetCounts || null;
 
       setMetrics(aggregated);
       setEnvironments(mergedEnvs);
-      setExchangeSummary(exchangeRes?.data?.assetCounts || null);
+      setExchangeSummary(exchSummary);
+      setCached(cacheKey, { metrics: aggregated, environments: mergedEnvs, exchangeSummary: exchSummary });
     } else {
       // Single BG
       const [metricsRes, envsRes, exchangeRes] = await Promise.allSettled([
@@ -91,9 +116,13 @@ export default function DashboardPage() {
         api.get(`/environments/${bgId}`),
         api.get(`/exchange/org/${exchangeOrgId}/summary`)
       ]);
-      setMetrics(metricsRes.status === 'fulfilled' ? metricsRes.value.data.summary : null);
-      setEnvironments(envsRes.status === 'fulfilled' ? envsRes.value.data.data || [] : []);
-      setExchangeSummary(exchangeRes.status === 'fulfilled' ? exchangeRes.value.data.assetCounts : null);
+      const m = metricsRes.status === 'fulfilled' ? metricsRes.value.data.summary : null;
+      const e = envsRes.status === 'fulfilled' ? envsRes.value.data.data || [] : [];
+      const x = exchangeRes.status === 'fulfilled' ? exchangeRes.value.data.assetCounts : null;
+      setMetrics(m);
+      setEnvironments(e);
+      setExchangeSummary(x);
+      setCached(cacheKey, { metrics: m, environments: e, exchangeSummary: x });
     }
 
     setLoading(false);
