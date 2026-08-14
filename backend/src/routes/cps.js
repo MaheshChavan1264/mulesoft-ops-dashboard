@@ -180,16 +180,43 @@ router.get('/fetch', authMiddleware, async (req, res) => {
   const queryStr = new URLSearchParams(params).toString();
   console.log(`CPS → GET ${fullUrl}?${queryStr}  [bg: ${bgOrgId || 'none'}]`);
 
-  try {
-    const response = await axios.get(fullUrl, {
-      headers: {
-        'client_id': creds.clientId,
-        'client_secret': creds.clientSecret,
-        'Content-Type': 'application/json'
-      },
+  // Helper: make one CPS GET call with a specific credential pair
+  const makeCpsCall = async (clientId, clientSecret) => {
+    return axios.get(fullUrl, {
+      headers: { 'client_id': clientId, 'client_secret': clientSecret, 'Content-Type': 'application/json' },
       params,
-      timeout: 20000
+      timeout: 20000,
+      validateStatus: () => true, // handle all statuses ourselves
     });
+  };
+
+  let response = await makeCpsCall(creds.clientId, creds.clientSecret);
+
+  // If the primary credential returned 401, try all other stored url::clientId credentials
+  if (response.status === 401) {
+    const sessionCreds = req.session.cpsCreds || {};
+    const altEntries = Object.entries(sessionCreds)
+      .filter(([k, v]) => k.startsWith(`${normaliseUrl(baseUrl)}::`) && v?.clientId && v?.clientId !== creds.clientId && v?.clientSecret);
+    for (const [, altCred] of altEntries) {
+      console.log(`CPS 401 — retrying with alt clientId "${altCred.clientId.slice(0, 8)}…"`);
+      const altRes = await makeCpsCall(altCred.clientId, altCred.clientSecret);
+      if (altRes.status !== 401) {
+        response = altRes;
+        // Promote this working credential to the primary position
+        req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: altCred.clientId, clientSecret: altCred.clientSecret };
+        console.log(`CPS 401 resolved — promoted clientId "${altCred.clientId.slice(0, 8)}…" as primary`);
+        break;
+      }
+    }
+  }
+
+  try {
+    if (response.status >= 400) {
+      const errMsg = response.data?.message || response.data?.description || response.data?.error
+        || (typeof response.data === 'string' ? response.data : null) || `HTTP ${response.status}`;
+      console.error(`CPS error (${response.status}) ${fullUrl}?${queryStr}: ${errMsg}`);
+      return res.status(response.status).json({ error: errMsg, attemptedUrl: `${fullUrl}?${queryStr}`, details: response.data });
+    }
 
     const data = response.data;
     if (type === 'binaries') {
