@@ -220,4 +220,154 @@ router.get('/fetch', authMiddleware, async (req, res) => {
   }
 });
 
+/* ── POST /api/cps/search-user ───────────────────────────────────────────────
+   Fan-out CPS search: find all apps whose non-secure OR secure CPS properties
+   contain a given username (value-match, case-insensitive).
+
+   Body: {
+     username: string,
+     apps: [{
+       appName, appId?, cpsBaseUrl, cpsKey, cpsEnv,
+       deploymentType, envName, bgOrgId
+     }]
+   }
+
+   Returns: {
+     results: [{
+       appName, appId, matchedProps: [{ key, value, source }]
+     }],
+     scanned: number,
+     skipped: number   // apps with no CPS config
+   }
+*/
+router.post('/search-user', authMiddleware, async (req, res) => {
+  const { username, apps = [] } = req.body || {};
+  if (!username || !username.trim()) {
+    return res.status(400).json({ error: 'username is required' });
+  }
+  if (!Array.isArray(apps) || apps.length === 0) {
+    return res.status(400).json({ error: 'apps array is required' });
+  }
+
+  const searchTerm = username.trim().toLowerCase();
+  const CONCURRENCY = 15;
+
+  /** Flatten CPS response (all formats) into a flat {key:value} map */
+  function flattenProps(data) {
+    if (!data) return {};
+    let flat = {};
+
+    const propsArray =
+      Array.isArray(data) ? data
+      : Array.isArray(data?.responses) ? data.responses
+      : Array.isArray(data?.properties) ? data.properties
+      : null;
+
+    if (propsArray) {
+      propsArray.forEach(entry => {
+        const inner = entry?.properties;
+        if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+          Object.assign(flat, inner);
+        } else if (Array.isArray(inner)) {
+          inner.forEach(p => { if (p?.key != null) flat[String(p.key)] = p.value ?? p.val ?? ''; });
+        } else if (entry && typeof entry === 'object' && !Array.isArray(entry) && !entry.key && !entry.environment) {
+          Object.assign(flat, entry);
+        }
+      });
+    } else if (data && typeof data === 'object') {
+      const firstVal = Object.values(data)[0];
+      if (firstVal && typeof firstVal === 'object' && !Array.isArray(firstVal)) {
+        flat = data[Object.keys(data)[0]] || firstVal;
+      } else {
+        flat = data;
+      }
+    }
+    return flat;
+  }
+
+  /** Scan a flat props map for the search term in values */
+  function scanProps(flat, source) {
+    const hits = [];
+    for (const [k, v] of Object.entries(flat)) {
+      if (v != null && String(v).toLowerCase().includes(searchTerm)) {
+        hits.push({ key: k, value: String(v), source });
+      }
+    }
+    return hits;
+  }
+
+  /** Process one app — fetch non-secure + optionally secure, return matched props */
+  async function processApp(appEntry) {
+    const { appName, appId, cpsBaseUrl, cpsKey, cpsEnv, deploymentType, envName, bgOrgId } = appEntry;
+    if (!cpsBaseUrl || !cpsKey) return null; // no CPS config
+
+    const envType = detectEnvType(cpsBaseUrl, cpsEnv, envName);
+    const chType = detectChType(deploymentType || '');
+    const creds = getCredentials(req, cpsBaseUrl, bgOrgId, envType, chType);
+    if (!creds) return null; // no credentials — skip silently
+
+    const cleanBase = normaliseUrl(cpsBaseUrl);
+    const params = { environment: cpsEnv, keys: cpsKey };
+
+    let matchedProps = [];
+
+    // ── Non-secure fetch ──────────────────────────────────────────────────
+    try {
+      const nsUrl = `${cleanBase}/api/v2/properties/non-secure`;
+      console.log(`[search-user] NS ${nsUrl} keys=${cpsKey} env=${cpsEnv} app=${appName}`);
+      const nsRes = await axios.get(nsUrl, {
+        headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
+        params,
+        timeout: 15000,
+      });
+      const nsFlat = flattenProps(nsRes.data);
+      matchedProps = matchedProps.concat(scanProps(nsFlat, 'non-secure'));
+
+      // ── Secure fetch (only if cps.secure.properties key exists) ──────────
+      const secureKeys = nsFlat['cps.secure.properties'] || '';
+      if (secureKeys) {
+        try {
+          const sUrl = `${cleanBase}/api/v2/properties/secure`;
+          console.log(`[search-user] SEC ${sUrl} keys=${secureKeys} env=${cpsEnv} app=${appName}`);
+          const sRes = await axios.get(sUrl, {
+            headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
+            params: { environment: cpsEnv, keys: secureKeys },
+            timeout: 15000,
+          });
+          const sFlat = flattenProps(sRes.data);
+          matchedProps = matchedProps.concat(scanProps(sFlat, 'secure'));
+        } catch { /* secure fetch failed — continue with non-secure results */ }
+      }
+    } catch { return null; }
+
+    if (matchedProps.length === 0) return null;
+    return { appName, appId: appId || appName, matchedProps };
+  }
+
+  // ── Concurrency-limited fan-out ──────────────────────────────────────────
+  const results = [];
+  let skipped = 0;
+  let scanned = 0;
+
+  for (let i = 0; i < apps.length; i += CONCURRENCY) {
+    const batch = apps.slice(i, i + CONCURRENCY);
+    const settled = await Promise.allSettled(batch.map(a => processApp(a)));
+    for (const outcome of settled) {
+      if (outcome.status === 'fulfilled') {
+        if (outcome.value === null) {
+          skipped++;
+        } else {
+          scanned++;
+          results.push(outcome.value);
+        }
+      } else {
+        skipped++;
+      }
+    }
+  }
+
+  console.log(`[search-user] "${username}" — scanned ${scanned}, matched ${results.length}, skipped ${skipped}`);
+  res.json({ results, scanned: scanned + results.length, skipped });
+});
+
 module.exports = router;
