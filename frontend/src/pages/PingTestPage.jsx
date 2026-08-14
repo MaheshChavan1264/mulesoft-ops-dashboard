@@ -509,24 +509,92 @@ export default function PingTestPage() {
   }, [autoResolvedMap]);
 
   // ─── Get JWT Token and retry ping ────────────────────────────────────────
-  // Fetches app details, scans CPS for OAuth2 URL, gets JWT, retries ping
+  // Full flow: app detail → CPS scan (apiId + OAuth2 URL) → credentials → JWT → ping
 
   const getJwtAndRetry = useCallback(async (app) => {
     const appId = app.id;
     setJwtLoadingIds(prev => new Set([...prev, appId]));
     try {
-      // Step 0: resolve credentials — use cached autoResolvedMap first,
-      // then auto-fill from API Manager if not yet available
+      const isCH1 = app.deploymentType !== 'CloudHub 2.0';
+      const orgId = app._bgId;
+
+      // Step 1: Fetch full app detail to extract CPS config + ingress URL
+      let detail = null;
+      let ch2IngressUrl;
+      if (!isCH1 && orgId && app.environment?.id) {
+        try {
+          const r = await api.get(`/applications/cloudhub2/${orgId}/${app.environment.id}/${app.id}`);
+          detail = r.data;
+          const ds2 = detail?.target?.deploymentSettings || {};
+          const hi = ds2.http?.inbound || {};
+          const eps2 = hi.endpoints || [];
+          ch2IngressUrl = hi.publicUrl || eps2.find(e => e.access === 'external')?.url || eps2[0]?.url;
+        } catch {}
+      }
+      const ds = detail?.target?.deploymentSettings || {};
+      const ps = (detail?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
+      const allProps = { ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}) };
+      const cpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'] || '';
+      const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
+      const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || '';
+
+      if (!cpsBaseUrl) throw new Error('No CPS URL configured for this app');
+
+      // Step 2: Scan CPS non-secure — extract both apiId and OAuth2 token URL
+      const findOAuth2Url = (props) => {
+        for (const [k, v] of Object.entries(props || {})) {
+          const val = String(v || '');
+          if (val.startsWith('http') && (val.includes('/oauth2/') || val.includes('okta.com') ||
+            (val.includes('/token') && (k.toLowerCase().includes('jwt') || k.toLowerCase().includes('oauth') || k.toLowerCase().includes('token') || k.toLowerCase().includes('auth'))))) return val;
+        }
+        return '';
+      };
+      const isValidId = v => /^\d+$/.test(String(v).trim()) && String(v).trim() !== '0';
+      const findApiIdInProps = (props) => {
+        if ('api.id' in props && isValidId(props['api.id'])) return String(props['api.id']).trim();
+        const e1 = Object.entries(props).find(([k]) => k.endsWith('.api.id'));
+        if (e1 && isValidId(e1[1])) return String(e1[1]).trim();
+        const e2 = Object.entries(props).find(([k, v]) => k.endsWith('.id') && isValidId(v));
+        if (e2) return String(e2[1]).trim();
+        return null;
+      };
+
+      const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
+      const nsData = nsRes.data;
+      let nsFlat = {};
+      const arr = Array.isArray(nsData) ? nsData : Array.isArray(nsData?.responses) ? nsData.responses : Array.isArray(nsData?.properties) ? nsData.properties : null;
+      if (arr) arr.forEach(e => { const inner = e?.properties; if (inner && typeof inner === 'object' && !Array.isArray(inner)) Object.assign(nsFlat, inner); else if (Array.isArray(inner)) inner.forEach(p => { if (p?.key != null) nsFlat[String(p.key)] = p.value ?? p.val ?? ''; }); });
+      else if (nsData && typeof nsData === 'object') nsFlat = nsData;
+
+      const cpsApiId = findApiIdInProps(nsFlat);
+      let tokenUrl = findOAuth2Url(nsFlat);
+
+      // Step 3: If token URL not in non-secure, scan secure CPS
+      if (!tokenUrl) {
+        const secureKeys = (nsFlat['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean);
+        const jwtKey = secureKeys.find(k => k.toLowerCase().includes('jwt') || k.toLowerCase().includes('auth'));
+        if (jwtKey) {
+          try {
+            const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: jwtKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
+            const sg = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
+            for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } }
+          } catch {}
+        }
+      }
+      if (!tokenUrl) throw new Error('No OAuth2 token URL found in CPS');
+
+      // Step 4: Resolve credentials (cached → auto-fill with CPS-derived apiId)
       let auto = autoResolvedMap[appId];
       if (!auto?.clientId || !auto?.clientSecret) {
         try {
           const acRes = await api.post('/health/auto-credentials', {
-            orgId: app._bgId, envId: app.environment?.id, appName: app.name,
+            orgId, envId: app.environment?.id, appName: app.name,
+            ...(cpsApiId && { apiId: cpsApiId }),
           });
           const apiInstanceId = acRes.data?.matchedApis?.[0]?.id;
           if (apiInstanceId) {
             const cd = (await api.post('/health/auto-contract-creds', {
-              orgId: app._bgId, envId: app.environment?.id, apiId: apiInstanceId,
+              orgId, envId: app.environment?.id, apiId: apiInstanceId,
             })).data;
             if (cd.clientId && cd.clientSecret) {
               auto = { clientId: cd.clientId, clientSecret: cd.clientSecret };
@@ -536,69 +604,17 @@ export default function PingTestPage() {
               }));
             }
           }
-        } catch { /* continue — will throw below if still no creds */ }
+        } catch {}
         if (!auto?.clientId || !auto?.clientSecret) {
           throw new Error('No credentials found — import a CSV or register a contract in API Manager first.');
         }
       }
-      // 1. Fetch full app detail to get CPS config
-      const isCH1 = app.deploymentType !== 'CloudHub 2.0';
-      let detail = null;
-      let ch2IngressUrl;
-      if (!isCH1 && app._bgId && app.environment?.id) {
-        const r = await api.get(`/applications/cloudhub2/${app._bgId}/${app.environment.id}/${app.id}`);
-        detail = r.data;
-        const ds = detail?.target?.deploymentSettings || {};
-        const httpInbound = ds.http?.inbound || {};
-        const eps = httpInbound.endpoints || [];
-        ch2IngressUrl = httpInbound.publicUrl || eps.find(e => e.access === 'external')?.url || eps[0]?.url;
-      }
-      const ds = detail?.target?.deploymentSettings || {};
-      const ps = (detail?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
-      const allProps = { ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}) };
-      const cpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'] || '';
-      const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
-      const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || '';
-      const orgId = app._bgId;
 
-      if (!cpsBaseUrl) throw new Error('No CPS URL configured for this app');
-
-      // 2. Scan CPS non-secure for OAuth2 token URL
-      const findOAuth2Url = (props) => {
-        for (const [k, v] of Object.entries(props || {})) {
-          const val = String(v || '');
-          if (val.startsWith('http') && (val.includes('/oauth2/') || val.includes('okta.com') ||
-            (val.includes('/token') && (k.toLowerCase().includes('jwt') || k.toLowerCase().includes('oauth') || k.toLowerCase().includes('token') || k.toLowerCase().includes('auth'))))) return val;
-        }
-        return '';
-      };
-
-      const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
-      const nsData = nsRes.data;
-      let nsFlat = {};
-      const arr = Array.isArray(nsData) ? nsData : Array.isArray(nsData?.responses) ? nsData.responses : Array.isArray(nsData?.properties) ? nsData.properties : null;
-      if (arr) arr.forEach(e => { const inner = e?.properties; if (inner && typeof inner === 'object' && !Array.isArray(inner)) Object.assign(nsFlat, inner); });
-      else if (nsData && typeof nsData === 'object') nsFlat = nsData;
-
-      let tokenUrl = findOAuth2Url(nsFlat);
-
-      if (!tokenUrl) {
-        const secureKeys = (nsFlat['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean);
-        const jwtKey = secureKeys.find(k => k.toLowerCase().includes('jwt') || k.toLowerCase().includes('auth'));
-        if (jwtKey) {
-          const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: jwtKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
-          const sg = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
-          for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } }
-        }
-      }
-
-      if (!tokenUrl) throw new Error('No OAuth2 token URL found in CPS');
-
-      // 3. Fetch JWT
+      // Step 5: Fetch JWT
       const tokenRes = await api.post('/health/oauth2-token', { tokenUrl, clientId: auto.clientId, clientSecret: auto.clientSecret });
       const jwt = tokenRes.data.access_token;
 
-      // 4. Retry ping with JWT Bearer token
+      // Step 6: Retry ping with JWT Bearer token
       const pingRes = await api.post('/health/ping', {
         targetType: isCH1 ? 'CH1' : 'CH2',
         appName: app.name,
