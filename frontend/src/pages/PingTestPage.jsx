@@ -513,13 +513,34 @@ export default function PingTestPage() {
 
   const getJwtAndRetry = useCallback(async (app) => {
     const appId = app.id;
-    const auto = autoResolvedMap[appId];
-    if (!auto?.clientId || !auto?.clientSecret) {
-      setResults(prev => ({ ...prev, [appId]: { ...prev[appId], _jwtError: 'Auto-fill credentials first, then click Get JWT' } }));
-      return;
-    }
     setJwtLoadingIds(prev => new Set([...prev, appId]));
     try {
+      // Step 0: resolve credentials — use cached autoResolvedMap first,
+      // then auto-fill from API Manager if not yet available
+      let auto = autoResolvedMap[appId];
+      if (!auto?.clientId || !auto?.clientSecret) {
+        try {
+          const acRes = await api.post('/health/auto-credentials', {
+            orgId: app._bgId, envId: app.environment?.id, appName: app.name,
+          });
+          const apiInstanceId = acRes.data?.matchedApis?.[0]?.id;
+          if (apiInstanceId) {
+            const cd = (await api.post('/health/auto-contract-creds', {
+              orgId: app._bgId, envId: app.environment?.id, apiId: apiInstanceId,
+            })).data;
+            if (cd.clientId && cd.clientSecret) {
+              auto = { clientId: cd.clientId, clientSecret: cd.clientSecret };
+              setAutoResolvedMap(prev => ({
+                ...prev,
+                [appId]: { ...auto, apiInstanceName: String(apiInstanceId), contractApp: cd.appName || '—', source: cd.contractStatus === 'approved' ? 'contract' : 'contract-pending' }
+              }));
+            }
+          }
+        } catch { /* continue — will throw below if still no creds */ }
+        if (!auto?.clientId || !auto?.clientSecret) {
+          throw new Error('No credentials found — import a CSV or register a contract in API Manager first.');
+        }
+      }
       // 1. Fetch full app detail to get CPS config
       const isCH1 = app.deploymentType !== 'CloudHub 2.0';
       let detail = null;
@@ -591,7 +612,7 @@ export default function PingTestPage() {
     } finally {
       setJwtLoadingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
     }
-  }, [autoResolvedMap]);
+  }, [autoResolvedMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Feature 2: CSV Upload & Batch Ping ───────────────────────────────────
 
