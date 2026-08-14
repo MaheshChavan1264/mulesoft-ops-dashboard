@@ -3,7 +3,10 @@ import { useAuth } from '../context/AuthContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { Search, Users, RefreshCw, AlertTriangle, Copy, Check, Key, ChevronDown, ChevronRight, Lock } from 'lucide-react';
 import api from '../services/api';
-import { useNavigate } from 'react-router-dom';
+
+const LS_ORG = 'usersearch_orgId';
+const LS_ENV = 'usersearch_envId';
+const LS_ENV_NAME = 'usersearch_envName';
 
 const CopyBtn = ({ text }) => {
   const [done, setDone] = useState(false);
@@ -23,6 +26,7 @@ function extractCpsConfig(app, orgId) {
     cpsBaseUrl:     p['cps.configServerBaseUrl'] || p['config.server.base.url'] || '',
     cpsKey:         p['cps.projectName'] || p['cloudhub.api.name'] || app.name || '',
     cpsEnv:         p['cps.prefix'] || p['cps.environment'] || '',
+    cpsClientId:    p['cps.clientId'] || p['cps.client_id'] || p['cps.client.id'] || p['cps.apiClientId'] || '',
     deploymentType: app._type === 'ch1' ? 'ch1' : 'ch2',
     envName:        app.environment?.name || '',
     bgOrgId:        orgId,
@@ -31,14 +35,13 @@ function extractCpsConfig(app, orgId) {
 
 export default function UserSearchPage() {
   const { orgId: authOrgId } = useAuth();
-  const { getAllCredentials, hasCredentials: hasCpsCreds } = useCpsCredentialStore();
-  const navigate = useNavigate();
+  const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
 
   const [bgs,      setBgs]      = useState([]);
-  const [orgId,    setOrgId]    = useState('');
+  const [orgId,    setOrgId]    = useState(() => localStorage.getItem(LS_ORG) || '');
   const [envs,     setEnvs]     = useState([]);
-  const [envId,    setEnvId]    = useState('');
-  const [envName,  setEnvName]  = useState('');
+  const [envId,    setEnvId]    = useState(() => localStorage.getItem(LS_ENV) || '');
+  const [envName,  setEnvName]  = useState(() => localStorage.getItem(LS_ENV_NAME) || '');
   const [bgsLoad,  setBgsLoad]  = useState(false);
   const [envsLoad, setEnvsLoad] = useState(false);
 
@@ -53,30 +56,66 @@ export default function UserSearchPage() {
   useEffect(() => {
     setBgsLoad(true);
     api.get('/organizations/business-groups')
-      .then(r => { const g = r.data?.data || []; setBgs(g); const d = g.find(x => x.id === authOrgId) || g[0]; if (d) setOrgId(d.id); })
+      .then(r => {
+        const g = r.data?.data || [];
+        setBgs(g);
+        // Only set default if nothing is already selected from localStorage
+        if (!orgId) {
+          const d = g.find(x => x.id === authOrgId) || g[0];
+          if (d) { setOrgId(d.id); localStorage.setItem(LS_ORG, d.id); }
+        }
+      })
       .catch(() => {}).finally(() => setBgsLoad(false));
-  }, [authOrgId]);
+  }, [authOrgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!orgId) return;
-    setEnvId(''); setEnvName(''); setEnvs([]);
     setEnvsLoad(true);
     api.get(`/environments/${orgId}`)
-      .then(r => { const e = r.data?.data || r.data?.environments || r.data || []; setEnvs(Array.isArray(e) ? e : []); })
+      .then(r => {
+        const e = r.data?.data || r.data?.environments || r.data || [];
+        setEnvs(Array.isArray(e) ? e : []);
+      })
       .catch(() => {}).finally(() => setEnvsLoad(false));
   }, [orgId]);
 
-  const postCreds = useCallback(async (urls, oId) => {
+  /**
+   * Post CPS credentials per URL — Strategy 1: use the specific cpsClientId from
+   * ARM props (getSecret lookup). Strategy 2: try all credentials (first match wins).
+   * entries: app entries with { cpsBaseUrl, cpsClientId, bgOrgId }
+   */
+  const postCreds = useCallback(async (entries, oId) => {
     if (!hasCpsCreds) return;
-    const creds = getAllCredentials();
-    if (!creds.length) return;
-    const unique = [...new Set(urls.filter(Boolean).map(u => u.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')))];
-    for (const u of unique) {
-      for (const { clientId, clientSecret } of creds) {
-        try { await api.post('/cps/credentials', { credentials: { [`${u}::${oId}`]: { clientId, clientSecret }, [u]: { clientId, clientSecret } } }); } catch {}
+    const allCreds = getAllCredentials();
+    if (!allCreds.length) return;
+
+    // Build per-URL credential map (resolve once per unique URL)
+    const urlCredMap = new Map();
+    for (const entry of entries) {
+      if (!entry.cpsBaseUrl) continue;
+      const normUrl = entry.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+      if (urlCredMap.has(normUrl)) continue;
+
+      // Strategy 1: use the specific cpsClientId known from app's ARM props
+      if (entry.cpsClientId) {
+        const secret = getSecret(entry.cpsClientId);
+        if (secret) { urlCredMap.set(normUrl, { clientId: entry.cpsClientId, clientSecret: secret }); continue; }
       }
+      // Strategy 2: use first available credential as fallback
+      if (allCreds.length > 0) { urlCredMap.set(normUrl, allCreds[0]); }
     }
-  }, [hasCpsCreds, getAllCredentials]);
+
+    for (const [normUrl, { clientId, clientSecret }] of urlCredMap.entries()) {
+      try {
+        await api.post('/cps/credentials', {
+          credentials: {
+            [`${normUrl}::${oId}`]: { clientId, clientSecret },
+            [normUrl]: { clientId, clientSecret },
+          }
+        });
+      } catch { /* non-fatal */ }
+    }
+  }, [hasCpsCreds, getAllCredentials, getSecret]);
 
   const fetchApps = useCallback(async (oId, eId) => {
     const apps = [];
@@ -108,7 +147,7 @@ export default function UserSearchPage() {
       setAppsT(all.length);
       if (!all.length) { setError('No apps found.'); setLoading(false); return; }
       const entries = all.map(a => ({ appName: a.name, appId: a.id || a.name, ...extractCpsConfig(a, orgId) })).filter(e => e.cpsBaseUrl && e.cpsKey);
-      await postCreds([...new Set(entries.map(e => e.cpsBaseUrl))], orgId);
+      await postCreds(entries, orgId);
       setAppsN(entries.length);
       if (!entries.length) { setResults({ results: [], scanned: 0, skipped: all.length }); setLoading(false); return; }
       const r = await api.post('/cps/search-user', { username: query.trim(), apps: entries });
@@ -132,7 +171,13 @@ export default function UserSearchPage() {
         <div className="space-y-1.5">
           <label className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Business Group</label>
           {bgsLoad ? <div className="text-slate-500 text-xs flex items-center gap-2"><RefreshCw size={12} className="animate-spin" />Loading…</div> : (
-            <select value={orgId} onChange={e => { setOrgId(e.target.value); setResults(null); setError(''); }}
+            <select value={orgId} onChange={e => {
+              setOrgId(e.target.value);
+              setEnvId(''); setEnvName('');
+              localStorage.setItem(LS_ORG, e.target.value);
+              localStorage.removeItem(LS_ENV); localStorage.removeItem(LS_ENV_NAME);
+              setResults(null); setError('');
+            }}
               className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-600/50">
               <option value="">— Select BG —</option>
               {bgs.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -143,7 +188,13 @@ export default function UserSearchPage() {
           <label className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Environment</label>
           {envsLoad ? <div className="text-slate-500 text-xs flex items-center gap-2"><RefreshCw size={12} className="animate-spin" />Loading…</div> : (
             <select value={envId}
-              onChange={e => { const ev = envs.find(x => x.id === e.target.value); setEnvId(e.target.value); setEnvName(ev?.name || ''); setResults(null); setError(''); }}
+              onChange={e => {
+                const ev = envs.find(x => x.id === e.target.value);
+                setEnvId(e.target.value); setEnvName(ev?.name || '');
+                localStorage.setItem(LS_ENV, e.target.value);
+                localStorage.setItem(LS_ENV_NAME, ev?.name || '');
+                setResults(null); setError('');
+              }}
               disabled={!orgId || !envs.length}
               className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-600/50 disabled:opacity-50">
               <option value="">— Select Environment —</option>
