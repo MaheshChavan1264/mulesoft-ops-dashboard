@@ -524,20 +524,21 @@ export default function ApplicationDetailPage() {
         }
       }
 
-      // Strategy 2: try ALL credentials from the store (URL-based key)
-      // Useful when the app's ARM props don't have cps.clientId or
-      // the clientId doesn't match the CSV format.
+      // Strategy 2: store ALL credentials under unique per-clientId keys
+      // so the backend can try each one until it finds a working credential.
       if (!resolved) {
         const allCreds = getAllCredentials();
-        for (const { clientId, clientSecret } of allCreds) {
-          try {
-            // Post using URL-only key (shared across BGs for this server)
-            await api.post('/cps/credentials', { credentials: { [normBase]: { clientId, clientSecret } } });
-            setCpsCredsResolved(true);
-            resolved = true;
-            console.log(`[CPS auto-resolve] Used URL-based fallback with clientId "${clientId.slice(0,8)}…"`);
-            break; // only need one working set
-          } catch { /* try next */ }
+        if (allCreds.length > 0) {
+          for (const { clientId, clientSecret } of allCreds) {
+            try {
+              await api.post('/cps/credentials', {
+                credentials: { [`${normBase}::${clientId}`]: { clientId, clientSecret } }
+              });
+            } catch { /* non-fatal */ }
+          }
+          setCpsCredsResolved(true);
+          resolved = true;
+          console.log(`[CPS auto-resolve] Stored ${allCreds.length} credential(s) under URL::clientId keys`);
         }
       }
 
