@@ -716,29 +716,36 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
         if (autoTier) tierId = autoTier.id;
       } catch { /* no tiers required */ }
 
-      // Try to create a contract — if IDP conflict, cycle through remaining apps.
-      // Maintain priority order: targetApp first, then same-env-type ping apps,
-      // then any ping apps, then everything else — so we always try the most
-      // appropriate app for this environment before falling back to generics.
-      const otherApps = userApps.filter(a => String(a.id) !== String(targetApp.id));
-      const sortedOthers = [
-        // Same env-type + ping first (e.g. another "prod-ping-*" app)
-        ...otherApps.filter(a => isProd
+      // Try to create a contract — strict env-type enforcement:
+      //   UAT  environments → only apps matching "uat" + "ping"
+      //   PROD environments → only apps matching "prod" + "ping"
+      // If no env-type match at all, fallback to any "ping" app, then others.
+      const envTypeApps = userApps.filter(a => isProd
+        ? (nameLo(a).includes('prod') && nameLo(a).includes('ping'))
+        : (nameLo(a).includes('uat') && nameLo(a).includes('ping'))
+      );
+      const pingOnlyApps = userApps.filter(a =>
+        nameLo(a).includes('ping') &&
+        !(isProd
           ? (nameLo(a).includes('prod') && nameLo(a).includes('ping'))
           : (nameLo(a).includes('uat') && nameLo(a).includes('ping'))
+        )
+      );
+      const otherApps2 = userApps.filter(a => !nameLo(a).includes('ping'));
+
+      // Build candidate list: env-type apps first, then ping-only, then rest
+      // (deduplicated — targetApp is always included at the front)
+      const seen = new Set([String(targetApp.id)]);
+      const candidateApps = [
+        targetApp,
+        ...envTypeApps.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
+        ...(envTypeApps.length === 0
+          ? [...pingOnlyApps.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
+             ...otherApps2.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id)))]
+          : [] // if env-type apps exist, don't fall back to generic apps
         ),
-        // Any other ping apps next
-        ...otherApps.filter(a =>
-          nameLo(a).includes('ping') &&
-          !(isProd
-            ? (nameLo(a).includes('prod') && nameLo(a).includes('ping'))
-            : (nameLo(a).includes('uat') && nameLo(a).includes('ping'))
-          )
-        ),
-        // Everything else last
-        ...otherApps.filter(a => !nameLo(a).includes('ping')),
       ];
-      const candidateApps = [targetApp, ...sortedOthers];
+      console.log(`[auto-contract-creds] Candidate apps (${isProd ? 'PROD' : 'UAT'}): ${candidateApps.map(a => a.name).join(', ')}`);
       let created = false;
       let lastErr = null;
 
