@@ -18,7 +18,7 @@ const navItems = [
   { to: '/exchange', icon: Package, label: 'Exchange Assets' },
   { to: '/ping-test', icon: Activity, label: 'Ping Test' },
   { to: '/cps-compare', icon: GitCompare, label: 'CPS Compare' },
-  { to: '/user-search', icon: Users, label: 'User Search' },
+  { to: '/user-search', icon: Users, label: 'Global Search' },
 ];
 
 export default function Sidebar({ open }) {
