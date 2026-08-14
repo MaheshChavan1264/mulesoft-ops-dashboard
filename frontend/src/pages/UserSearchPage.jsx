@@ -119,23 +119,43 @@ export default function UserSearchPage() {
 
   const fetchApps = useCallback(async (oId, eId) => {
     const apps = [];
+    const BATCH = 15;
+
+    // CH2 — Step 1: get summary list to collect app IDs
+    let ch2List = [];
     try {
-      let page = 1;
+      let offset = 0;
       while (true) {
-        const r = await api.get(`/applications/cloudhub2/${oId}/${eId}`, { params: { page, pageSize: 100 } });
-        const items = r.data?.items || r.data?.content || r.data?.applications || (Array.isArray(r.data) ? r.data : []);
+        const r = await api.get(`/applications/cloudhub2/${oId}/${eId}`, { params: { limit: 100, offset } });
+        const items = r.data?.items || r.data?.deployments || r.data?.content || (Array.isArray(r.data) ? r.data : []);
         if (!items.length) break;
-        apps.push(...items);
-        const total = r.data?.total ?? r.data?.totalCount ?? items.length;
-        if (apps.length >= total || items.length < 100) break;
-        page++;
+        ch2List.push(...items);
+        const total = r.data?.total ?? r.data?.totalItems ?? items.length;
+        if (ch2List.length >= total || items.length < 100) break;
+        offset += 100;
       }
     } catch {}
+
+    // CH2 — Step 2: batch-fetch full details (contains target.deploymentSettings with cps.* props)
+    for (let i = 0; i < ch2List.length; i += BATCH) {
+      const batch = ch2List.slice(i, i + BATCH);
+      const settled = await Promise.allSettled(
+        batch.map(a => api.get(`/applications/cloudhub2/${oId}/${eId}/${a.id}`).then(r => r.data).catch(() => a))
+      );
+      settled.forEach(s => { if (s.status === 'fulfilled' && s.value) apps.push(s.value); });
+    }
+
+    // CH1 — list already includes properties
     try {
       const r = await api.get(`/applications/cloudhub1/${eId}`, { params: { orgId: oId } });
       const ch1 = Array.isArray(r.data) ? r.data : (r.data?.applications || r.data?.data || []);
-      apps.push(...ch1.map(c => ({ _type: 'ch1', id: c.domain, name: c.domain, properties: c.properties || {}, environment: { name: envName } })));
+      apps.push(...ch1.map(c => ({
+        _type: 'ch1', id: c.domain, name: c.domain,
+        properties: c.properties || {},
+        environment: { name: envName },
+      })));
     } catch {}
+
     return apps;
   }, [envName]);
 
@@ -163,7 +183,7 @@ export default function UserSearchPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-white flex items-center gap-2"><Users size={20} className="text-cyan-400" /> API User Search</h1>
+        <h1 className="text-xl font-bold text-white flex items-center gap-2"><Users size={20} className="text-cyan-400" /> Global Search</h1>
         <p className="text-slate-500 text-sm mt-1">Search for a username across all app CPS non-secure & secure properties</p>
       </div>
 
