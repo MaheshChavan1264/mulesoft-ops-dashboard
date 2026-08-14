@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, SlidersHorizontal, Key, X } from 'lucide-react';
+import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, SlidersHorizontal, Key, X, Eye, EyeOff } from 'lucide-react';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
@@ -234,7 +234,8 @@ function MultiAppChecklist({ apps, selectedIds, loading, onToggle, onSelectAll, 
 // ─── SidePanel ────────────────────────────────────────────────────────────────
 
 function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp, hideAppSelector, collapsed, onToggleCollapse }) {
-  const { bgId, envId, envs, apps, appId, loadingEnvs, loadingApps, loadingDetail, cpsUrl, cpsEnv, cpsKey, credsResolved } = state;
+  const { bgId, envId, envs, apps, appId, loadingEnvs, loadingApps, loadingDetail, cpsUrl, cpsEnv, cpsKey, cpsClientId, cpsClientSecret, credsResolved } = state;
+  const [showSecret, setShowSecret] = useState(false);
   const isBlue = color === 'border-blue-700/50';
   const showEnvInLabel = bgId === '__all__' || !envId;
   const bgName = filteredBgs.find(g => g.id === bgId)?.name || (bgId === '__all__' ? 'All BGs' : '—');
@@ -397,6 +398,31 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
           </div>
         </div>
+        {/* CPS Credentials — shown after auto-resolve; editable for override */}
+        <div className="pt-1 border-t border-gray-800/40 space-y-1.5">
+          <p className="text-[10px] text-gray-600 flex items-center gap-1"><Key size={8} /> CPS Credentials (auto-resolved · override if needed)</p>
+          <div>
+            <label className="text-[10px] text-gray-600 block mb-0.5">Client ID</label>
+            <input value={cpsClientId} onChange={e => onUpdate({ cpsClientId: e.target.value, credsResolved: !!e.target.value })} placeholder="auto-resolved"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-600 block mb-0.5">Client Secret</label>
+            <div className="relative">
+              <input
+                type={showSecret ? 'text' : 'password'}
+                value={cpsClientSecret}
+                onChange={e => onUpdate({ cpsClientSecret: e.target.value })}
+                placeholder="auto-resolved"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 pr-8 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600"
+              />
+              <button onClick={() => setShowSecret(v => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                {showSecret ? <EyeOff size={11} /> : <Eye size={11} />}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -404,7 +430,7 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const INIT_SIDE = { bgId: '', envId: '__all__', envs: [], apps: [], appId: '', selectedAppIds: [], loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '', credsResolved: false };
+const INIT_SIDE = { bgId: '', envId: '__all__', envs: [], apps: [], appId: '', selectedAppIds: [], loadingEnvs: false, loadingApps: false, loadingDetail: false, cpsUrl: '', cpsEnv: '', cpsKey: '', cpsClientId: '', cpsClientSecret: '', credsResolved: false };
 
 export default function CpsComparisonPage() {
   const { getSecret, hasCredentials, getAllCredentials } = useCpsCredentialStore();
@@ -564,11 +590,29 @@ export default function CpsComparisonPage() {
         }
       }
 
+      // Store the resolved client ID so the user can see/override it
+      // For the secret, store what was resolved (masked in UI) or empty if unknown
+      let resolvedClientId = extracted.cpsClientId || '';
+      let resolvedClientSecret = '';
+      if (extracted.cpsClientId && hasCredentials) {
+        const isMasked = v => !v || /^\*+$/.test(v.trim());
+        if (!isMasked(extracted.cpsClientId)) {
+          const secret = getSecret(extracted.cpsClientId);
+          if (secret) { resolvedClientId = extracted.cpsClientId; resolvedClientSecret = secret; }
+        }
+        if (!resolvedClientSecret) {
+          const allCreds = getAllCredentials();
+          if (allCreds.length > 0) { resolvedClientId = allCreds[0].clientId; resolvedClientSecret = allCreds[0].clientSecret; }
+        }
+      }
+
       updateSide(side, {
         loadingDetail: false,
         cpsUrl: extracted.cpsBaseUrl,
         cpsEnv: extracted.cpsEnv,
         cpsKey: extracted.cpsKey,
+        cpsClientId: resolvedClientId,
+        cpsClientSecret: resolvedClientSecret,
         credsResolved,
       });
     } catch {
@@ -775,6 +819,20 @@ export default function CpsComparisonPage() {
      */
     const fetchSide = async (s, pt) => {
       if (!s.cpsUrl || !s.cpsKey) throw new Error('CPS URL and project key are required');
+
+      // Re-post credentials if user manually overrode clientId/secret
+      if (s.cpsClientId && s.cpsClientSecret) {
+        try {
+          const normBase = s.cpsUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+          const bgKey = (s.bgId && s.bgId !== '__all__') ? s.bgId : 'override';
+          await api.post('/cps/credentials', {
+            credentials: {
+              [`${normBase}::${bgKey}`]: { clientId: s.cpsClientId, clientSecret: s.cpsClientSecret },
+              [normBase]: { clientId: s.cpsClientId, clientSecret: s.cpsClientSecret },
+            }
+          });
+        } catch { /* non-fatal */ }
+      }
 
       const baseParams = {
         baseUrl: s.cpsUrl,
