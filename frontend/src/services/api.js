@@ -104,9 +104,11 @@ axiosClient.interceptors.response.use(
       // Some endpoints return 401 for per-resource access issues (not session expiry).
       // Don't redirect to login for those — let the caller handle the rejection.
       const skipRedirect =
-        url.includes('/applications/summary') ||  // BG access check
-        url.includes('/cps/')                   || // CPS credential issues
-        url.includes('/exchange/')              || // Exchange asset access
+        url.includes('/applications/summary') ||  // BG access check (per-BG access)
+        url.includes('/environments/')         ||  // env fetch for __all__ or restricted BG
+        url.startsWith('/environments/')       ||  // same
+        url.includes('/cps/')                  ||  // CPS credential issues
+        url.includes('/exchange/')             ||  // Exchange asset access
         url.includes('/apis/');                    // API Manager access
 
       if (!skipRedirect) {
