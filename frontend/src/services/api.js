@@ -92,11 +92,27 @@ const axiosClient = axios.create({
   headers: { 'Content-Type': 'application/json' }
 });
 
+// Track whether a redirect is already in progress to avoid double-redirects
+// from concurrent requests all returning 401 simultaneously.
+let _redirecting = false;
+
 axiosClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && !isDemoMode()) {
-      window.location.href = '/login';
+    if (error.response?.status === 401 && !isDemoMode() && !_redirecting) {
+      const url = error.config?.url || '';
+      // Some endpoints return 401 for per-resource access issues (not session expiry).
+      // Don't redirect to login for those — let the caller handle the rejection.
+      const skipRedirect =
+        url.includes('/applications/summary') ||  // BG access check
+        url.includes('/cps/')                   || // CPS credential issues
+        url.includes('/exchange/')              || // Exchange asset access
+        url.includes('/apis/');                    // API Manager access
+
+      if (!skipRedirect) {
+        _redirecting = true;
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
