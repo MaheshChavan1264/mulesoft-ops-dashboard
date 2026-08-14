@@ -442,7 +442,11 @@ export default function CpsComparisonPage() {
   }, []);
 
   const loadEnvs = useCallback(async (side, bgId) => {
-    if (!bgId) return;
+    // '__all__' is not a real org — skip the environments fetch entirely
+    if (!bgId || bgId === '__all__') {
+      updateSide(side, { loadingEnvs: false, envs: [] });
+      return;
+    }
     updateSide(side, { loadingEnvs: true, envs: [] });
     try {
       const r = await api.get(`/environments/${bgId}`);
