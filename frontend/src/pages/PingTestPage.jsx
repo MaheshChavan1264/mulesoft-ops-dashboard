@@ -27,7 +27,7 @@ function latencyColor(ms) {
 
 // ─── Result Row (Feature 1: retry button) ────────────────────────────────────
 
-function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRetry, onCheckContract, checkingContract, retrying }) {
+function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRetry, onCheckContract, checkingContract, retrying, onGetJwt, jwtLoading, navigate }) {
   const rowKey = `${app.id}|${app.environment?.id}`;
   const isExpanded = expandedId === rowKey;
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
@@ -47,7 +47,12 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_BADGE[app.environment?.type] || 'bg-gray-400'}`} />
             <div>
               <div className="flex items-center gap-1.5">
-                <p className="text-white text-sm font-medium">{app.name}</p>
+                <button
+                  onClick={() => app._bgId && app.environment?.id && navigate(`/applications/${app._bgId}/${app.environment.id}/${app.id}`)}
+                  title="Open application detail"
+                  className="text-white text-sm font-medium hover:text-cyan-300 transition-colors text-left">
+                  {app.name}
+                </button>
                 {autoResolved && (
                   <span title={`Auto-resolved: ${autoResolved.apiInstanceName} → ${autoResolved.contractApp}`}
                     className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-700/40 text-emerald-400 rounded font-medium">
@@ -56,6 +61,9 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 )}
               </div>
               <p className="text-gray-500 text-xs">{app.environment?.name}</p>
+              {result?._jwtError && (
+                <p className="text-[10px] text-red-400/70 mt-0.5">{result._jwtError}</p>
+              )}
             </div>
           </div>
         </td>
@@ -158,6 +166,17 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               <span className="text-[10px] text-orange-400/70 flex items-center gap-1">
                 <RefreshCw size={9} className="animate-spin" /> Checking…
               </span>
+            )}
+            {/* Get JWT button for PARTIAL results with 401/403 */}
+            {result && result.status === 'PARTIAL' && !result._jwtUsed && !retrying &&
+              (result.httpStatus === 401 || result.httpStatus === 403 || result.httpStatus === 400) && (
+              <button
+                onClick={() => onGetJwt(app)}
+                disabled={jwtLoading}
+                title="Fetch JWT token from CPS and retry ping"
+                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-indigo-400 hover:text-indigo-300 hover:bg-indigo-950/40 border border-indigo-800/40 transition-colors font-medium whitespace-nowrap disabled:opacity-50">
+                {jwtLoading ? <RefreshCw size={9} className="animate-spin" /> : <Lock size={9} />} JWT
+              </button>
             )}
             {/* Normal retry for FAILED / PARTIAL */}
             {canRetry && !retrying && (
@@ -328,6 +347,7 @@ export default function PingTestPage() {
   // Feature 1: per-app retry state
   const [retryingIds, setRetryingIds] = useState(new Set());
   const [checkingContractIds, setCheckingContractIds] = useState(new Set());
+  const [jwtLoadingIds, setJwtLoadingIds] = useState(new Set());
 
   // Feature 2: CSV upload state
   const [csvMatchedNames, setCsvMatchedNames] = useState(null); // null = not uploaded yet
@@ -485,6 +505,91 @@ export default function PingTestPage() {
       setResults(prev => ({ ...prev, [appId]: { status: 'FAILED', error: err.message } }));
     } finally {
       setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
+    }
+  }, [autoResolvedMap]);
+
+  // ─── Get JWT Token and retry ping ────────────────────────────────────────
+  // Fetches app details, scans CPS for OAuth2 URL, gets JWT, retries ping
+
+  const getJwtAndRetry = useCallback(async (app) => {
+    const appId = app.id;
+    const auto = autoResolvedMap[appId];
+    if (!auto?.clientId || !auto?.clientSecret) {
+      setResults(prev => ({ ...prev, [appId]: { ...prev[appId], _jwtError: 'Auto-fill credentials first, then click Get JWT' } }));
+      return;
+    }
+    setJwtLoadingIds(prev => new Set([...prev, appId]));
+    try {
+      // 1. Fetch full app detail to get CPS config
+      const isCH1 = app.deploymentType !== 'CloudHub 2.0';
+      let detail = null;
+      let ch2IngressUrl;
+      if (!isCH1 && app._bgId && app.environment?.id) {
+        const r = await api.get(`/applications/cloudhub2/${app._bgId}/${app.environment.id}/${app.id}`);
+        detail = r.data;
+        const ds = detail?.target?.deploymentSettings || {};
+        const httpInbound = ds.http?.inbound || {};
+        const eps = httpInbound.endpoints || [];
+        ch2IngressUrl = httpInbound.publicUrl || eps.find(e => e.access === 'external')?.url || eps[0]?.url;
+      }
+      const ds = detail?.target?.deploymentSettings || {};
+      const ps = (detail?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
+      const allProps = { ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}) };
+      const cpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'] || '';
+      const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
+      const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || '';
+      const orgId = app._bgId;
+
+      if (!cpsBaseUrl) throw new Error('No CPS URL configured for this app');
+
+      // 2. Scan CPS non-secure for OAuth2 token URL
+      const findOAuth2Url = (props) => {
+        for (const [k, v] of Object.entries(props || {})) {
+          const val = String(v || '');
+          if (val.startsWith('http') && (val.includes('/oauth2/') || val.includes('okta.com') ||
+            (val.includes('/token') && (k.toLowerCase().includes('jwt') || k.toLowerCase().includes('oauth') || k.toLowerCase().includes('token') || k.toLowerCase().includes('auth'))))) return val;
+        }
+        return '';
+      };
+
+      const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
+      const nsData = nsRes.data;
+      let nsFlat = {};
+      const arr = Array.isArray(nsData) ? nsData : Array.isArray(nsData?.responses) ? nsData.responses : Array.isArray(nsData?.properties) ? nsData.properties : null;
+      if (arr) arr.forEach(e => { const inner = e?.properties; if (inner && typeof inner === 'object' && !Array.isArray(inner)) Object.assign(nsFlat, inner); });
+      else if (nsData && typeof nsData === 'object') nsFlat = nsData;
+
+      let tokenUrl = findOAuth2Url(nsFlat);
+
+      if (!tokenUrl) {
+        const secureKeys = (nsFlat['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean);
+        const jwtKey = secureKeys.find(k => k.toLowerCase().includes('jwt') || k.toLowerCase().includes('auth'));
+        if (jwtKey) {
+          const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: jwtKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
+          const sg = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
+          for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } }
+        }
+      }
+
+      if (!tokenUrl) throw new Error('No OAuth2 token URL found in CPS');
+
+      // 3. Fetch JWT
+      const tokenRes = await api.post('/health/oauth2-token', { tokenUrl, clientId: auto.clientId, clientSecret: auto.clientSecret });
+      const jwt = tokenRes.data.access_token;
+
+      // 4. Retry ping with JWT Bearer token
+      const pingRes = await api.post('/health/ping', {
+        targetType: isCH1 ? 'CH1' : 'CH2',
+        appName: app.name,
+        ch2IngressUrl,
+        bearerToken: jwt,
+        transactionId: generateTxId(),
+      });
+      setResults(prev => ({ ...prev, [appId]: { ...pingRes.data, _jwtUsed: true } }));
+    } catch (err) {
+      setResults(prev => ({ ...prev, [appId]: { ...prev[appId], _jwtError: err.response?.data?.error || err.message } }));
+    } finally {
+      setJwtLoadingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
     }
   }, [autoResolvedMap]);
 
@@ -756,6 +861,9 @@ export default function PingTestPage() {
                   onCheckContract={checkContractApproval}
                   checkingContract={checkingContractIds.has(app.id)}
                   retrying={retryingIds.has(app.id)}
+                  onGetJwt={getJwtAndRetry}
+                  jwtLoading={jwtLoadingIds.has(app.id)}
+                  navigate={navigate}
                 />
               ))}
             </tbody>
