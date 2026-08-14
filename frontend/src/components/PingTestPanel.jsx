@@ -53,12 +53,13 @@ export default function PingTestPanel({
   };
 
   const extractApiId = (props) => {
-    if ('api.id' in props) { const v = String(props['api.id']).trim(); if (/^\d+$/.test(v)) return v; }
+    const isValidId = v => /^\d+$/.test(String(v).trim()) && String(v).trim() !== '0';
+    if ('api.id' in props && isValidId(props['api.id'])) return String(props['api.id']).trim();
     const e1 = Object.entries(props).find(([k]) => k.endsWith('.api.id'));
-    if (e1 && /^\d+$/.test(String(e1[1]).trim())) return String(e1[1]).trim();
-    const e2 = Object.entries(props).find(([k, v]) => k.endsWith('.id') && /^\d+$/.test(String(v).trim()));
+    if (e1 && isValidId(e1[1])) return String(e1[1]).trim();
+    const e2 = Object.entries(props).find(([k, v]) => k.endsWith('.id') && isValidId(v));
     if (e2) return String(e2[1]).trim();
-    if ('id' in props && /^\d+$/.test(String(props['id']).trim())) return String(props['id']).trim();
+    if ('id' in props && isValidId(props['id'])) return String(props['id']).trim();
     return null;
   };
 

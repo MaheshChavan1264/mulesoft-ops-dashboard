@@ -482,8 +482,9 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
     // LAYER 1: Direct api.id lookup
     // If the Mule app has Autodiscovery configured, it will have `api.id` in
     // its runtime properties. Use that to fetch the exact API Manager instance.
+    // Skip apiId="0" — it's a common placeholder meaning "not configured".
     // ─────────────────────────────────────────────────────────────────────────
-    if (apiId) {
+    if (apiId && apiId !== '0') {
       console.log(`[auto-credentials] Layer 1 — direct api.id="${apiId}"`);
       // Try the deployment env first; then scan others in the same org
       const envIds = [envId, ...(await getOrgEnvs(searchOrgId)).map(e => e.id).filter(id => id !== envId)];
