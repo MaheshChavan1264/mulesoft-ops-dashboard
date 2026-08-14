@@ -530,21 +530,27 @@ export default function ApplicationDetailPage() {
         console.log('[CPS auto-resolve] cpsClientId is masked in ARM props → skipping Strategy 1, using Strategy 2');
       }
 
-      // Strategy 2: store ALL credentials under unique per-clientId keys
-      // so the backend can try each one until it finds a working credential.
+      // Strategy 2: store ALL credentials so backend can find them.
+      // getCredentials looks for url::bgOrgId first, then url-only.
+      // Also store all as url::clientId for the 401-retry fallback.
       if (!resolved) {
         const allCreds = getAllCredentials();
         if (allCreds.length > 0) {
+          // Build a single bulk credential map
+          const credMap = {};
+          // First credential → url::bgOrgId + url-only (so getCredentials returns it)
+          credMap[urlBgKey]  = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
+          credMap[normBase]  = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
+          // All credentials → url::clientId keys (for 401-retry loop in backend)
           for (const { clientId, clientSecret } of allCreds) {
-            try {
-              await api.post('/cps/credentials', {
-                credentials: { [`${normBase}::${clientId}`]: { clientId, clientSecret } }
-              });
-            } catch { /* non-fatal */ }
+            credMap[`${normBase}::${clientId}`] = { clientId, clientSecret };
           }
+          try {
+            await api.post('/cps/credentials', { credentials: credMap });
+          } catch { /* non-fatal */ }
           setCpsCredsResolved(true);
           resolved = true;
-          console.log(`[CPS auto-resolve] Stored ${allCreds.length} credential(s) under URL::clientId keys`);
+          console.log(`[CPS auto-resolve] Strategy 2: posted ${allCreds.length} credential(s) (first as primary, all as fallbacks)`);
         }
       }
 
