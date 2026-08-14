@@ -548,17 +548,19 @@ export default function CpsComparisonPage() {
         }
 
         if (!credsResolved) {
-          // Strategy 2: store ALL CSV credentials under url::clientId keys
-          // Backend will try each on 401 and promote the first working one
+          // Strategy 2: post first credential to url::bgOrgId + url-only so
+          // getCredentials can find it, PLUS all as url::clientId for 401-retry
           const allCreds = getAllCredentials();
-          for (const { clientId, clientSecret } of allCreds) {
-            try {
-              await api.post('/cps/credentials', {
-                credentials: { [`${normBase}::${clientId}`]: { clientId, clientSecret } }
-              });
-            } catch { /* non-fatal */ }
+          if (allCreds.length > 0) {
+            const credMap = {};
+            credMap[`${normBase}::${resolvedBgId}`] = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
+            credMap[normBase]                        = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
+            for (const { clientId, clientSecret } of allCreds) {
+              credMap[`${normBase}::${clientId}`] = { clientId, clientSecret };
+            }
+            try { await api.post('/cps/credentials', { credentials: credMap }); } catch {}
+            credsResolved = true;
           }
-          if (allCreds.length > 0) credsResolved = true;
         }
       }
 
