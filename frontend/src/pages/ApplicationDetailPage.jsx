@@ -510,18 +510,24 @@ export default function ApplicationDetailPage() {
       const urlBgKey = `${normBase}::${orgId}`;
       let resolved = false;
 
-      // Strategy 1: look up the specific cpsClientId from ARM props
-      if (cpsClientId) {
+      // Strategy 1: look up the specific cpsClientId from ARM props.
+      // Skip if the value is masked (e.g. "****") — Anypoint Platform redacts
+      // secure ARM properties; in that case fall straight to Strategy 2.
+      const isMasked = (v) => !v || /^\*+$/.test(v.trim());
+      if (cpsClientId && !isMasked(cpsClientId)) {
         const secret = getSecret(cpsClientId);
         if (secret) {
           try {
             await api.post('/cps/credentials', { credentials: { [urlBgKey]: { clientId: cpsClientId, clientSecret: secret } } });
             setCpsCredsResolved(true);
             resolved = true;
+            console.log(`[CPS auto-resolve] Strategy 1 matched cpsClientId "${cpsClientId.slice(0,8)}…"`);
           } catch { /* non-fatal */ }
         } else {
-          console.log(`[CPS auto-resolve] cpsClientId "${cpsClientId.slice(0,8)}…" not found in imported CSV`);
+          console.log(`[CPS auto-resolve] cpsClientId "${cpsClientId.slice(0,8)}…" not in CSV → falling back to Strategy 2`);
         }
+      } else if (cpsClientId && isMasked(cpsClientId)) {
+        console.log('[CPS auto-resolve] cpsClientId is masked in ARM props → skipping Strategy 1, using Strategy 2');
       }
 
       // Strategy 2: store ALL credentials under unique per-clientId keys
