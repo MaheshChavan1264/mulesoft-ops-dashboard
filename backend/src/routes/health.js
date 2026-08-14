@@ -712,29 +712,58 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
           `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/tiers`
         );
         const tiers = tiersRes.data?.tiers || tiersRes.data || [];
-        // Prefer tier with autoApprove, else take first
         const autoTier = tiers.find(t => t.autoApprove === true) || tiers[0];
         if (autoTier) tierId = autoTier.id;
       } catch { /* no tiers required */ }
 
-      // Create the contract
-      const contractBody = { applicationId: targetAppId };
-      if (tierId) contractBody.requestedTierId = tierId;
-      try {
-        const createRes = await client.post(
-          `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts`,
-          contractBody
-        );
-        const created = createRes.data;
-        contractStatus = (created.status || 'pending').toLowerCase();
-        console.log(`[auto-contract-creds] Contract created, status: ${contractStatus}`);
-      } catch (createErr) {
-        console.warn('[auto-contract-creds] Could not create contract:', createErr.response?.data || createErr.message);
-        return res.status(createErr.response?.status || 500).json({
-          error: createErr.response?.data?.message || 'Failed to create contract',
+      // Try to create a contract — if IDP conflict, cycle through remaining apps
+      const candidateApps = [
+        targetApp,
+        ...userApps.filter(a => a.id !== targetApp.id)
+      ];
+      let created = false;
+      let lastErr = null;
+
+      for (const candidateApp of candidateApps) {
+        const contractBody = { applicationId: candidateApp.id };
+        if (tierId) contractBody.requestedTierId = tierId;
+        try {
+          const createRes = await client.post(
+            `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts`,
+            contractBody
+          );
+          contractStatus = (createRes.data?.status || 'pending').toLowerCase();
+          console.log(`[auto-contract-creds] Contract created with app "${candidateApp.name}" (${candidateApp.id}), status: ${contractStatus}`);
+          // Override targetAppId/Name for credential fetch below
+          Object.assign(targetApp, { id: candidateApp.id, name: candidateApp.name });
+          created = true;
+          break;
+        } catch (createErr) {
+          const msg = createErr.response?.data?.message || createErr.message || '';
+          const isIdpConflict = msg.toLowerCase().includes('idp') || msg.toLowerCase().includes('identity');
+          if (isIdpConflict) {
+            console.log(`[auto-contract-creds] IDP conflict for app "${candidateApp.name}" — trying next app`);
+            lastErr = createErr;
+            continue;
+          }
+          // Non-IDP error — stop immediately
+          console.warn('[auto-contract-creds] Could not create contract:', createErr.response?.data || msg);
+          return res.status(createErr.response?.status || 500).json({
+            error: msg || 'Failed to create contract',
+            contractStatus: 'error',
+            appName: candidateApp.name,
+            appId: candidateApp.id,
+          });
+        }
+      }
+
+      if (!created) {
+        const errMsg = lastErr?.response?.data?.message || lastErr?.message || 'All available apps have IDP conflicts with this API instance';
+        console.warn('[auto-contract-creds] Could not create contract with any app:', errMsg);
+        return res.status(409).json({
+          error: errMsg,
           contractStatus: 'error',
-          appName: targetAppName,
-          appId: targetAppId,
+          hint: 'The user\'s Exchange applications use a different Identity Provider than this API instance. Manually create a contract in Anypoint Exchange, then use "Auto-fill from API Manager".',
         });
       }
     } else {
