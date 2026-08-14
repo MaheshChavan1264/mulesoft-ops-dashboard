@@ -33,7 +33,7 @@ function buildBaseUrl(targetType, appName, ch2IngressUrl) {
     }
   }
 
-  return `https://${safe}.api.sfdcbt.net`;
+  return `https://${safe}.internalapi.sfdcbt.net`;
 }
 
 // ─── POST /api/health/oauth2-token ───────────────────────────────────────────
