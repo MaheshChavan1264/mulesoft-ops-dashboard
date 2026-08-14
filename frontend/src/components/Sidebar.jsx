@@ -7,6 +7,7 @@ import {
   Package,
   Activity,
   GitCompare,
+  Users,
   ChevronRight
 } from 'lucide-react';
 
@@ -17,6 +18,7 @@ const navItems = [
   { to: '/exchange', icon: Package, label: 'Exchange Assets' },
   { to: '/ping-test', icon: Activity, label: 'Ping Test' },
   { to: '/cps-compare', icon: GitCompare, label: 'CPS Compare' },
+  { to: '/user-search', icon: Users, label: 'User Search' },
 ];
 
 export default function Sidebar({ open }) {
