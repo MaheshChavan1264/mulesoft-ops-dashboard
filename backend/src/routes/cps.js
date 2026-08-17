@@ -227,15 +227,26 @@ router.get('/fetch', authMiddleware, async (req, res) => {
       return false;
     };
 
+    // Helper: check specifically for the explicit "COULD NOT ACCESS" string
+    // (unambiguous wrong-credential signal — always retry, even for promoted creds)
+    const isCouldNotAccess = (r) => {
+      const d = r.data;
+      if (!d || !Array.isArray(d?.responses)) return false;
+      return d.responses.some(x => typeof x.properties === 'string');
+    };
+
     // Retry conditions:
     //   1. HTTP 401 — wrong credential (server-level auth failure)
-    //   2. HTTP 200 but empty response + credential came from step 2b fallback
-    //      (credential has server access but not project-level access)
+    //   2. HTTP 200 + "COULD NOT ACCESS" string — wrong cred for THIS project
+    //      (retry ALWAYS, even for promoted credentials — different projects need
+    //       different credentials even on the same CPS server)
+    //   3. HTTP 200 + empty response + step 2b fallback credential only
     const shouldRetry = response.status === 401 ||
+      isCouldNotAccess(response) ||
       (response.status === 200 && creds._fromFallback && isNoAccessResponse(response));
 
     if (shouldRetry && response.status === 200) {
-      console.log(`CPS 200 but no project access — credential "${creds.clientId.slice(0,8)}…" returned empty or "COULD NOT ACCESS"; trying other credentials`);
+      console.log(`CPS 200 but no project access — credential "${creds.clientId.slice(0,8)}…" ${isCouldNotAccess(response) ? 'returned COULD NOT ACCESS' : 'returned empty response'}; trying other credentials`);
     }
 
     if (shouldRetry) {
