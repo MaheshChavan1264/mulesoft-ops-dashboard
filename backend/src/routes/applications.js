@@ -351,11 +351,6 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
         );
         ch2Accessible = true;
         const apps = parseCH2Apps(ch2Response.data);
-          // Debug: log first app structure to diagnose missing artifactVersion
-          if (apps.length > 0 && results.length === 0) {
-            const sample = apps[0];
-            console.log(`[Summary] CH2 sample app "${sample.name}" — application keys: ${JSON.stringify(Object.keys(sample.application || {}))}, ref: ${JSON.stringify(sample.application?.ref)}, artifactVersion: ${sample.application?.ref?.version}`);
-          }
           apps.forEach((app) => {
             const runtimeStatus = app.application?.status || app.application?.state;
             const deploymentStatus = app.status || app.desiredStatus;
@@ -368,17 +363,9 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
               environment: { id: env.id, name: env.name, type: env.type },
               deploymentType: 'CloudHub 2.0',
               lastModifiedDate: app.lastModifiedDate || app.updatedAt,
-              // CH2 list API returns version at top-level, NOT inside target.deploymentSettings
+              // CH2 list API only returns application.status — ref/version not available
               muleVersion: app.currentRuntimeVersion || app.lastSuccessfulRuntimeVersion,
               replicas: app.target?.replicas,
-              // Deployed artifact (JAR) version from Exchange
-              // Try multiple paths as the CH2 list API may return ref at different locations
-              artifactVersion: app.application?.ref?.version
-                || app.application?.artifactVersion
-                || app.ref?.version
-                || app.application?.configuration?.['mule.agent.application.properties.service']?.properties?.['anypoint.platform.client_version']
-                || null,
-              artifactId: app.application?.ref?.artifactId || app.ref?.artifactId || app.name || null,
             });
           });
       } catch (e) {
