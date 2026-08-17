@@ -205,11 +205,23 @@ router.get('/fetch', authMiddleware, async (req, res) => {
     response = await makeCpsCall(creds.clientId, creds.clientSecret);
     console.log(`CPS primary response — HTTP ${response.status} (clientId="${creds.clientId.slice(0,8)}…")`);
 
-    // Helper: check if a CPS response body is empty (credential has server access but no project access)
-    const isEmptyResponse = (r) => {
+    // Helper: check if a CPS response indicates no project access.
+    // Detects three patterns:
+    //   1. Empty responses array or empty properties objects
+    //   2. properties = "COULD NOT ACCESS" (string) — CPS explicit denial
+    //   3. Top-level empty object/array
+    const isNoAccessResponse = (r) => {
       const d = r.data;
       if (!d) return true;
-      if (Array.isArray(d?.responses)) return d.responses.length === 0 || d.responses.every(x => !x.properties || Object.keys(x.properties).length === 0);
+      if (Array.isArray(d?.responses)) {
+        if (d.responses.length === 0) return true;
+        return d.responses.every(x => {
+          if (!x.properties) return true;
+          if (typeof x.properties === 'string') return true;  // "COULD NOT ACCESS"
+          if (typeof x.properties === 'object') return Object.keys(x.properties).length === 0;
+          return true;
+        });
+      }
       if (Array.isArray(d)) return d.length === 0;
       if (typeof d === 'object') return Object.keys(d).length === 0;
       return false;
@@ -220,12 +232,10 @@ router.get('/fetch', authMiddleware, async (req, res) => {
     //   2. HTTP 200 but empty response + credential came from step 2b fallback
     //      (credential has server access but not project-level access)
     const shouldRetry = response.status === 401 ||
-      (response.status === 200 && creds._fromFallback && isEmptyResponse(response));
+      (response.status === 200 && creds._fromFallback && isNoAccessResponse(response));
 
-    if (shouldRetry) {
-      if (response.status === 200) {
-        console.log(`CPS 200 but empty data — credential "${creds.clientId.slice(0,8)}…" has server access but not project-level access; trying other credentials`);
-      }
+    if (shouldRetry && response.status === 200) {
+      console.log(`CPS 200 but no project access — credential "${creds.clientId.slice(0,8)}…" returned empty or "COULD NOT ACCESS"; trying other credentials`);
     }
 
     if (shouldRetry) {
@@ -250,10 +260,10 @@ router.get('/fetch', authMiddleware, async (req, res) => {
               console.log(`CPS retry — clientId="${s.reason?.config?.headers?.client_id?.slice(0,8) || '?'}…" threw: ${s.reason?.code || s.reason?.message}`);
             } else {
               const { cred, res: r } = s.value;
-              const empty = isEmptyResponse(r);
-              console.log(`CPS retry — clientId="${cred.clientId.slice(0,8)}…" → HTTP ${r.status}${r.status === 200 && empty ? ' (empty)' : r.status === 200 ? ' ✅ has data' : ''}`);
-              // Accept this credential if: not 401 AND (not empty OR it's a genuine non-200 response)
-              if (r.status !== 401 && !(r.status === 200 && empty)) {
+              const noAccess = isNoAccessResponse(r);
+              console.log(`CPS retry — clientId="${cred.clientId.slice(0,8)}…" → HTTP ${r.status}${r.status === 200 && noAccess ? ' (no project access)' : r.status === 200 ? ' ✅ has data' : ''}`);
+              // Accept this credential if: not 401 AND not "no project access"
+              if (r.status !== 401 && !(r.status === 200 && noAccess)) {
                 response = r;
                 req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: cred.clientId, clientSecret: cred.clientSecret };
                 console.log(`CPS retry resolved ✅ — promoted clientId "${cred.clientId.slice(0,8)}…" as primary (batch ${batchNum}/${totalBatches})`);
