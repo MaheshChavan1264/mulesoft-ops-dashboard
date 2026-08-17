@@ -201,20 +201,32 @@ router.get('/fetch', authMiddleware, async (req, res) => {
 
   let response = await makeCpsCall(creds.clientId, creds.clientSecret);
 
-  // If the primary credential returned 401, try all other stored url::clientId credentials
+  // If the primary credential returned 401, try all other stored url::clientId credentials.
+  // Run in parallel batches of 5 so we don't make 72+ sequential calls when the CSV is large.
   if (response.status === 401) {
     const sessionCreds = req.session.cpsCreds || {};
     const altEntries = Object.entries(sessionCreds)
       .filter(([k, v]) => k.startsWith(`${normaliseUrl(baseUrl)}::`) && v?.clientId && v?.clientId !== creds.clientId && v?.clientSecret);
-    for (const [, altCred] of altEntries) {
-      console.log(`CPS 401 — retrying with alt clientId "${altCred.clientId.slice(0, 8)}…"`);
-      const altRes = await makeCpsCall(altCred.clientId, altCred.clientSecret);
-      if (altRes.status !== 401) {
-        response = altRes;
-        // Promote this working credential to the primary position
-        req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: altCred.clientId, clientSecret: altCred.clientSecret };
-        console.log(`CPS 401 resolved — promoted clientId "${altCred.clientId.slice(0, 8)}…" as primary`);
-        break;
+
+    if (altEntries.length > 0) {
+      console.log(`CPS 401 — trying ${altEntries.length} alt credential(s) in parallel batches of 5`);
+      const BATCH = 5;
+      let found = false;
+      for (let i = 0; i < altEntries.length && !found; i += BATCH) {
+        const batch = altEntries.slice(i, i + BATCH);
+        const settled = await Promise.allSettled(
+          batch.map(([, c]) => makeCpsCall(c.clientId, c.clientSecret).then(r => ({ cred: c, res: r })))
+        );
+        for (const s of settled) {
+          if (s.status === 'fulfilled' && s.value.res.status !== 401) {
+            response = s.value.res;
+            const workingCred = s.value.cred;
+            req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: workingCred.clientId, clientSecret: workingCred.clientSecret };
+            console.log(`CPS 401 resolved — promoted clientId "${workingCred.clientId.slice(0, 8)}…" as primary (tried ${i + batch.indexOf(altEntries[i]) + 1}/${altEntries.length} creds)`);
+            found = true;
+            break;
+          }
+        }
       }
     }
   }
