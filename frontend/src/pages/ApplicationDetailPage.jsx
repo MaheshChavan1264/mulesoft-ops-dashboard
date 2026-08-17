@@ -1340,7 +1340,31 @@ export default function ApplicationDetailPage() {
 
               {/* Secure property groups */}
               {cpsData.secureGroups.length > 0 && cpsData.secureGroups.map((group) => {
+                // Error group — show error message instead of a property card
+                if (group.key === '__error__' || group._error) {
+                  return (
+                    <div key="__error__" className="flex items-start gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-5 py-4 text-red-400 text-sm">
+                      <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-medium">Secure properties could not be loaded</p>
+                        <p className="text-xs text-red-500/80 mt-1">{group._error || 'Unknown error'}</p>
+                        <p className="text-xs text-red-600/60 mt-1">
+                          The credential may not have access to this project's secure properties. Try refreshing the page to retry with a different credential.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
                 const groupProps = group.properties || {};
+                // Skip groups where properties is a "COULD NOT ACCESS" string
+                if (typeof groupProps === 'string') {
+                  return (
+                    <div key={group.key} className="flex items-start gap-3 bg-yellow-950/30 border border-yellow-800/50 rounded-xl px-5 py-3 text-yellow-400 text-xs">
+                      <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                      <span>🔒 <strong>{group.key}</strong>: {groupProps}</span>
+                    </div>
+                  );
+                }
                 const filtered = Object.entries(groupProps).filter(([k, v]) =>
                   !cpsSearch || k.toLowerCase().includes(cpsSearch.toLowerCase()) || String(v).toLowerCase().includes(cpsSearch.toLowerCase()));
                 if (filtered.length === 0 && cpsSearch) return null;
