@@ -1311,6 +1311,7 @@ export default function ApplicationsPage() {
                 <th className="text-left px-4 py-3 font-medium">Status</th>
                 <th className="text-left px-4 py-3 font-medium">Environment</th>
                 <th className="text-left px-4 py-3 font-medium">Type</th>
+                <th className="text-left px-4 py-3 font-medium">JAR Version</th>
                 <th className="text-left px-4 py-3 font-medium">Mule Version</th>
                 <th className="text-left px-4 py-3 font-medium">Last Modified</th>
                 <th className="px-4 py-3 font-medium text-center">Actions</th>
@@ -1347,6 +1348,11 @@ export default function ApplicationsPage() {
                         app.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
                       }`}>{app.deploymentType}</span>
                     </td>
+                    <td className="px-4 py-3">
+                      {app.artifactVersion
+                        ? <span className="font-mono text-xs text-emerald-400/90 bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-800/40">{app.artifactVersion}</span>
+                        : <span className="text-gray-600 text-xs">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-gray-400 font-mono text-xs">{app.muleVersion || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {app.lastModifiedDate ? new Date(app.lastModifiedDate).toLocaleDateString() : '—'}
@@ -1376,7 +1382,7 @@ export default function ApplicationsPage() {
               })}
               {displayFiltered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-gray-500">
+                  <td colSpan={9} className="px-5 py-12 text-center text-gray-500">
                     {apps.length === 0
                       ? `No applications found in ${selectedBgName}.`
                       : 'No applications match your filters.'}
