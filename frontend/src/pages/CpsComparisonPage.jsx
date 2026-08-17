@@ -934,6 +934,33 @@ export default function CpsComparisonPage() {
     if (resB.status === 'fulfilled') setPropsB(resB.value);
     else setErrorB(resB.reason?.response?.data?.error || resB.reason?.message || 'Failed');
 
+    // After compare — query stored credentials and populate the credential fields
+    // if they are still empty (e.g., cpsClientId was masked and backend auto-discovered)
+    try {
+      const credRes = await api.get('/cps/credentials');
+      const byUrlBg = credRes.data?.byUrlBg || {};
+
+      const fillCredsFromStore = (s, side) => {
+        if (s.cpsClientId && s.cpsClientSecret) return; // already populated
+        if (!s.cpsUrl) return;
+        const normBase = s.cpsUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+        const bgKey = s.bgId && s.bgId !== '__all__' ? s.bgId : null;
+        const storeKey = bgKey ? `${normBase}::${bgKey}` : null;
+        const stored = storeKey ? byUrlBg[storeKey] : null;
+        if (stored?.maskedId) {
+          // maskedId is first 8 chars + '…' — find the full credential from getAllCredentials
+          const allCreds = getAllCredentials();
+          const match = allCreds.find(c => c.clientId.startsWith(stored.maskedId.replace('…', '')));
+          if (match) {
+            updateSide(side, { cpsClientId: match.clientId, cpsClientSecret: match.clientSecret });
+          }
+        }
+      };
+
+      fillCredsFromStore(sideA, 'A');
+      fillCredsFromStore(sideB, 'B');
+    } catch { /* non-fatal */ }
+
     setComparing(false);
     setFilter('all');
     setSearch('');
