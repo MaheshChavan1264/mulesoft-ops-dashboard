@@ -38,12 +38,12 @@ function getCredentials(req, rawBaseUrl, bgOrgId, envType, chType) {
   if (byUrl?.clientId && byUrl?.clientSecret) return { clientId: byUrl.clientId, clientSecret: byUrl.clientSecret };
 
   // 2b. Any url::clientId* entry stored by Strategy 2 (masked cpsClientId path)
-  //     This allows the 401-retry loop to promote the correct credential to url::bgOrgId
+  //     Mark as _fromFallback so /fetch can also retry on empty 200 responses
   const urlPrefixEntries = Object.entries(sessionCreds)
     .filter(([k, v]) => k.startsWith(`${normUrl}::`) && v?.clientId && v?.clientSecret);
   if (urlPrefixEntries.length > 0) {
     const [, c] = urlPrefixEntries[0];
-    return { clientId: c.clientId, clientSecret: c.clientSecret };
+    return { clientId: c.clientId, clientSecret: c.clientSecret, _fromFallback: true };
   }
 
   // 3. Legacy ch/env key
@@ -205,10 +205,30 @@ router.get('/fetch', authMiddleware, async (req, res) => {
     response = await makeCpsCall(creds.clientId, creds.clientSecret);
     console.log(`CPS primary response — HTTP ${response.status} (clientId="${creds.clientId.slice(0,8)}…")`);
 
-    // If the primary credential returned 401, try all other stored url::clientId credentials.
-    // Run in parallel batches of 5 so we don't make 72+ sequential calls when the CSV is large.
-    // Use 5s timeout for retry calls to fail fast on wrong credentials.
-    if (response.status === 401) {
+    // Helper: check if a CPS response body is empty (credential has server access but no project access)
+    const isEmptyResponse = (r) => {
+      const d = r.data;
+      if (!d) return true;
+      if (Array.isArray(d?.responses)) return d.responses.length === 0 || d.responses.every(x => !x.properties || Object.keys(x.properties).length === 0);
+      if (Array.isArray(d)) return d.length === 0;
+      if (typeof d === 'object') return Object.keys(d).length === 0;
+      return false;
+    };
+
+    // Retry conditions:
+    //   1. HTTP 401 — wrong credential (server-level auth failure)
+    //   2. HTTP 200 but empty response + credential came from step 2b fallback
+    //      (credential has server access but not project-level access)
+    const shouldRetry = response.status === 401 ||
+      (response.status === 200 && creds._fromFallback && isEmptyResponse(response));
+
+    if (shouldRetry) {
+      if (response.status === 200) {
+        console.log(`CPS 200 but empty data — credential "${creds.clientId.slice(0,8)}…" has server access but not project-level access; trying other credentials`);
+      }
+    }
+
+    if (shouldRetry) {
       const sessionCreds = req.session.cpsCreds || {};
       const altEntries = Object.entries(sessionCreds)
         .filter(([k, v]) => k.startsWith(`${normaliseUrl(baseUrl)}::`) && v?.clientId && v?.clientId !== creds.clientId && v?.clientSecret);
@@ -230,11 +250,13 @@ router.get('/fetch', authMiddleware, async (req, res) => {
               console.log(`CPS retry — clientId="${s.reason?.config?.headers?.client_id?.slice(0,8) || '?'}…" threw: ${s.reason?.code || s.reason?.message}`);
             } else {
               const { cred, res: r } = s.value;
-              console.log(`CPS retry — clientId="${cred.clientId.slice(0,8)}…" → HTTP ${r.status}`);
-              if (r.status !== 401) {
+              const empty = isEmptyResponse(r);
+              console.log(`CPS retry — clientId="${cred.clientId.slice(0,8)}…" → HTTP ${r.status}${r.status === 200 && empty ? ' (empty)' : r.status === 200 ? ' ✅ has data' : ''}`);
+              // Accept this credential if: not 401 AND (not empty OR it's a genuine non-200 response)
+              if (r.status !== 401 && !(r.status === 200 && empty)) {
                 response = r;
                 req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: cred.clientId, clientSecret: cred.clientSecret };
-                console.log(`CPS 401 resolved ✅ — promoted clientId "${cred.clientId.slice(0,8)}…" as primary (batch ${batchNum}/${totalBatches})`);
+                console.log(`CPS retry resolved ✅ — promoted clientId "${cred.clientId.slice(0,8)}…" as primary (batch ${batchNum}/${totalBatches})`);
                 found = true;
                 break;
               }
@@ -242,7 +264,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
           }
         }
         if (!found) {
-          console.warn(`CPS 401 ❌ — all ${altEntries.length} credentials failed with 401 or error`);
+          console.warn(`CPS retry ❌ — all ${altEntries.length} credentials returned 401 or empty data`);
         }
       } else {
         console.warn(`CPS 401 — no alt credentials available; CSV may not contain a valid credential for this server`);
