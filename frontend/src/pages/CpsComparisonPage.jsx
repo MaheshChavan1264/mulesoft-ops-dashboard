@@ -233,7 +233,7 @@ function MultiAppChecklist({ apps, selectedIds, loading, onToggle, onSelectAll, 
 
 // ─── SidePanel ────────────────────────────────────────────────────────────────
 
-function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp, hideAppSelector, collapsed, onToggleCollapse, knownCpsUrls }) {
+function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp, hideAppSelector, collapsed, onToggleCollapse }) {
   const { bgId, envId, envs, apps, appId, loadingEnvs, loadingApps, loadingDetail, cpsUrl, cpsEnv, cpsKey, cpsClientId, cpsClientSecret, credsResolved } = state;
   const [showSecret, setShowSecret] = useState(false);
   const isBlue = color === 'border-blue-700/50';
@@ -383,30 +383,8 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
         <p className="text-[10px] text-gray-500 uppercase tracking-wider">CPS Configuration (auto-filled)</p>
         <div>
           <label className="text-[10px] text-gray-600 block mb-0.5">CPS Base URL</label>
-          <input
-            value={cpsUrl}
-            onChange={e => onUpdate({ cpsUrl: e.target.value })}
-            list={`cps-url-list-${label}`}
-            placeholder="https://cps-server.api.sfdcbt.net"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600"
-          />
-          {/* HTML5 datalist for known CPS server suggestions */}
-          <datalist id={`cps-url-list-${label}`}>
-            {[...knownCpsUrls].map(u => <option key={u} value={u} />)}
-          </datalist>
-          {/* Quick-pick chips — shown only when CPS URL is empty */}
-          {!cpsUrl && knownCpsUrls.size > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
-              <span className="text-[9px] text-gray-600 self-center">Known servers:</span>
-              {[...knownCpsUrls].map(u => (
-                <button key={u} onClick={() => onUpdate({ cpsUrl: u })}
-                  className="text-[9px] px-2 py-0.5 rounded border bg-gray-800/60 border-gray-700/50 text-cyan-400/80 hover:text-cyan-300 hover:border-cyan-700/50 transition-colors font-mono truncate max-w-[200px]"
-                  title={u}>
-                  {u.replace(/^https?:\/\//, '').split('.')[0]}
-                </button>
-              ))}
-            </div>
-          )}
+          <input value={cpsUrl} onChange={e => onUpdate({ cpsUrl: e.target.value })} placeholder="https://cps-server.api.sfdcbt.net"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
@@ -457,8 +435,6 @@ const INIT_SIDE = { bgId: '', envId: '__all__', envs: [], apps: [], appId: '', s
 export default function CpsComparisonPage() {
   const { getSecret, hasCredentials, getAllCredentials } = useCpsCredentialStore();
   const [allBgs, setAllBgs] = useState([]);
-  // Collect known CPS base URLs from apps as they are selected — used for suggestions
-  const [knownCpsUrls, setKnownCpsUrls] = useState(new Set());
   const [showBgFilter, setShowBgFilter] = useState(false);
   const [compareMode, setCompareMode] = useState('single'); // 'single' | 'multi'
   // Each side has its own property type
@@ -628,15 +604,6 @@ export default function CpsComparisonPage() {
           const allCreds = getAllCredentials();
           if (allCreds.length > 0) { resolvedClientId = allCreds[0].clientId; resolvedClientSecret = allCreds[0].clientSecret; }
         }
-      }
-
-      // Accumulate known CPS URLs for the suggestions dropdown
-      if (extracted.cpsBaseUrl) {
-        setKnownCpsUrls(prev => {
-          const next = new Set(prev);
-          next.add(extracted.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, ''));
-          return next;
-        });
       }
 
       updateSide(side, {
@@ -1095,7 +1062,6 @@ export default function CpsComparisonPage() {
           hideAppSelector={compareMode === 'multi'}
           collapsed={collapsedA}
           onToggleCollapse={() => setCollapsedA(v => !v)}
-          knownCpsUrls={knownCpsUrls}
         />
 
         {/* Swap + Compare button column */}
@@ -1136,7 +1102,6 @@ export default function CpsComparisonPage() {
           hideAppSelector={compareMode === 'multi'}
           collapsed={collapsedB}
           onToggleCollapse={() => setCollapsedB(v => !v)}
-          knownCpsUrls={knownCpsUrls}
         />
       </div>
 
