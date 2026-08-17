@@ -325,7 +325,7 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
           }}
           options={bgOptions}
           placeholder="Select Business Group…"
-          searchable={filteredBgs.length > 5}
+          searchable
         />
       </div>
 
@@ -340,6 +340,7 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
           options={envOptions}
           placeholder="All Environments"
           disabled={!bgId}
+          searchable
         />
       </div>
 
