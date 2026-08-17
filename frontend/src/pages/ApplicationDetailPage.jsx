@@ -1349,7 +1349,13 @@ export default function ApplicationDetailPage() {
                   <GlassCard key={group.key} icon={Key} title={`🔒 ${group.key}`} count={Object.keys(groupProps).length} noPad>
                     <div className="px-5 py-2 bg-orange-950/20 border-b border-orange-900/20 flex items-center justify-between">
                       <span className="text-[10px] text-orange-400/70">Secure property group — treat values as sensitive</span>
-                      <CopyGroupBtn text={JSON.stringify(groupProps, null, 2)} />
+                      <CopyGroupBtn text={JSON.stringify({
+                        responses: [{
+                          environment: group.environment || cpsData.useEnv || effectiveCpsEnv,
+                          key: group.key,
+                          properties: groupProps,
+                        }]
+                      }, null, 2)} />
                     </div>
                     <div className="max-h-64 overflow-y-auto">
                     <table className="w-full text-sm border-collapse">

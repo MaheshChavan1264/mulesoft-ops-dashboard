@@ -351,23 +351,26 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
         );
         ch2Accessible = true;
         const apps = parseCH2Apps(ch2Response.data);
-        apps.forEach((app) => {
-          const runtimeStatus = app.application?.status || app.application?.state;
-          const deploymentStatus = app.status || app.desiredStatus;
-          const effectiveStatus = runtimeStatus || deploymentStatus;
-          results.push({
-            id: app.id,
-            name: app.name,
-            status: normalizeStatus(effectiveStatus),
-            deploymentStatus: normalizeStatus(deploymentStatus),
-            environment: { id: env.id, name: env.name, type: env.type },
-            deploymentType: 'CloudHub 2.0',
-            lastModifiedDate: app.lastModifiedDate || app.updatedAt,
-            // CH2 list API returns version at top-level, NOT inside target.deploymentSettings
-            muleVersion: app.currentRuntimeVersion || app.lastSuccessfulRuntimeVersion,
-            replicas: app.target?.replicas
+          apps.forEach((app) => {
+            const runtimeStatus = app.application?.status || app.application?.state;
+            const deploymentStatus = app.status || app.desiredStatus;
+            const effectiveStatus = runtimeStatus || deploymentStatus;
+            results.push({
+              id: app.id,
+              name: app.name,
+              status: normalizeStatus(effectiveStatus),
+              deploymentStatus: normalizeStatus(deploymentStatus),
+              environment: { id: env.id, name: env.name, type: env.type },
+              deploymentType: 'CloudHub 2.0',
+              lastModifiedDate: app.lastModifiedDate || app.updatedAt,
+              // CH2 list API returns version at top-level, NOT inside target.deploymentSettings
+              muleVersion: app.currentRuntimeVersion || app.lastSuccessfulRuntimeVersion,
+              replicas: app.target?.replicas,
+              // Deployed artifact (JAR) version from Exchange
+              artifactVersion: app.application?.ref?.version || null,
+              artifactId: app.application?.ref?.artifactId || null,
+            });
           });
-        });
       } catch (e) {
         const status = e.response?.status;
         if (status !== 403 && status !== 401) ch2Accessible = true; // accessible but empty/errored
