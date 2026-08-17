@@ -37,6 +37,15 @@ function getCredentials(req, rawBaseUrl, bgOrgId, envType, chType) {
   const byUrl = sessionCreds[normUrl];
   if (byUrl?.clientId && byUrl?.clientSecret) return { clientId: byUrl.clientId, clientSecret: byUrl.clientSecret };
 
+  // 2b. Any url::clientId* entry stored by Strategy 2 (masked cpsClientId path)
+  //     This allows the 401-retry loop to promote the correct credential to url::bgOrgId
+  const urlPrefixEntries = Object.entries(sessionCreds)
+    .filter(([k, v]) => k.startsWith(`${normUrl}::`) && v?.clientId && v?.clientSecret);
+  if (urlPrefixEntries.length > 0) {
+    const [, c] = urlPrefixEntries[0];
+    return { clientId: c.clientId, clientSecret: c.clientSecret };
+  }
+
   // 3. Legacy ch/env key
   const legacyKey = `${chType}_${envType}`;
   const byLegacy = sessionCreds[legacyKey];

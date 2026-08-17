@@ -574,13 +574,12 @@ export default function CpsComparisonPage() {
         }
 
         if (!credsResolved) {
-          // Strategy 2: post first credential to url::bgOrgId + url-only so
-          // getCredentials can find it, PLUS all as url::clientId for 401-retry
+          // Strategy 2: post each credential under url::clientId (unique per cred).
+          // Do NOT overwrite url::bgOrgId — backend's 401-retry + getCredentials step 2b
+          // will try each url::clientId* entry and promote the correct one to url::bgOrgId.
           const allCreds = getAllCredentials();
           if (allCreds.length > 0) {
             const credMap = {};
-            credMap[`${normBase}::${resolvedBgId}`] = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
-            credMap[normBase]                        = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
             for (const { clientId, clientSecret } of allCreds) {
               credMap[`${normBase}::${clientId}`] = { clientId, clientSecret };
             }
