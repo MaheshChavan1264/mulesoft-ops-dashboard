@@ -547,12 +547,11 @@ export default function ApplicationDetailPage() {
       if (!resolved) {
         const allCreds = getAllCredentials();
         if (allCreds.length > 0) {
-          // Build a single bulk credential map
+          // Strategy 2: post each credential under url::clientId (unique per cred).
+          // Do NOT overwrite url::bgOrgId — the backend's 401-retry loop will
+          // promote the correct one to url::bgOrgId once it finds a 200 response.
+          // getCredentials() now also falls back to url::clientId* entries (step 2b).
           const credMap = {};
-          // First credential → url::bgOrgId + url-only (so getCredentials returns it)
-          credMap[urlBgKey]  = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
-          credMap[normBase]  = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
-          // All credentials → url::clientId keys (for 401-retry loop in backend)
           for (const { clientId, clientSecret } of allCreds) {
             credMap[`${normBase}::${clientId}`] = { clientId, clientSecret };
           }
@@ -561,7 +560,7 @@ export default function ApplicationDetailPage() {
           } catch { /* non-fatal */ }
           setCpsCredsResolved(true);
           resolved = true;
-          console.log(`[CPS auto-resolve] Strategy 2: posted ${allCreds.length} credential(s) (first as primary, all as fallbacks)`);
+          console.log(`[CPS auto-resolve] Strategy 2: posted ${allCreds.length} credential(s) under url::clientId keys; backend will try each and promote the correct one`);
         }
       }
 
