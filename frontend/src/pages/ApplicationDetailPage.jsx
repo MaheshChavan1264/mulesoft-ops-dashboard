@@ -19,6 +19,17 @@ const CopyBtn = ({ text }) => {
   );
 };
 
+// Always-visible copy button (no hover-fade) — used where a button must always be seen
+const CopyGroupBtn = ({ text }) => {
+  const [done, setDone] = useState(false);
+  const copy = () => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); };
+  return (
+    <button onClick={copy} className="flex items-center gap-1 p-1 rounded-md text-orange-400/60 hover:text-orange-300 hover:bg-orange-900/30 transition-all flex-shrink-0" title="Copy as JSON">
+      {done ? <Check size={10} className="text-emerald-400"/> : <Copy size={10}/>}
+    </button>
+  );
+};
+
 const SecretVal = ({ value }) => {
   const [show, setShow] = useState(false);
   const isSecret = /^\*+$/.test(String(value));
@@ -1336,9 +1347,9 @@ export default function ApplicationDetailPage() {
                 if (filtered.length === 0 && cpsSearch) return null;
                 return (
                   <GlassCard key={group.key} icon={Key} title={`🔒 ${group.key}`} count={Object.keys(groupProps).length} noPad>
-                    <div className="group px-5 py-2 bg-orange-950/20 border-b border-orange-900/20 flex items-center justify-between">
+                    <div className="px-5 py-2 bg-orange-950/20 border-b border-orange-900/20 flex items-center justify-between">
                       <span className="text-[10px] text-orange-400/70">Secure property group — treat values as sensitive</span>
-                      <CopyBtn text={JSON.stringify(groupProps, null, 2)} />
+                      <CopyGroupBtn text={JSON.stringify(groupProps, null, 2)} />
                     </div>
                     <div className="max-h-64 overflow-y-auto">
                     <table className="w-full text-sm border-collapse">
