@@ -5,7 +5,6 @@ import { CredentialStoreProvider } from './context/CredentialStoreContext';
 import { CpsCredentialStoreProvider } from './context/CpsCredentialStoreContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
 import ApplicationsPage from './pages/ApplicationsPage';
 import ApplicationDetailPage from './pages/ApplicationDetailPage';
 import ApiManagerPage from './pages/ApiManagerPage';
@@ -42,7 +41,7 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<DashboardPage />} />
+            <Route index element={<Navigate to="/applications" replace />} />
             <Route path="applications" element={<ApplicationsPage />} />
             <Route path="applications/:orgId/:envId/:appId" element={<ApplicationDetailPage />} />
             <Route path="api-manager" element={<ApiManagerPage />} />
