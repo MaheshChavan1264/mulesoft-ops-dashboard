@@ -351,6 +351,11 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
         );
         ch2Accessible = true;
         const apps = parseCH2Apps(ch2Response.data);
+          // Debug: log first app structure to diagnose missing artifactVersion
+          if (apps.length > 0 && results.length === 0) {
+            const sample = apps[0];
+            console.log(`[Summary] CH2 sample app "${sample.name}" — application keys: ${JSON.stringify(Object.keys(sample.application || {}))}, ref: ${JSON.stringify(sample.application?.ref)}, artifactVersion: ${sample.application?.ref?.version}`);
+          }
           apps.forEach((app) => {
             const runtimeStatus = app.application?.status || app.application?.state;
             const deploymentStatus = app.status || app.desiredStatus;
@@ -367,8 +372,13 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
               muleVersion: app.currentRuntimeVersion || app.lastSuccessfulRuntimeVersion,
               replicas: app.target?.replicas,
               // Deployed artifact (JAR) version from Exchange
-              artifactVersion: app.application?.ref?.version || null,
-              artifactId: app.application?.ref?.artifactId || null,
+              // Try multiple paths as the CH2 list API may return ref at different locations
+              artifactVersion: app.application?.ref?.version
+                || app.application?.artifactVersion
+                || app.ref?.version
+                || app.application?.configuration?.['mule.agent.application.properties.service']?.properties?.['anypoint.platform.client_version']
+                || null,
+              artifactId: app.application?.ref?.artifactId || app.ref?.artifactId || app.name || null,
             });
           });
       } catch (e) {
