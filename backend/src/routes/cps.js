@@ -201,7 +201,9 @@ router.get('/fetch', authMiddleware, async (req, res) => {
 
   let response;
   try {
+    console.log(`CPS primary call — clientId="${creds.clientId.slice(0,8)}…"`);
     response = await makeCpsCall(creds.clientId, creds.clientSecret);
+    console.log(`CPS primary response — HTTP ${response.status} (clientId="${creds.clientId.slice(0,8)}…")`);
 
     // If the primary credential returned 401, try all other stored url::clientId credentials.
     // Run in parallel batches of 5 so we don't make 72+ sequential calls when the CSV is large.
@@ -211,36 +213,46 @@ router.get('/fetch', authMiddleware, async (req, res) => {
       const altEntries = Object.entries(sessionCreds)
         .filter(([k, v]) => k.startsWith(`${normaliseUrl(baseUrl)}::`) && v?.clientId && v?.clientId !== creds.clientId && v?.clientSecret);
 
+      console.log(`CPS 401 — ${altEntries.length} alt credential(s) available for retry`);
       if (altEntries.length > 0) {
-        console.log(`CPS 401 — trying ${altEntries.length} alt credential(s) in parallel batches of 5`);
         const BATCH = 5;
         let found = false;
         for (let i = 0; i < altEntries.length && !found; i += BATCH) {
           const batch = altEntries.slice(i, i + BATCH);
+          const batchNum = Math.floor(i / BATCH) + 1;
+          const totalBatches = Math.ceil(altEntries.length / BATCH);
+          console.log(`CPS retry batch ${batchNum}/${totalBatches} — testing clientIds: [${batch.map(([,c]) => c.clientId.slice(0,8)+'…').join(', ')}]`);
           const settled = await Promise.allSettled(
             batch.map(([, c]) => makeCpsCall(c.clientId, c.clientSecret, 5000).then(r => ({ cred: c, res: r })))
           );
           for (const s of settled) {
-            if (s.status === 'fulfilled' && s.value.res.status !== 401) {
-              response = s.value.res;
-              const workingCred = s.value.cred;
-              req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: workingCred.clientId, clientSecret: workingCred.clientSecret };
-              console.log(`CPS 401 resolved — promoted clientId "${workingCred.clientId.slice(0, 8)}…" as primary (batch ${Math.floor(i/BATCH)+1}/${Math.ceil(altEntries.length/BATCH)})`);
-              found = true;
-              break;
+            if (s.status === 'rejected') {
+              console.log(`CPS retry — clientId="${s.reason?.config?.headers?.client_id?.slice(0,8) || '?'}…" threw: ${s.reason?.code || s.reason?.message}`);
+            } else {
+              const { cred, res: r } = s.value;
+              console.log(`CPS retry — clientId="${cred.clientId.slice(0,8)}…" → HTTP ${r.status}`);
+              if (r.status !== 401) {
+                response = r;
+                req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: cred.clientId, clientSecret: cred.clientSecret };
+                console.log(`CPS 401 resolved ✅ — promoted clientId "${cred.clientId.slice(0,8)}…" as primary (batch ${batchNum}/${totalBatches})`);
+                found = true;
+                break;
+              }
             }
           }
         }
         if (!found) {
-          console.warn(`CPS 401 — all ${altEntries.length} credentials failed`);
+          console.warn(`CPS 401 ❌ — all ${altEntries.length} credentials failed with 401 or error`);
         }
+      } else {
+        console.warn(`CPS 401 — no alt credentials available; CSV may not contain a valid credential for this server`);
       }
     }
   } catch (fetchErr) {
     const msg = fetchErr.code === 'ECONNABORTED' || fetchErr.code === 'ETIMEDOUT'
       ? `CPS request timed out after ${fetchErr.config?.timeout || 20000}ms`
       : fetchErr.message || 'CPS network error';
-    console.error(`CPS fetch error for ${fullUrl}: ${msg}`);
+    console.error(`CPS fetch error for ${fullUrl}: [${fetchErr.code || 'ERR'}] ${msg}`);
     return res.status(504).json({ error: msg, attemptedUrl: `${fullUrl}?${queryStr}` });
   }
 
