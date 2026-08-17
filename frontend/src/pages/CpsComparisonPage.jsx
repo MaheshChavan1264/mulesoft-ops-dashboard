@@ -589,20 +589,19 @@ export default function CpsComparisonPage() {
         }
       }
 
-      // Store the resolved client ID so the user can see/override it
-      // For the secret, store what was resolved (masked in UI) or empty if unknown
-      let resolvedClientId = extracted.cpsClientId || '';
+      // Store the resolved client ID so the user can see/override it.
+      // For masked cpsClientId: leave fields empty so fetchSide doesn't
+      // overwrite the backend's auto-discovered (promoted) correct credential.
+      let resolvedClientId = '';
       let resolvedClientSecret = '';
       if (extracted.cpsClientId && hasCredentials) {
         const isMasked = v => !v || /^\*+$/.test(v.trim());
         if (!isMasked(extracted.cpsClientId)) {
+          // Strategy 1 exact match — show the known credential
           const secret = getSecret(extracted.cpsClientId);
           if (secret) { resolvedClientId = extracted.cpsClientId; resolvedClientSecret = secret; }
         }
-        if (!resolvedClientSecret) {
-          const allCreds = getAllCredentials();
-          if (allCreds.length > 0) { resolvedClientId = allCreds[0].clientId; resolvedClientSecret = allCreds[0].clientSecret; }
-        }
+        // If masked or not found in CSV, leave empty — backend will discover via step 2b retry
       }
 
       updateSide(side, {
@@ -819,15 +818,15 @@ export default function CpsComparisonPage() {
     const fetchSide = async (s, pt) => {
       if (!s.cpsUrl || !s.cpsKey) throw new Error('CPS URL and project key are required');
 
-      // Re-post credentials if user manually overrode clientId/secret
+      // Re-post credentials if user manually provided clientId/secret.
+      // Post under url::clientId (NOT url::bgOrgId) so we never overwrite
+      // the backend's promoted correct credential from the step-2b retry.
       if (s.cpsClientId && s.cpsClientSecret) {
         try {
           const normBase = s.cpsUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
-          const bgKey = (s.bgId && s.bgId !== '__all__') ? s.bgId : 'override';
           await api.post('/cps/credentials', {
             credentials: {
-              [`${normBase}::${bgKey}`]: { clientId: s.cpsClientId, clientSecret: s.cpsClientSecret },
-              [normBase]: { clientId: s.cpsClientId, clientSecret: s.cpsClientSecret },
+              [`${normBase}::${s.cpsClientId}`]: { clientId: s.cpsClientId, clientSecret: s.cpsClientSecret },
             }
           });
         } catch { /* non-fatal */ }
