@@ -1,7 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard,
   Server,
   ShieldCheck,
   Package,
@@ -12,7 +11,6 @@ import {
 } from 'lucide-react';
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/applications', icon: Server, label: 'Applications' },
   { to: '/api-manager', icon: ShieldCheck, label: 'API Manager' },
   { to: '/exchange', icon: Package, label: 'Exchange Assets' },
