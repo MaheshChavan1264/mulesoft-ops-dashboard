@@ -265,7 +265,10 @@ router.get('/fetch', authMiddleware, async (req, res) => {
               // Accept this credential if: not 401 AND not "no project access"
               if (r.status !== 401 && !(r.status === 200 && noAccess)) {
                 response = r;
-                req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: cred.clientId, clientSecret: cred.clientSecret };
+                // Promote to url::bgOrgId (when bgOrgId is known) AND url-only
+                // This ensures callers with bgId='__all__' (no bgOrgId) also benefit
+                if (bgOrgId) req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: cred.clientId, clientSecret: cred.clientSecret };
+                req.session.cpsCreds[normaliseUrl(baseUrl)] = { clientId: cred.clientId, clientSecret: cred.clientSecret };
                 console.log(`CPS retry resolved ✅ — promoted clientId "${cred.clientId.slice(0,8)}…" as primary (batch ${batchNum}/${totalBatches})`);
                 found = true;
                 break;

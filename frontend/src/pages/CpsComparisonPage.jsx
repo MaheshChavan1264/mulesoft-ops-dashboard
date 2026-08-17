@@ -945,12 +945,15 @@ export default function CpsComparisonPage() {
         if (!s.cpsUrl) return;
         const normBase = s.cpsUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
         const bgKey = s.bgId && s.bgId !== '__all__' ? s.bgId : null;
+        // Check url::bgId first, then fall back to url-only (for __all__ / no bgOrgId cases)
         const storeKey = bgKey ? `${normBase}::${bgKey}` : null;
-        const stored = storeKey ? byUrlBg[storeKey] : null;
+        const byUrl = credRes.data?.byUrl || {};
+        const stored = (storeKey ? byUrlBg[storeKey] : null) || byUrl[normBase];
         if (stored?.maskedId) {
           // maskedId is first 8 chars + '…' — find the full credential from getAllCredentials
           const allCreds = getAllCredentials();
-          const match = allCreds.find(c => c.clientId.startsWith(stored.maskedId.replace('…', '')));
+          const prefix = stored.maskedId.replace('…', '');
+          const match = allCreds.find(c => c.clientId.startsWith(prefix));
           if (match) {
             updateSide(side, { cpsClientId: match.clientId, cpsClientSecret: match.clientSecret });
           }
