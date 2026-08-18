@@ -389,11 +389,11 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
           {/* Output format */}
           {status === 'idle' && (
             <div className="space-y-1.5">
-              <p className="text-gray-500 text-[10px] uppercase tracking-wider font-medium">Output: CSV — up to 3 files downloaded</p>
-              {['CPS-AllProperties (API Name, Static IPs, Hosts, Properties)', 'CPS-HostAPIUsers (API Users, Secure Hosts)', 'CPS-Schedules (Cron expressions — only if schedulers exist)'].map((s, i) => (
-                <div key={i} className="flex items-center gap-2 bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-1.5">
+              <p className="text-gray-500 text-[10px] uppercase tracking-wider font-medium">Output: Excel (.xlsx) — 3 sheets</p>
+              {['AllPropertiesCatalog', 'Host_APIUsersCatalog', 'ScheduleCatalog'].map(s => (
+                <div key={s} className="flex items-center gap-2 bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-1.5">
                   <ChevronRight size={10} className="text-gray-600 flex-shrink-0" />
-                  <span className="text-gray-300 text-xs">{s}</span>
+                  <span className="text-gray-300 text-xs font-mono">{s}</span>
                 </div>
               ))}
               <p className="text-gray-700 text-[10px]">⚠ Sensitive values masked as <code>****</code></p>
@@ -448,7 +448,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg disabled:opacity-50 transition-colors">
                 {status === 'running'
                   ? <><RefreshCw size={13} className="animate-spin" /> Exporting…</>
-                  : status === 'error' ? <><RefreshCw size={13} /> Retry</> : <><Download size={13} /> Export to CSV</>}
+                  : status === 'error' ? <><RefreshCw size={13} /> Retry</> : <><Download size={13} /> Export to Excel</>}
               </button>
             )}
             {status === 'done' && (
