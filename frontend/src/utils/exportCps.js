@@ -95,9 +95,23 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
         ...ds.environmentVars,
         ...res.data?.properties
       };
-      // CH2 static IPs — from replica list
-      const replicaList = res.data?.replicas || [];
-      staticIPList = replicaList.map(r => r.ipAddress || r.publicIpAddress).filter(Boolean);
+      // CH2 static IPs:
+      // If deployed to a Private Space (targetId is a UUID), fetch outboundStaticIps from Private Spaces API.
+      // Otherwise (Shared Space, targetId is a region name), fall back to replica list.
+      const targetId = res.data?.target?.targetId || '';
+      const isPrivateSpace = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+      if (isPrivateSpace) {
+        try {
+          const psRes = await api.get(`/applications/private-spaces/${effectiveBgOrgId}/${targetId}`);
+          const outboundIPs = psRes.data?.network?.outboundStaticIps || [];
+          if (Array.isArray(outboundIPs)) staticIPList = outboundIPs.filter(Boolean);
+        } catch { /* not a private space or no access — fall through */ }
+      }
+      // Fallback: replica list (shared space or private space fetch failed)
+      if (!staticIPList.length) {
+        const replicaList = res.data?.replicas || [];
+        staticIPList = replicaList.map(r => r.ipAddress || r.publicIpAddress).filter(Boolean);
+      }
       // CH2 schedulers from dedicated endpoint — returns { items: [{flowName, type, expression, enabled}] }
       try {
         const schedRes = await api.get(`/applications/cloudhub2/${effectiveBgOrgId}/${envId}/${app.id}/schedulers`);

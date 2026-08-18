@@ -179,6 +179,7 @@ export default function ApplicationDetailPage() {
   }, [orgId, envId]);
 
   // CH2 schedulers from dedicated /schedulers endpoint
+  const [ch2PrivateIPs, setCh2PrivateIPs] = useState([]);
   const [ch2Schedulers, setCh2Schedulers] = useState(null);
   const [schedulersLoading, setSchedulersLoading] = useState(false);
   // CPS properties fetched specifically to resolve ${...} placeholders in scheduler expressions
@@ -310,6 +311,16 @@ export default function ApplicationDetailPage() {
     try {
       const res = await api.get(`/applications/cloudhub2/${orgId}/${envId}/${appId}`);
       setApp(res.data);
+      // CH2 Private Space static outbound IPs
+      const targetId = res.data?.target?.targetId || '';
+      const isPrivate = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+      if (isPrivate) {
+        try {
+          const psRes = await api.get(`/applications/private-spaces/${orgId}/${targetId}`);
+          const ips = psRes.data?.network?.outboundStaticIps || [];
+          if (Array.isArray(ips) && ips.length) setCh2PrivateIPs(ips.filter(Boolean));
+        } catch { /* not accessible */ }
+      }
     } catch {
       try {
         const res2 = await api.get(`/applications/cloudhub1/${envId}/${appId}`, { params: { orgId } });
@@ -835,8 +846,12 @@ export default function ApplicationDetailPage() {
               <KVRow label="vCores" value={app.application?.vCores!=null?String(app.application.vCores):undefined} />
               <KVRow label="Replicas" value={replicas!=null?String(replicas):undefined} />
               <KVRow label="Static IPs" value={ds.staticIpEnabled!=null?(ds.staticIpEnabled?'✅ Enabled':'❌ Disabled'):undefined} />
-              {/* Show individual replica IP addresses if available */}
-              {replicaList.filter(r => r.ipAddress || r.publicIpAddress).length > 0 && (
+              {/* Private Space static outbound IPs */}
+              {ch2PrivateIPs.length > 0 && (
+                <KVRow label="Static Outbound IPs" value={ch2PrivateIPs.join(', ')} mono />
+              )}
+              {/* Replica IPs (shared space) */}
+              {ch2PrivateIPs.length === 0 && replicaList.filter(r => r.ipAddress || r.publicIpAddress).length > 0 && (
                 <KVRow label="Replica IPs" value={replicaList.filter(r => r.ipAddress || r.publicIpAddress).map(r => r.ipAddress || r.publicIpAddress).join(', ')} mono />
               )}
               <KVRow label="Update Strategy" value={typeof ds.updateStrategy==='string'?ds.updateStrategy:undefined} />
