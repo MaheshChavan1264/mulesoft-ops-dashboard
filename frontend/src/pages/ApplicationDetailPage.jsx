@@ -1,25 +1,20 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, Play, Square, RotateCcw, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity } from 'lucide-react';
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 import PingTestPanel from '../components/PingTestPanel';
+import CopyBtn from '../components/CopyBtn';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
+import { availableActions, ACTION_CONFIG } from '../utils/appUtils';
 
 /* ── Micro components ──────────────────────────────────── */
 
-const CopyBtn = ({ text }) => {
-  const [done, setDone] = useState(false);
-  const copy = () => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); };
-  return (
-    <button onClick={copy} className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/60 transition-all flex-shrink-0">
-      {done ? <Check size={10} className="text-emerald-400"/> : <Copy size={10}/>}
-    </button>
-  );
-};
+// CopyBtn is imported from components/CopyBtn (hover-fade shared component).
+// CopyGroupBtn is unique to this page — always visible, orange tint, used for JSON copying.
 
-// Always-visible copy button (no hover-fade) — used where a button must always be seen
+// Always-visible copy button (no hover-fade) — used only in the secure group header
 const CopyGroupBtn = ({ text }) => {
   const [done, setDone] = useState(false);
   const copy = () => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); };
@@ -87,18 +82,8 @@ const GlassCard = ({ icon: Icon, title, count, accent, children, noPad }) => (
 );
 
 /* ── Action helpers ────────────────────────────────────── */
-const availableActions = (status) => {
-  const s = (status || '').toUpperCase();
-  if (['RUNNING', 'STARTED', 'PARTIALLY_STARTED', 'PARTIALLY_RUNNING'].includes(s)) return ['stop', 'restart'];
-  if (['STOPPED', 'FAILED', 'DEPLOY_FAILED', 'UNDEPLOYED', 'NOT_RUNNING'].includes(s)) return ['start'];
-  return [];
-};
-
-const ACTION_CONFIG = {
-  start:   { label: 'Start',   Icon: Play,      cls: 'text-emerald-400 border-emerald-800/50 hover:bg-emerald-950/60 hover:text-emerald-300' },
-  stop:    { label: 'Stop',    Icon: Square,    cls: 'text-red-400    border-red-800/50    hover:bg-red-950/60    hover:text-red-300' },
-  restart: { label: 'Restart', Icon: RotateCcw, cls: 'text-blue-400   border-blue-800/50   hover:bg-blue-950/60   hover:text-blue-300' }
-};
+// availableActions and ACTION_CONFIG are imported from utils/appUtils.
+// Use detailCls (detail-page border style) instead of btnCls for action buttons here.
 
 function AppConfirmModal({ state, onConfirm, onCancel, loading }) {
   if (!state) return null;
@@ -764,10 +749,10 @@ export default function ApplicationDetailPage() {
                     <span className="text-slate-400 text-xs">Working…</span>
                   </div>
                 ) : actions.map((action) => {
-                  const { Icon, label, cls } = ACTION_CONFIG[action];
+                  const { Icon, label, detailCls } = ACTION_CONFIG[action];
                   return (
                     <button key={action} title={label} onClick={() => requestAction(action)}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 transition-all ${cls}`}>
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 transition-all ${detailCls}`}>
                       <Icon size={13} /> {label}
                     </button>
                   );
