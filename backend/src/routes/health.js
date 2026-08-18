@@ -4,6 +4,9 @@ const axios = require('axios');
 const https = require('https');
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
+const { stripDeploymentSuffix } = require('../utils/appHelpers');
+const { fetchExchangeAppCreds } = require('../utils/exchangeHelpers');
+const { sendProxyError } = require('../utils/responseHelpers');
 
 // Agent that tolerates self-signed / internal-CA certs
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -115,7 +118,7 @@ router.post('/ping', async (req, res) => {
   const attempts = [];
 
   for (const path of PING_PATHS) {
-    // Append optional query parameters (Feature 5: smart ping URL resolution)
+    // Append optional query parameters
     const url = queryParams ? `${base}${path}?${queryParams}` : `${base}${path}`;
     const t0 = Date.now();
 
@@ -158,8 +161,6 @@ router.post('/ping', async (req, res) => {
       //   4. "resource not found" text
       //   5. ENDPT_FAILURE text — Mule app-level 404 wrapped inside HTTP 200
       //   6. Structured app-level 404: { "error": [{ "code": "404", "status": "NOT_FOUND" }] }
-      //      Some Mule apps return HTTP 200 with a JSON body containing an error object
-      //      whose code is "404" — treat this as "path not found" and try the next path.
       const isAppLevel404 = (() => {
         if (!payload || typeof payload !== 'object') return false;
         const errors = Array.isArray(payload.error) ? payload.error
@@ -187,22 +188,19 @@ router.post('/ping', async (req, res) => {
       // Some apps return 500 with a rich pingResponse/endpoints body when a
       // downstream service fails — the app itself IS reachable.
       const hasMeaningfulBody = payload && typeof payload === 'object' && (
-        payload.pingResponse ||   // structured ping connectivity result
-        payload.endpoints ||       // endpoint health list
-        payload.summary ||         // health summary object
+        payload.pingResponse ||
+        payload.endpoints ||
+        payload.summary ||
         (Array.isArray(payload.errors) && payload.errors.length > 0)
       );
 
       if (httpStatus < 500 && !isNoListener) {
-        // This path returned a definitive response (2xx success, or 401/403
-        // meaning the app IS reachable but credentials are wrong).
         const status =
           httpStatus >= 200 && httpStatus < 300 ? 'SUCCESS' :
           httpStatus >= 400 && httpStatus < 500 ? 'PARTIAL' : 'FAILED';
         return res.json({ status, activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts });
       }
 
-      // 5xx with meaningful app-level body → app is reachable (PARTIAL)
       if (httpStatus >= 500 && !isNoListener && hasMeaningfulBody) {
         console.log(`[Ping] ${url} → ${httpStatus} with meaningful pingResponse body — marking PARTIAL (app reachable, downstream error)`);
         return res.json({ status: 'PARTIAL', activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts });
@@ -255,22 +253,15 @@ router.post('/ping', async (req, res) => {
 
 /**
  * Normalize a name for fuzzy matching:
- *   - lowercase
- *   - strip version suffixes (-v1, -v2, -v1.0, v1 …)
+ *   - strip deployment/version suffixes (via shared stripDeploymentSuffix)
  *   - replace hyphens / underscores / dots with space
  *   - collapse whitespace
+ *
+ * Uses stripDeploymentSuffix from appHelpers so the regex rules stay in sync
+ * with the Exchange search normalization in exchange.js.
  */
 function normalizeName(name) {
-  return (name || '')
-    .toLowerCase()
-    // Strip trailing cloud/region+env deployment suffixes before version:
-    //   e.g. -uw2-up, -eu2-ut, -ap1-ud, -uw2-up1, -eu1-prod, -us1-uat
-    .replace(/-[a-z]{2,4}\d+[-_][a-z]{2,5}\d*$/i, '')
-    // Strip standalone region codes at end: -uw2, -eu2, -ap1
-    .replace(/-[a-z]{2,3}\d+$/i, '')
-    // Strip version suffixes (-v1, _v2, .v1.0, v1 bare)
-    .replace(/[-_.]v\d+(\.\d+)*$/i, '')
-    .replace(/\bv\d+(\.\d+)*$/i, '')
+  return stripDeploymentSuffix(name)
     .replace(/[-_.]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -288,34 +279,9 @@ function isMatch(appName, apiLabel) {
  * Foolproof multi-layer strategy to find the API Manager instance for a
  * deployed Mule app and return the clientIds from its APPROVED contracts.
  *
- * ┌─────────────────────────────────────────────────────────────────────────┐
- * │  LAYER 1 — Direct api.id lookup  (100% accurate, fastest)              │
- * │  If the frontend passes `apiId` (from the app's Autodiscovery property  │
- * │  `api.id`), use it to call /apis/{apiId} directly — no name matching.  │
- * ├─────────────────────────────────────────────────────────────────────────┤
- * │  LAYER 2 — assetId-filtered paginated search  (high accuracy)          │
- * │  If `assetId` is known, pass it as a query param to the API Manager    │
- * │  list endpoint so only instances of that asset are returned.            │
- * ├─────────────────────────────────────────────────────────────────────────┤
- * │  LAYER 3 — Paginated fuzzy name search in deployment env  (good)       │
- * │  Fetch ALL instances (paginated, no 200-cap) and match on              │
- * │  instanceLabel / exchangeAssetName / assetId / asset.name.             │
- * ├─────────────────────────────────────────────────────────────────────────┤
- * │  LAYER 4 — All envs in the same BG  (catches cross-env registrations)  │
- * │  Repeat Layer 3 for every other environment in the same BG.            │
- * ├─────────────────────────────────────────────────────────────────────────┤
- * │  LAYER 5 — Parent BG walk  (catches root-org API registrations)        │
- * │  Walk up the BG hierarchy and repeat Layers 3-4 for each ancestor.     │
- * └─────────────────────────────────────────────────────────────────────────┘
+ * Layers 1-3 are implemented here (Layer 4 and 5 are the outer catch-all).
  *
- * Body: {
- *   orgId        string   BG of the deployed app
- *   envId        string   env of the deployed app
- *   appName      string   app name (used for fuzzy matching in Layers 2-5)
- *   apiId?       string   api.id from app Autodiscovery properties → Layer 1
- *   assetId?     string   Exchange assetId from app properties → Layer 2
- *   apiMgrOrgId? string   override BG to search in API Manager
- * }
+ * Body: { orgId, envId, appName, apiId?, assetId?, apiMgrOrgId? }
  */
 router.post('/auto-credentials', authMiddleware, async (req, res) => {
   const { orgId, envId, appName, apiId, assetId, apiMgrOrgId } = req.body || {};
@@ -332,7 +298,6 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
     const client = createClient(req.anypointToken);
     const searchOrgId = (apiMgrOrgId && apiMgrOrgId !== orgId) ? apiMgrOrgId : orgId;
 
-    // Log what was received — helps debug why Layer 1/2 may not fire
     console.log(`[auto-credentials] Request — appName="${appName}" apiId=${apiId || 'null'} assetId=${assetId || 'null'} org=${searchOrgId} env=${envId}`);
 
     // ── Shared helpers ──────────────────────────────────────────────────────
@@ -357,10 +322,7 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
       return Array.isArray(raw) ? raw : [];
     }
 
-    /**
-     * Fetch ALL API Manager instances for org+env using pagination (100/page).
-     * Pass filterAssetId to add ?assetId= server-side filtering (Layer 2).
-     */
+    /** Fetch ALL API Manager instances for org+env using pagination (100/page). */
     async function fetchAllApisForEnv(oId, eId, filterAssetId) {
       const PAGE = 100;
       let offset = 0;
@@ -383,10 +345,7 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
       return all;
     }
 
-    /**
-     * Fetch approved contracts for one API instance and return normalized rows.
-     * clientId priority: coreServicesId (OAuth) → clientId → credentials.clientId
-     */
+    /** Fetch approved contracts for one API instance and return normalized rows. */
     async function extractContractClientIds(oId, eId, api) {
       const apiLabel =
         api.instanceLabel ||
@@ -402,7 +361,7 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
           .filter(c => (c.status || '').toUpperCase() === 'APPROVED')
           .map(c => ({
             clientId:
-              c.application?.coreServicesId ||      // ← PRIMARY (Anypoint OAuth)
+              c.application?.coreServicesId ||
               c.application?.clientId ||
               c.application?.credentials?.clientId ||
               c.clientApplication?.coreServicesId ||
@@ -454,7 +413,7 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
       });
     }
 
-    /** Get all environments for an org (cached across layers). */
+    /** Get all environments for an org. */
     async function getOrgEnvs(oId) {
       try {
         const r = await client.get(`/accounts/api/organizations/${oId}/environments`);
@@ -478,15 +437,9 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
       });
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // LAYER 1: Direct api.id lookup
-    // If the Mule app has Autodiscovery configured, it will have `api.id` in
-    // its runtime properties. Use that to fetch the exact API Manager instance.
-    // Skip apiId="0" — it's a common placeholder meaning "not configured".
-    // ─────────────────────────────────────────────────────────────────────────
+    // ── LAYER 1: Direct api.id lookup ─────────────────────────────────────
     if (apiId && apiId !== '0') {
       console.log(`[auto-credentials] Layer 1 — direct api.id="${apiId}"`);
-      // Try the deployment env first; then scan others in the same org
       const envIds = [envId, ...(await getOrgEnvs(searchOrgId)).map(e => e.id).filter(id => id !== envId)];
       for (const eid of envIds) {
         try {
@@ -504,28 +457,20 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
       console.log('[auto-credentials] Layer 1 — no contracts found, falling through to Layer 2');
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // LAYER 2: assetId-filtered paginated search in deployment env
-    // Passing ?assetId= to API Manager narrows the results to only instances
-    // of that Exchange asset, removing false positives from name matching.
-    // ─────────────────────────────────────────────────────────────────────────
+    // ── LAYER 2: assetId-filtered paginated search ────────────────────────
     if (assetId) {
       console.log(`[auto-credentials] Layer 2 — assetId-filtered search: "${assetId}"`);
       const apis = await fetchAllApisForEnv(searchOrgId, envId, assetId);
-      const matched = apis.length > 0 ? apis : []; // all returned are for this asset
-      if (matched.length > 0) {
-        const { allCandidates, matchInfo } = await collectCandidates(searchOrgId, envId, matched);
+      if (apis.length > 0) {
+        const { allCandidates, matchInfo } = await collectCandidates(searchOrgId, envId, apis);
         if (allCandidates.length > 0) {
-          return sendResult(res, allCandidates, matchInfo, matched, 2);
+          return sendResult(res, allCandidates, matchInfo, apis, 2);
         }
       }
       console.log('[auto-credentials] Layer 2 — no contracts found, falling through to Layer 3');
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // LAYER 3: Paginated fuzzy name search — deployment env only
-    // Fetches ALL instances (no 200-cap) and fuzzy-matches the app name.
-    // ─────────────────────────────────────────────────────────────────────────
+    // ── LAYER 3: Paginated fuzzy name search — deployment env only ────────
     console.log(`[auto-credentials] Layer 3 — paginated fuzzy search in env ${envId}`);
     {
       const apis = await fetchAllApisForEnv(searchOrgId, envId);
@@ -539,7 +484,7 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
       }
     }
 
-    // All layers exhausted — no match found
+    // All layers exhausted
     console.log(`[auto-credentials] All layers exhausted — no API Manager instance found for "${appName}"`);
     return res.json({
       found: false,
@@ -551,13 +496,7 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[auto-credentials] Error:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to resolve credentials from API Manager',
-      found: false,
-      candidates: [],
-      matchInfo: [],
-    });
+    sendProxyError(res, error, 'Failed to resolve credentials from API Manager');
   }
 });
 
@@ -567,13 +506,7 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
  * owned by the logged-in user and using it to create (or reuse) a contract
  * on the target API instance.
  *
- * Flow:
- *   1. List the user's existing Exchange applications
- *   2. Find one that already has an APPROVED contract on this API instance → reuse it
- *   3. If none → pick the first user app and create a new contract
- *   4. Fetch clientId + clientSecret for that app
- *
- * Body: { orgId, envId, apiId }
+ * Body: { orgId, envId, apiId, envType? }
  * Response: { clientId, clientSecret, contractStatus, appName, appId }
  */
 router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
@@ -585,7 +518,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
 
-    // 1. List user's Exchange applications (owned by current user / org)
+    // 1. List user's Exchange applications
     console.log(`[auto-contract-creds] Listing user apps for org ${orgId}`);
     let userApps = [];
     try {
@@ -606,29 +539,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
     }
     console.log(`[auto-contract-creds] Found ${userApps.length} user app(s)`);
 
-    // Helper: fetch credentials for an app
-    const fetchAppCreds = async (appId) => {
-      try {
-        // Try credentials endpoint first
-        const r = await client.get(`/exchange/api/v2/organizations/${orgId}/applications/${appId}/credentials`);
-        const cred = r.data;
-        return {
-          clientId: cred.clientId || cred.client_id || null,
-          clientSecret: cred.clientSecret || cred.client_secret || null,
-        };
-      } catch {
-        try {
-          // Fallback: main app endpoint
-          const r = await client.get(`/exchange/api/v2/organizations/${orgId}/applications/${appId}`);
-          return {
-            clientId: r.data.clientId || r.data.client_id || null,
-            clientSecret: r.data.clientSecret || r.data.client_secret || null,
-          };
-        } catch { return { clientId: null, clientSecret: null }; }
-      }
-    };
-
-    // 2. Fetch existing contracts on this API and check if any belong to a user app
+    // 2. Fetch existing contracts on this API
     console.log(`[auto-contract-creds] Fetching existing contracts for API ${apiId}`);
     let existingContracts = [];
     try {
@@ -652,15 +563,13 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       const appId = existingApproved.application?.id || existingApproved.applicationId;
       const appName = existingApproved.application?.name || 'User App';
       console.log(`[auto-contract-creds] Found existing approved contract for app ${appName} (${appId})`);
-      const creds = await fetchAppCreds(appId);
+      const creds = await fetchExchangeAppCreds(client, orgId, appId);
       if (creds.clientId && creds.clientSecret) {
         return res.json({ ...creds, contractStatus: 'approved', appName, appId });
       }
     }
 
     // Check for PENDING contracts from any of the user's apps
-    // IMPORTANT: Return the pending status WITHOUT creating a new contract.
-    // This is the "Check Approval" flow — we should never create a duplicate.
     const existingPendingAny = existingContracts.find(c =>
       (c.status || '').toUpperCase() !== 'APPROVED' &&
       userAppIds.has(String(c.application?.id || c.applicationId || ''))
@@ -671,26 +580,18 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       const appName = existingPendingAny.application?.name || 'User App';
       const status = (existingPendingAny.status || 'PENDING').toLowerCase();
       console.log(`[auto-contract-creds] Found existing ${status.toUpperCase()} contract for app ${appName} (${appId}) — returning status only`);
-      // Return credentials of the user's app even though contract is pending
-      const creds = await fetchAppCreds(appId);
+      const creds = await fetchExchangeAppCreds(client, orgId, appId);
       return res.json({ clientId: creds.clientId, clientSecret: creds.clientSecret, contractStatus: status, appName, appId });
     }
 
-    // 3. No existing contract at all — create one using the most appropriate user app.
-    //
-    // Selection priority (environment-aware):
-    //   • Production env  → app whose name contains BOTH "prod"  AND "ping"
-    //   • Non-prod env    → app whose name contains BOTH "uat"   AND "ping"
-    //   • Fallback #1     → app whose name contains "ping" (any env)
-    //   • Fallback #2     → first available app
-    //
+    // 3. No existing contract — create one using the most appropriate user app
     const isProd = (envType || '').toLowerCase() === 'production';
     const nameLo = (a) => (a.name || '').toLowerCase();
 
     const targetApp =
       (isProd
         ? userApps.find(a => nameLo(a).includes('prod') && nameLo(a).includes('ping'))
-        : userApps.find(a => nameLo(a).includes('uat')  && nameLo(a).includes('ping'))
+        : userApps.find(a => nameLo(a).includes('uat') && nameLo(a).includes('ping'))
       ) ||
       userApps.find(a => nameLo(a).includes('ping')) ||
       userApps[0];
@@ -716,10 +617,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
         if (autoTier) tierId = autoTier.id;
       } catch { /* no tiers required */ }
 
-      // Try to create a contract — strict env-type enforcement:
-      //   UAT  environments → only apps matching "uat" + "ping"
-      //   PROD environments → only apps matching "prod" + "ping"
-      // If no env-type match at all, fallback to any "ping" app, then others.
+      // Build candidate app list: env-type apps first, then ping-only, then rest
       const envTypeApps = userApps.filter(a => isProd
         ? (nameLo(a).includes('prod') && nameLo(a).includes('ping'))
         : (nameLo(a).includes('uat') && nameLo(a).includes('ping'))
@@ -733,8 +631,6 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       );
       const otherApps2 = userApps.filter(a => !nameLo(a).includes('ping'));
 
-      // Build candidate list: env-type apps first, then ping-only, then rest
-      // (deduplicated — targetApp is always included at the front)
       const seen = new Set([String(targetApp.id)]);
       const candidateApps = [
         targetApp,
@@ -742,7 +638,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
         ...(envTypeApps.length === 0
           ? [...pingOnlyApps.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
              ...otherApps2.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id)))]
-          : [] // if env-type apps exist, don't fall back to generic apps
+          : []
         ),
       ];
       console.log(`[auto-contract-creds] Candidate apps (${isProd ? 'PROD' : 'UAT'}): ${candidateApps.map(a => a.name).join(', ')}`);
@@ -759,7 +655,6 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
           );
           contractStatus = (createRes.data?.status || 'pending').toLowerCase();
           console.log(`[auto-contract-creds] Contract created with app "${candidateApp.name}" (${candidateApp.id}), status: ${contractStatus}`);
-          // Override targetAppId/Name for credential fetch below
           Object.assign(targetApp, { id: candidateApp.id, name: candidateApp.name });
           created = true;
           break;
@@ -771,7 +666,6 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
             lastErr = createErr;
             continue;
           }
-          // Non-IDP error — stop immediately
           console.warn('[auto-contract-creds] Could not create contract:', createErr.response?.data || msg);
           return res.status(createErr.response?.status || 500).json({
             error: msg || 'Failed to create contract',
@@ -797,7 +691,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
     }
 
     // 4. Fetch credentials for the user app
-    const creds = await fetchAppCreds(targetAppId);
+    const creds = await fetchExchangeAppCreds(client, orgId, targetAppId);
     return res.json({
       clientId: creds.clientId,
       clientSecret: creds.clientSecret,
@@ -807,11 +701,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[auto-contract-creds] Error:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to auto-resolve contract credentials',
-      contractStatus: 'error',
-    });
+    sendProxyError(res, error, 'Failed to auto-resolve contract credentials');
   }
 });
 

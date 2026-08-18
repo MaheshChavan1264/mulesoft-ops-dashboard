@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
+const { fetchExchangeAppCreds } = require('../utils/exchangeHelpers');
+const { sendProxyError } = require('../utils/responseHelpers');
 
 // Fetch a client application's clientId from Exchange by numeric appId.
 // Route uses a hyphenated prefix so it CANNOT be confused with /:orgId/:envId/:apiId.
@@ -22,31 +24,12 @@ router.get('/app-client-id/:appId', authMiddleware, async (req, res) => {
   const client = createClient(req.anypointToken);
 
   for (const oid of toTry) {
-    // Try 1: main application endpoint
-    try {
-      const r = await client.get(`/exchange/api/v2/organizations/${oid}/applications/${appId}`);
-      const app = r.data;
-      const clientId = app.clientId || app.client_id || null;
-      if (clientId) {
-        console.log(`[APIs] clientId resolved for appId ${appId} via org ${oid}`);
-        return res.json({ id: app.id, name: app.name, clientId });
-      }
-    } catch (e1) {
-      console.warn(`[APIs] Exchange app lookup failed (org ${oid}):`, e1.response?.status, e1.message);
+    const { clientId, clientSecret } = await fetchExchangeAppCreds(client, oid, appId);
+    if (clientId) {
+      console.log(`[APIs] clientId resolved for appId ${appId} via org ${oid}`);
+      return res.json({ id: appId, name: null, clientId });
     }
-
-    // Try 2: explicit credentials sub-endpoint
-    try {
-      const r = await client.get(`/exchange/api/v2/organizations/${oid}/applications/${appId}/credentials`);
-      const cred = r.data;
-      const clientId = cred.clientId || cred.client_id || null;
-      if (clientId) {
-        console.log(`[APIs] clientId resolved for appId ${appId} via credentials endpoint (org ${oid})`);
-        return res.json({ id: appId, name: null, clientId });
-      }
-    } catch (e2) {
-      console.warn(`[APIs] Exchange credentials endpoint failed (org ${oid}):`, e2.response?.status, e2.message);
-    }
+    console.warn(`[APIs] Exchange app lookup found no clientId (org ${oid})`);
   }
 
   // Nothing worked — return null clientId without error so UI gracefully shows "—"
@@ -65,10 +48,7 @@ router.get('/:orgId/:envId', authMiddleware, async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching APIs:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API instances'
-    });
+    sendProxyError(res, error, 'Failed to fetch API instances');
   }
 });
 
@@ -81,10 +61,7 @@ router.get('/:orgId/:envId/:apiId', authMiddleware, async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching API:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API instance'
-    });
+    sendProxyError(res, error, 'Failed to fetch API instance');
   }
 });
 
@@ -133,10 +110,7 @@ router.get('/:orgId/:envId/:apiId/tiers', authMiddleware, async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching SLA tiers:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch SLA tiers'
-    });
+    sendProxyError(res, error, 'Failed to fetch SLA tiers');
   }
 });
 
@@ -149,10 +123,7 @@ router.get('/:orgId/:envId/:apiId/alerts', authMiddleware, async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching API alerts:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API alerts'
-    });
+    sendProxyError(res, error, 'Failed to fetch API alerts');
   }
 });
 

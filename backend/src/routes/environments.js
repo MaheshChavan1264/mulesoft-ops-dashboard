@@ -2,13 +2,8 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
-
-// Filter out non-production environments (qa, dev, etc.)
-const filterEnvs = (envs) =>
-  envs.filter((e) => {
-    const name = (e.name || '').toLowerCase();
-    return !name.includes('qa') && !name.includes('dev');
-  });
+const { isProductionEnv, uniqueProductionEnvs } = require('../utils/appHelpers');
+const { sendProxyError } = require('../utils/responseHelpers');
 
 // Get environments for a specific org — filtered to only those the user has access to
 router.get('/:orgId', authMiddleware, async (req, res) => {
@@ -21,19 +16,14 @@ router.get('/:orgId', authMiddleware, async (req, res) => {
 
   // Fast path: session has accessible envs for this specific org
   if (req.accessibleEnvironments[targetOrgId]?.length > 0) {
-    const envs = filterEnvs(req.accessibleEnvironments[targetOrgId]);
+    const envs = req.accessibleEnvironments[targetOrgId].filter(isProductionEnv);
     return res.json({ data: envs, total: envs.length });
   }
 
-  // If root org or no direct match — return all accessible envs across all orgs
+  // If root org or no direct match — return all accessible envs across all orgs (deduped)
   if (allAccessibleIds.size > 0) {
     const allEnvs = Object.values(req.accessibleEnvironments).flat();
-    const seen = new Set();
-    const unique = filterEnvs(allEnvs.filter((e) => {
-      if (seen.has(e.id)) return false;
-      seen.add(e.id);
-      return true;
-    }));
+    const unique = uniqueProductionEnvs(allEnvs);
     if (unique.length > 0) return res.json({ data: unique, total: unique.length });
   }
 
@@ -44,15 +34,13 @@ router.get('/:orgId', authMiddleware, async (req, res) => {
       `/accounts/api/organizations/${targetOrgId}/environments`
     );
     const all = response.data.data || [];
-    const filtered = filterEnvs(
-      allAccessibleIds.size > 0 ? all.filter((e) => allAccessibleIds.has(e.id)) : all
-    );
+    const candidates = allAccessibleIds.size > 0
+      ? all.filter((e) => allAccessibleIds.has(e.id))
+      : all;
+    const filtered = candidates.filter(isProductionEnv);
     res.json({ data: filtered, total: filtered.length });
   } catch (error) {
-    console.error('Error fetching environments:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch environments'
-    });
+    sendProxyError(res, error, 'Failed to fetch environments');
   }
 });
 
@@ -60,12 +48,7 @@ router.get('/:orgId', authMiddleware, async (req, res) => {
 router.get('/', authMiddleware, async (req, res) => {
   if (Object.keys(req.accessibleEnvironments).length > 0) {
     const allEnvs = Object.values(req.accessibleEnvironments).flat();
-    const seen = new Set();
-    const unique = filterEnvs(allEnvs.filter((e) => {
-      if (seen.has(e.id)) return false;
-      seen.add(e.id);
-      return true;
-    }));
+    const unique = uniqueProductionEnvs(allEnvs);
     return res.json({ data: unique, total: unique.length });
   }
 
@@ -77,10 +60,7 @@ router.get('/', authMiddleware, async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching environments:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch environments'
-    });
+    sendProxyError(res, error, 'Failed to fetch environments');
   }
 });
 

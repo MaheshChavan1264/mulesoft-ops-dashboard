@@ -2,7 +2,8 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
-const ANYPOINT_URL = process.env.ANYPOINT_PLATFORM_URL || 'https://anypoint.mulesoft.com';
+const { ANYPOINT_URL } = require('../utils/anypointClient');
+const { mapOrgShape } = require('../utils/orgHelpers');
 
 // Helper: fetch user profile and store session
 async function storeSession(req, token) {
@@ -27,14 +28,7 @@ async function storeSession(req, token) {
   req.session.orgName = rootOrgName;
   req.session.username = user.username;
   // Store full member org list so /business-groups can return it without extra API calls
-  req.session.memberOrgs = memberOrgs.map((o) => ({
-    id: o.id,
-    name: o.name,
-    domain: o.domain,
-    type: o.type,
-    parentId: o.parentId || null,
-    subOrganizationIds: o.subOrganizationIds || []
-  }));
+  req.session.memberOrgs = memberOrgs.map(mapOrgShape);
 
   // Build the set of environment IDs the user has an explicit role in
   // user.roles[].contextParams.envId is the authoritative source
