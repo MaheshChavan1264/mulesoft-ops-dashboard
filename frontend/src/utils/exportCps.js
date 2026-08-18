@@ -130,13 +130,24 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   if (cpsClientId && !isMasked(cpsClientId) && getCredential) {
     const secret = getCredential(cpsClientId);
     if (secret) {
-      // ✅ Specific credential found — post ONLY this one as the primary
-      try {
-        await api.post('/cps/credentials', { credentials: {
-          [`${normUrl}::${bgOrgId}`]: { clientId: cpsClientId, clientSecret: secret },
-          [normUrl]: { clientId: cpsClientId, clientSecret: secret },
-        }});
-      } catch { /* non-fatal */ }
+      // ✅ Specific credential found — post it as the primary (url::bgOrgId)
+      // ALSO post all other credentials as url::clientId fallback entries.
+      // Reason: the specific credential may not have access to THIS project
+      // (returns "COULD NOT ACCESS") — in that case the backend retry loop
+      // needs the other entries to try automatically.
+      const credMap = {
+        [`${normUrl}::${bgOrgId}`]: { clientId: cpsClientId, clientSecret: secret },
+        [normUrl]: { clientId: cpsClientId, clientSecret: secret },
+      };
+      if (getAllCredentials) {
+        const allCreds = getAllCredentials();
+        for (const { clientId, clientSecret } of allCreds) {
+          if (clientId !== cpsClientId) {
+            credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
+          }
+        }
+      }
+      try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
     } else if (getAllCredentials) {
       // Specific clientId not in CSV — fall back to all credentials
       const allCreds = getAllCredentials();
