@@ -260,6 +260,7 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
     return val;
   };
 
+  const schedEnv = app._envName || app.environment?.name || '—';
   for (const s of (fetchedSchedulers || [])) {
     const innerSchedulers = Array.isArray(s.schedulers) ? s.schedulers : [];
     const cronSched = innerSchedulers.find(x => /cron/i.test(x.type || '')) || innerSchedulers[0];
@@ -269,6 +270,7 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
     const rawTimeUnit = fixedSched?.timeUnit || s.schedule?.timeUnit || s.timeUnit || '';
     const rawTimeZone = cronSched?.timeZone || s.schedule?.timeZone || s.timeZone || '';
     scheduleRows.push({
+      environment: schedEnv,
       apiDomainName: app.name,
       scheduleName: s.flow || s.flowName || s.name || s.schedulerName || '',
       enabled: s.enabled !== false ? 'true' : 'false',
@@ -279,14 +281,16 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
     });
   }
 
+  const environment = app._envName || app.environment?.name || '—';
+
   if (secureGroups.length === 0) {
-    allPropsRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', properties: '' });
-    hostApiRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', hostsSecure: '', apiUsers: '', notAccessible: '' });
+    allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', properties: '' });
+    hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', hostsSecure: '', apiUsers: '', notAccessible: '' });
   } else {
     for (const group of secureGroups) {
       const maskedSec = maskSecrets(group.properties);
-      allPropsRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: group.key, properties: propsToString(maskedSec) });
-      hostApiRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: group.key, hostsSecure: extractHostsSecure(group.properties), apiUsers: extractApiUsers(group.properties), notAccessible: '' });
+      allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: group.key, properties: propsToString(maskedSec) });
+      hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: group.key, hostsSecure: extractHostsSecure(group.properties), apiUsers: extractApiUsers(group.properties), notAccessible: '' });
     }
   }
   // One row per app in the dedicated StaticIPs sheet
@@ -303,11 +307,12 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
 }
 
 function buildErrorRow(app, e, allPropsRows, hostApiRows) {
+  const environment = app._envName || app.environment?.name || '—';
   const cloudhubVersion = app.deploymentType === 'CloudHub 2.0' ? 'CloudHub 2.0' : 'CloudHub 1.0';
   const appStatus = app.status || '—';
   const msg = `ERROR: ${e.response?.data?.error || e.message}`;
-  allPropsRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', properties: msg });
-  hostApiRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', hostsSecure: '', apiUsers: '', notAccessible: msg });
+  allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', properties: msg });
+  hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', hostsSecure: '', apiUsers: '', notAccessible: msg });
 }
 
 /**
@@ -375,17 +380,17 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
   const wb = XLSX.utils.book_new();
 
   const ws1 = XLSX.utils.json_to_sheet(allPropsRows, {
-    header: ['apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties']
+    header: ['environment', 'apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties']
   });
   XLSX.utils.book_append_sheet(wb, ws1, 'AllPropertiesCatalog');
 
   const ws2 = XLSX.utils.json_to_sheet(hostApiRows, {
-    header: ['apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
+    header: ['environment', 'apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
   });
   XLSX.utils.book_append_sheet(wb, ws2, 'Host_APIUsersCatalog');
 
   const ws3 = XLSX.utils.json_to_sheet(scheduleRows, {
-    header: ['apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod']
+    header: ['environment', 'apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod']
   });
   XLSX.utils.book_append_sheet(wb, ws3, 'ScheduleCatalog');
 
