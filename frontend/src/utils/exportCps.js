@@ -106,18 +106,19 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
     } else {
       const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: effectiveBgOrgId } });
       runtimeProps = res.data?.properties || {};
-      // CH1 static IPs — always attempt the dedicated endpoint
+      // CH1 static IPs — try dedicated endpoint first
       try {
         const sipRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/static-ips`, { params: { orgId: effectiveBgOrgId } });
         const sipArr = Array.isArray(sipRes.data) ? sipRes.data
           : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
         staticIPList = sipArr.map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip)).filter(Boolean);
-        // Fallback: check inline fields on the raw app detail response
-        if (!staticIPList.length) {
-          const rawIPs = res.data?.staticIPs || res.data?.staticIps || res.data?.staticIPAddresses || [];
-          if (Array.isArray(rawIPs)) staticIPList = rawIPs.map(s => typeof s === 'string' ? s : (s.ipAddress || s.address || s.ip)).filter(Boolean);
-        }
-      } catch { /* endpoint may not exist — continue without IPs */ }
+      } catch { /* 404 or other — will check inline fields below */ }
+      // Fallback: inline fields on the main app detail response
+      // (this is what the Application Detail Page uses when /static-ips returns 404)
+      if (!staticIPList.length) {
+        const rawIPs = res.data?.staticIPs || res.data?.staticIps || res.data?.staticIPAddresses || res.data?.ipAddresses || [];
+        if (Array.isArray(rawIPs)) staticIPList = rawIPs.map(s => typeof s === 'string' ? s : (s.ipAddress || s.address || s.ip)).filter(Boolean);
+      }
       // CH1 schedulers from dedicated endpoint
       try {
         const schedRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/schedules`, { params: { orgId: effectiveBgOrgId } });
