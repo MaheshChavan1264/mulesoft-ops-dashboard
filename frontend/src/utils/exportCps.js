@@ -104,20 +104,20 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
     } else {
       const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: bgOrgId } });
       runtimeProps = res.data?.properties || {};
-      // CH1 static IPs — from dedicated endpoint when enabled
-      if (res.data?.staticIPsEnabled) {
-        try {
-          const sipRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/static-ips`, { params: { orgId: bgOrgId } });
-          const sipArr = Array.isArray(sipRes.data) ? sipRes.data
-            : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
-          staticIPList = sipArr.map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip)).filter(Boolean);
-          // Fallback: check inline fields on the raw response
-          if (!staticIPList.length) {
-            const rawIPs = res.data?.staticIPs || res.data?.staticIps || res.data?.staticIPAddresses || [];
-            if (Array.isArray(rawIPs)) staticIPList = rawIPs.map(s => typeof s === 'string' ? s : (s.ipAddress || s.address || s.ip)).filter(Boolean);
-          }
-        } catch { /* endpoint may not exist */ }
-      }
+      // CH1 static IPs — always attempt the dedicated endpoint;
+      // also check app.staticIPsEnabled (summary) as a fallback trigger
+      const ch1StaticEnabled = res.data?.staticIPsEnabled ?? app.staticIPsEnabled;
+      try {
+        const sipRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/static-ips`, { params: { orgId: bgOrgId } });
+        const sipArr = Array.isArray(sipRes.data) ? sipRes.data
+          : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
+        staticIPList = sipArr.map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip)).filter(Boolean);
+        // Fallback: check inline fields on the raw app detail response
+        if (!staticIPList.length) {
+          const rawIPs = res.data?.staticIPs || res.data?.staticIps || res.data?.staticIPAddresses || [];
+          if (Array.isArray(rawIPs)) staticIPList = rawIPs.map(s => typeof s === 'string' ? s : (s.ipAddress || s.address || s.ip)).filter(Boolean);
+        }
+      } catch { /* endpoint may not exist — continue without IPs */ }
       // CH1 schedulers from dedicated endpoint
       try {
         const schedRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/schedules`, { params: { orgId: bgOrgId } });
@@ -391,32 +391,46 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
 
   }
 
-  // Build XLSX workbook
-  const wb = XLSX.utils.book_new();
-
-  // Sheet 1: AllPropertiesCatalog
-  const ws1 = XLSX.utils.json_to_sheet(allPropsRows, {
-    header: ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'properties']
-  });
-  XLSX.utils.book_append_sheet(wb, ws1, 'AllPropertiesCatalog');
-
-  // Sheet 2: Host_APIUsersCatalog
-  const ws2 = XLSX.utils.json_to_sheet(hostApiRows, {
-    header: ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
-  });
-  XLSX.utils.book_append_sheet(wb, ws2, 'Host_APIUsersCatalog');
-
-  // Sheet 3: ScheduleCatalog
-  const ws3 = XLSX.utils.json_to_sheet(scheduleRows, {
-    header: ['apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod']
-  });
-  XLSX.utils.book_append_sheet(wb, ws3, 'ScheduleCatalog');
-
-  // Build filename: CPS-Properties-{BGName}-{EnvName}-{Date}.xlsx
+  // ── Export as CSV ──────────────────────────────────────────────────────
   const date = new Date().toISOString().split('T')[0];
   const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  const bgPart = safeName(bgName);
   const envPart = safeName(envName);
-  const filename = ['CPS-Properties', envPart, date].filter(Boolean).join('-') + '.xlsx';
-  XLSX.writeFile(wb, filename);
+
+  const toCsv = (rows, headers) => {
+    const lines = [headers];
+    for (const row of rows) lines.push(headers.map(h => '"' + String(row[h] ?? '').replace(/"/g, '""') + '"'));
+    return lines.map(r => r.join(',')).join('\n');
+  };
+
+  const triggerDownload = (csvContent, filename) => {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Sheet 1 — AllPropertiesCatalog
+  triggerDownload(
+    toCsv(allPropsRows, ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'properties']),
+    ['CPS-AllProperties', envPart, date].filter(Boolean).join('-') + '.csv'
+  );
+
+  // Sheet 2 — Host_APIUsersCatalog (download after a short delay so browser allows multiple downloads)
+  await new Promise(r => setTimeout(r, 300));
+  triggerDownload(
+    toCsv(hostApiRows, ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']),
+    ['CPS-HostAPIUsers', envPart, date].filter(Boolean).join('-') + '.csv'
+  );
+
+  // Sheet 3 — ScheduleCatalog
+  if (scheduleRows.length > 0) {
+    await new Promise(r => setTimeout(r, 300));
+    triggerDownload(
+      toCsv(scheduleRows, ['apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod']),
+      ['CPS-Schedules', envPart, date].filter(Boolean).join('-') + '.csv'
+    );
+  }
 }
