@@ -386,46 +386,27 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
 
   }
 
-  // ── Export as CSV ──────────────────────────────────────────────────────
+  // ── Export as Excel (.xlsx) with 3 sheets ─────────────────────────────
+  const wb = XLSX.utils.book_new();
+
+  const ws1 = XLSX.utils.json_to_sheet(allPropsRows, {
+    header: ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'properties']
+  });
+  XLSX.utils.book_append_sheet(wb, ws1, 'AllPropertiesCatalog');
+
+  const ws2 = XLSX.utils.json_to_sheet(hostApiRows, {
+    header: ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
+  });
+  XLSX.utils.book_append_sheet(wb, ws2, 'Host_APIUsersCatalog');
+
+  const ws3 = XLSX.utils.json_to_sheet(scheduleRows, {
+    header: ['apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod']
+  });
+  XLSX.utils.book_append_sheet(wb, ws3, 'ScheduleCatalog');
+
   const date = new Date().toISOString().split('T')[0];
   const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   const envPart = safeName(envName);
-
-  const toCsv = (rows, headers) => {
-    const lines = [headers];
-    for (const row of rows) lines.push(headers.map(h => '"' + String(row[h] ?? '').replace(/"/g, '""') + '"'));
-    return lines.map(r => r.join(',')).join('\n');
-  };
-
-  const triggerDownload = (csvContent, filename) => {
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  // Sheet 1 — AllPropertiesCatalog
-  triggerDownload(
-    toCsv(allPropsRows, ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'properties']),
-    ['CPS-AllProperties', envPart, date].filter(Boolean).join('-') + '.csv'
-  );
-
-  // Sheet 2 — Host_APIUsersCatalog (download after a short delay so browser allows multiple downloads)
-  await new Promise(r => setTimeout(r, 300));
-  triggerDownload(
-    toCsv(hostApiRows, ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']),
-    ['CPS-HostAPIUsers', envPart, date].filter(Boolean).join('-') + '.csv'
-  );
-
-  // Sheet 3 — ScheduleCatalog
-  if (scheduleRows.length > 0) {
-    await new Promise(r => setTimeout(r, 300));
-    triggerDownload(
-      toCsv(scheduleRows, ['apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod']),
-      ['CPS-Schedules', envPart, date].filter(Boolean).join('-') + '.csv'
-    );
-  }
+  const filename = ['CPS-Properties', envPart, date].filter(Boolean).join('-') + '.xlsx';
+  XLSX.writeFile(wb, filename);
 }
