@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud, Download } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud } from 'lucide-react';
 import CredentialImportButton from '../components/CredentialImportButton';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
@@ -1156,34 +1156,6 @@ export default function ApplicationsPage() {
             className="flex items-center gap-2 text-sm text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 hover:bg-cyan-950/60 border border-cyan-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
             <Activity size={14} />
             {selectedApps.length > 0 ? `Ping (${selectedApps.length})` : 'Ping Test'}
-          </button>
-          <button
-            onClick={() => {
-              const exportApps = selectedApps.length > 0 ? selectedApps : filtered;
-              const rows = [['Application', 'Status', 'Environment', 'Env Type', 'Deployment Type', 'Static IPs Enabled', 'Mule Version', 'Last Modified']];
-              exportApps.forEach(a => rows.push([
-                a.name,
-                a.status || '—',
-                a.environment?.name || '—',
-                a.environment?.type || '—',
-                a.deploymentType || '—',
-                a.staticIPsEnabled != null ? (a.staticIPsEnabled ? 'Yes' : 'No') : '—',
-                a.muleVersion || '—',
-                a.lastModifiedDate ? new Date(a.lastModifiedDate).toLocaleDateString() : '—',
-              ]));
-              const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `applications-${new Date().toISOString().slice(0, 10)}.csv`;
-              document.body.appendChild(a); a.click(); document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-            }}
-            disabled={loading || filtered.length === 0}
-            title={selectedApps.length > 0 ? `Export ${selectedApps.length} selected apps to CSV` : 'Export all visible apps to CSV'}
-            className="flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300 bg-purple-950/40 hover:bg-purple-950/60 border border-purple-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
-            <Download size={14} /> Export Apps
           </button>
           <button onClick={() => setShowExport(true)} disabled={loading || apps.length === 0}
             title="Export CPS Properties to Excel"

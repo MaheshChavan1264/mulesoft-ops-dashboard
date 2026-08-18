@@ -180,6 +180,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
 
     try {
       const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride);
+      const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
       const maskedNs = maskSecrets(flatNs);
       const hostsNonSecure = extractHosts(flatNs);
 
@@ -251,12 +252,14 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
         // No secure groups — one row with empty cpsSecureKey and empty properties
         allPropsRows.push({
           apiName: app.name,
+          staticIPsEnabled,
           hostsNonSecure,
           cpsSecureKey: flatNs['cps.secure.properties'] || '',
           properties: ''
         });
         hostApiRows.push({
           apiName: app.name,
+          staticIPsEnabled,
           hostsNonSecure,
           cpsSecureKey: flatNs['cps.secure.properties'] || '',
           hostsSecure: '',
@@ -269,12 +272,14 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
           const maskedSec = maskSecrets(group.properties);
           allPropsRows.push({
             apiName: app.name,
+            staticIPsEnabled,
             hostsNonSecure,
             cpsSecureKey: group.key,
             properties: propsToString(maskedSec)  // only this secure group's props
           });
           hostApiRows.push({
             apiName: app.name,
+            staticIPsEnabled,
             hostsNonSecure,
             cpsSecureKey: group.key,
             hostsSecure: extractHostsSecure(group.properties),
@@ -285,14 +290,17 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
       }
     } catch (e) {
       // App failed — add a placeholder row
+      const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
       allPropsRows.push({
         apiName: app.name,
+        staticIPsEnabled,
         hostsNonSecure: '',
         cpsSecureKey: '',
         properties: `ERROR: ${e.response?.data?.error || e.message}`
       });
       hostApiRows.push({
         apiName: app.name,
+        staticIPsEnabled,
         hostsNonSecure: '',
         cpsSecureKey: '',
         hostsSecure: '',
@@ -308,13 +316,13 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
 
   // Sheet 1: AllPropertiesCatalog
   const ws1 = XLSX.utils.json_to_sheet(allPropsRows, {
-    header: ['apiName', 'hostsNonSecure', 'cpsSecureKey', 'properties']
+    header: ['apiName', 'staticIPsEnabled', 'hostsNonSecure', 'cpsSecureKey', 'properties']
   });
   XLSX.utils.book_append_sheet(wb, ws1, 'AllPropertiesCatalog');
 
   // Sheet 2: Host_APIUsersCatalog
   const ws2 = XLSX.utils.json_to_sheet(hostApiRows, {
-    header: ['apiName', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
+    header: ['apiName', 'staticIPsEnabled', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
   });
   XLSX.utils.book_append_sheet(wb, ws2, 'Host_APIUsersCatalog');
 

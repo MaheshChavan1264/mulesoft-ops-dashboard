@@ -323,7 +323,9 @@ export default function ApplicationDetailPage() {
           muleVersion:typeof c.muleVersion==='string'?c.muleVersion:c.muleVersion?.version,
           lastModifiedDate:c.lastUpdateTime?new Date(c.lastUpdateTime).toISOString():null,
           properties:c.properties||{}, persistentQueues:c.persistentQueues,
-          staticIPsEnabled:c.staticIPsEnabled, loggingCustomLog4JEnabled:c.loggingCustomLog4JEnabled,
+          staticIPsEnabled:c.staticIPsEnabled,
+          staticIPs: Array.isArray(c.staticIPs) ? c.staticIPs : [],
+          loggingCustomLog4JEnabled:c.loggingCustomLog4JEnabled,
           monitoringEnabled:c.monitoringAutoRestart??c.monitoringEnabled,
           workers:{ amount:typeof c.workers==='number'?c.workers:c.workers?.amount, type:c.workerType||c.workers?.type },
           _ch1Schedules:sch, _raw:c });
@@ -800,6 +802,9 @@ export default function ApplicationDetailPage() {
               <KVRow label="Workers" value={app.workers?.amount!=null?String(app.workers.amount):undefined} />
               <KVRow label="Worker Type" value={typeof app.workers?.type==='string'?app.workers.type:app.workers?.type?.name} />
               <KVRow label="Static IPs" value={app.staticIPsEnabled!=null?(app.staticIPsEnabled?'✅ Enabled':'❌ Disabled'):undefined} />
+              {app.staticIPs && app.staticIPs.length > 0 && (
+                <KVRow label="Static IP Addresses" value={app.staticIPs.join(', ')} mono />
+              )}
               <KVRow label="Last Modified" value={app.lastModifiedDate?new Date(app.lastModifiedDate).toLocaleString():undefined} />
             </>) : (<>
               <KVRow label="Runtime Status" value={app.application?.status} />
