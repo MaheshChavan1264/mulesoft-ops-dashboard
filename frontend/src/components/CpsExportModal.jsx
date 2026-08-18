@@ -299,26 +299,62 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
       }
     }
 
-    // ── Single export — all apps in one file with Environment column ──────
-    const uniqueEnvNames = [...new Set(allApps.map(a => a._envName || a.environment?.name).filter(Boolean))];
-    const combinedEnvName = uniqueEnvNames.length === 1 ? uniqueEnvNames[0] : 'Multi-Env';
-
-    try {
-      await exportCpsProperties({
-        apps: allApps,
-        bgOrgId,
-        bgName,
-        envName: combinedEnvName,
-        cpsBaseUrl: cpsBaseUrl.trim(),
-        cpsEnvOverride: cpsEnv.trim(),
-        onProgress: (current, total, label) => setProgress({ current, total, label }),
-        getCredential: hasCpsCreds ? getSecret : null,
-        getAllCredentials: hasCpsCreds ? getAllCredentials : null,
-      });
-      setStatus('done');
-    } catch (e) {
-      setErrorMsg(e.message || 'Export failed');
-      setStatus('error');
+    if (usePreselected) {
+      // ── Pre-selected apps: single file with Environment column ─────────────
+      const uniqueEnvNames = [...new Set(allApps.map(a => a._envName || a.environment?.name).filter(Boolean))];
+      const combinedEnvName = uniqueEnvNames.length === 1 ? uniqueEnvNames[0] : 'Multi-Env';
+      try {
+        await exportCpsProperties({
+          apps: allApps,
+          bgOrgId,
+          bgName,
+          envName: combinedEnvName,
+          cpsBaseUrl: cpsBaseUrl.trim(),
+          cpsEnvOverride: cpsEnv.trim(),
+          onProgress: (current, total, label) => setProgress({ current, total, label }),
+          getCredential: hasCpsCreds ? getSecret : null,
+          getAllCredentials: hasCpsCreds ? getAllCredentials : null,
+        });
+        setStatus('done');
+      } catch (e) {
+        setErrorMsg(e.message || 'Export failed');
+        setStatus('error');
+      }
+    } else {
+      // ── BG/Env selector: one file per environment ──────────────────────────
+      const appsByEnv = new Map();
+      for (const a of allApps) {
+        const envKey = a._envName || a.environment?.name || 'Unknown';
+        if (!appsByEnv.has(envKey)) appsByEnv.set(envKey, { apps: [], bgName: a._bgName || bgName });
+        appsByEnv.get(envKey).apps.push(a);
+      }
+      const envEntries = [...appsByEnv.entries()];
+      const totalAll = allApps.length;
+      let totalProcessed = 0;
+      try {
+        for (let ei = 0; ei < envEntries.length; ei++) {
+          const [envLabel, { apps: envApps, bgName: envBgName }] = envEntries[ei];
+          await exportCpsProperties({
+            apps: envApps,
+            bgOrgId,
+            bgName: envBgName,
+            envName: envLabel,
+            cpsBaseUrl: cpsBaseUrl.trim(),
+            cpsEnvOverride: cpsEnv.trim(),
+            onProgress: (current, _total, label) => {
+              setProgress({ current: totalProcessed + current, total: totalAll, label });
+            },
+            getCredential: hasCpsCreds ? getSecret : null,
+            getAllCredentials: hasCpsCreds ? getAllCredentials : null,
+          });
+          totalProcessed += envApps.length;
+          if (ei < envEntries.length - 1) await new Promise(r => setTimeout(r, 200));
+        }
+        setStatus('done');
+      } catch (e) {
+        setErrorMsg(e.message || 'Export failed');
+        setStatus('error');
+      }
     }
   };
 
