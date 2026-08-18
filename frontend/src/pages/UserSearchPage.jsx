@@ -41,6 +41,7 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
   const [loadingEnvs, setLoadingEnvs] = useState({});
   const [expandedBgs, setExpandedBgs] = useState(new Set());
   const [selections, setSelections] = useState(new Set());
+  const [envSearch, setEnvSearch] = useState('');
 
   const loadEnvs = useCallback(async (bgId) => {
     if (envsByBg[bgId]) return;
@@ -90,12 +91,41 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
   const visible = applyBgFilter(businessGroups);
   const ordered = [visible.find(g => !g.parentId), ...visible.filter(g => g.parentId)].filter(Boolean);
 
+  // When a search term is active, auto-expand all BGs and filter envs
+  const searchLo = envSearch.toLowerCase().trim();
+  const getFilteredEnvs = (bgId) => {
+    const envs = envsByBg[bgId] || [];
+    if (!searchLo) return envs;
+    return envs.filter(e => e.name.toLowerCase().includes(searchLo) || e.type?.toLowerCase().includes(searchLo));
+  };
+  // Auto-load envs for all BGs when search is active
+  useEffect(() => {
+    if (!searchLo) return;
+    visible.forEach(bg => { if (!envsByBg[bg.id]) loadEnvs(bg.id); });
+  }, [searchLo]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <div className="border border-slate-700/50 rounded-xl overflow-y-auto" style={{ maxHeight: '13rem' }}>
+    <div className="border border-slate-700/50 rounded-xl overflow-hidden">
+      {/* Search bar */}
+      <div className="relative border-b border-slate-700/50">
+        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+        <input
+          value={envSearch}
+          onChange={e => setEnvSearch(e.target.value)}
+          placeholder="Search environments…"
+          className="w-full bg-slate-800/40 pl-8 pr-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:bg-slate-800/60"
+        />
+        {envSearch && (
+          <button onClick={() => setEnvSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs">✕</button>
+        )}
+      </div>
+      <div style={{ maxHeight: '11rem', overflowY: 'auto' }}>
       {ordered.map(bg => {
-        const expanded = expandedBgs.has(bg.id);
+        const expanded = expandedBgs.has(bg.id) || !!searchLo;
         const checked = isBgSel(bg.id);
-        const envs = envsByBg[bg.id] || [];
+        const envs = getFilteredEnvs(bg.id);
+        // Hide BG entirely if search active and no matching envs
+        if (searchLo && envs.length === 0 && !loadingEnvs[bg.id]) return null;
         return (
           <div key={bg.id} className="border-b border-slate-800/40 last:border-0">
             <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-slate-800/30 transition-colors">
@@ -137,6 +167,7 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
