@@ -78,6 +78,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   // Step 1: Fetch full app details — get runtime properties AND schedulers in one call
   let runtimeProps = {};
   let schedulers = [];
+  let staticIPList = [];
   try {
     const envId = app.environment?.id;
     if (isCh2) {
@@ -92,6 +93,9 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
         ...ds.environmentVars,
         ...res.data?.properties
       };
+      // CH2 static IPs — from replica list
+      const replicaList = res.data?.replicas || [];
+      staticIPList = replicaList.map(r => r.ipAddress || r.publicIpAddress).filter(Boolean);
       // CH2 schedulers from dedicated endpoint — returns { items: [{flowName, type, expression, enabled}] }
       try {
         const schedRes = await api.get(`/applications/cloudhub2/${bgOrgId}/${envId}/${app.id}/schedulers`);
@@ -100,6 +104,20 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
     } else {
       const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: bgOrgId } });
       runtimeProps = res.data?.properties || {};
+      // CH1 static IPs — from dedicated endpoint when enabled
+      if (res.data?.staticIPsEnabled) {
+        try {
+          const sipRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/static-ips`, { params: { orgId: bgOrgId } });
+          const sipArr = Array.isArray(sipRes.data) ? sipRes.data
+            : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
+          staticIPList = sipArr.map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip)).filter(Boolean);
+          // Fallback: check inline fields on the raw response
+          if (!staticIPList.length) {
+            const rawIPs = res.data?.staticIPs || res.data?.staticIps || res.data?.staticIPAddresses || [];
+            if (Array.isArray(rawIPs)) staticIPList = rawIPs.map(s => typeof s === 'string' ? s : (s.ipAddress || s.address || s.ip)).filter(Boolean);
+          }
+        } catch { /* endpoint may not exist */ }
+      }
       // CH1 schedulers from dedicated endpoint
       try {
         const schedRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/schedules`, { params: { orgId: bgOrgId } });
@@ -207,7 +225,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
     } catch { /* secure fetch failed */ }
   }
 
-  return { flatNs, secureGroups, cpsEnv, cpsKey, schedulers, allProps };
+  return { flatNs, secureGroups, cpsEnv, cpsKey, schedulers, allProps, staticIPList };
 }
 
 /**
@@ -234,8 +252,9 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
     onProgress?.(i + 1, total, app.name);
 
     try {
-      const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials);
+      const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps, staticIPList: fetchedStaticIPs } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials);
       const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
+      const staticIPs = fetchedStaticIPs?.length > 0 ? fetchedStaticIPs.join(', ') : '—';
       const maskedNs = maskSecrets(flatNs);
       const hostsNonSecure = extractHosts(flatNs);
 
@@ -308,6 +327,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
         allPropsRows.push({
           apiName: app.name,
           staticIPsEnabled,
+          staticIPs,
           hostsNonSecure,
           cpsSecureKey: flatNs['cps.secure.properties'] || '',
           properties: ''
@@ -315,6 +335,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
         hostApiRows.push({
           apiName: app.name,
           staticIPsEnabled,
+          staticIPs,
           hostsNonSecure,
           cpsSecureKey: flatNs['cps.secure.properties'] || '',
           hostsSecure: '',
@@ -328,6 +349,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
           allPropsRows.push({
             apiName: app.name,
             staticIPsEnabled,
+            staticIPs,
             hostsNonSecure,
             cpsSecureKey: group.key,
             properties: propsToString(maskedSec)  // only this secure group's props
@@ -335,6 +357,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
           hostApiRows.push({
             apiName: app.name,
             staticIPsEnabled,
+            staticIPs,
             hostsNonSecure,
             cpsSecureKey: group.key,
             hostsSecure: extractHostsSecure(group.properties),
@@ -349,6 +372,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
       allPropsRows.push({
         apiName: app.name,
         staticIPsEnabled,
+        staticIPs: '—',
         hostsNonSecure: '',
         cpsSecureKey: '',
         properties: `ERROR: ${e.response?.data?.error || e.message}`
@@ -356,6 +380,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
       hostApiRows.push({
         apiName: app.name,
         staticIPsEnabled,
+        staticIPs: '—',
         hostsNonSecure: '',
         cpsSecureKey: '',
         hostsSecure: '',
@@ -371,13 +396,13 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
 
   // Sheet 1: AllPropertiesCatalog
   const ws1 = XLSX.utils.json_to_sheet(allPropsRows, {
-    header: ['apiName', 'staticIPsEnabled', 'hostsNonSecure', 'cpsSecureKey', 'properties']
+    header: ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'properties']
   });
   XLSX.utils.book_append_sheet(wb, ws1, 'AllPropertiesCatalog');
 
   // Sheet 2: Host_APIUsersCatalog
   const ws2 = XLSX.utils.json_to_sheet(hostApiRows, {
-    header: ['apiName', 'staticIPsEnabled', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
+    header: ['apiName', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
   });
   XLSX.utils.book_append_sheet(wb, ws2, 'Host_APIUsersCatalog');
 
