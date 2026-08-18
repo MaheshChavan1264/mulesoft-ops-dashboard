@@ -799,6 +799,7 @@ export default function ApplicationDetailPage() {
               <KVRow label="Region" value={app.region} mono />
               <KVRow label="Workers" value={app.workers?.amount!=null?String(app.workers.amount):undefined} />
               <KVRow label="Worker Type" value={typeof app.workers?.type==='string'?app.workers.type:app.workers?.type?.name} />
+              <KVRow label="Static IPs" value={app.staticIPsEnabled!=null?(app.staticIPsEnabled?'✅ Enabled':'❌ Disabled'):undefined} />
               <KVRow label="Last Modified" value={app.lastModifiedDate?new Date(app.lastModifiedDate).toLocaleString():undefined} />
             </>) : (<>
               <KVRow label="Runtime Status" value={app.application?.status} />
@@ -809,6 +810,11 @@ export default function ApplicationDetailPage() {
               <KVRow label="Release Channel" value={ds.runtime?.releaseChannel} />
               <KVRow label="vCores" value={app.application?.vCores!=null?String(app.application.vCores):undefined} />
               <KVRow label="Replicas" value={replicas!=null?String(replicas):undefined} />
+              <KVRow label="Static IPs" value={ds.staticIpEnabled!=null?(ds.staticIpEnabled?'✅ Enabled':'❌ Disabled'):undefined} />
+              {/* Show individual replica IP addresses if available */}
+              {replicaList.filter(r => r.ipAddress || r.publicIpAddress).length > 0 && (
+                <KVRow label="Replica IPs" value={replicaList.filter(r => r.ipAddress || r.publicIpAddress).map(r => r.ipAddress || r.publicIpAddress).join(', ')} mono />
+              )}
               <KVRow label="Update Strategy" value={typeof ds.updateStrategy==='string'?ds.updateStrategy:undefined} />
               <KVRow label="Artifact" value={app.application?.ref?`${app.application.ref.artifactId} v${app.application.ref.version}`:undefined} />
               <KVRow label="Last Modified" value={app.lastModifiedDate?new Date(app.lastModifiedDate).toLocaleString():undefined} />
