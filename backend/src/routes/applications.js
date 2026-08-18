@@ -146,6 +146,8 @@ router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
 });
 
 // Get CloudHub 1.0 static IP assignments
+// Note: this endpoint returns 404 for apps that don't have the /static-ips API available.
+// The frontend handles 404 gracefully by falling back to ipAddresses[] in the main app detail.
 router.get('/cloudhub1/:envId/:appName/static-ips', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
@@ -161,8 +163,12 @@ router.get('/cloudhub1/:envId/:appName/static-ips', authMiddleware, async (req, 
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching CH1 static IPs:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
+    const status = error.response?.status || 500;
+    // 404 is expected for apps that don't have the static-ips endpoint — log at debug level only
+    if (status !== 404) {
+      console.error('Error fetching CH1 static IPs:', error.response?.data || error.message);
+    }
+    res.status(status).json({
       error: error.response?.data?.message || 'Failed to fetch static IPs'
     });
   }
