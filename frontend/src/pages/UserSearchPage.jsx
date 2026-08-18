@@ -66,12 +66,11 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
           .catch(() => [])
       )
     ).then(results => {
-      const flat = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
-      // Apply global env filter so the selector shows only the user's selected envs.
-      // Safety fallback: if the filter yields 0 results (e.g. stale IDs in localStorage),
-      // show all envs so the page doesn't appear broken.
-      const envFiltered = applyEnvFilter(flat);
-      setAllEnvs(envFiltered.length > 0 ? envFiltered : flat);
+      // Show all envs from BG-filtered groups.
+      // Only the global BG filter is applied here (via applyBgFilter above).
+      // The Env Filter (from header) is intentionally NOT applied — the user
+      // selects which environments to search directly in this selector.
+      setAllEnvs(results.flatMap(r => r.status === 'fulfilled' ? r.value : []));
       setLoading(false);
     });
   }, [businessGroups]); // eslint-disable-line react-hooks/exhaustive-deps
