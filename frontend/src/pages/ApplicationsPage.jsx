@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, Play, Square, RotateCcw, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud, Copy, Check } from 'lucide-react';
 import CredentialImportButton from '../components/CredentialImportButton';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
@@ -12,6 +12,18 @@ import CpsExportModal from '../components/CpsExportModal';
 import PingResultCard from '../components/PingResultCard';
 import api from '../services/api';
 import { getCached, setCached, bustCache } from '../services/apiCache';
+
+const CopyBtn = ({ text }) => {
+  const [done, setDone] = React.useState(false);
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }}
+      className="opacity-0 group-hover:opacity-100 p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-700/60 transition-all flex-shrink-0"
+      title="Copy app name">
+      {done ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+    </button>
+  );
+};
 
 const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
 const ENV_TAG_COLOR = {
@@ -1334,7 +1346,12 @@ export default function ApplicationsPage() {
                         {isChecked && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-white font-medium">{app.name}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 group">
+                        <span className="text-white font-medium">{app.name}</span>
+                        <CopyBtn text={app.name} />
+                      </div>
+                    </td>
                     <td className="px-4 py-3"><StatusBadge status={app.status} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
