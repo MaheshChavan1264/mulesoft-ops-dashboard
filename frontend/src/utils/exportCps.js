@@ -113,9 +113,14 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
   // cps.projectName is the authoritative CPS key — NOT the app name or app.id
   const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
 
+  // Use per-app CPS URL from ARM properties if modal URL is empty
+  const effectiveCpsBaseUrl = cpsBaseUrl ||
+    allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
+  if (!effectiveCpsBaseUrl) throw new Error(`No CPS URL configured for "${app.name}"`);
+
   // Fetch non-secure — throw on error so the caller can record it in the export
   const nsRes = await api.get('/cps/fetch', { params: {
-    baseUrl: cpsBaseUrl, type: 'non-secure', environment: cpsEnv,
+    baseUrl: effectiveCpsBaseUrl, type: 'non-secure', environment: cpsEnv,
     keys: cpsKey, deploymentType: depType, bgOrgId
   }});
   const nsRaw = nsRes.data;
@@ -141,7 +146,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
   if (secureKeys.length > 0) {
     try {
       const sr = await api.get('/cps/fetch', { params: {
-        baseUrl: cpsBaseUrl, type: 'secure', environment: cpsEnv,
+        baseUrl: effectiveCpsBaseUrl, type: 'secure', environment: cpsEnv,
         keys: secureKeyStr, deploymentType: depType, bgOrgId
       }});
       const raw = sr.data;

@@ -1131,12 +1131,13 @@ export default function ApplicationsPage() {
       {/* CPS Export Modal */}
       {showExport && (
         <CpsExportModal
-          apps={filtered}
-          bgOrgId={selectedBg}
+          apps={selectedApps.length > 0 ? selectedApps : filtered}
+          bgOrgId={selectedBg !== '__all__' ? selectedBg : (selectedApps[0]?._bgId || orgId)}
           bgName={selectedBgName}
           selectedEnvId={filterEnv || ''}
           envName={filterEnv ? (environments.find(e=>e.id===filterEnv)?.name || '') : (filtered[0]?.environment?.name || '')}
           filterSummary={[
+            selectedApps.length > 0 ? `${selectedApps.length} selected apps` : null,
             filterEnv ? `Env: ${environments.find(e=>e.id===filterEnv)?.name || filterEnv}` : null,
             filterStatus ? `Status: ${filterStatus}` : null,
             filterType ? `Type: ${filterType}` : null,
@@ -1170,9 +1171,9 @@ export default function ApplicationsPage() {
             {selectedApps.length > 0 ? `Ping (${selectedApps.length})` : 'Ping Test'}
           </button>
           <button onClick={() => setShowExport(true)} disabled={loading || apps.length === 0}
-            title="Export CPS Properties to Excel"
+            title={selectedApps.length > 0 ? `Export CPS for ${selectedApps.length} selected apps` : 'Export CPS Properties to Excel'}
             className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
-            <FileSpreadsheet size={14} /> Export CPS
+            <FileSpreadsheet size={14} /> {selectedApps.length > 0 ? `Export CPS (${selectedApps.length})` : 'Export CPS'}
           </button>
           <button onClick={() => loadApps(selectedBg, true)} disabled={loading || bgLoading}
             className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg disabled:opacity-50">
