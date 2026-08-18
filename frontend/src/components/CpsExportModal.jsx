@@ -100,26 +100,27 @@ function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
     onSelectionsChange(result);
   }, [selections, businessGroups, envsByBg]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Compute derived values (before any early return) ────────────────
+  const visible = applyBgFilter(businessGroups);
+  const searchLo = envSearch.toLowerCase().trim();
+
+  // Auto-load envs for all visible BGs when search is active — MUST be before early return
+  useEffect(() => {
+    if (!searchLo || loading) return;
+    visible.forEach(bg => { if (!envsByBg[bg.id]) loadEnvsForBg(bg.id); });
+  }, [searchLo, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (loading) return <div className="flex items-center justify-center py-6"><RefreshCw size={16} className="animate-spin text-gray-500" /></div>;
 
-  // Apply global BG filter
-  const visible = applyBgFilter(businessGroups);
   const root = visible.find(g => !g.parentId);
   const children = visible.filter(g => g.parentId);
   const ordered = root ? [root, ...children] : visible;
 
-  // Search: auto-load all BG envs and filter when a search term is active
-  const searchLo = envSearch.toLowerCase().trim();
   const getFilteredEnvs = (bgId) => {
     const envs = envsByBg[bgId] || [];
     if (!searchLo) return envs;
     return envs.filter(e => e.name.toLowerCase().includes(searchLo) || e.type?.toLowerCase().includes(searchLo));
   };
-  // Auto-load envs for all BGs when search is active
-  useEffect(() => {
-    if (!searchLo) return;
-    visible.forEach(bg => { if (!envsByBg[bg.id]) loadEnvsForBg(bg.id); });
-  }, [searchLo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="border border-gray-700/50 rounded-xl overflow-hidden">
