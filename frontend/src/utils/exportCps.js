@@ -224,7 +224,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
 }
 
 // ── Row builder (shared between sequential and batch paths) ─────────────
-function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows) {
+function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, staticIPsRows) {
   const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps, staticIPList: fetchedStaticIPs } = fetchResult;
   const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
   const staticIPs = fetchedStaticIPs?.length > 0 ? fetchedStaticIPs.join(', ') : '—';
@@ -272,6 +272,15 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows) {
       hostApiRows.push({ apiName: app.name, staticIPsEnabled, staticIPs, hostsNonSecure, cpsSecureKey: group.key, hostsSecure: extractHostsSecure(group.properties), apiUsers: extractApiUsers(group.properties), notAccessible: '' });
     }
   }
+  // One row per app in the dedicated StaticIPs sheet
+  if (staticIPsRows) {
+    staticIPsRows.push({
+      apiName: app.name,
+      environment: app._envName || app.environment?.name || '—',
+      staticIPsEnabled,
+      staticIPs,
+    });
+  }
 }
 
 function buildErrorRow(app, e, allPropsRows, hostApiRows) {
@@ -296,6 +305,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
   const allPropsRows = [];
   const hostApiRows = [];
   const scheduleRows = [];
+  const staticIPsRows = [];
 
   const total = apps.length;
   const totalBatches = Math.ceil(total / batchSize);
@@ -326,12 +336,17 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
     if (!app) continue;
     if (outcome.status === 'fulfilled') {
       try {
-        buildRows(app, outcome.value, allPropsRows, hostApiRows, scheduleRows);
+        buildRows(app, outcome.value, allPropsRows, hostApiRows, scheduleRows, staticIPsRows);
       } catch (e) {
         buildErrorRow(app, e, allPropsRows, hostApiRows);
+        // Still add a row to StaticIPs sheet so app appears even when CPS fetch failed
+        const siEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
+        staticIPsRows.push({ apiName: app.name, environment: app._envName || app.environment?.name || '—', staticIPsEnabled: siEnabled, staticIPs: '—' });
       }
     } else {
       buildErrorRow(app, outcome.reason, allPropsRows, hostApiRows);
+      const siEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
+      staticIPsRows.push({ apiName: app.name, environment: app._envName || app.environment?.name || '—', staticIPsEnabled: siEnabled, staticIPs: '—' });
     }
   }
 
@@ -352,6 +367,12 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
     header: ['apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod']
   });
   XLSX.utils.book_append_sheet(wb, ws3, 'ScheduleCatalog');
+
+  // Sheet 4: StaticIPsCatalog — one row per app, includes env name
+  const ws4 = XLSX.utils.json_to_sheet(staticIPsRows, {
+    header: ['apiName', 'environment', 'staticIPsEnabled', 'staticIPs']
+  });
+  XLSX.utils.book_append_sheet(wb, ws4, 'StaticIPsCatalog');
 
   const date = new Date().toISOString().split('T')[0];
   const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
