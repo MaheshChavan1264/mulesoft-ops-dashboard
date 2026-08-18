@@ -100,7 +100,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
       staticIPList = replicaList.map(r => r.ipAddress || r.publicIpAddress).filter(Boolean);
       // CH2 schedulers from dedicated endpoint — returns { items: [{flowName, type, expression, enabled}] }
       try {
-        const schedRes = await api.get(`/applications/cloudhub2/${bgOrgId}/${envId}/${app.id}/schedulers`);
+        const schedRes = await api.get(`/applications/cloudhub2/${effectiveBgOrgId}/${envId}/${app.id}/schedulers`);
         schedulers = schedRes.data?.items || schedRes.data?.schedulers || (Array.isArray(schedRes.data) ? schedRes.data : []);
       } catch { /* no schedulers */ }
     } else {
