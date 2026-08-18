@@ -5,6 +5,7 @@ import { applyBgFilter } from '../components/BgFilterModal';
 import { applyEnvFilter } from '../components/EnvFilterModal';
 import { Search, Users, RefreshCw, AlertTriangle, Copy, Check, Key, Lock, ChevronRight, Building2, Download } from 'lucide-react';
 import api from '../services/api';
+import { getCached, setCached } from '../services/apiCache';
 
 const CopyBtn = ({ text }) => {
   const [done, setDone] = useState(false);
@@ -190,7 +191,8 @@ export default function UserSearchPage() {
     api.get('/organizations/business-groups').then(r => setBgs(r.data?.data || [])).catch(() => {}).finally(() => setBgsLoad(false));
   }, []);
 
-  const postCreds = useCallback(async (entries) => {
+  // Fire-and-forget credential posting — no await, runs in background
+  const postCreds = useCallback((entries) => {
     if (!hasCpsCreds) return;
     const allCreds = getAllCredentials();
     if (!allCreds.length) return;
@@ -202,64 +204,132 @@ export default function UserSearchPage() {
       if (e.cpsClientId) { const s = getSecret(e.cpsClientId); if (s) { urlMap.set(norm, { clientId: e.cpsClientId, clientSecret: s }); continue; } }
       if (allCreds.length) urlMap.set(norm, allCreds[0]);
     }
+    // Fire without await — credentials are stored in session for the backend,
+    // the CPS search itself handles 401-retry, so no need to block on this
     for (const [norm, { clientId, clientSecret }] of urlMap.entries()) {
-      try {
-        await api.post('/cps/credentials', { credentials: {
-          [norm + '::' + (entries[0]?.bgOrgId || '')]: { clientId, clientSecret },
-          [norm]: { clientId, clientSecret },
-        }});
-      } catch { /* non-fatal */ }
+      api.post('/cps/credentials', { credentials: {
+        [norm + '::' + (entries[0]?.bgOrgId || '')]: { clientId, clientSecret },
+        [norm]: { clientId, clientSecret },
+      }}).catch(() => {});
     }
   }, [hasCpsCreds, getAllCredentials, getSecret]);
 
   const fetchAppsForEnv = useCallback(async (bgId, envId, envName) => {
     const apps = [];
-    const BATCH = 15;
-    let ch2 = [];
-    try {
-      let offset = 0;
-      while (true) {
-        const r = await api.get(`/applications/cloudhub2/${bgId}/${envId}`, { params: { limit: 100, offset } });
-        const items = r.data?.items || r.data?.deployments || r.data?.content || (Array.isArray(r.data) ? r.data : []);
-        if (!items.length) break;
-        ch2.push(...items);
-        const total = r.data?.total ?? r.data?.totalItems ?? items.length;
-        if (ch2.length >= total || items.length < 100) break;
-        offset += 100;
-      }
-    } catch {}
-    for (let i = 0; i < ch2.length; i += BATCH) {
-      const settled = await Promise.allSettled(ch2.slice(i, i + BATCH).map(a => api.get(`/applications/cloudhub2/${bgId}/${envId}/${a.id}`).then(r => r.data).catch(() => a)));
+    const DETAIL_BATCH = 50; // increased from 15 — fetch 50 CH2 details in parallel
+    let ch2List = [];
+
+    // ── Try app summary cache first (already loaded by ApplicationsPage) ──
+    const cacheKey = `apps:__all__:${bgId}`;
+    const cachedSummary = getCached(cacheKey);
+    if (cachedSummary?.apps) {
+      ch2List = cachedSummary.apps.filter(
+        a => a.environment?.id === envId && a.deploymentType === 'CloudHub 2.0'
+      );
+      // For CH1: extract from cache directly (no detail needed)
+      const cachedCh1 = cachedSummary.apps.filter(
+        a => a.environment?.id === envId && a.deploymentType !== 'CloudHub 2.0'
+      );
+      apps.push(...cachedCh1.map(c => ({
+        _type: 'ch1', id: c.id || c.name, name: c.name, properties: c.properties || {},
+        environment: { name: envName, id: envId },
+      })));
+    } else {
+      // Fresh CH2 list fetch
+      try {
+        let offset = 0;
+        while (true) {
+          const r = await api.get(`/applications/cloudhub2/${bgId}/${envId}`, { params: { limit: 100, offset } });
+          const items = r.data?.items || r.data?.deployments || r.data?.content || (Array.isArray(r.data) ? r.data : []);
+          if (!items.length) break;
+          ch2List.push(...items);
+          const total = r.data?.total ?? r.data?.totalItems ?? items.length;
+          if (ch2List.length >= total || items.length < 100) break;
+          offset += 100;
+        }
+      } catch {}
+      // CH1 list fetch
+      try {
+        const r = await api.get(`/applications/cloudhub1/${envId}`, { params: { orgId: bgId } });
+        const ch1 = Array.isArray(r.data) ? r.data : (r.data?.applications || r.data?.data || []);
+        apps.push(...ch1.map(c => ({ _type: 'ch1', id: c.domain, name: c.domain, properties: c.properties || {}, environment: { name: envName, id: envId } })));
+      } catch {}
+    }
+
+    // ── CH2 detail fetch with per-app caching + large parallel batch ──────
+    for (let i = 0; i < ch2List.length; i += DETAIL_BATCH) {
+      const settled = await Promise.allSettled(
+        ch2List.slice(i, i + DETAIL_BATCH).map(a => {
+          // Check per-app detail cache (5-min TTL)
+          const appKey = `ch2detail:${a.id}:${envId}`;
+          const cached = getCached(appKey);
+          if (cached) return Promise.resolve(cached);
+          return api.get(`/applications/cloudhub2/${bgId}/${envId}/${a.id}`)
+            .then(r => { setCached(appKey, r.data); return r.data; })
+            .catch(() => a);
+        })
+      );
       settled.forEach(s => { if (s.status === 'fulfilled' && s.value) apps.push(s.value); });
     }
-    try {
-      const r = await api.get(`/applications/cloudhub1/${envId}`, { params: { orgId: bgId } });
-      const ch1 = Array.isArray(r.data) ? r.data : (r.data?.applications || r.data?.data || []);
-      apps.push(...ch1.map(c => ({ _type: 'ch1', id: c.domain, name: c.domain, properties: c.properties || {}, environment: { name: envName } })));
-    } catch {}
+
+    // If we got apps from cache but no CH1 yet, fetch CH1 now
+    if (cachedSummary?.apps && apps.filter(a => a._type !== 'ch1' && a.deploymentType !== 'CloudHub 2.0').length === 0) {
+      try {
+        const r = await api.get(`/applications/cloudhub1/${envId}`, { params: { orgId: bgId } });
+        const ch1 = Array.isArray(r.data) ? r.data : (r.data?.applications || r.data?.data || []);
+        const existing = new Set(apps.map(a => a.name));
+        apps.push(...ch1
+          .filter(c => !existing.has(c.domain))
+          .map(c => ({ _type: 'ch1', id: c.domain, name: c.domain, properties: c.properties || {}, environment: { name: envName, id: envId } }))
+        );
+      } catch {}
+    }
+
     return apps;
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runSearch = async () => {
     if (!query.trim()) { setError('Enter a search term.'); return; }
     if (!bgEnvSelections.length) { setError('Select at least one Environment.'); return; }
     setLoading(true); setError(''); setResults(null);
     setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0 });
-    const allEntries = [];
-    let totalApps = 0;
-    for (let i = 0; i < bgEnvSelections.length; i++) {
-      const sel = bgEnvSelections[i];
-      try {
+
+    // ── Phase 1: Fetch all envs in PARALLEL (was sequential) ──────────────
+    const envResults = await Promise.allSettled(
+      bgEnvSelections.map(async (sel) => {
         const apps = await fetchAppsForEnv(sel.bgId, sel.envId, sel.envName);
-        totalApps += apps.length;
-        setProgress(p => ({ ...p, appsT: totalApps, envsDone: i + 1 }));
-        const entries = apps.map(a => ({ appName: a.name, appId: a.id || a.name, ...extractCpsConfig(a, sel.bgId) })).filter(e => e.cpsBaseUrl && e.cpsKey);
-        allEntries.push(...entries);
-        setProgress(p => ({ ...p, appsN: allEntries.length }));
-        if (entries.length) await postCreds(entries);
-      } catch { /* skip */ }
-    }
+        const entries = apps
+          .map(a => ({ appName: a.name, appId: a.id || a.name, ...extractCpsConfig(a, sel.bgId) }))
+          .filter(e => e.cpsBaseUrl && e.cpsKey);
+        // Fire-and-forget credentials (no await)
+        if (entries.length) postCreds(entries);
+        // Atomic progress increment
+        setProgress(p => ({
+          ...p,
+          appsT: p.appsT + apps.length,
+          envsDone: p.envsDone + 1,
+        }));
+        return entries;
+      })
+    );
+
+    // ── Phase 2: Flatten + deduplicate entries ─────────────────────────────
+    const seen = new Set();
+    const allEntries = envResults
+      .flatMap(r => r.status === 'fulfilled' ? r.value : [])
+      .filter(e => {
+        // Deduplicate by cpsUrl + cpsKey + cpsEnv + bgOrgId
+        const k = `${e.cpsBaseUrl}||${e.cpsKey}||${e.cpsEnv}||${e.bgOrgId}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+
+    setProgress(p => ({ ...p, appsN: allEntries.length }));
+
     if (!allEntries.length) { setResults([]); setLoading(false); return; }
+
+    // ── Phase 3: Backend CPS fan-out search ───────────────────────────────
     try {
       const r = await api.post('/cps/search-user', { username: query.trim(), apps: allEntries });
       const rows = [];

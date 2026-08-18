@@ -368,7 +368,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
   }
 
   const searchTerm = username.trim().toLowerCase();
-  const CONCURRENCY = 15;
+  const CONCURRENCY = 30; // increased from 15 for faster fan-out
 
   /** Flatten CPS response (all formats) into a flat {key:value} map */
   function flattenProps(data) {
