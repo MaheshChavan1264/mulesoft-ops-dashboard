@@ -79,10 +79,12 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   let runtimeProps = {};
   let schedulers = [];
   let staticIPList = [];
+  // Use app-specific bgId if available (set when building apps from BG/Env selector)
+  const effectiveBgOrgId = app._bgId || bgOrgId;
   try {
     const envId = app.environment?.id;
     if (isCh2) {
-      const res = await api.get(`/applications/cloudhub2/${bgOrgId}/${envId}/${app.id}`);
+      const res = await api.get(`/applications/cloudhub2/${effectiveBgOrgId}/${envId}/${app.id}`);
       const cfg = res.data?.application?.configuration || {};
       const propsSvc = cfg['mule.agent.application.properties.service'] || {};
       const ds = res.data?.target?.deploymentSettings || {};
@@ -102,13 +104,11 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
         schedulers = schedRes.data?.items || schedRes.data?.schedulers || (Array.isArray(schedRes.data) ? schedRes.data : []);
       } catch { /* no schedulers */ }
     } else {
-      const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: bgOrgId } });
+      const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: effectiveBgOrgId } });
       runtimeProps = res.data?.properties || {};
-      // CH1 static IPs — always attempt the dedicated endpoint;
-      // also check app.staticIPsEnabled (summary) as a fallback trigger
-      const ch1StaticEnabled = res.data?.staticIPsEnabled ?? app.staticIPsEnabled;
+      // CH1 static IPs — always attempt the dedicated endpoint
       try {
-        const sipRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/static-ips`, { params: { orgId: bgOrgId } });
+        const sipRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/static-ips`, { params: { orgId: effectiveBgOrgId } });
         const sipArr = Array.isArray(sipRes.data) ? sipRes.data
           : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
         staticIPList = sipArr.map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip)).filter(Boolean);
@@ -120,7 +120,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
       } catch { /* endpoint may not exist — continue without IPs */ }
       // CH1 schedulers from dedicated endpoint
       try {
-        const schedRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/schedules`, { params: { orgId: bgOrgId } });
+        const schedRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/schedules`, { params: { orgId: effectiveBgOrgId } });
         schedulers = Array.isArray(schedRes.data) ? schedRes.data : (schedRes.data?.schedules || []);
       } catch { /* no schedulers */ }
     }
@@ -148,13 +148,8 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   if (cpsClientId && !isMasked(cpsClientId) && getCredential) {
     const secret = getCredential(cpsClientId);
     if (secret) {
-      // ✅ Specific credential found — post it as the primary (url::bgOrgId)
-      // ALSO post all other credentials as url::clientId fallback entries.
-      // Reason: the specific credential may not have access to THIS project
-      // (returns "COULD NOT ACCESS") — in that case the backend retry loop
-      // needs the other entries to try automatically.
       const credMap = {
-        [`${normUrl}::${bgOrgId}`]: { clientId: cpsClientId, clientSecret: secret },
+        [`${normUrl}::${effectiveBgOrgId}`]: { clientId: cpsClientId, clientSecret: secret },
         [normUrl]: { clientId: cpsClientId, clientSecret: secret },
       };
       if (getAllCredentials) {
@@ -189,7 +184,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   // Fetch non-secure — throw on error so the caller can record it in the export
   const nsRes = await api.get('/cps/fetch', { params: {
     baseUrl: normUrl, type: 'non-secure', environment: cpsEnv,
-    keys: cpsKey, deploymentType: depType, bgOrgId
+    keys: cpsKey, deploymentType: depType, bgOrgId: effectiveBgOrgId
   }});
   const nsRaw = nsRes.data;
 
@@ -215,7 +210,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
     try {
       const sr = await api.get('/cps/fetch', { params: {
         baseUrl: normUrl, type: 'secure', environment: cpsEnv,
-        keys: secureKeyStr, deploymentType: depType, bgOrgId
+        keys: secureKeyStr, deploymentType: depType, bgOrgId: effectiveBgOrgId
       }});
       const raw = sr.data;
       const arr = normalisePropsArray(raw, secureKeys[0]);

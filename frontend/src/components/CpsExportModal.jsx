@@ -257,7 +257,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
           const filtered = sel.envId ? appsForBg.filter(a => a.environment?.id === sel.envId) : appsForBg;
           filtered.forEach(a => {
             if (!allApps.find(x => x.id === a.id && x.environment?.id === a.environment?.id)) {
-              allApps.push({ ...a, _bgName: sel.bgName, _envName: sel.envName });
+              allApps.push({ ...a, _bgId: sel.bgId, _bgName: sel.bgName, _envName: sel.envName });
             }
           });
         } catch { /* skip */ }
