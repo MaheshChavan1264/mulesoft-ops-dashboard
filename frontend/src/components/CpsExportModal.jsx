@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, Globe, ChevronRight, Building2, Layers, Key, Zap } from 'lucide-react';
+import { X, Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, Globe, ChevronRight, Building2, Layers, Key, Zap, Search } from 'lucide-react';
 import { exportCpsProperties } from '../utils/exportCps';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
+import { applyBgFilter } from './BgFilterModal';
 import api from '../services/api';
 
 /* ── BG + Env multi-selector ────────────────────────────────── */
@@ -12,6 +13,7 @@ function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
   const [expandedBgs, setExpandedBgs] = useState(new Set());
   const [selections, setSelections] = useState(new Set());
   const [loading, setLoading] = useState(true);
+  const [envSearch, setEnvSearch] = useState('');
 
   useEffect(() => { loadBusinessGroups(); }, []);
 
@@ -100,17 +102,48 @@ function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
 
   if (loading) return <div className="flex items-center justify-center py-6"><RefreshCw size={16} className="animate-spin text-gray-500" /></div>;
 
-  const root = businessGroups.find(g => !g.parentId);
-  const children = businessGroups.filter(g => g.parentId);
-  const ordered = root ? [root, ...children] : businessGroups;
+  // Apply global BG filter
+  const visible = applyBgFilter(businessGroups);
+  const root = visible.find(g => !g.parentId);
+  const children = visible.filter(g => g.parentId);
+  const ordered = root ? [root, ...children] : visible;
+
+  // Search: auto-load all BG envs and filter when a search term is active
+  const searchLo = envSearch.toLowerCase().trim();
+  const getFilteredEnvs = (bgId) => {
+    const envs = envsByBg[bgId] || [];
+    if (!searchLo) return envs;
+    return envs.filter(e => e.name.toLowerCase().includes(searchLo) || e.type?.toLowerCase().includes(searchLo));
+  };
+  // Auto-load envs for all BGs when search is active
+  useEffect(() => {
+    if (!searchLo) return;
+    visible.forEach(bg => { if (!envsByBg[bg.id]) loadEnvsForBg(bg.id); });
+  }, [searchLo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="max-h-56 overflow-y-auto border border-gray-700/50 rounded-xl">
+    <div className="border border-gray-700/50 rounded-xl overflow-hidden">
+      {/* Env search input */}
+      <div className="relative border-b border-gray-700/50">
+        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+        <input
+          value={envSearch}
+          onChange={e => setEnvSearch(e.target.value)}
+          placeholder="Search environments…"
+          className="w-full bg-gray-800/40 pl-8 pr-3 py-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:bg-gray-800/60"
+        />
+        {envSearch && (
+          <button onClick={() => setEnvSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">✕</button>
+        )}
+      </div>
+      <div style={{ maxHeight: '12rem', overflowY: 'auto' }}>
       {ordered.map(bg => {
-        const isExpanded = expandedBgs.has(bg.id);
+        const isExpanded = expandedBgs.has(bg.id) || !!searchLo;
         const isChecked = isBgSelected(bg.id);
-        const envs = envsByBg[bg.id] || [];
+        const envs = getFilteredEnvs(bg.id);
         const loadingE = loadingEnvs[bg.id];
+        // Hide BG if search active and no matching envs (and not still loading)
+        if (searchLo && envs.length === 0 && !loadingE) return null;
         return (
           <div key={bg.id} className="border-b border-gray-800/40 last:border-0">
             <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-gray-800/30 transition-colors">
@@ -151,6 +184,7 @@ function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
