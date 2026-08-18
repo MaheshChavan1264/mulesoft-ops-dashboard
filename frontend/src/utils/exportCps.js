@@ -223,167 +223,116 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   return { flatNs, secureGroups, cpsEnv, cpsKey, schedulers, allProps, staticIPList };
 }
 
+// ── Row builder (shared between sequential and batch paths) ─────────────
+function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows) {
+  const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps, staticIPList: fetchedStaticIPs } = fetchResult;
+  const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
+  const staticIPs = fetchedStaticIPs?.length > 0 ? fetchedStaticIPs.join(', ') : '—';
+  const hostsNonSecure = extractHosts(flatNs);
+
+  const flatSecure = {};
+  for (const g of secureGroups) Object.assign(flatSecure, g.properties || {});
+
+  const resolveProp = (val) => {
+    if (!val) return val;
+    const m = String(val).match(/^\$\{(.+)\}$/);
+    if (m) {
+      const key = m[1];
+      return flatNs[key] || flatSecure[key] || (fetchedAllProps && fetchedAllProps[key]) || val;
+    }
+    return val;
+  };
+
+  for (const s of (fetchedSchedulers || [])) {
+    const innerSchedulers = Array.isArray(s.schedulers) ? s.schedulers : [];
+    const cronSched = innerSchedulers.find(x => /cron/i.test(x.type || '')) || innerSchedulers[0];
+    const fixedSched = innerSchedulers.find(x => /fixed/i.test(x.type || '')) || null;
+    const rawCron = cronSched?.expression || s.schedule?.cronExpression || s.schedule?.expression || s.cronExpression || s.expression || s.schedulerConfig?.cronExpression || s.schedulerConfig?.expression || '';
+    const rawPeriod = fixedSched?.period || fixedSched?.frequency || s.schedule?.period || s.schedule?.frequency || s.frequency || s.period || '';
+    const rawTimeUnit = fixedSched?.timeUnit || s.schedule?.timeUnit || s.timeUnit || '';
+    const rawTimeZone = cronSched?.timeZone || s.schedule?.timeZone || s.timeZone || '';
+    scheduleRows.push({
+      apiDomainName: app.name,
+      scheduleName: s.flow || s.flowName || s.name || s.schedulerName || '',
+      enabled: s.enabled !== false ? 'true' : 'false',
+      scheduleCronExpression: resolveProp(rawCron),
+      scheduleTimeZone: resolveProp(rawTimeZone),
+      scheduleTimeUnit: resolveProp(rawTimeUnit),
+      schedulePeriod: String(resolveProp(String(rawPeriod)))
+    });
+  }
+
+  if (secureGroups.length === 0) {
+    allPropsRows.push({ apiName: app.name, staticIPsEnabled, staticIPs, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', properties: '' });
+    hostApiRows.push({ apiName: app.name, staticIPsEnabled, staticIPs, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', hostsSecure: '', apiUsers: '', notAccessible: '' });
+  } else {
+    for (const group of secureGroups) {
+      const maskedSec = maskSecrets(group.properties);
+      allPropsRows.push({ apiName: app.name, staticIPsEnabled, staticIPs, hostsNonSecure, cpsSecureKey: group.key, properties: propsToString(maskedSec) });
+      hostApiRows.push({ apiName: app.name, staticIPsEnabled, staticIPs, hostsNonSecure, cpsSecureKey: group.key, hostsSecure: extractHostsSecure(group.properties), apiUsers: extractApiUsers(group.properties), notAccessible: '' });
+    }
+  }
+}
+
+function buildErrorRow(app, e, allPropsRows, hostApiRows) {
+  const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
+  const msg = `ERROR: ${e.response?.data?.error || e.message}`;
+  allPropsRows.push({ apiName: app.name, staticIPsEnabled, staticIPs: '—', hostsNonSecure: '', cpsSecureKey: '', properties: msg });
+  hostApiRows.push({ apiName: app.name, staticIPsEnabled, staticIPs: '—', hostsNonSecure: '', cpsSecureKey: '', hostsSecure: '', apiUsers: '', notAccessible: msg });
+}
+
 /**
- * Main export function.
+ * Main export function — processes apps in parallel batches for speed.
  * @param {Array}    apps             - list of apps from /applications/summary
  * @param {string}   bgOrgId          - selected BG org ID
- * @param {string}   cpsBaseUrl       - CPS server base URL override (can be empty — per-app URL used)
- * @param {string}   cpsEnvOverride   - CPS environment override (can be empty — per-app cps.prefix used)
- * @param {Function} onProgress       - callback(current, total, appName)
- * @param {Function} getCredential    - (clientId) => secret | null  — look up one credential from CSV store
- * @param {Function} getAllCredentials - () => [{clientId, clientSecret}]  — all CSV credentials (fallback)
+ * @param {string}   cpsBaseUrl       - CPS server base URL override (per-app URL takes priority)
+ * @param {string}   cpsEnvOverride   - CPS environment override (per-app cps.prefix takes priority)
+ * @param {Function} onProgress       - callback(current, total, label)
+ * @param {Function} getCredential    - (clientId) => secret | null
+ * @param {Function} getAllCredentials - () => [{clientId, clientSecret}]
+ * @param {number}   batchSize        - parallel concurrency per batch (default 10)
  */
-export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsBaseUrl, cpsEnvOverride, onProgress, getCredential, getAllCredentials }) {
+export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsBaseUrl, cpsEnvOverride, onProgress, getCredential, getAllCredentials, batchSize = 10 }) {
   const allPropsRows = [];
   const hostApiRows = [];
   const scheduleRows = [];
 
-  // Process all apps — use the user-specified CPS base URL
   const total = apps.length;
+  const totalBatches = Math.ceil(total / batchSize);
 
-  for (let i = 0; i < apps.length; i++) {
-    const app = apps[i];
+  // ── Parallel batch processing ──────────────────────────────────────────
+  // Pre-allocate results array to preserve original app order after batches run in parallel
+  const results = new Array(total);
+  let done = 0;
 
-    onProgress?.(i + 1, total, app.name);
+  for (let i = 0; i < total; i += batchSize) {
+    const batchApps = apps.slice(i, i + batchSize);
+    const batchNum = Math.floor(i / batchSize) + 1;
 
-    try {
-      const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps, staticIPList: fetchedStaticIPs } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials);
-      const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
-      const staticIPs = fetchedStaticIPs?.length > 0 ? fetchedStaticIPs.join(', ') : '—';
-      const maskedNs = maskSecrets(flatNs);
-      const hostsNonSecure = extractHosts(flatNs);
+    const settled = await Promise.allSettled(
+      batchApps.map(app => fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials))
+    );
 
-      // Flatten all secure groups' properties into one lookup map
-      const flatSecure = {};
-      for (const g of secureGroups) {
-        Object.assign(flatSecure, g.properties || {});
+    settled.forEach((outcome, j) => {
+      results[i + j] = { app: batchApps[j], outcome };
+      done++;
+    });
+
+    onProgress?.(done, total, `Batch ${batchNum}/${totalBatches} complete (${done}/${total} apps)`);
+  }
+  // ── Build rows in original order ───────────────────────────────────────
+
+  for (const { app, outcome } of results) {
+    if (!app) continue;
+    if (outcome.status === 'fulfilled') {
+      try {
+        buildRows(app, outcome.value, allPropsRows, hostApiRows, scheduleRows);
+      } catch (e) {
+        buildErrorRow(app, e, allPropsRows, hostApiRows);
       }
-
-      // Resolve a property placeholder "${some.key}":
-      // Check CPS non-secure → CPS secure → Anypoint runtime props
-      const resolveProp = (val) => {
-        if (!val) return val;
-        const match = String(val).match(/^\$\{(.+)\}$/);
-        if (match) {
-          const key = match[1];
-          return flatNs[key]
-            || flatSecure[key]
-            || (fetchedAllProps && fetchedAllProps[key])
-            || val;
-        }
-        return val;
-      };
-
-      // Add scheduler rows inside try so fetchedSchedulers is in scope
-      if (fetchedSchedulers?.length > 0) {
-        // Log first scheduler to console for debugging structure
-        console.log(`[CPS Scheduler] app="${app.name}" first scheduler:`, JSON.stringify(fetchedSchedulers[0], null, 2));
-      }
-      for (const s of (fetchedSchedulers || [])) {
-        // Scheduler can be nested differently per version — probe all known paths
-        const innerSchedulers = Array.isArray(s.schedulers) ? s.schedulers : [];
-        const cronSched = innerSchedulers.find(x => /cron/i.test(x.type || '')) || innerSchedulers[0];
-        const fixedSched = innerSchedulers.find(x => /fixed/i.test(x.type || '')) || null;
-
-        // Exhaustively probe all known cron expression paths
-        const rawCron =
-          cronSched?.expression ||
-          s.schedule?.cronExpression || s.schedule?.expression ||
-          s.cronExpression || s.expression ||
-          s.schedulerConfig?.cronExpression || s.schedulerConfig?.expression || '';
-
-        // Exhaustively probe all known period/timeUnit paths
-        const rawPeriod =
-          fixedSched?.period || fixedSched?.frequency ||
-          s.schedule?.period || s.schedule?.frequency ||
-          s.frequency || s.period || '';
-
-        const rawTimeUnit =
-          fixedSched?.timeUnit ||
-          s.schedule?.timeUnit || s.timeUnit || '';
-
-        const rawTimeZone =
-          cronSched?.timeZone ||
-          s.schedule?.timeZone || s.timeZone || '';
-
-        scheduleRows.push({
-          apiDomainName: app.name,
-          scheduleName: s.flow || s.flowName || s.name || s.schedulerName || '',
-          enabled: s.enabled !== false ? 'true' : 'false',
-          scheduleCronExpression: resolveProp(rawCron),
-          scheduleTimeZone: resolveProp(rawTimeZone),
-          scheduleTimeUnit: resolveProp(rawTimeUnit),
-          schedulePeriod: String(resolveProp(String(rawPeriod)))
-        });
-      }
-
-      if (secureGroups.length === 0) {
-        // No secure groups — one row with empty cpsSecureKey and empty properties
-        allPropsRows.push({
-          apiName: app.name,
-          staticIPsEnabled,
-          staticIPs,
-          hostsNonSecure,
-          cpsSecureKey: flatNs['cps.secure.properties'] || '',
-          properties: ''
-        });
-        hostApiRows.push({
-          apiName: app.name,
-          staticIPsEnabled,
-          staticIPs,
-          hostsNonSecure,
-          cpsSecureKey: flatNs['cps.secure.properties'] || '',
-          hostsSecure: '',
-          apiUsers: '',
-          notAccessible: ''
-        });
-      } else {
-        // One row per secure group — properties column = ONLY that secure key's properties
-        for (const group of secureGroups) {
-          const maskedSec = maskSecrets(group.properties);
-          allPropsRows.push({
-            apiName: app.name,
-            staticIPsEnabled,
-            staticIPs,
-            hostsNonSecure,
-            cpsSecureKey: group.key,
-            properties: propsToString(maskedSec)  // only this secure group's props
-          });
-          hostApiRows.push({
-            apiName: app.name,
-            staticIPsEnabled,
-            staticIPs,
-            hostsNonSecure,
-            cpsSecureKey: group.key,
-            hostsSecure: extractHostsSecure(group.properties),
-            apiUsers: extractApiUsers(group.properties),
-            notAccessible: ''
-          });
-        }
-      }
-    } catch (e) {
-      // App failed — add a placeholder row
-      const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
-      allPropsRows.push({
-        apiName: app.name,
-        staticIPsEnabled,
-        staticIPs: '—',
-        hostsNonSecure: '',
-        cpsSecureKey: '',
-        properties: `ERROR: ${e.response?.data?.error || e.message}`
-      });
-      hostApiRows.push({
-        apiName: app.name,
-        staticIPsEnabled,
-        staticIPs: '—',
-        hostsNonSecure: '',
-        cpsSecureKey: '',
-        hostsSecure: '',
-        apiUsers: '',
-        notAccessible: `ERROR: ${e.response?.data?.error || e.message}`
-      });
+    } else {
+      buildErrorRow(app, outcome.reason, allPropsRows, hostApiRows);
     }
-
   }
 
   // ── Export as Excel (.xlsx) with 3 sheets ─────────────────────────────

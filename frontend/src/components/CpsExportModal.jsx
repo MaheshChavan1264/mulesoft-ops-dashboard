@@ -160,7 +160,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
   const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
 
   const [status, setStatus] = useState('idle');
-  const [progress, setProgress] = useState({ current: 0, total: 0, appName: '' });
+  const [progress, setProgress] = useState({ current: 0, total: 0, label: '' });
   const [errorMsg, setErrorMsg] = useState('');
   const [cpsBaseUrl, setCpsBaseUrl] = useState('');
   const [cpsEnv, setCpsEnv] = useState('');
@@ -275,7 +275,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
         envName: envNames.length === 1 ? envNames[0] : 'Multi-Env',
         cpsBaseUrl: cpsBaseUrl.trim(),        // optional override — fetchAppCps uses per-app URL first
         cpsEnvOverride: cpsEnv.trim(),        // optional override — fetchAppCps uses per-app cps.prefix
-        onProgress: (current, total, appName) => setProgress({ current, total, appName }),
+        onProgress: (current, total, label) => setProgress({ current, total, label }),
         // Per-app credential resolution — Strategy 1: specific clientId from ARM props
         getCredential: hasCpsCreds ? getSecret : null,
         // Fallback — Strategy 2: try all CSV credentials when specific one is masked/absent
@@ -404,14 +404,16 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
           {(status === 'running' || status === 'done') && (
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-400">{status === 'done' ? 'Export complete!' : `Processing ${progress.current} of ${progress.total}…`}</span>
+                <span className="text-gray-400">
+                  {status === 'done' ? 'Export complete!' : `Fetching ${progress.current}/${progress.total} apps in parallel…`}
+                </span>
                 <span className={'font-medium ' + (status === 'done' ? 'text-emerald-400' : 'text-blue-400')}>{progressPct}%</span>
               </div>
               <div className="w-full bg-gray-800 rounded-full h-2">
                 <div className={'h-2 rounded-full transition-all duration-300 ' + (status === 'done' ? 'bg-emerald-500' : 'bg-blue-500')} style={{ width: `${progressPct}%` }} />
               </div>
-              {progress.appName && status === 'running' && (
-                <p className="text-gray-500 text-[10px] font-mono truncate">Current: {progress.appName}</p>
+              {progress.label && status === 'running' && (
+                <p className="text-gray-500 text-[10px] font-mono truncate">⚡ {progress.label}</p>
               )}
               {status === 'done' && (
                 <div className="flex items-center gap-2 text-emerald-400 text-sm"><CheckCircle size={16} /> File downloaded successfully!</div>
