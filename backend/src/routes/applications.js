@@ -397,7 +397,9 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
               muleVersion: typeof app.muleVersion === 'string'
                 ? app.muleVersion
                 : app.muleVersion?.version,
-              workers: app.workers
+              workers: app.workers,
+              // Static IPs info for CH1
+              staticIPsEnabled: app.staticIPsEnabled ?? null,
             });
           }
         });
