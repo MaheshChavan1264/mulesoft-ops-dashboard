@@ -7,8 +7,8 @@ import { Search, RefreshCw, ChevronRight, AlertTriangle, X, SlidersHorizontal, F
 import CredentialImportButton from '../components/CredentialImportButton';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
-import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
-import EnvFilterModal, { applyEnvFilter } from '../components/EnvFilterModal';
+import { applyBgFilter } from '../components/BgFilterModal';
+import { applyEnvFilter } from '../components/EnvFilterModal';
 import CpsExportModal from '../components/CpsExportModal';
 import PingResultCard from '../components/PingResultCard';
 import CopyBtn from '../components/CopyBtn';
@@ -665,9 +665,6 @@ export default function ApplicationsPage() {
   const [selectedBg, setSelectedBg] = useState(
     () => localStorage.getItem('mule_dashboard_selected_bg') || ''
   );
-  const [showBgFilter, setShowBgFilter] = useState(false);
-  const [showEnvFilter, setShowEnvFilter] = useState(false);
-
   // Keep localStorage in sync whenever selectedBg changes
   useEffect(() => {
     if (selectedBg) localStorage.setItem('mule_dashboard_selected_bg', selectedBg);
@@ -1056,36 +1053,6 @@ export default function ApplicationsPage() {
   return (
     <div className="space-y-5">
       {/* Modals */}
-      {/* BG Filter Modal */}
-      {showBgFilter && (
-        <BgFilterModal
-          businessGroups={allBusinessGroups}
-          onClose={() => setShowBgFilter(false)}
-          onSaved={() => {
-            const visible = applyBgFilter(allBusinessGroups);
-            if (!visible.find((g) => g.id === selectedBg)) {
-              const root = visible.find((g) => !g.parentId) || visible[0];
-              if (root) setSelectedBg(root.id);
-            }
-          }}
-        />
-      )}
-
-      {/* Env Filter Modal */}
-      {showEnvFilter && (
-        <EnvFilterModal
-          environments={environments}
-          onClose={() => setShowEnvFilter(false)}
-          onSaved={() => {
-            // If current filterEnv is now hidden, clear it
-            const visibleEnvs = applyEnvFilter(environments);
-            if (filterEnv && !visibleEnvs.find((e) => e.id === filterEnv)) {
-              setFilterEnv('');
-            }
-          }}
-        />
-      )}
-
       <ConfirmModal
         state={confirmState}
         onConfirm={executeAction}
@@ -1209,18 +1176,11 @@ export default function ApplicationsPage() {
       <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">Business Group</p>
-          <button
-            onClick={() => setShowBgFilter(true)}
-            title="Configure visible business groups"
-            className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border transition-all ${
-              filterActive
-                ? 'bg-blue-600/20 border-blue-600/50 text-blue-400 hover:bg-blue-600/30'
-                : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600'
-            }`}
-          >
-            <SlidersHorizontal size={11} />
-            {filterActive ? `${visibleGroups.length}/${allBusinessGroups.length} shown` : 'Filter BGs'}
-          </button>
+          {filterActive && (
+            <span className="text-[10px] text-blue-400 font-medium">
+              {visibleGroups.length}/{allBusinessGroups.length} shown (filtered)
+            </span>
+          )}
         </div>
         <Select
           value={selectedBg}
@@ -1249,24 +1209,7 @@ export default function ApplicationsPage() {
             placeholder="Search applications..."
             className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="flex-1">
-            <Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="Environment" searchable />
-          </div>
-          <button
-            onClick={() => setShowEnvFilter(true)}
-            disabled={environments.length === 0}
-            title="Configure visible environments"
-            className={`flex items-center gap-1 text-xs px-2 py-2 rounded-lg border transition-all flex-shrink-0 ${
-              envFilterActive
-                ? 'bg-green-600/20 border-green-600/50 text-green-400 hover:bg-green-600/30'
-                : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 disabled:opacity-40'
-            }`}
-          >
-            <SlidersHorizontal size={11} />
-            {envFilterActive ? `${visibleEnvs.length}/${environments.length}` : ''}
-          </button>
-        </div>
+        <div><Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="Environment" searchable /></div>
         <div><Select value={filterStatus} onChange={setFilterStatus} options={statusOptions} placeholder="Status" /></div>
         <div><Select value={filterType} onChange={setFilterType} options={typeOptions} placeholder="Type" /></div>
       </div>
