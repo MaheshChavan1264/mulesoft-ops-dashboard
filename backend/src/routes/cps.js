@@ -130,7 +130,6 @@ router.post('/credentials', authMiddleware, (req, res) => {
     req.session.cpsCreds[storageKey] = { clientId: creds.clientId || '', clientSecret: creds.clientSecret || '' };
   }
 
-  console.log('CPS credentials saved:', Object.keys(credentials));
   res.json({ success: true });
 });
 
