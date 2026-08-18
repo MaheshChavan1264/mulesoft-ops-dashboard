@@ -2,30 +2,13 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
-
-// Skip environments containing dev or qa in their name
-const isProductionEnv = (env) => {
-  const name = (env.name || '').toLowerCase();
-  return !name.includes('qa') && !name.includes('dev');
-};
-
-// Helper: parse apps from various CH2 response shapes
-const parseCH2Apps = (data) => {
-  if (Array.isArray(data)) return data;
-  return data.items || data.deployments || data.content || data.data || [];
-};
-
-// Normalize statuses across CH1 and CH2 so frontend uses one consistent set
-// CH1: STARTED → RUNNING, DEPLOY_FAILED → FAILED, PARTIALLY_STARTED → PARTIALLY_STARTED
-// CH2: RUNNING, FAILED, STOPPED, DEPLOYING, UPDATING, STARTING, STOPPING
-const normalizeStatus = (status) => {
-  const s = (status || '').toUpperCase().trim();
-  if (s === 'STARTED') return 'RUNNING';
-  if (s === 'DEPLOY_FAILED') return 'FAILED';
-  if (s === 'UNDEPLOYED') return 'STOPPED';
-  if (s === 'NOT_RUNNING') return 'STOPPED';
-  return s;
-};
+const {
+  isProductionEnv,
+  parseCH2Apps,
+  normalizeStatus,
+  makeCh1Headers,
+} = require('../utils/appHelpers');
+const { sendProxyError } = require('../utils/responseHelpers');
 
 // Get all applications for an environment (CloudHub 2.0)
 router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
@@ -38,10 +21,7 @@ router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching CH2 apps:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch CloudHub 2.0 applications'
-    });
+    sendProxyError(res, error, 'Failed to fetch CloudHub 2.0 applications');
   }
 });
 
@@ -71,20 +51,9 @@ router.get('/cloudhub2/:orgId/:envId/:deploymentId', authMiddleware, async (req,
       deployment._settings = extraProps;
     }
 
-    // Log what property paths exist for debugging
-    /*const ds = deployment.target?.deploymentSettings || {};
-    console.log(`CH2 props for ${deploymentId}:`, {
-      'target.deploymentSettings.properties': Object.keys(ds.properties || {}),
-      'target.deploymentSettings.environmentVars': Object.keys(ds.environmentVars || {}),
-      'application.configuration': !!deployment.application?.configuration
-    });*/
-
     res.json(deployment);
   } catch (error) {
-    console.error('Error fetching CH2 app:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch application'
-    });
+    sendProxyError(res, error, 'Failed to fetch application');
   }
 });
 
@@ -98,10 +67,7 @@ router.get('/cloudhub2/:orgId/:envId/:deploymentId/schedulers', authMiddleware, 
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching CH2 schedulers:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch schedulers'
-    });
+    sendProxyError(res, error, 'Failed to fetch schedulers');
   }
 });
 
@@ -111,17 +77,11 @@ router.get('/cloudhub1/:envId', authMiddleware, async (req, res) => {
     const client = createClient(req.anypointToken);
     const orgId = req.query.orgId || req.orgId;
     const response = await client.get('/cloudhub/api/applications', {
-      headers: {
-        'X-ANYPNT-ENV-ID': req.params.envId,
-        'X-ANYPNT-ORG-ID': orgId
-      }
+      headers: makeCh1Headers(req.params.envId, orgId),
     });
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching CH1 apps:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch CloudHub 1.0 applications'
-    });
+    sendProxyError(res, error, 'Failed to fetch CloudHub 1.0 applications');
   }
 });
 
@@ -131,17 +91,11 @@ router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
     const client = createClient(req.anypointToken);
     const orgId = req.query.orgId || req.orgId;
     const response = await client.get(`/cloudhub/api/applications/${req.params.appName}`, {
-      headers: {
-        'X-ANYPNT-ENV-ID': req.params.envId,
-        'X-ANYPNT-ORG-ID': orgId
-      }
+      headers: makeCh1Headers(req.params.envId, orgId),
     });
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching CH1 app:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch CloudHub 1.0 application'
-    });
+    sendProxyError(res, error, 'Failed to fetch CloudHub 1.0 application');
   }
 });
 
@@ -154,12 +108,7 @@ router.get('/cloudhub1/:envId/:appName/static-ips', authMiddleware, async (req, 
     const orgId = req.query.orgId || req.orgId;
     const response = await client.get(
       `/cloudhub/api/applications/${req.params.appName}/static-ips`,
-      {
-        headers: {
-          'X-ANYPNT-ENV-ID': req.params.envId,
-          'X-ANYPNT-ORG-ID': orgId
-        }
-      }
+      { headers: makeCh1Headers(req.params.envId, orgId) }
     );
     res.json(response.data);
   } catch (error) {
@@ -181,19 +130,11 @@ router.get('/cloudhub1/:envId/:appName/schedules', authMiddleware, async (req, r
     const orgId = req.query.orgId || req.orgId;
     const response = await client.get(
       `/cloudhub/api/applications/${req.params.appName}/schedules`,
-      {
-        headers: {
-          'X-ANYPNT-ENV-ID': req.params.envId,
-          'X-ANYPNT-ORG-ID': orgId
-        }
-      }
+      { headers: makeCh1Headers(req.params.envId, orgId) }
     );
     res.json(response.data);
   } catch (error) {
-    console.error('Error fetching CH1 schedules:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch schedules'
-    });
+    sendProxyError(res, error, 'Failed to fetch schedules');
   }
 });
 
@@ -203,10 +144,7 @@ router.get('/cloudhub1/:envId/:appName/properties', authMiddleware, async (req, 
     const client = createClient(req.anypointToken);
     const orgId = req.query.orgId || req.orgId;
     const response = await client.get(`/cloudhub/api/applications/${req.params.appName}`, {
-      headers: {
-        'X-ANYPNT-ENV-ID': req.params.envId,
-        'X-ANYPNT-ORG-ID': orgId
-      }
+      headers: makeCh1Headers(req.params.envId, orgId),
     });
     const app = response.data;
     res.json({
@@ -222,10 +160,7 @@ router.get('/cloudhub1/:envId/:appName/properties', authMiddleware, async (req, 
       monitoringEnabled: app.monitoringEnabled
     });
   } catch (error) {
-    console.error('Error fetching app properties:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch application properties'
-    });
+    sendProxyError(res, error, 'Failed to fetch application properties');
   }
 });
 
@@ -242,7 +177,7 @@ router.post('/cloudhub1/:envId/:appName/action', authMiddleware, async (req, res
   }
   const orgId = req.query.orgId || req.orgId;
   const client = createClient(req.anypointToken);
-  const headers = { 'X-ANYPNT-ENV-ID': envId, 'X-ANYPNT-ORG-ID': orgId };
+  const headers = makeCh1Headers(envId, orgId);
 
   // Strategy 1: POST .../status with { status: 'start'|'stop'|'restart' }
   // This is the canonical CH1 REST API status-change endpoint
@@ -361,7 +296,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     const targetOrgId = req.params.orgId;
     const forceRefresh = req.query.refresh === 'true';
 
-    // ── Session cache (per-user, 2-min TTL) ──────────────────────────────────
+    // ── Session cache (per-user, 20-min TTL) ─────────────────────────────────
     // Cache is keyed by orgId inside the user's session so different users
     // never share cached data.
     if (!req.session.summaryCache) req.session.summaryCache = {};
@@ -397,23 +332,23 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
         );
         ch2Accessible = true;
         const apps = parseCH2Apps(ch2Response.data);
-          apps.forEach((app) => {
-            const runtimeStatus = app.application?.status || app.application?.state;
-            const deploymentStatus = app.status || app.desiredStatus;
-            const effectiveStatus = runtimeStatus || deploymentStatus;
-            results.push({
-              id: app.id,
-              name: app.name,
-              status: normalizeStatus(effectiveStatus),
-              deploymentStatus: normalizeStatus(deploymentStatus),
-              environment: { id: env.id, name: env.name, type: env.type },
-              deploymentType: 'CloudHub 2.0',
-              lastModifiedDate: app.lastModifiedDate || app.updatedAt,
-              // CH2 list API only returns application.status — ref/version not available
-              muleVersion: app.currentRuntimeVersion || app.lastSuccessfulRuntimeVersion,
-              replicas: app.target?.replicas,
-            });
+        apps.forEach((app) => {
+          const runtimeStatus = app.application?.status || app.application?.state;
+          const deploymentStatus = app.status || app.desiredStatus;
+          const effectiveStatus = runtimeStatus || deploymentStatus;
+          results.push({
+            id: app.id,
+            name: app.name,
+            status: normalizeStatus(effectiveStatus),
+            deploymentStatus: normalizeStatus(deploymentStatus),
+            environment: { id: env.id, name: env.name, type: env.type },
+            deploymentType: 'CloudHub 2.0',
+            lastModifiedDate: app.lastModifiedDate || app.updatedAt,
+            // CH2 list API only returns application.status — ref/version not available
+            muleVersion: app.currentRuntimeVersion || app.lastSuccessfulRuntimeVersion,
+            replicas: app.target?.replicas,
           });
+        });
       } catch (e) {
         const status = e.response?.status;
         if (status !== 403 && status !== 401) ch2Accessible = true; // accessible but empty/errored
@@ -423,10 +358,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
       // Try CloudHub 1.0
       try {
         const ch1Response = await client.get('/cloudhub/api/applications', {
-          headers: {
-            'X-ANYPNT-ENV-ID': env.id,
-            'X-ANYPNT-ORG-ID': targetOrgId
-          }
+          headers: makeCh1Headers(env.id, targetOrgId),
         });
         ch1Accessible = true;
         const raw = ch1Response.data;
@@ -479,10 +411,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
     res.json(responseData);
   } catch (error) {
-    console.error('Error fetching app summary:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch application summary'
-    });
+    sendProxyError(res, error, 'Failed to fetch application summary');
   }
 });
 

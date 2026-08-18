@@ -2,17 +2,8 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
-
-// Skip environments containing dev or qa
-const isProductionEnv = (env) => {
-  const name = (env.name || '').toLowerCase();
-  return !name.includes('qa') && !name.includes('dev');
-};
-
-const parseCH2Apps = (data) => {
-  if (Array.isArray(data)) return data;
-  return data.items || data.deployments || data.content || data.data || [];
-};
+const { isProductionEnv, parseCH2Apps, makeCh1Headers } = require('../utils/appHelpers');
+const { sendProxyError } = require('../utils/responseHelpers');
 
 // Get application metrics (CloudHub 1.0)
 router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
@@ -22,13 +13,13 @@ router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
     const response = await client.get(
       `/cloudhub/api/applications/${req.params.appName}/dashboardData`,
       {
-        headers: { 'X-ANYPNT-ENV-ID': req.params.envId, 'X-ANYPNT-ORG-ID': req.orgId },
+        headers: makeCh1Headers(req.params.envId, req.orgId),
         params: { duration, period }
       }
     );
     res.json(response.data);
   } catch (error) {
-    res.status(error.response?.status || 500).json({ error: error.message });
+    sendProxyError(res, error, 'Failed to fetch CloudHub 1.0 metrics');
   }
 });
 
@@ -78,6 +69,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
     await Promise.all(allEnvPairs.map(async ({ orgId, env }) => {
       environmentsSeen.add(env.id);
+
       // Try CloudHub 2.0
       try {
         const ch2Res = await client.get(
@@ -98,7 +90,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
       // Try CloudHub 1.0
       try {
         const ch1Res = await client.get('/cloudhub/api/applications', {
-          headers: { 'X-ANYPNT-ENV-ID': env.id, 'X-ANYPNT-ORG-ID': orgId }
+          headers: makeCh1Headers(env.id, orgId),
         });
         const ch1Apps = Array.isArray(ch1Res.data) ? ch1Res.data : (ch1Res.data.applications || []);
         ch1Apps.forEach((app) => {
@@ -122,10 +114,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching metrics summary:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch metrics summary'
-    });
+    sendProxyError(res, error, 'Failed to fetch metrics summary');
   }
 });
 

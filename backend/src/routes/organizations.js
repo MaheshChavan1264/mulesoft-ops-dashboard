@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
+const { mapOrgShape } = require('../utils/orgHelpers');
+const { sendProxyError } = require('../utils/responseHelpers');
 
 // Walk UP from any org to the root (parentId === null)
 async function findRootOrgId(client, orgId) {
@@ -69,9 +71,7 @@ router.get('/', authMiddleware, async (req, res) => {
     const response = await client.get(`/accounts/api/organizations/${req.orgId}`);
     res.json(response.data);
   } catch (error) {
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch organization'
-    });
+    sendProxyError(res, error, 'Failed to fetch organization');
   }
 });
 
@@ -80,21 +80,13 @@ router.get('/business-groups', authMiddleware, async (req, res) => {
   try {
     // Fast path: session already has the full memberOrgs list from /accounts/api/me
     if (req.memberOrgs && req.memberOrgs.length > 0) {
-      //"console.log(`Business groups from session: ${req.memberOrgs.length}`);
       return res.json({ total: req.memberOrgs.length, data: req.memberOrgs });
     }
 
     // Fallback: re-fetch from /accounts/api/me
     const client = createClient(req.anypointToken);
     const profileRes = await client.get('/accounts/api/me');
-    const memberOrgs = (profileRes.data.user?.memberOfOrganizations || []).map((o) => ({
-      id: o.id,
-      name: o.name,
-      domain: o.domain,
-      type: o.type,
-      parentId: o.parentId || null,
-      subOrganizationIds: o.subOrganizationIds || []
-    }));
+    const memberOrgs = (profileRes.data.user?.memberOfOrganizations || []).map(mapOrgShape);
 
     if (memberOrgs.length > 0) {
       console.log(`Business groups from /me: ${memberOrgs.length}`);
@@ -107,10 +99,7 @@ router.get('/business-groups', authMiddleware, async (req, res) => {
     console.log(`Business groups from BFS: ${allOrgs.length}`);
     res.json({ total: allOrgs.length, data: allOrgs, rootOrgId });
   } catch (error) {
-    console.error('Error fetching business groups:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch business groups'
-    });
+    sendProxyError(res, error, 'Failed to fetch business groups');
   }
 });
 
@@ -121,9 +110,7 @@ router.get('/:orgId', authMiddleware, async (req, res) => {
     const response = await client.get(`/accounts/api/organizations/${req.params.orgId}`);
     res.json(response.data);
   } catch (error) {
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch organization'
-    });
+    sendProxyError(res, error, 'Failed to fetch organization');
   }
 });
 
@@ -137,9 +124,7 @@ router.get('/:orgId/members', authMiddleware, async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch organization members'
-    });
+    sendProxyError(res, error, 'Failed to fetch organization members');
   }
 });
 
