@@ -38,138 +38,115 @@ function extractCpsConfig(app, orgId) {
   };
 }
 
+// Flat searchable BG+Env selector — loads all environments upfront, no expand/collapse
 function BgEnvSelector({ businessGroups, onSelectionsChange }) {
-  const [envsByBg, setEnvsByBg] = useState({});
-  const [loadingEnvs, setLoadingEnvs] = useState({});
-  const [expandedBgs, setExpandedBgs] = useState(new Set());
-  const [selections, setSelections] = useState(new Set());
-  const [envSearch, setEnvSearch] = useState('');
+  const [allEnvs, setAllEnvs] = useState([]);  // flat [{bgId, bgName, envId, envName, envType}]
+  const [loading, setLoading] = useState(false);
+  const [selections, setSelections] = useState(new Set()); // "bgId:envId"
+  const [search, setSearch] = useState('');
 
-  const loadEnvs = useCallback(async (bgId) => {
-    if (envsByBg[bgId]) return;
-    setLoadingEnvs(p => ({ ...p, [bgId]: true }));
-    try {
-      const r = await api.get(`/environments/${bgId}`);
-      const envs = r.data?.data || r.data?.environments || r.data || [];
-      setEnvsByBg(p => ({ ...p, [bgId]: Array.isArray(envs) ? envs : [] }));
-    } catch { setEnvsByBg(p => ({ ...p, [bgId]: [] })); }
-    setLoadingEnvs(p => ({ ...p, [bgId]: false }));
-  }, [envsByBg]);
+  // Load ALL envs from all visible BGs on mount (parallel)
+  useEffect(() => {
+    const visible = applyBgFilter(businessGroups);
+    if (!visible.length) return;
+    setLoading(true);
+    Promise.allSettled(
+      visible.map(bg => api.get(`/environments/${bg.id}`)
+        .then(r => (r.data?.data || []).map(e => ({
+          bgId: bg.id, bgName: bg.name,
+          envId: e.id, envName: e.name, envType: e.type,
+        })))
+        .catch(() => [])
+      )
+    ).then(results => {
+      const flat = applyEnvFilter(results.flatMap(r => r.status === 'fulfilled' ? r.value : []));
+      setAllEnvs(flat);
+      setLoading(false);
+    });
+  }, [businessGroups]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isBgSel = (bgId) => [...selections].some(s => s.startsWith(bgId + ':'));
-  const isEnvSel = (bgId, envId) => selections.has(bgId + ':' + envId);
+  useEffect(() => {
+    const sel = allEnvs.filter(e => selections.has(`${e.bgId}:${e.envId}`));
+    onSelectionsChange(sel);
+  }, [selections, allEnvs]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggleEnv = (bgId, envId) => {
+  const searchLo = search.toLowerCase().trim();
+  const filtered = searchLo
+    ? allEnvs.filter(e =>
+        e.envName.toLowerCase().includes(searchLo) ||
+        e.bgName.toLowerCase().includes(searchLo) ||
+        (e.envType || '').toLowerCase().includes(searchLo)
+      )
+    : allEnvs;
+
+  const toggle = (bgId, envId) => {
     setSelections(prev => {
       const n = new Set(prev);
-      const k = bgId + ':' + envId;
+      const k = `${bgId}:${envId}`;
       n.has(k) ? n.delete(k) : n.add(k);
       return n;
     });
   };
 
-  const toggleBg = (bgId) => {
-    const envs = envsByBg[bgId] || [];
-    setSelections(prev => {
-      const n = new Set(prev);
-      if (isBgSel(bgId)) { [...n].filter(s => s.startsWith(bgId + ':')).forEach(s => n.delete(s)); }
-      else { envs.forEach(e => n.add(bgId + ':' + e.id)); }
-      return n;
-    });
-  };
-
-  useEffect(() => {
-    const result = [];
-    selections.forEach(sel => {
-      const [bgId, envId] = sel.split(':');
-      const bg = businessGroups.find(g => g.id === bgId);
-      if (!bg) return;
-      const env = (envsByBg[bgId] || []).find(e => e.id === envId);
-      if (env) result.push({ bgId, bgName: bg.name, envId, envName: env.name, envType: env.type });
-    });
-    onSelectionsChange(result);
-  }, [selections, businessGroups, envsByBg]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const visible = applyBgFilter(businessGroups);
-  const ordered = [visible.find(g => !g.parentId), ...visible.filter(g => g.parentId)].filter(Boolean);
-
-  // When a search term is active, auto-expand all BGs and filter envs
-  const searchLo = envSearch.toLowerCase().trim();
-  const getFilteredEnvs = (bgId) => {
-    const envs = applyEnvFilter(envsByBg[bgId] || []); // apply global env filter
-    if (!searchLo) return envs;
-    return envs.filter(e => e.name.toLowerCase().includes(searchLo) || e.type?.toLowerCase().includes(searchLo));
-  };
-  // Auto-load envs for all BGs when search is active
-  useEffect(() => {
-    if (!searchLo) return;
-    visible.forEach(bg => { if (!envsByBg[bg.id]) loadEnvs(bg.id); });
-  }, [searchLo]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selectAll = () => setSelections(new Set(filtered.map(e => `${e.bgId}:${e.envId}`)));
+  const clearAll = () => setSelections(new Set());
 
   return (
     <div className="border border-slate-700/50 rounded-xl overflow-hidden">
-      {/* Search bar */}
-      <div className="relative border-b border-slate-700/50">
-        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+      {/* Search + bulk actions bar */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700/50 bg-slate-800/40">
+        <Search size={11} className="text-slate-500 flex-shrink-0" />
         <input
-          value={envSearch}
-          onChange={e => setEnvSearch(e.target.value)}
-          placeholder="Search environments…"
-          className="w-full bg-slate-800/40 pl-8 pr-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:bg-slate-800/60"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search BG or environment…"
+          className="flex-1 bg-transparent text-xs text-slate-200 placeholder-slate-600 focus:outline-none min-w-0"
         />
-        {envSearch && (
-          <button onClick={() => setEnvSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs">✕</button>
-        )}
+        {search && <button onClick={() => setSearch('')} className="text-slate-500 hover:text-slate-300 text-xs flex-shrink-0">✕</button>}
+        <div className="flex items-center gap-2 flex-shrink-0 border-l border-slate-700/60 pl-2">
+          <span className="text-[10px] text-slate-500">{selections.size}/{allEnvs.length}</span>
+          <button onClick={selectAll} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium">All</button>
+          <button onClick={clearAll} className="text-[10px] text-slate-500 hover:text-slate-300">Clear</button>
+        </div>
       </div>
-      <div style={{ maxHeight: '11rem', overflowY: 'auto' }}>
-      {ordered.map(bg => {
-        const expanded = expandedBgs.has(bg.id) || !!searchLo;
-        const checked = isBgSel(bg.id);
-        const envs = getFilteredEnvs(bg.id);
-        // Hide BG entirely if search active and no matching envs
-        if (searchLo && envs.length === 0 && !loadingEnvs[bg.id]) return null;
-        return (
-          <div key={bg.id} className="border-b border-slate-800/40 last:border-0">
-            <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-slate-800/30 transition-colors">
-              <div onClick={() => { loadEnvs(bg.id); toggleBg(bg.id); }}
-                className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer flex-shrink-0 transition-colors ${checked ? 'bg-cyan-600 border-cyan-500' : 'border-slate-600 hover:border-cyan-500'}`}>
-                {checked && <span className="text-white text-[10px] font-bold">✓</span>}
+
+      {/* Flat environment list */}
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-6 text-slate-500 text-xs">
+          <RefreshCw size={12} className="animate-spin" /> Loading environments…
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="py-6 text-center text-slate-600 text-xs">
+          {search ? `No environments match "${search}"` : 'No environments available'}
+        </div>
+      ) : (
+        <div style={{ maxHeight: '14rem', overflowY: 'auto' }}>
+          {filtered.map(env => {
+            const key = `${env.bgId}:${env.envId}`;
+            const isChecked = selections.has(key);
+            const isProd = env.envType === 'production';
+            return (
+              <div
+                key={key}
+                onClick={() => toggle(env.bgId, env.envId)}
+                className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors border-b border-slate-800/30 last:border-0 ${isChecked ? 'bg-cyan-950/20' : 'hover:bg-slate-800/30'}`}
+              >
+                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-cyan-600 border-cyan-500' : 'border-slate-600 hover:border-cyan-500'}`}>
+                  {isChecked && <Check size={9} className="text-white" />}
+                </div>
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
+                <div className="flex-1 min-w-0">
+                  <span className={`text-xs font-medium ${isChecked ? 'text-white' : 'text-slate-300'}`}>{env.envName}</span>
+                  <span className="text-slate-600 text-[10px] ml-1.5">{env.bgName}</span>
+                </div>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${isProd ? 'bg-green-900/40 text-green-500' : 'bg-yellow-900/40 text-yellow-500'}`}>
+                  {env.envType || 'sandbox'}
+                </span>
               </div>
-              <Building2 size={12} className={checked ? 'text-cyan-400' : 'text-slate-600'} />
-              <span className={`text-xs font-medium flex-1 ${checked ? 'text-white' : 'text-slate-400'}`}>{bg.name}</span>
-              {!bg.parentId && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded-full">ROOT</span>}
-              <button onClick={() => { setExpandedBgs(p => { const n = new Set(p); n.has(bg.id) ? n.delete(bg.id) : n.add(bg.id); return n; }); loadEnvs(bg.id); }}
-                className="text-slate-600 hover:text-slate-300 p-0.5 rounded">
-                <ChevronRight size={12} className={`transition-transform ${expanded ? 'rotate-90' : ''}`} />
-              </button>
-            </div>
-            {expanded && (
-              <div className="bg-slate-900/40">
-                {loadingEnvs[bg.id] ? (
-                  <div className="flex items-center gap-2 px-8 py-2 text-slate-600 text-xs"><RefreshCw size={10} className="animate-spin" /> Loading…</div>
-                ) : envs.length === 0 ? (
-                  <div className="px-8 py-2 text-slate-700 text-xs">No environments</div>
-                ) : envs.map(env => {
-                  const ec = isEnvSel(bg.id, env.id);
-                  const isProd = env.type === 'production';
-                  return (
-                    <div key={env.id} onClick={() => toggleEnv(bg.id, env.id)}
-                      className="flex items-center gap-2 px-8 py-2 hover:bg-slate-800/20 cursor-pointer transition-colors">
-                      <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${ec ? 'bg-cyan-600 border-cyan-500' : 'border-slate-600 hover:border-cyan-500'}`}>
-                        {ec && <span className="text-white text-[9px] font-bold">✓</span>}
-                      </div>
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
-                      <span className={`text-xs flex-1 ${ec ? 'text-slate-200' : 'text-slate-500'}`}>{env.name}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isProd ? 'bg-green-900/40 text-green-500' : 'bg-yellow-900/40 text-yellow-500'}`}>{env.type}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
