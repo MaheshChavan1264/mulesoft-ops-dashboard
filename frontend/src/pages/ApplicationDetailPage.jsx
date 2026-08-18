@@ -319,12 +319,31 @@ export default function ApplicationDetailPage() {
           const sr = await api.get(`/applications/cloudhub1/${envId}/${appId}/schedules`, { params: { orgId } });
           sch = Array.isArray(sr.data) ? sr.data : (sr.data?.schedules || []);
         } catch {}
+        // Fetch actual static IP addresses from dedicated endpoint when enabled
+        let staticIPs = [];
+        if (c.staticIPsEnabled) {
+          try {
+            const sipRes = await api.get(`/applications/cloudhub1/${envId}/${appId}/static-ips`, { params: { orgId } });
+            const sipArr = Array.isArray(sipRes.data) ? sipRes.data
+              : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
+            staticIPs = sipArr
+              .map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip))
+              .filter(Boolean);
+          } catch { /* endpoint not available — fall through to raw field check */ }
+        }
+        // Fallback: check raw response field names (some API versions include them inline)
+        if (staticIPs.length === 0) {
+          const rawIPs = c.staticIPs || c.staticIps || c.staticIPAddresses || c.ipAddresses || [];
+          if (Array.isArray(rawIPs) && rawIPs.length > 0) {
+            staticIPs = rawIPs.map(s => typeof s === 'string' ? s : (s.ipAddress || s.address || s.ip)).filter(Boolean);
+          }
+        }
         setApp({ _type:'ch1', id:c.domain, name:c.domain, status:c.status, region:c.region,
           muleVersion:typeof c.muleVersion==='string'?c.muleVersion:c.muleVersion?.version,
           lastModifiedDate:c.lastUpdateTime?new Date(c.lastUpdateTime).toISOString():null,
           properties:c.properties||{}, persistentQueues:c.persistentQueues,
           staticIPsEnabled:c.staticIPsEnabled,
-          staticIPs: Array.isArray(c.staticIPs) ? c.staticIPs : [],
+          staticIPs,
           loggingCustomLog4JEnabled:c.loggingCustomLog4JEnabled,
           monitoringEnabled:c.monitoringAutoRestart??c.monitoringEnabled,
           workers:{ amount:typeof c.workers==='number'?c.workers:c.workers?.amount, type:c.workerType||c.workers?.type },
