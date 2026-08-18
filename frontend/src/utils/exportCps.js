@@ -280,13 +280,13 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
   }
 
   if (secureGroups.length === 0) {
-    allPropsRows.push({ apiName: app.name, cloudhubVersion, appStatus, staticIPsEnabled, staticIPs, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', properties: '' });
-    hostApiRows.push({ apiName: app.name, cloudhubVersion, appStatus, staticIPsEnabled, staticIPs, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', hostsSecure: '', apiUsers: '', notAccessible: '' });
+    allPropsRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', properties: '' });
+    hostApiRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', hostsSecure: '', apiUsers: '', notAccessible: '' });
   } else {
     for (const group of secureGroups) {
       const maskedSec = maskSecrets(group.properties);
-      allPropsRows.push({ apiName: app.name, cloudhubVersion, appStatus, staticIPsEnabled, staticIPs, hostsNonSecure, cpsSecureKey: group.key, properties: propsToString(maskedSec) });
-      hostApiRows.push({ apiName: app.name, cloudhubVersion, appStatus, staticIPsEnabled, staticIPs, hostsNonSecure, cpsSecureKey: group.key, hostsSecure: extractHostsSecure(group.properties), apiUsers: extractApiUsers(group.properties), notAccessible: '' });
+      allPropsRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: group.key, properties: propsToString(maskedSec) });
+      hostApiRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: group.key, hostsSecure: extractHostsSecure(group.properties), apiUsers: extractApiUsers(group.properties), notAccessible: '' });
     }
   }
   // One row per app in the dedicated StaticIPs sheet
@@ -303,12 +303,11 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
 }
 
 function buildErrorRow(app, e, allPropsRows, hostApiRows) {
-  const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
   const cloudhubVersion = app.deploymentType === 'CloudHub 2.0' ? 'CloudHub 2.0' : 'CloudHub 1.0';
   const appStatus = app.status || '—';
   const msg = `ERROR: ${e.response?.data?.error || e.message}`;
-  allPropsRows.push({ apiName: app.name, cloudhubVersion, appStatus, staticIPsEnabled, staticIPs: '—', hostsNonSecure: '', cpsSecureKey: '', properties: msg });
-  hostApiRows.push({ apiName: app.name, cloudhubVersion, appStatus, staticIPsEnabled, staticIPs: '—', hostsNonSecure: '', cpsSecureKey: '', hostsSecure: '', apiUsers: '', notAccessible: msg });
+  allPropsRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', properties: msg });
+  hostApiRows.push({ apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', hostsSecure: '', apiUsers: '', notAccessible: msg });
 }
 
 /**
@@ -376,12 +375,12 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
   const wb = XLSX.utils.book_new();
 
   const ws1 = XLSX.utils.json_to_sheet(allPropsRows, {
-    header: ['apiName', 'cloudhubVersion', 'appStatus', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'properties']
+    header: ['apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties']
   });
   XLSX.utils.book_append_sheet(wb, ws1, 'AllPropertiesCatalog');
 
   const ws2 = XLSX.utils.json_to_sheet(hostApiRows, {
-    header: ['apiName', 'cloudhubVersion', 'appStatus', 'staticIPsEnabled', 'staticIPs', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
+    header: ['apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
   });
   XLSX.utils.book_append_sheet(wb, ws2, 'Host_APIUsersCatalog');
 
