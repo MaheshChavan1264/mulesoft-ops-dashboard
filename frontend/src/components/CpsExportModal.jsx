@@ -264,23 +264,38 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
       }
     }
 
-    const bgNames = usePreselected ? [bgName] : [...new Set(bgEnvSelections.map(s => s.bgName))];
-    const envNames = usePreselected ? [envName] : [...new Set(bgEnvSelections.map(s => s.envName))];
+    // ── Group apps by environment — one Excel file per environment ────────
+    const appsByEnv = new Map();
+    for (const a of allApps) {
+      const envKey = a._envName || a.environment?.name || 'Unknown';
+      if (!appsByEnv.has(envKey)) appsByEnv.set(envKey, { apps: [], bgName: a._bgName || bgName });
+      appsByEnv.get(envKey).apps.push(a);
+    }
+
+    const envEntries = [...appsByEnv.entries()]; // [{envName, {apps, bgName}}]
+    const totalAll = allApps.length;
+    let totalProcessed = 0;
 
     try {
-      await exportCpsProperties({
-        apps: allApps,
-        bgOrgId,
-        bgName: bgNames.length === 1 ? bgNames[0] : 'Multi-BG',
-        envName: envNames.length === 1 ? envNames[0] : 'Multi-Env',
-        cpsBaseUrl: cpsBaseUrl.trim(),        // optional override — fetchAppCps uses per-app URL first
-        cpsEnvOverride: cpsEnv.trim(),        // optional override — fetchAppCps uses per-app cps.prefix
-        onProgress: (current, total, label) => setProgress({ current, total, label }),
-        // Per-app credential resolution — Strategy 1: specific clientId from ARM props
-        getCredential: hasCpsCreds ? getSecret : null,
-        // Fallback — Strategy 2: try all CSV credentials when specific one is masked/absent
-        getAllCredentials: hasCpsCreds ? getAllCredentials : null,
-      });
+      for (let ei = 0; ei < envEntries.length; ei++) {
+        const [envLabel, { apps: envApps, bgName: envBgName }] = envEntries[ei];
+        await exportCpsProperties({
+          apps: envApps,
+          bgOrgId,
+          bgName: envBgName,
+          envName: envLabel,
+          cpsBaseUrl: cpsBaseUrl.trim(),
+          cpsEnvOverride: cpsEnv.trim(),
+          onProgress: (current, _total, label) => {
+            setProgress({ current: totalProcessed + current, total: totalAll, label });
+          },
+          getCredential: hasCpsCreds ? getSecret : null,
+          getAllCredentials: hasCpsCreds ? getAllCredentials : null,
+        });
+        totalProcessed += envApps.length;
+        // Brief pause between file downloads so browser doesn't block subsequent ones
+        if (ei < envEntries.length - 1) await new Promise(r => setTimeout(r, 200));
+      }
       setStatus('done');
     } catch (e) {
       setErrorMsg(e.message || 'Export failed');
