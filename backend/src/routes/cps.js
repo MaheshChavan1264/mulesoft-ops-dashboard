@@ -444,7 +444,6 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     // ── Non-secure fetch ──────────────────────────────────────────────────
     try {
       const nsUrl = `${cleanBase}/api/v2/properties/non-secure`;
-      console.log(`[search-user] NS ${nsUrl} keys=${cpsKey} env=${cpsEnv} app=${appName}`);
       const nsRes = await axios.get(nsUrl, {
         headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
         params,
@@ -461,7 +460,6 @@ router.post('/search-user', authMiddleware, async (req, res) => {
       if (secureKeyStr) {
         try {
           const sUrl = `${cleanBase}/api/v2/properties/secure`;
-          console.log(`[search-user] SEC ${sUrl} keys=${secureKeyStr} env=${cpsEnv} app=${appName}`);
           const sRes = await axios.get(sUrl, {
             headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
             params: { environment: cpsEnv, keys: secureKeyStr },
