@@ -157,7 +157,7 @@ function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
 
 /* ── Main Modal ─────────────────────────────────────────────── */
 export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envName, selectedEnvId, filterSummary, onClose }) {
-  const { getAllCredentials, hasCredentials: hasCpsCreds } = useCpsCredentialStore();
+  const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
 
   const [status, setStatus] = useState('idle');
   const [progress, setProgress] = useState({ current: 0, total: 0, appName: '' });
@@ -234,21 +234,6 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
     });
   }, [bgOrgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Post all CPS credentials from store to backend session ───────────────
-  const postAllCpsCredentials = useCallback(async () => {
-    if (!hasCpsCreds) return;
-    const allCreds = getAllCredentials();
-    if (!allCreds.length) return;
-    const normUrl = cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
-    if (!normUrl) return;
-    const credMap = {};
-    for (const { clientId, clientSecret } of allCreds) {
-      credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
-      credMap[`${normUrl}::${bgOrgId}`] = { clientId, clientSecret };
-    }
-    try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
-  }, [hasCpsCreds, getAllCredentials, cpsBaseUrl, bgOrgId]);
-
   const handleExport = async () => {
     if (bgEnvSelections.length === 0 && !usePreselected) {
       setErrorMsg('Please select at least one Business Group / Environment.');
@@ -257,9 +242,6 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
     }
     setStatus('running');
     setErrorMsg('');
-
-    // Auto-post CPS credentials from CSV store before export
-    if (cpsBaseUrl) await postAllCpsCredentials();
 
     let allApps = [];
 
@@ -291,9 +273,13 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
         bgOrgId,
         bgName: bgNames.length === 1 ? bgNames[0] : 'Multi-BG',
         envName: envNames.length === 1 ? envNames[0] : 'Multi-Env',
-        cpsBaseUrl: cpsBaseUrl.trim(),       // can be empty — fetchAppCps uses per-app URL
-        cpsEnvOverride: cpsEnv.trim(),       // can be empty — fetchAppCps uses per-app cps.prefix
+        cpsBaseUrl: cpsBaseUrl.trim(),        // optional override — fetchAppCps uses per-app URL first
+        cpsEnvOverride: cpsEnv.trim(),        // optional override — fetchAppCps uses per-app cps.prefix
         onProgress: (current, total, appName) => setProgress({ current, total, appName }),
+        // Per-app credential resolution — Strategy 1: specific clientId from ARM props
+        getCredential: hasCpsCreds ? getSecret : null,
+        // Fallback — Strategy 2: try all CSV credentials when specific one is masked/absent
+        getAllCredentials: hasCpsCreds ? getAllCredentials : null,
       });
       setStatus('done');
     } catch (e) {

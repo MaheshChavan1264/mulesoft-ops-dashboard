@@ -69,7 +69,9 @@ function normalisePropsArray(raw, appKey) {
  * Fetch CPS data for a single app.
  * Returns { nonSecure, secureGroups } or throws.
  */
-async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
+const isMasked = (v) => !v || /^\*+$/.test(String(v).trim());
+
+async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials) {
   const isCh2 = app.deploymentType === 'CloudHub 2.0';
   const depType = isCh2 ? 'ch2' : 'ch1';
 
@@ -113,14 +115,51 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
   // cps.projectName is the authoritative CPS key — NOT the app name or app.id
   const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
 
-  // Use per-app CPS URL from ARM properties if modal URL is empty
-  const effectiveCpsBaseUrl = cpsBaseUrl ||
-    allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
+  // CPS URL always comes from the app's own ARM properties (modal URL is just a fallback)
+  const effectiveCpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'] || cpsBaseUrl;
   if (!effectiveCpsBaseUrl) throw new Error(`No CPS URL configured for "${app.name}"`);
+
+  const normUrl = effectiveCpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+
+  // ── Per-app credential resolution ────────────────────────────────────────
+  // Strategy 1: get the specific cps.clientId from ARM props → look up secret in CSV
+  // Strategy 2 (fallback): masked / not in CSV → post all CSV creds as url::clientId entries
+  const cpsClientId = allProps['cps.clientId'] || allProps['cps.client_id'] ||
+                      allProps['cps.client.id'] || allProps['cps.apiClientId'] || '';
+
+  if (cpsClientId && !isMasked(cpsClientId) && getCredential) {
+    const secret = getCredential(cpsClientId);
+    if (secret) {
+      // ✅ Specific credential found — post ONLY this one as the primary
+      try {
+        await api.post('/cps/credentials', { credentials: {
+          [`${normUrl}::${bgOrgId}`]: { clientId: cpsClientId, clientSecret: secret },
+          [normUrl]: { clientId: cpsClientId, clientSecret: secret },
+        }});
+      } catch { /* non-fatal */ }
+    } else if (getAllCredentials) {
+      // Specific clientId not in CSV — fall back to all credentials
+      const allCreds = getAllCredentials();
+      if (allCreds.length) {
+        const credMap = {};
+        for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
+        try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
+      }
+    }
+  } else if (getAllCredentials) {
+    // clientId is masked or absent — post all as url::clientId fallback entries
+    const allCreds = getAllCredentials();
+    if (allCreds.length) {
+      const credMap = {};
+      for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
+      try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Fetch non-secure — throw on error so the caller can record it in the export
   const nsRes = await api.get('/cps/fetch', { params: {
-    baseUrl: effectiveCpsBaseUrl, type: 'non-secure', environment: cpsEnv,
+    baseUrl: normUrl, type: 'non-secure', environment: cpsEnv,
     keys: cpsKey, deploymentType: depType, bgOrgId
   }});
   const nsRaw = nsRes.data;
@@ -146,7 +185,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
   if (secureKeys.length > 0) {
     try {
       const sr = await api.get('/cps/fetch', { params: {
-        baseUrl: effectiveCpsBaseUrl, type: 'secure', environment: cpsEnv,
+        baseUrl: normUrl, type: 'secure', environment: cpsEnv,
         keys: secureKeyStr, deploymentType: depType, bgOrgId
       }});
       const raw = sr.data;
@@ -162,15 +201,15 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride) {
 
 /**
  * Main export function.
- * @param {Array} apps - list of apps from /applications/summary
- * @param {string} bgOrgId - selected BG org ID
- * @param {string} cpsBaseUrl - CPS server base URL (user-specified in modal)
- * @param {string} cpsEnvOverride - CPS environment override (e.g. 'prod', 'uat')
- * @param {Function} onProgress - callback(current, total, appName)
- * @param {Function} onComplete - callback()
- * @param {Function} onError - callback(msg)
+ * @param {Array}    apps             - list of apps from /applications/summary
+ * @param {string}   bgOrgId          - selected BG org ID
+ * @param {string}   cpsBaseUrl       - CPS server base URL override (can be empty — per-app URL used)
+ * @param {string}   cpsEnvOverride   - CPS environment override (can be empty — per-app cps.prefix used)
+ * @param {Function} onProgress       - callback(current, total, appName)
+ * @param {Function} getCredential    - (clientId) => secret | null  — look up one credential from CSV store
+ * @param {Function} getAllCredentials - () => [{clientId, clientSecret}]  — all CSV credentials (fallback)
  */
-export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsBaseUrl, cpsEnvOverride, onProgress, onComplete, onError }) {
+export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsBaseUrl, cpsEnvOverride, onProgress, getCredential, getAllCredentials }) {
   const allPropsRows = [];
   const hostApiRows = [];
   const scheduleRows = [];
@@ -184,7 +223,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
     onProgress?.(i + 1, total, app.name);
 
     try {
-      const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride);
+      const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps } = await fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials);
       const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
       const maskedNs = maskSecrets(flatNs);
       const hostsNonSecure = extractHosts(flatNs);
