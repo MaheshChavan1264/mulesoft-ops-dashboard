@@ -41,26 +41,33 @@ function extractCpsConfig(app, orgId) {
 // Flat searchable BG+Env selector — loads all environments upfront, no expand/collapse
 function BgEnvSelector({ businessGroups, onSelectionsChange }) {
   const [allEnvs, setAllEnvs] = useState([]);  // flat [{bgId, bgName, envId, envName, envType}]
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // true by default — envs load on mount
   const [selections, setSelections] = useState(new Set()); // "bgId:envId"
   const [search, setSearch] = useState('');
 
-  // Load ALL envs from all visible BGs on mount (parallel)
+  // Load ALL envs from all visible BGs (parallel) whenever businessGroups changes
   useEffect(() => {
     const visible = applyBgFilter(businessGroups);
-    if (!visible.length) return;
+    if (!visible.length) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     Promise.allSettled(
-      visible.map(bg => api.get(`/environments/${bg.id}`)
-        .then(r => (r.data?.data || []).map(e => ({
-          bgId: bg.id, bgName: bg.name,
-          envId: e.id, envName: e.name, envType: e.type,
-        })))
-        .catch(() => [])
+      visible.map(bg =>
+        api.get(`/environments/${bg.id}`)
+          .then(r => {
+            const envList = r.data?.data || r.data?.environments || (Array.isArray(r.data) ? r.data : []);
+            return envList.map(e => ({
+              bgId: bg.id, bgName: bg.name,
+              envId: e.id, envName: e.name, envType: e.type,
+            }));
+          })
+          .catch(() => [])
       )
     ).then(results => {
-      const flat = applyEnvFilter(results.flatMap(r => r.status === 'fulfilled' ? r.value : []));
-      setAllEnvs(flat);
+      const flat = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+      setAllEnvs(applyEnvFilter(flat));
       setLoading(false);
     });
   }, [businessGroups]); // eslint-disable-line react-hooks/exhaustive-deps
