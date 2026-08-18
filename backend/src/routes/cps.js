@@ -415,6 +415,18 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     return hits;
   }
 
+  /** Find a related password property in the same namespace as matchedKey */
+  function findPassword(props, matchedKey) {
+    const PWD_PATTERN = /password|passwd|\.secret$|_secret$|\.pwd$|_pwd$/i;
+    const prefix = matchedKey.includes('.') ? matchedKey.split('.')[0] : '';
+    for (const [k, v] of Object.entries(props || {})) {
+      if (!PWD_PATTERN.test(k)) continue;
+      if (prefix && !k.startsWith(prefix)) continue;
+      return v ? '****' : '';
+    }
+    return '';
+  }
+
   /** Process one app — fetch non-secure + optionally secure, return matched props */
   async function processApp(appEntry) {
     const { appName, appId, cpsBaseUrl, cpsKey, cpsEnv, deploymentType, envName, bgOrgId } = appEntry;
@@ -440,27 +452,51 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         timeout: 15000,
       });
       const nsFlat = flattenProps(nsRes.data);
-      matchedProps = matchedProps.concat(scanProps(nsFlat, 'non-secure'));
+      const nsHits = scanProps(nsFlat, 'non-secure').map(h => ({
+        ...h, secureGroupKey: '', password: findPassword(nsFlat, h.key),
+      }));
+      matchedProps = matchedProps.concat(nsHits);
 
       // ── Secure fetch (only if cps.secure.properties key exists) ──────────
-      const secureKeys = nsFlat['cps.secure.properties'] || '';
-      if (secureKeys) {
+      const secureKeyStr = nsFlat['cps.secure.properties'] || '';
+      if (secureKeyStr) {
         try {
           const sUrl = `${cleanBase}/api/v2/properties/secure`;
-          console.log(`[search-user] SEC ${sUrl} keys=${secureKeys} env=${cpsEnv} app=${appName}`);
+          console.log(`[search-user] SEC ${sUrl} keys=${secureKeyStr} env=${cpsEnv} app=${appName}`);
           const sRes = await axios.get(sUrl, {
             headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
-            params: { environment: cpsEnv, keys: secureKeys },
+            params: { environment: cpsEnv, keys: secureKeyStr },
             timeout: 15000,
           });
-          const sFlat = flattenProps(sRes.data);
-          matchedProps = matchedProps.concat(scanProps(sFlat, 'secure'));
+          // Parse per-group to track which secure group each match came from
+          const sData = sRes.data;
+          const groups = Array.isArray(sData?.responses) ? sData.responses
+            : Array.isArray(sData) ? sData
+            : (sData && typeof sData === 'object' ? [{ key: secureKeyStr.split(',')[0].trim(), properties: sData }] : []);
+          for (const group of groups) {
+            if (!group) continue;
+            const gKey = group.key || secureKeyStr.split(',')[0].trim() || '';
+            const gProps = group.properties || {};
+            if (typeof gProps !== 'object' || Array.isArray(gProps)) continue;
+            const sHits = scanProps(gProps, 'secure').map(h => ({
+              ...h, secureGroupKey: gKey, password: findPassword(gProps, h.key),
+            }));
+            matchedProps = matchedProps.concat(sHits);
+          }
         } catch { /* secure fetch failed — continue with non-secure results */ }
       }
     } catch { return null; }
 
     if (matchedProps.length === 0) return null;
-    return { appName, appId: appId || appName, matchedProps };
+    return {
+      appName,
+      appId: appId || appName,
+      envName,
+      deploymentType,
+      cpsKey,
+      cpsPrefix: cpsEnv,
+      matchedProps,
+    };
   }
 
   // ── Concurrency-limited fan-out ──────────────────────────────────────────
