@@ -66,11 +66,12 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
           .catch(() => [])
       )
     ).then(results => {
-      // Show ALL environments in the selector — the user picks which ones to search.
-      // Do NOT apply applyEnvFilter here: the global env filter is for page dropdowns,
-      // not for the Global Search multi-selector where the user needs full visibility.
       const flat = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
-      setAllEnvs(flat);
+      // Apply global env filter so the selector shows only the user's selected envs.
+      // Safety fallback: if the filter yields 0 results (e.g. stale IDs in localStorage),
+      // show all envs so the page doesn't appear broken.
+      const envFiltered = applyEnvFilter(flat);
+      setAllEnvs(envFiltered.length > 0 ? envFiltered : flat);
       setLoading(false);
     });
   }, [businessGroups]); // eslint-disable-line react-hooks/exhaustive-deps
