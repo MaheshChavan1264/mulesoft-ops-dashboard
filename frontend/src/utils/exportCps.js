@@ -419,5 +419,4 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
   const envPart = safeName(envName);
   const filename = ['CPS-Properties', envPart, date].filter(Boolean).join('-') + '.xlsx';
   XLSX.writeFile(wb, filename);
-  onComplete?.();
 }
