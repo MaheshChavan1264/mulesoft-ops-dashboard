@@ -5,8 +5,8 @@ import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import api from '../services/api';
+import { ENV_BADGE } from '../utils/appUtils';
 
-const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
 const ENV_TAG_COLOR = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yellow-500/20 text-yellow-400' };
 
 function ContractCard({ c, i }) {

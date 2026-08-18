@@ -6,24 +6,10 @@ import {
   UploadCloud, X, Lock,
 } from 'lucide-react';
 import api from '../services/api';
+import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId, downloadCsv } from '../utils/appUtils';
+import { findOAuth2Url, findApiIdInProps as findApiId, flattenCpsResponse } from '../utils/cpsHelpers';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
-
-const STATUS_CONFIG = {
-  SUCCESS:                   { label: 'Healthy',            cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-700/40', dot: 'bg-emerald-400', ping: true },
-  PARTIAL:                   { label: 'Partial',            cls: 'text-yellow-400 bg-yellow-500/10 border-yellow-700/40',   dot: 'bg-yellow-400', ping: false },
-  FAILED:                    { label: 'Unreachable',        cls: 'text-red-400 bg-red-500/10 border-red-700/40',             dot: 'bg-red-500',    ping: false },
-  SKIPPED_CONTRACT_PENDING:  { label: 'Contract Pending',  cls: 'text-orange-400 bg-orange-500/10 border-orange-700/40',   dot: 'bg-orange-400', ping: false },
-};
-
-function latencyColor(ms) {
-  if (!ms) return 'text-gray-400';
-  if (ms < 300) return 'text-emerald-400';
-  if (ms < 1000) return 'text-yellow-400';
-  return 'text-red-400';
-}
 
 // ─── Result Row (Feature 1: retry button) ────────────────────────────────────
 
@@ -462,15 +448,6 @@ export default function PingTestPage() {
     }
   }, [results]);
 
-  // Generate a unique transaction ID for each ping
-  const generateTxId = () => {
-    try { return crypto.randomUUID(); } catch {}
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-      const r = Math.random() * 16 | 0;
-      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-    });
-  };
-
   // ─── Retry ping (uses already-resolved credentials from autoResolvedMap) ──
 
   const retryApp = useCallback(async (app) => {
@@ -542,32 +519,10 @@ export default function PingTestPage() {
       if (!cpsBaseUrl) throw new Error('No CPS URL configured for this app');
 
       // Step 2: Scan CPS non-secure — extract both apiId and OAuth2 token URL
-      const findOAuth2Url = (props) => {
-        for (const [k, v] of Object.entries(props || {})) {
-          const val = String(v || '');
-          if (val.startsWith('http') && (val.includes('/oauth2/') || val.includes('okta.com') ||
-            (val.includes('/token') && (k.toLowerCase().includes('jwt') || k.toLowerCase().includes('oauth') || k.toLowerCase().includes('token') || k.toLowerCase().includes('auth'))))) return val;
-        }
-        return '';
-      };
-      const isValidId = v => /^\d+$/.test(String(v).trim()) && String(v).trim() !== '0';
-      const findApiIdInProps = (props) => {
-        if ('api.id' in props && isValidId(props['api.id'])) return String(props['api.id']).trim();
-        const e1 = Object.entries(props).find(([k]) => k.endsWith('.api.id'));
-        if (e1 && isValidId(e1[1])) return String(e1[1]).trim();
-        const e2 = Object.entries(props).find(([k, v]) => k.endsWith('.id') && isValidId(v));
-        if (e2) return String(e2[1]).trim();
-        return null;
-      };
-
       const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
-      const nsData = nsRes.data;
-      let nsFlat = {};
-      const arr = Array.isArray(nsData) ? nsData : Array.isArray(nsData?.responses) ? nsData.responses : Array.isArray(nsData?.properties) ? nsData.properties : null;
-      if (arr) arr.forEach(e => { const inner = e?.properties; if (inner && typeof inner === 'object' && !Array.isArray(inner)) Object.assign(nsFlat, inner); else if (Array.isArray(inner)) inner.forEach(p => { if (p?.key != null) nsFlat[String(p.key)] = p.value ?? p.val ?? ''; }); });
-      else if (nsData && typeof nsData === 'object') nsFlat = nsData;
+      const nsFlat = flattenCpsResponse(nsRes.data, cpsKey);
 
-      const cpsApiId = findApiIdInProps(nsFlat);
+      const cpsApiId = findApiId(nsFlat);
       let tokenUrl = findOAuth2Url(nsFlat);
 
       // Step 3: If token URL not in non-secure, scan secure CPS
@@ -578,7 +533,7 @@ export default function PingTestPage() {
           try {
             const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: jwtKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
             const sg = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
-            for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } }
+            for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } } // findOAuth2Url from cpsHelpers
           } catch {}
         }
       }
@@ -703,13 +658,7 @@ export default function PingTestPage() {
         result?.httpStatus ?? '—', result?.activeEndpoint || '—', result?.responseTimeMs ?? '—',
         creds, result?.error || '—', payloadStr]);
     });
-    const csv = rows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `ping-test-results-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadCsv(rows, `ping-test-results-${new Date().toISOString().slice(0, 10)}.csv`);
   }, [testedApps, results, autoResolvedMap]);
 
   // ─── Status filter ───────────────────────────────────────────────────────

@@ -1,8 +1,9 @@
- import { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X, Copy, Check, Terminal } from 'lucide-react';
 import api from '../services/api';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
+import { findOAuth2Url, flattenCpsResponse } from '../utils/cpsHelpers';
 export default function PingTestPanel({
   appName, isCH1, ch2IngressUrl, orgId, envId,
   defaultClientId = '', defaultClientSecret = '',
@@ -133,17 +134,6 @@ export default function PingTestPanel({
     }
     setGettingJwt(true);
     setJwtError(null);
-
-    const findOAuth2Url = (props) => {
-      for (const [k, v] of Object.entries(props || {})) {
-        const val = String(v || '');
-        if (val.startsWith('http') && (
-          val.includes('/oauth2/') || val.includes('okta.com') ||
-          (val.includes('/token') && (k.toLowerCase().includes('jwt') || k.toLowerCase().includes('oauth') || k.toLowerCase().includes('token') || k.toLowerCase().includes('auth')))
-        )) return val;
-      }
-      return '';
-    };
 
     try {
       let foundTokenUrl = jwtTokenUrl; // reuse previously discovered URL

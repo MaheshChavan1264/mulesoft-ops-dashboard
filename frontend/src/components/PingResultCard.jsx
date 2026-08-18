@@ -1,38 +1,25 @@
 import { useState } from 'react';
 import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight, RefreshCw, Globe, Lock } from 'lucide-react';
+import { ENV_BADGE, PING_STATUS_CONFIG, latencyColor } from '../utils/appUtils';
 
-const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
-
+// PingResultCard uses icon-enhanced status config — build it from the shared base
 const STATUS_CONFIG = {
   SUCCESS: {
+    ...PING_STATUS_CONFIG.SUCCESS,
     icon: <CheckCircle2 size={14} className="text-emerald-400" />,
-    label: 'Healthy',
     cls: 'bg-emerald-950/50 border-emerald-700/50 text-emerald-300',
-    dot: 'bg-emerald-400',
-    ping: true,
   },
   PARTIAL: {
+    ...PING_STATUS_CONFIG.PARTIAL,
     icon: <AlertCircle size={14} className="text-yellow-400" />,
-    label: 'Partial',
     cls: 'bg-yellow-950/50 border-yellow-700/50 text-yellow-300',
-    dot: 'bg-yellow-400',
-    ping: false,
   },
   FAILED: {
+    ...PING_STATUS_CONFIG.FAILED,
     icon: <XCircle size={14} className="text-red-400" />,
-    label: 'Unreachable',
     cls: 'bg-red-950/50 border-red-700/50 text-red-300',
-    dot: 'bg-red-500',
-    ping: false,
   },
 };
-
-function latencyColor(ms) {
-  if (!ms) return 'text-gray-400';
-  if (ms < 300) return 'text-emerald-400';
-  if (ms < 1000) return 'text-yellow-400';
-  return 'text-red-400';
-}
 
 /**
  * PingResultCard — shows full ping details for a single app result.

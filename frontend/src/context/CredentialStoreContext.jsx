@@ -1,28 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { parseCsvToCredentialMap } from '../utils/csvCredentialStore';
 
 const CredentialStoreContext = createContext(null);
-
-/**
- * Parse a single CSV line, handling quoted fields and comma/semicolon delimiters.
- */
-function parseCsvLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-    } else if ((ch === ',' || ch === ';') && !inQuotes) {
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current.trim());
-  return result;
-}
 
 /**
  * CredentialStoreProvider
@@ -38,6 +17,10 @@ function parseCsvLine(line) {
  *     clientId+secret pair travels over HTTPS at the moment a ping fires.
  *   - On logout, the AuthContext should call clearCredentials() (or the
  *     React tree unmount handles it automatically).
+ *
+ * CSV parsing is handled by the shared parseCsvToCredentialMap utility
+ * (utils/csvCredentialStore.js) so the logic stays in sync with
+ * CpsCredentialStoreContext.
  */
 export function CredentialStoreProvider({ children }) {
   // Map<string clientId, string clientSecret> — in-memory only
@@ -46,35 +29,10 @@ export function CredentialStoreProvider({ children }) {
 
   /**
    * Parse a CSV text string and populate the credential map.
-   * Auto-detects header row (skips if first cell is not a hex/UUID value).
-   * Supports comma or semicolon delimiters and optionally quoted fields.
    * Returns the number of credential pairs loaded.
    */
   const loadFromCsv = useCallback((text) => {
-    const lines = text.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length === 0) return 0;
-
-    // Auto-detect header: if the first cell looks like a label (not a UUID/hex),
-    // skip it.
-    let startIndex = 0;
-    const firstCell = parseCsvLine(lines[0])[0] || '';
-    const cleanFirst = firstCell.replace(/^"|"$/g, '').trim();
-    // A real clientId is typically a long hex/alphanumeric string (≥16 chars, no spaces)
-    const looksLikeId = /^[0-9a-zA-Z_\-]{16,}$/.test(cleanFirst);
-    if (!looksLikeId) {
-      startIndex = 1; // treat as header row
-    }
-
-    const map = new Map();
-    for (let i = startIndex; i < lines.length; i++) {
-      const parts = parseCsvLine(lines[i]);
-      const clientId = (parts[0] || '').replace(/^"|"$/g, '').trim();
-      const clientSecret = (parts[1] || '').replace(/^"|"$/g, '').trim();
-      if (clientId && clientSecret) {
-        map.set(clientId, clientSecret);
-      }
-    }
-
+    const map = parseCsvToCredentialMap(text);
     setCredentialMap(map);
     setLoadedCount(map.size);
     return map.size;
