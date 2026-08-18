@@ -439,8 +439,8 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
           {/* Output format */}
           {status === 'idle' && (
             <div className="space-y-1.5">
-              <p className="text-gray-500 text-[10px] uppercase tracking-wider font-medium">Output: Excel (.xlsx) — 3 sheets</p>
-              {['AllPropertiesCatalog', 'Host_APIUsersCatalog', 'ScheduleCatalog'].map(s => (
+              <p className="text-gray-500 text-[10px] uppercase tracking-wider font-medium">Output: Excel (.xlsx) — 4 sheets</p>
+              {['AllPropertiesCatalog', 'Host_APIUsersCatalog', 'ScheduleCatalog', 'StaticIPsCatalog'].map(s => (
                 <div key={s} className="flex items-center gap-2 bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-1.5">
                   <ChevronRight size={10} className="text-gray-600 flex-shrink-0" />
                   <span className="text-gray-300 text-xs font-mono">{s}</span>
