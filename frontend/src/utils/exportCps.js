@@ -110,14 +110,14 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
 
   const allProps = { ...runtimeProps, ...(app.runtimeProps || {}), ...(app.properties || {}) };
 
-  // Use env override from modal first, then runtime props (cps.prefix), then fallback
-  const cpsEnv = cpsEnvOverride || allProps['cps.prefix'] || allProps['cps.environment'] || 'prod';
+  // CPS URL and env always come from the app's own ARM runtime properties.
+  // The modal's URL/env fields are NOT used — they are for display only.
+  const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || 'prod';
   // cps.projectName is the authoritative CPS key — NOT the app name or app.id
   const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
 
-  // CPS URL always comes from the app's own ARM properties (modal URL is just a fallback)
-  const effectiveCpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'] || cpsBaseUrl;
-  if (!effectiveCpsBaseUrl) throw new Error(`No CPS URL configured for "${app.name}"`);
+  const effectiveCpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
+  if (!effectiveCpsBaseUrl) throw new Error(`No CPS URL in runtime properties for "${app.name}"`);
 
   const normUrl = effectiveCpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
 
