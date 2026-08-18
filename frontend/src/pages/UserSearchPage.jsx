@@ -222,20 +222,14 @@ export default function UserSearchPage() {
     // ── Try app summary cache first (already loaded by ApplicationsPage) ──
     const cacheKey = `apps:__all__:${bgId}`;
     const cachedSummary = getCached(cacheKey);
+    // ── CH2: use summary cache for list (avoids fresh list fetch) ─────────
     if (cachedSummary?.apps) {
       ch2List = cachedSummary.apps.filter(
         a => a.environment?.id === envId && a.deploymentType === 'CloudHub 2.0'
       );
-      // For CH1: extract from cache directly (no detail needed)
-      const cachedCh1 = cachedSummary.apps.filter(
-        a => a.environment?.id === envId && a.deploymentType !== 'CloudHub 2.0'
-      );
-      apps.push(...cachedCh1.map(c => ({
-        _type: 'ch1', id: c.id || c.name, name: c.name, properties: c.properties || {},
-        environment: { name: envName, id: envId },
-      })));
+      // Note: CH1 from summary has NO runtime properties → always fetch fresh below
     } else {
-      // Fresh CH2 list fetch
+      // Fresh CH2 list fetch (paginated)
       try {
         let offset = 0;
         while (true) {
@@ -248,19 +242,14 @@ export default function UserSearchPage() {
           offset += 100;
         }
       } catch {}
-      // CH1 list fetch
-      try {
-        const r = await api.get(`/applications/cloudhub1/${envId}`, { params: { orgId: bgId } });
-        const ch1 = Array.isArray(r.data) ? r.data : (r.data?.applications || r.data?.data || []);
-        apps.push(...ch1.map(c => ({ _type: 'ch1', id: c.domain, name: c.domain, properties: c.properties || {}, environment: { name: envName, id: envId } })));
-      } catch {}
     }
 
-    // ── CH2 detail fetch with per-app caching + large parallel batch ──────
+    // ── CH2: detail fetch with per-app caching + large parallel batch ─────
+    // CH2 list API does NOT return runtime properties — must fetch each app detail.
+    // Per-app cache avoids re-fetching on repeat searches (5-min TTL).
     for (let i = 0; i < ch2List.length; i += DETAIL_BATCH) {
       const settled = await Promise.allSettled(
         ch2List.slice(i, i + DETAIL_BATCH).map(a => {
-          // Check per-app detail cache (5-min TTL)
           const appKey = `ch2detail:${a.id}:${envId}`;
           const cached = getCached(appKey);
           if (cached) return Promise.resolve(cached);
@@ -272,18 +261,23 @@ export default function UserSearchPage() {
       settled.forEach(s => { if (s.status === 'fulfilled' && s.value) apps.push(s.value); });
     }
 
-    // If we got apps from cache but no CH1 yet, fetch CH1 now
-    if (cachedSummary?.apps && apps.filter(a => a._type !== 'ch1' && a.deploymentType !== 'CloudHub 2.0').length === 0) {
-      try {
+    // ── CH1: always fetch fresh list (1 call returns ALL apps with properties)
+    // CH1 list API returns the full properties map directly — no per-app detail needed.
+    // Cache the list per env (5-min TTL) to speed up repeat searches.
+    try {
+      const ch1Key = `ch1list:${bgId}:${envId}`;
+      let ch1Data = getCached(ch1Key);
+      if (!ch1Data) {
         const r = await api.get(`/applications/cloudhub1/${envId}`, { params: { orgId: bgId } });
-        const ch1 = Array.isArray(r.data) ? r.data : (r.data?.applications || r.data?.data || []);
-        const existing = new Set(apps.map(a => a.name));
-        apps.push(...ch1
-          .filter(c => !existing.has(c.domain))
-          .map(c => ({ _type: 'ch1', id: c.domain, name: c.domain, properties: c.properties || {}, environment: { name: envName, id: envId } }))
-        );
-      } catch {}
-    }
+        ch1Data = Array.isArray(r.data) ? r.data : (r.data?.applications || r.data?.data || []);
+        setCached(ch1Key, ch1Data);
+      }
+      apps.push(...ch1Data.map(c => ({
+        _type: 'ch1', id: c.domain, name: c.domain,
+        properties: c.properties || {}, // full properties from CH1 list API
+        environment: { name: envName, id: envId },
+      })));
+    } catch {}
 
     return apps;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
