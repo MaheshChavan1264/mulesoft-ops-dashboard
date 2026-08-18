@@ -335,6 +335,23 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/action', authMiddleware, asy
   }
 });
 
+// Get CH2 Private Space details (includes network.outboundStaticIps)
+// targetId is a UUID when deployed to a Private Space (not a region name like cloudhub-us-east-2)
+router.get('/private-spaces/:orgId/:privateSpaceId', authMiddleware, async (req, res) => {
+  try {
+    const client = createClient(req.anypointToken);
+    const { orgId, privateSpaceId } = req.params;
+    const response = await client.get(
+      `/runtimefabric/api/organizations/${orgId}/privatespaces/${privateSpaceId}`
+    );
+    res.json(response.data);
+  } catch (error) {
+    const status = error.response?.status || 500;
+    if (status !== 404) console.error('Error fetching private space:', error.response?.data || error.message);
+    res.status(status).json({ error: error.response?.data?.message || 'Failed to fetch private space' });
+  }
+});
+
 const SUMMARY_CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
 // Summary: get apps across all environments for an org (accepts orgId param or query)
