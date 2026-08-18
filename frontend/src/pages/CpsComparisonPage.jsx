@@ -2,9 +2,13 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, SlidersHorizontal, Key, X, Eye, EyeOff } from 'lucide-react';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
+import { applyEnvFilter } from '../components/EnvFilterModal';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import CpsCredentialImportButton from '../components/CpsCredentialImportButton';
 import api from '../services/api';
+import { getCached, setCached } from '../services/apiCache';
+import { flattenCpsResponse } from '../utils/cpsHelpers';
+import { ENV_BADGE } from '../utils/appUtils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -30,30 +34,6 @@ const PROP_TYPE_OPTS = [
   { value: 'secure',     label: 'Secure Properties' },
   { value: 'binaries',   label: 'Binary Assets' },
 ];
-
-function flattenCpsResponse(data) {
-  if (!data) return {};
-  if (Array.isArray(data?.responses)) {
-    const map = {};
-    data.responses.forEach(r => Object.assign(map, r.properties || {}));
-    return map;
-  }
-  if (Array.isArray(data)) {
-    const map = {};
-    data.forEach(r => { if (r?.properties && typeof r.properties === 'object') Object.assign(map, r.properties); });
-    if (Object.keys(map).length > 0) return map;
-  }
-  if (typeof data === 'object' && !Array.isArray(data)) {
-    const firstVal = Object.values(data)[0];
-    if (firstVal && typeof firstVal === 'object' && !Array.isArray(firstVal)) {
-      const map = {};
-      Object.values(data).forEach(v => { if (v && typeof v === 'object') Object.assign(map, v); });
-      return map;
-    }
-    return data;
-  }
-  return {};
-}
 
 function CopyBtn({ text }) {
   const [done, setDone] = useState(false);
@@ -169,7 +149,6 @@ function DiffModal({ row, labelA, labelB, onClose }) {
   );
 }
 
-const ENV_BADGE = { production: 'bg-green-400', sandbox: 'bg-yellow-400', design: 'bg-blue-400' };
 const ENV_TAG = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yellow-500/20 text-yellow-400' };
 
 // ─── MultiAppChecklist ────────────────────────────────────────────────────────
@@ -270,9 +249,10 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
     ...filteredBgs.map(g => ({ value: g.id, label: g.name, tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400', indent: !!g.parentId })),
   ];
 
+  const visibleEnvs = applyEnvFilter(envs);
   const envOptions = [
     { value: '__all__', label: 'All Environments' },
-    ...envs.map(e => ({ value: e.id, label: e.name, badge: true, badgeColor: ENV_BADGE[e.type] || 'bg-gray-400', tag: e.type, tagColor: ENV_TAG[e.type] || 'bg-gray-700 text-gray-400' })),
+    ...visibleEnvs.map(e => ({ value: e.id, label: e.name, badge: true, badgeColor: ENV_BADGE[e.type] || 'bg-gray-400', tag: e.type, tagColor: ENV_TAG[e.type] || 'bg-gray-700 text-gray-400' })),
   ];
 
   // App options: when showing all, include env name in label for disambiguation
@@ -508,19 +488,34 @@ export default function CpsComparisonPage() {
 
       if (bgIds.length === 0) { updateSide(side, { loadingApps: false }); return; }
 
+      // ── Frontend cache (same strategy as ApplicationsPage) ─────────────────
+      const cacheKey = `apps:__all__:${bgIds.join(',')}`;
+      const cached = getCached(cacheKey);
+      if (cached) {
+        const envFiltered = (envId && envId !== '__all__')
+          ? (cached.apps || []).filter(a => a.environment?.id === envId)
+          : (cached.apps || []);
+        updateSide(side, { apps: envFiltered, loadingApps: false });
+        return;
+      }
+      // ─────────────────────────────────────────────────────────────────────────
+
       const results = await Promise.allSettled(bgIds.map(id => api.get(`/applications/summary/${id}`)));
-      const merged = [];
+      const mergedAll = [];
       const seen = new Set();
       results.forEach((r, i) => {
         if (r.status === 'fulfilled') {
           (r.value.data.data || []).forEach(a => {
-            // Filter by env if a specific env is selected
-            if (envId && envId !== '__all__' && a.environment?.id !== envId) return;
             const key = `${a.id}|${a.environment?.id || ''}`;
-            if (!seen.has(key)) { seen.add(key); merged.push({ ...a, _bgId: bgIds[i] }); }
+            if (!seen.has(key)) { seen.add(key); mergedAll.push({ ...a, _bgId: bgIds[i] }); }
           });
         }
       });
+      // Store all (unfiltered) in cache; serve filtered subset to the side
+      setCached(cacheKey, { apps: mergedAll, envs: [] });
+      const merged = (envId && envId !== '__all__')
+        ? mergedAll.filter(a => a.environment?.id === envId)
+        : mergedAll;
       updateSide(side, { apps: merged, loadingApps: false });
     } catch {
       updateSide(side, { loadingApps: false });
