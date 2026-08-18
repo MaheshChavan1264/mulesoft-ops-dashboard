@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { applyBgFilter } from '../components/BgFilterModal';
+import { applyEnvFilter } from '../components/EnvFilterModal';
 import { Search, Users, RefreshCw, AlertTriangle, Copy, Check, Key, Lock, ChevronRight, Building2, Download } from 'lucide-react';
 import api from '../services/api';
 
@@ -94,7 +95,7 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
   // When a search term is active, auto-expand all BGs and filter envs
   const searchLo = envSearch.toLowerCase().trim();
   const getFilteredEnvs = (bgId) => {
-    const envs = envsByBg[bgId] || [];
+    const envs = applyEnvFilter(envsByBg[bgId] || []); // apply global env filter
     if (!searchLo) return envs;
     return envs.filter(e => e.name.toLowerCase().includes(searchLo) || e.type?.toLowerCase().includes(searchLo));
   };
