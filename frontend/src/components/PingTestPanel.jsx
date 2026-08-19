@@ -195,6 +195,7 @@ export default function PingTestPanel({
   // Build the curl command from current credentials and a given URL
   const buildCurl = (url, maskSecrets = false) => {
     const lines = [`curl -X GET \\`, `  "${url}" \\`];
+    lines.push(`  -H "Content-Type: application/json" \\`);
     lines.push(`  -H "x-transaction-id: ${transactionId || 'smokeTest'}" \\`);
     if (authMode === 'bearer-token' && bearerToken) {
       const tok = maskSecrets ? `${bearerToken.slice(0, 20)}…` : bearerToken;
