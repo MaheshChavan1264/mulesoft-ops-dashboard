@@ -716,8 +716,20 @@ export default function PingTestPage() {
   const filteredApps = useMemo(() => {
     const base = showAll ? apps : testedApps;
     if (statusFilter === 'ALL') return base;
+    if (statusFilter === 'CONTRACT_PENDING') {
+      return base.filter(a =>
+        results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING' &&
+        autoResolvedMap[a.id]?.source !== 'contract'
+      );
+    }
+    if (statusFilter === 'CONTRACT_APPROVED') {
+      return base.filter(a =>
+        results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING' &&
+        autoResolvedMap[a.id]?.source === 'contract'
+      );
+    }
     return base.filter(a => results[a.id]?.status === statusFilter);
-  }, [showAll, apps, testedApps, results, statusFilter]);
+  }, [showAll, apps, testedApps, results, statusFilter, autoResolvedMap]);
 
   const displayApps = filteredApps;
   const done = testedApps.length;
@@ -728,6 +740,10 @@ export default function PingTestPage() {
   const pendingContractCount = testedApps.filter(a =>
     results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING' &&
     autoResolvedMap[a.id]?.source !== 'contract'
+  ).length;
+  const approvedContractCount = testedApps.filter(a =>
+    results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING' &&
+    autoResolvedMap[a.id]?.source === 'contract'
   ).length;
   const autoResolvedCount = Object.keys(autoResolvedMap).length;
   const hasResults = done > 0;
@@ -892,17 +908,19 @@ export default function PingTestPage() {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
             {/* Status filter chips */}
             {[
-              { key: 'ALL', label: 'All', cls: 'text-slate-400 border-slate-700 hover:border-slate-500' },
-              { key: 'SUCCESS', label: '✓ Healthy', cls: 'text-emerald-400 border-emerald-800/50 hover:border-emerald-600' },
-              { key: 'PARTIAL', label: '~ Partial', cls: 'text-yellow-400 border-yellow-800/50 hover:border-yellow-600' },
-              { key: 'FAILED', label: '✗ Failed', cls: 'text-red-400 border-red-800/50 hover:border-red-600' },
-            ].map(f => (
+              { key: 'ALL',               label: 'All',                count: null,                  cls: 'text-slate-400 border-slate-700 hover:border-slate-500' },
+              { key: 'SUCCESS',           label: '✓ Healthy',          count: successCount,          cls: 'text-emerald-400 border-emerald-800/50 hover:border-emerald-600' },
+              { key: 'PARTIAL',           label: '~ Partial',          count: partialCount,          cls: 'text-yellow-400 border-yellow-800/50 hover:border-yellow-600' },
+              { key: 'FAILED',            label: '✗ Failed',           count: failedCount,           cls: 'text-red-400 border-red-800/50 hover:border-red-600' },
+              { key: 'CONTRACT_PENDING',  label: '🔑 Pending',         count: pendingContractCount,  cls: 'text-orange-400 border-orange-800/50 hover:border-orange-600' },
+              { key: 'CONTRACT_APPROVED', label: '✅ Approved',         count: approvedContractCount, cls: 'text-emerald-300 border-emerald-700/50 hover:border-emerald-500' },
+            ].filter(f => f.key === 'ALL' || f.count > 0).map(f => (
               <button key={f.key} onClick={() => setStatusFilter(f.key)}
                 className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${f.cls} ${statusFilter === f.key ? 'bg-gray-800/80 ring-1 ring-inset ring-current' : 'bg-transparent'}`}>
-                {f.label}
+                {f.label}{f.count != null ? ` (${f.count})` : ''}
               </button>
             ))}
             <button onClick={() => setShowAll(v => !v)}
