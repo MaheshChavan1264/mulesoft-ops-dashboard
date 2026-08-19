@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, XCircle, AlertCircle, Clock, RefreshCw, Globe, Lock } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight, RefreshCw, Globe, Lock } from 'lucide-react';
 import { ENV_BADGE, PING_STATUS_CONFIG, latencyColor } from '../utils/appUtils';
 import AttemptLog from './AttemptLog';
 
