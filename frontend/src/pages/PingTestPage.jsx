@@ -153,28 +153,28 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
           <div className="flex items-center justify-center gap-1.5">
             {/* Feature 1: Retry button for FAILED / PARTIAL rows */}
             {/* Pending contract: two separate buttons */}
-            {isPendingContract && !retrying && !checkingContract && (
-              <>
-                <button
-                  onClick={() => onCheckContract(app)}
-                  title="Check if the contract has been approved in API Manager"
-                  className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-orange-400 hover:text-orange-300 hover:bg-orange-950/40 border border-orange-800/40 transition-colors font-medium whitespace-nowrap">
-                  🔑 Check
-                </button>
-                {contractApproved && (
-                  <button
-                    onClick={() => onRetry(app)}
-                    title="Run ping test with resolved credentials"
-                    className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 border border-emerald-800/40 transition-colors font-medium whitespace-nowrap">
-                    <RefreshCw size={10} /> Ping
-                  </button>
-                )}
-              </>
+            {/* Contract pending — show Check button only while not yet approved */}
+            {isPendingContract && !contractApproved && !retrying && !checkingContract && (
+              <button
+                onClick={() => onCheckContract(app)}
+                title="Check if the contract has been approved in API Manager"
+                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-orange-400 hover:text-orange-300 hover:bg-orange-950/40 border border-orange-800/40 transition-colors font-medium whitespace-nowrap">
+                🔑 Check
+              </button>
             )}
             {isPendingContract && checkingContract && (
               <span className="text-[10px] text-orange-400/70 flex items-center gap-1">
                 <RefreshCw size={9} className="animate-spin" /> Checking…
               </span>
+            )}
+            {/* Contract approved — show only the Ping button */}
+            {isPendingContract && contractApproved && !retrying && (
+              <button
+                onClick={() => onRetry(app)}
+                title="Run ping test with resolved credentials"
+                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 border border-emerald-800/40 transition-colors font-medium whitespace-nowrap">
+                <RefreshCw size={10} /> Ping
+              </button>
             )}
             {/* Get JWT button for PARTIAL results with 401/403 */}
             {result && result.status === 'PARTIAL' && !result._jwtUsed && !retrying &&
