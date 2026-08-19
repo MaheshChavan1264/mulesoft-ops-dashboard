@@ -59,6 +59,7 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
           .then(r => {
             const envList = r.data?.data || r.data?.environments || (Array.isArray(r.data) ? r.data : []);
             return envList.map(e => ({
+              id: e.id,   // required by applyEnvFilter which checks e.id
               bgId: bg.id, bgName: bg.name,
               envId: e.id, envName: e.name, envType: e.type,
             }));
