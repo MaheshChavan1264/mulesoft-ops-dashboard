@@ -1617,6 +1617,7 @@ export default function ApplicationDetailPage() {
           cpsEnv={effectiveCpsEnv || ''}
           pingSpec={pingSpec}
           pingSpecLoading={pingSpecLoading}
+          envType={app.environment?.type || ''}
         />
       )}
 
