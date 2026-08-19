@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
-import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X, Copy, Check, Terminal } from 'lucide-react';
+import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X, Copy, Check, Terminal } from 'lucide-react';
 import api from '../services/api';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { findOAuth2Url, flattenCpsResponse } from '../utils/cpsHelpers';
+import AttemptLog from './AttemptLog';
 export default function PingTestPanel({
   appName, isCH1, ch2IngressUrl, orgId, envId,
   defaultClientId = '', defaultClientSecret = '',
@@ -38,7 +39,6 @@ export default function PingTestPanel({
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showAttempts, setShowAttempts] = useState(false);
   const [configOpen, setConfigOpen] = useState(true); // auto-collapses after ping completes
 
   const flattenCpsProps = (data) => {
@@ -228,7 +228,7 @@ export default function PingTestPanel({
   const runPing = async () => {
     const txId = generateTxId();
     setTransactionId(txId); // update field + curl command with the generated UUID
-    setLoading(true); setResult(null); setError(null); setShowAttempts(false);
+    setLoading(true); setResult(null); setError(null);
     try {
       const { data } = await api.post('/health/ping', {
         targetType, appName,
@@ -599,33 +599,10 @@ export default function PingTestPanel({
             {result.error && <div className="border-t border-slate-800/40 px-5 py-3 flex items-center gap-2 text-red-400 text-xs"><XCircle size={12} className="flex-shrink-0" />{result.error}</div>}
           </div>
           {Array.isArray(result.attempts) && result.attempts.length > 0 && (
-            <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl overflow-hidden">
-              <button onClick={() => setShowAttempts(!showAttempts)}
-                className="w-full flex items-center justify-between px-5 py-3 text-slate-400 hover:text-white text-xs font-semibold transition-colors">
-                <div className="flex items-center gap-2"><Clock size={12} />Ping Attempt Log ({result.attempts.length} path{result.attempts.length !== 1 ? 's' : ''} tried)</div>
-                {showAttempts ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
-              {showAttempts && (
-                <div className="border-t border-slate-800/40">
-                  <table className="w-full text-xs">
-                    <thead><tr className="bg-slate-800/50">
-                      <th className="px-5 py-2 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">URL</th>
-                      <th className="px-5 py-2 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Status</th>
-                      <th className="px-5 py-2 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Latency</th>
-                    </tr></thead>
-                    <tbody>
-                      {result.attempts.map((a, i) => (
-                        <tr key={i} className="border-t border-slate-800/30 hover:bg-slate-800/20">
-                          <td className="px-5 py-2.5 font-mono text-slate-300 break-all">{a.url}</td>
-                          <td className="px-5 py-2.5">{a.error ? <span className="text-red-400">{a.error}</span> : <span className={`font-bold ${a.httpStatus < 300 ? 'text-emerald-400' : a.httpStatus < 500 ? 'text-yellow-400' : 'text-red-400'}`}>{a.httpStatus}</span>}</td>
-                          <td className={`px-5 py-2.5 font-mono ${latencyColor(a.responseTimeMs)}`}>{a.responseTimeMs != null ? `${a.responseTimeMs}ms` : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <AttemptLog
+              attempts={result.attempts}
+              className="bg-slate-900/40 border border-slate-800/60 rounded-2xl px-4 py-3"
+            />
           )}
         </div>
       )}
