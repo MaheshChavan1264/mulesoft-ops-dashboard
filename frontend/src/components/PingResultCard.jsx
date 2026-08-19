@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight, RefreshCw, Globe, Lock } from 'lucide-react';
 import { ENV_BADGE, PING_STATUS_CONFIG, latencyColor } from '../utils/appUtils';
 
@@ -33,7 +33,12 @@ const STATUS_CONFIG = {
  */
 export default function PingResultCard({ app, result, loading, selected, onToggle }) {
   const [showAttempts, setShowAttempts] = useState(false);
+  // Auto-expand payload for 5xx responses so the error body is immediately visible
   const [showPayload, setShowPayload] = useState(false);
+
+  useEffect(() => {
+    if (result?.payload && result?.httpStatus >= 500) setShowPayload(true);
+  }, [result?.httpStatus, result?.payload]);
 
   const isCH1 = app?.deploymentType !== 'CloudHub 2.0';
   const cfg = result ? STATUS_CONFIG[result.status] || STATUS_CONFIG.FAILED : null;
@@ -145,16 +150,24 @@ export default function PingResultCard({ app, result, loading, selected, onToggl
             </div>
           )}
 
-          {/* Response payload — collapsible */}
+          {/* Response payload — auto-expanded for 5xx errors */}
           {result.payload && (
             <div>
               <button onClick={() => setShowPayload(!showPayload)}
-                className="flex items-center gap-1 text-gray-400 hover:text-gray-200 text-xs transition-colors font-medium">
+                className={`flex items-center gap-1 text-xs transition-colors font-medium ${
+                  result.httpStatus >= 500
+                    ? 'text-red-400/80 hover:text-red-300'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}>
                 {showPayload ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                Response Payload
+                {result.httpStatus >= 500 ? `API Response (HTTP ${result.httpStatus})` : 'Response Payload'}
               </button>
               {showPayload && (
-                <pre className="mt-2 bg-[#0B0F17] rounded-lg px-3 py-2.5 text-xs text-emerald-400/90 overflow-auto font-mono border border-gray-800/60 leading-relaxed whitespace-pre-wrap break-all">
+                <pre className={`mt-2 rounded-lg px-3 py-2.5 text-xs overflow-auto font-mono border leading-relaxed whitespace-pre-wrap break-all max-h-60 ${
+                  result.httpStatus >= 500
+                    ? 'bg-red-950/20 border-red-800/40 text-red-300/80'
+                    : 'bg-[#0B0F17] border-gray-800/60 text-emerald-400/90'
+                }`}>
                   {typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2)}
                 </pre>
               )}
