@@ -36,8 +36,10 @@ function buildBaseUrl(targetType, appName, ch2IngressUrl, envType) {
     }
   }
 
-  // CH1: non-production environments use the stage subdomain
-  const isProd = !envType || (envType || '').toLowerCase() === 'production';
+  // CH1: non-production environments use the stage subdomain.
+  // Only treat as production when envType is explicitly 'production';
+  // empty / unknown defaults to stage (all non-prod CH1 apps are on stage).
+  const isProd = (envType || '').toLowerCase() === 'production';
   return isProd
     ? `https://${safe}.internalapi.sfdcbt.net`
     : `https://${safe}.stage.internalapi.sfdcbt.net`;

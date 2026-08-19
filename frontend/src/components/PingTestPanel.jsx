@@ -224,7 +224,8 @@ export default function PingTestPanel({
   };
 
   const targetType = isCH1 ? 'CH1' : 'CH2';
-  const isProdEnv = !envType || envType.toLowerCase() === 'production';
+  // Only use prod URL when envType is explicitly 'production'; everything else → stage
+  const isProdEnv = (envType || '').toLowerCase() === 'production';
   const safeName = (appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
   const ch1Base = isProdEnv
     ? `https://${safeName}.internalapi.sfdcbt.net`
