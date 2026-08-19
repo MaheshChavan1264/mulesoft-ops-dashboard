@@ -90,6 +90,11 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
             <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold text-cyan-400 bg-cyan-500/10 border-cyan-700/40">
               <RefreshCw size={10} className="animate-spin" /> Retrying…
             </span>
+          ) : contractApproved ? (
+            /* Contract was approved — show green "Approved" badge */
+            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold bg-emerald-500/10 text-emerald-400 border-emerald-700/40">
+              ✅ Approved — Ping Ready
+            </span>
           ) : cfg ? (
             <div className="space-y-0.5">
               <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold ${cfg.cls}`}>
@@ -254,10 +259,16 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               </div>
               {result.error && (
                 <div className="flex items-start gap-3">
-                  <XCircle size={13} className="text-red-400 flex-shrink-0 mt-0.5" />
+                  {contractApproved
+                    ? <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+                    : <XCircle size={13} className="text-red-400 flex-shrink-0 mt-0.5" />}
                   <div>
-                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">Error</span>
-                    <p className="text-red-400 text-xs mt-0.5 break-all">{result.error}</p>
+                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">
+                      {contractApproved ? 'Status' : 'Error'}
+                    </span>
+                    <p className={`text-xs mt-0.5 break-all ${contractApproved ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {result.error}
+                    </p>
                   </div>
                 </div>
               )}
@@ -713,7 +724,11 @@ export default function PingTestPage() {
   const successCount = testedApps.filter(a => results[a.id]?.status === 'SUCCESS').length;
   const partialCount = testedApps.filter(a => results[a.id]?.status === 'PARTIAL').length;
   const failedCount  = testedApps.filter(a => results[a.id]?.status === 'FAILED').length;
-  const pendingContractCount = testedApps.filter(a => results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING').length;
+  // Only count apps whose contract is still pending (not yet approved)
+  const pendingContractCount = testedApps.filter(a =>
+    results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING' &&
+    autoResolvedMap[a.id]?.source !== 'contract'
+  ).length;
   const autoResolvedCount = Object.keys(autoResolvedMap).length;
   const hasResults = done > 0;
 
