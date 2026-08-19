@@ -13,7 +13,7 @@ import { findOAuth2Url, findApiIdInProps as findApiId, flattenCpsResponse } from
 
 // ─── Result Row (Feature 1: retry button) ────────────────────────────────────
 
-function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRetry, onCheckContract, checkingContract, retrying, onGetJwt, jwtLoading, navigate }) {
+function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRetry, onCheckContract, checkingContract, retrying, onGetJwt, jwtLoading, navigate, rowNum }) {
   const rowKey = `${app.id}|${app.environment?.id}`;
   const isExpanded = expandedId === rowKey;
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
@@ -46,6 +46,10 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
       <tr
         onClick={() => result && setExpandedId(isExpanded ? null : rowKey)}
         className={`border-t border-gray-800 transition-colors ${result ? 'cursor-pointer hover:bg-gray-800/30' : 'hover:bg-gray-800/20'}`}>
+        {/* Row number */}
+        <td className="px-3 py-3 text-center text-gray-600 text-xs font-mono select-none w-8">
+          {rowNum}
+        </td>
         {/* App name */}
         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-2">
@@ -220,7 +224,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
       {/* Expanded detail */}
       {isExpanded && result && (
         <tr className="border-t border-gray-800/40 bg-gray-900/40">
-          <td colSpan={7} className="px-6 py-4">
+          <td colSpan={8} className="px-6 py-4">
             <div className="space-y-3 text-sm">
               {result._jwtUsed && (
                 <div className="flex items-center gap-2 bg-indigo-950/30 border border-indigo-800/40 rounded-lg px-3 py-2 text-indigo-400 text-xs">
@@ -861,6 +865,7 @@ export default function PingTestPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-800/50 text-gray-400 text-xs uppercase tracking-wider">
+                <th className="px-3 py-3 font-medium text-center w-8">#</th>
                 <th className="text-left px-4 py-3 font-medium">Application</th>
                 <th className="text-left px-3 py-3 font-medium">Type</th>
                 <th className="text-left px-3 py-3 font-medium">Status</th>
@@ -871,7 +876,7 @@ export default function PingTestPage() {
               </tr>
             </thead>
             <tbody>
-              {displayApps.map(app => (
+              {displayApps.map((app, idx) => (
                 <ResultRow
                   key={`${app.id}|${app.environment?.id}`}
                   app={app}
@@ -886,6 +891,7 @@ export default function PingTestPage() {
                   onGetJwt={getJwtAndRetry}
                   jwtLoading={jwtLoadingIds.has(app.id)}
                   navigate={navigate}
+                  rowNum={idx + 1}
                 />
               ))}
             </tbody>
