@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, ChevronDown, ChevronRight, CheckCircle2, XCircle,
   AlertCircle, Globe, ShieldCheck, ArrowLeft, Download, RefreshCw,
-  UploadCloud, X, Lock,
+  UploadCloud, X, Lock, Terminal, Check,
 } from 'lucide-react';
 import api from '../services/api';
 import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId, downloadCsv } from '../utils/appUtils';
@@ -17,6 +17,23 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
   const rowKey = `${app.id}|${app.environment?.id}`;
   const isExpanded = expandedId === rowKey;
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
+  const [copiedCurl, setCopiedCurl] = useState(false);
+
+  const buildRowCurl = () => {
+    const url = result?.activeEndpoint;
+    if (!url) return null;
+    const lines = [`curl -X GET \\`, `  "${url}" \\`];
+    lines.push(`  -H "Content-Type: application/json" \\`);
+    lines.push(`  -H "x-transaction-id: smokeTest" \\`);
+    if (autoResolved?.clientId) lines.push(`  -H "client_id: ${autoResolved.clientId}" \\`);
+    if (autoResolved?.clientSecret) {
+      lines.push(`  -H "client_secret: ${autoResolved.clientSecret.slice(0, 4)}…"`);
+    } else if (autoResolved?.clientId) {
+      lines[lines.length - 1] = lines[lines.length - 1].replace(/ \\$/, '');
+    }
+    lines[lines.length - 1] = lines[lines.length - 1].replace(/ \\$/, '');
+    return lines.join('\n');
+  };
   const cfg = result ? STATUS_CONFIG[result.status] || STATUS_CONFIG.FAILED : null;
   const isPendingContract = result?.status === 'SKIPPED_CONTRACT_PENDING';
   // Normal retry: FAILED or PARTIAL (not pending contract)
@@ -173,6 +190,22 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 title="Retry ping for this app"
                 className="p-1 rounded text-red-400 hover:text-red-300 hover:bg-red-950/40 transition-colors">
                 <RefreshCw size={13} />
+              </button>
+            )}
+            {result?.activeEndpoint && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const curl = buildRowCurl();
+                  if (curl) {
+                    navigator.clipboard.writeText(curl);
+                    setCopiedCurl(true);
+                    setTimeout(() => setCopiedCurl(false), 2000);
+                  }
+                }}
+                title="Copy cURL for this endpoint"
+                className="p-1 rounded text-gray-600 hover:text-white hover:bg-gray-800/60 transition-colors">
+                {copiedCurl ? <Check size={12} className="text-emerald-400" /> : <Terminal size={12} />}
               </button>
             )}
             {result && (
