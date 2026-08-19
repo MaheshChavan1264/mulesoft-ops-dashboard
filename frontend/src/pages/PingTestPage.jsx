@@ -749,7 +749,22 @@ export default function PingTestPage() {
   const hasResults = done > 0;
 
   const [retryingAll, setRetryingAll] = useState(false);
+  const [pingingAllApproved, setPingingAllApproved] = useState(false);
   const [checkingAll, setCheckingAll] = useState(false);
+
+  const pingAllApproved = useCallback(async () => {
+    const approvedApps = testedApps.filter(a =>
+      results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING' &&
+      autoResolvedMap[a.id]?.source === 'contract'
+    );
+    if (!approvedApps.length) return;
+    setPingingAllApproved(true);
+    const BATCH = 5;
+    for (let i = 0; i < approvedApps.length; i += BATCH) {
+      await Promise.allSettled(approvedApps.slice(i, i + BATCH).map(app => retryApp(app)));
+    }
+    setPingingAllApproved(false);
+  }, [testedApps, results, autoResolvedMap, retryApp]);
 
   const retryAllFailed = useCallback(async () => {
     const failedApps = testedApps.filter(a => results[a.id]?.status === 'FAILED');
@@ -824,6 +839,15 @@ export default function PingTestPage() {
               className="flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/60 border border-red-800/50 rounded-lg disabled:opacity-50 transition-colors">
               <RefreshCw size={13} className={retryingAll ? 'animate-spin' : ''} />
               {retryingAll ? 'Retrying…' : `Retry Failed (${failedCount})`}
+            </button>
+          )}
+          {/* Ping all approved contracts */}
+          {approvedContractCount > 0 && (
+            <button onClick={pingAllApproved} disabled={pingingAllApproved}
+              title={`Ping all ${approvedContractCount} approved app${approvedContractCount !== 1 ? 's' : ''}`}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg disabled:opacity-50 transition-colors">
+              <Activity size={13} className={pingingAllApproved ? 'animate-pulse' : ''} />
+              {pingingAllApproved ? 'Pinging…' : `Ping Approved (${approvedContractCount})`}
             </button>
           )}
           {/* Check all pending contracts */}
