@@ -477,6 +477,7 @@ export default function PingTestPage() {
         clientId: auto?.clientId || undefined,
         clientSecret: auto?.clientSecret || undefined,
         transactionId: generateTxId(),
+        envType: app.environment?.type || '',
       });
       setResults(prev => ({ ...prev, [appId]: data }));
     } catch (err) {
@@ -577,6 +578,7 @@ export default function PingTestPage() {
         ch2IngressUrl,
         bearerToken: jwt,
         transactionId: generateTxId(),
+        envType: app.environment?.type || '',
       });
       setResults(prev => ({ ...prev, [appId]: { ...pingRes.data, _jwtUsed: true } }));
     } catch (err) {

@@ -21,7 +21,7 @@ const PING_PATHS = [
 ];
 const PING_TIMEOUT_MS = 30000; // 30 s — some apps (e.g. PAPIs calling Oracle) need more time
 
-function buildBaseUrl(targetType, appName, ch2IngressUrl) {
+function buildBaseUrl(targetType, appName, ch2IngressUrl, envType) {
   const safe = (appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
 
   if (targetType === 'CH2' && ch2IngressUrl) {
@@ -36,7 +36,11 @@ function buildBaseUrl(targetType, appName, ch2IngressUrl) {
     }
   }
 
-  return `https://${safe}.internalapi.sfdcbt.net`;
+  // CH1: non-production environments use the stage subdomain
+  const isProd = !envType || (envType || '').toLowerCase() === 'production';
+  return isProd
+    ? `https://${safe}.internalapi.sfdcbt.net`
+    : `https://${safe}.stage.internalapi.sfdcbt.net`;
 }
 
 // ─── POST /api/health/oauth2-token ───────────────────────────────────────────
@@ -90,13 +94,14 @@ router.post('/ping', async (req, res) => {
     bearerToken,        // JWT / OAuth2 Bearer token — sends Authorization: Bearer <token>
     transactionId = 'smokeTest',
     queryParams = '',   // optional: "key1=val1&key2=val2" appended to every ping URL
+    envType = '',       // 'production' | 'sandbox' | 'design' — selects CH1 domain
   } = req.body || {};
 
   if (!appName) {
     return res.status(400).json({ error: 'appName is required' });
   }
 
-  const base = buildBaseUrl(targetType, appName, ch2IngressUrl);
+  const base = buildBaseUrl(targetType, appName, ch2IngressUrl, envType);
 
   const outboundHeaders = {
     Accept: 'application/json, */*',
