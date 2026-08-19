@@ -713,8 +713,31 @@ export default function PingTestPage() {
   const successCount = testedApps.filter(a => results[a.id]?.status === 'SUCCESS').length;
   const partialCount = testedApps.filter(a => results[a.id]?.status === 'PARTIAL').length;
   const failedCount  = testedApps.filter(a => results[a.id]?.status === 'FAILED').length;
+  const pendingContractCount = testedApps.filter(a => results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING').length;
   const autoResolvedCount = Object.keys(autoResolvedMap).length;
   const hasResults = done > 0;
+
+  const [retryingAll, setRetryingAll] = useState(false);
+  const [checkingAll, setCheckingAll] = useState(false);
+
+  const retryAllFailed = useCallback(async () => {
+    const failedApps = testedApps.filter(a => results[a.id]?.status === 'FAILED');
+    if (!failedApps.length) return;
+    setRetryingAll(true);
+    const BATCH = 5;
+    for (let i = 0; i < failedApps.length; i += BATCH) {
+      await Promise.allSettled(failedApps.slice(i, i + BATCH).map(app => retryApp(app)));
+    }
+    setRetryingAll(false);
+  }, [testedApps, results, retryApp]);
+
+  const checkAllContracts = useCallback(async () => {
+    const pendingApps = testedApps.filter(a => results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING');
+    if (!pendingApps.length) return;
+    setCheckingAll(true);
+    await Promise.allSettled(pendingApps.map(app => checkContractApproval(app)));
+    setCheckingAll(false);
+  }, [testedApps, results, checkContractApproval]);
 
   // ─── Empty state ─────────────────────────────────────────────────────────────
 
@@ -763,6 +786,24 @@ export default function PingTestPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Retry all failed */}
+          {failedCount > 0 && (
+            <button onClick={retryAllFailed} disabled={retryingAll}
+              title={`Retry all ${failedCount} failed ping test${failedCount !== 1 ? 's' : ''}`}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/60 border border-red-800/50 rounded-lg disabled:opacity-50 transition-colors">
+              <RefreshCw size={13} className={retryingAll ? 'animate-spin' : ''} />
+              {retryingAll ? 'Retrying…' : `Retry Failed (${failedCount})`}
+            </button>
+          )}
+          {/* Check all pending contracts */}
+          {pendingContractCount > 0 && (
+            <button onClick={checkAllContracts} disabled={checkingAll}
+              title={`Check contract approval for ${pendingContractCount} pending app${pendingContractCount !== 1 ? 's' : ''}`}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-orange-400 hover:text-orange-300 bg-orange-950/40 hover:bg-orange-950/60 border border-orange-800/50 rounded-lg disabled:opacity-50 transition-colors">
+              <RefreshCw size={13} className={checkingAll ? 'animate-spin' : ''} />
+              {checkingAll ? 'Checking…' : `Check Contracts (${pendingContractCount})`}
+            </button>
+          )}
           {/* Feature 2: CSV Upload button */}
           <button onClick={() => csvInputRef.current?.click()}
             title="Upload a CSV of app names to batch-ping"
