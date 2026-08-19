@@ -100,7 +100,7 @@ router.post('/ping', async (req, res) => {
 
   const outboundHeaders = {
     Accept: 'application/json, */*',
-    'Content-Type': 'application/json',
+    'Content-Type': 'application/json', // always sent — required by many Mule APIs
     'x-transaction-id': transactionId,
   };
   if (bearerToken) outboundHeaders['Authorization'] = `Bearer ${bearerToken}`;
@@ -145,7 +145,12 @@ router.post('/ping', async (req, res) => {
         payload = response.data ? String(response.data).slice(0, 500) : null;
       }
 
-      attempts.push({ url, httpStatus, responseTimeMs });
+      // Store payload per attempt so the frontend can show the response body for each path tried
+      let attemptPayload = null;
+      try {
+        attemptPayload = typeof response.data === 'object' ? response.data : String(response.data).slice(0, 2000);
+      } catch {}
+      attempts.push({ url, httpStatus, responseTimeMs, payload: attemptPayload });
 
       const payloadStr = payload
         ? typeof payload === 'string' ? payload : JSON.stringify(payload)
@@ -219,7 +224,7 @@ router.post('/ping', async (req, res) => {
         errorDetail = 'SSL certificate error';
       }
 
-      attempts.push({ url, error: errorDetail, responseTimeMs });
+      attempts.push({ url, error: errorDetail, responseTimeMs, payload: null });
     }
   }
 
