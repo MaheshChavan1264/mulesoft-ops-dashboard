@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, SlidersHorizontal, Key, X, Eye, EyeOff } from 'lucide-react';
+import { GitCompare, RefreshCw, Search, Copy, Check, Download, ArrowLeftRight, AlertTriangle, SlidersHorizontal, Key, X, Eye, EyeOff, ClipboardCopy } from 'lucide-react';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
 import { applyEnvFilter } from '../components/EnvFilterModal';
@@ -41,6 +41,38 @@ function CopyBtn({ text }) {
     <button onClick={() => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }}
       className="text-gray-600 hover:text-gray-300 transition-colors p-0.5">
       {done ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+    </button>
+  );
+}
+
+// ─── Copy Diffs button ───────────────────────────────────────────────────────
+
+function CopyDiffsBtn({ diff, keyA, keyB }) {
+  const [done, setDone] = useState(false);
+  const copy = () => {
+    const diffRows = diff.filter(d => d.status !== 'matching');
+    const lines = [`CPS Diff Summary — Side A: ${keyA || 'A'} vs Side B: ${keyB || 'B'}`, `${diffRows.length} difference(s) found`, ''];
+    diffRows.forEach(d => {
+      lines.push(`[${d.status.toUpperCase()}] ${d.key}`);
+      if (d.status === 'different') {
+        lines.push(`  A: ${d.valA ?? '(not set)'}`);
+        lines.push(`  B: ${d.valB ?? '(not set)'}`);
+      } else if (d.status === 'only-a') {
+        lines.push(`  A: ${d.valA}`);
+        lines.push(`  B: (not present)`);
+      } else {
+        lines.push(`  A: (not present)`);
+        lines.push(`  B: ${d.valB}`);
+      }
+    });
+    navigator.clipboard.writeText(lines.join('\n'));
+    setDone(true);
+    setTimeout(() => setDone(false), 2000);
+  };
+  return (
+    <button onClick={copy}
+      className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border text-purple-400 bg-purple-950/30 border-purple-800/50 hover:bg-purple-950/50 transition-colors">
+      {done ? <><Check size={11} className="text-emerald-400" /> Copied!</> : <><ClipboardCopy size={11} /> Copy Diffs</>}
     </button>
   );
 }
@@ -435,6 +467,7 @@ export default function CpsComparisonPage() {
   const [errorB, setErrorB] = useState('');
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [showDiffsOnly, setShowDiffsOnly] = useState(false);
   const [diffRow, setDiffRow] = useState(null);
   const [collapsedA, setCollapsedA] = useState(false);
   const [collapsedB, setCollapsedB] = useState(false);
@@ -997,9 +1030,10 @@ export default function CpsComparisonPage() {
 
   const displayRows = useMemo(() => {
     let rows = filter === 'all' ? diff : diff.filter(d => d.status === filter);
+    if (showDiffsOnly) rows = rows.filter(d => d.status !== 'matching');
     if (search.trim()) rows = rows.filter(d => d.key.toLowerCase().includes(search.toLowerCase()));
     return rows;
-  }, [diff, filter, search]);
+  }, [diff, filter, search, showDiffsOnly]);
 
   const selectedCountA = (sideA.selectedAppIds || []).length;
   const selectedCountB = (sideB.selectedAppIds || []).length;
@@ -1025,16 +1059,16 @@ export default function CpsComparisonPage() {
   };
 
   const STATUS_ROW = {
-    different: 'bg-red-950/20 border-l-2 border-red-600',
-    'only-a':  'bg-blue-950/20 border-l-2 border-blue-600',
-    'only-b':  'bg-orange-950/20 border-l-2 border-orange-600',
-    matching:  '',
+    different: 'bg-red-950/20 border-l-2 border-red-500',
+    'only-a':  'bg-blue-950/20 border-l-2 border-blue-500',
+    'only-b':  'bg-amber-950/20 border-l-2 border-amber-500',
+    matching:  'opacity-50',   // muted — eye focuses on diffs
   };
   const STATUS_BADGE = {
-    different: 'text-red-400 bg-red-500/10 border-red-700/40',
-    'only-a':  'text-blue-400 bg-blue-500/10 border-blue-700/40',
-    'only-b':  'text-orange-400 bg-orange-500/10 border-orange-700/40',
-    matching:  'text-emerald-400 bg-emerald-500/10 border-emerald-700/40',
+    different: 'text-red-300 bg-red-500/20 border-red-600/60 ring-1 ring-red-500/20',
+    'only-a':  'text-blue-300 bg-blue-500/20 border-blue-600/60',
+    'only-b':  'text-amber-300 bg-amber-500/20 border-amber-600/60',
+    matching:  'text-gray-600 bg-gray-700/20 border-gray-700/40',
   };
   const STATUS_LABEL = { different: 'DIFF', 'only-a': 'A ONLY', 'only-b': 'B ONLY', matching: 'MATCH' };
 
@@ -1159,18 +1193,57 @@ export default function CpsComparisonPage() {
                     filter === f ? 'bg-cyan-600/20 border-cyan-600/60 text-cyan-300' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
                   }`}>
                   {f === 'all' ? `All (${stats.total})`
-                    : f === 'different' ? `🔴 Different (${stats.different})`
-                    : f === 'only-a'   ? `🔵 Only A (${stats['only-a']})`
-                    : f === 'only-b'   ? `🟠 Only B (${stats['only-b']})`
-                    : `✅ Matching (${stats.matching})`}
+                    : f === 'different' ? `🔴 Diff (${stats.different})`
+                    : f === 'only-a'   ? `🔵 A Only (${stats['only-a']})`
+                    : f === 'only-b'   ? `🟠 B Only (${stats['only-b']})`
+                    : `✅ Match (${stats.matching})`}
                 </button>
               ))}
             </div>
-            {/* Search */}
-            <div className="relative">
-              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter by key…"
-                className="bg-gray-800 border border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600/50 w-48" />
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Show Diffs Only toggle */}
+              <button
+                onClick={() => setShowDiffsOnly(v => !v)}
+                title="Hide matching rows"
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-all ${
+                  showDiffsOnly
+                    ? 'bg-cyan-600/20 border-cyan-600/50 text-cyan-300'
+                    : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
+                }`}>
+                <span className={`w-6 h-3.5 rounded-full flex items-center transition-colors ${showDiffsOnly ? 'bg-cyan-600' : 'bg-gray-600'}`}>
+                  <span className={`w-2.5 h-2.5 rounded-full bg-white shadow transition-transform mx-0.5 ${showDiffsOnly ? 'translate-x-2.5' : 'translate-x-0'}`} />
+                </span>
+                Diffs Only
+              </button>
+              {/* Export Diffs Only */}
+              {(stats.different + stats['only-a'] + stats['only-b']) > 0 && (
+                <button
+                  onClick={() => {
+                    const diffRows = diff.filter(d => d.status !== 'matching');
+                    const rows = [['Property Key', `Side A (${sideA.cpsKey || 'A'})`, `Side B (${sideB.cpsKey || 'B'})`, 'Status']];
+                    diffRows.forEach(d => rows.push([d.key, d.valA ?? '(not set)', d.valB ?? '(not set)', d.status.toUpperCase()]));
+                    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `cps-diffs-only-${new Date().toISOString().slice(0, 10)}.csv`;
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                  }}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border text-red-400 bg-red-950/30 border-red-800/50 hover:bg-red-950/50 transition-colors">
+                  <Download size={11} /> Export Diffs
+                </button>
+              )}
+              {/* Copy Diffs */}
+              {(stats.different + stats['only-a'] + stats['only-b']) > 0 && (
+                <CopyDiffsBtn diff={diff} keyA={sideA.cpsKey} keyB={sideB.cpsKey} />
+              )}
+              {/* Search */}
+              <div className="relative">
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter by key…"
+                  className="bg-gray-800 border border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600/50 w-40" />
+              </div>
             </div>
           </div>
 
@@ -1218,20 +1291,42 @@ export default function CpsComparisonPage() {
                           <span className="font-mono text-xs text-gray-300 truncate" title={row.displayKey}>{row.displayKey}</span>
                           <CopyBtn text={row.displayKey} />
                         </div>
-                        {/* Value A */}
+                        {/* Value A — inline word-diff for DIFF rows */}
                         <div className="flex items-center gap-1.5 min-w-0" onClick={e => e.stopPropagation()}>
                           {row.valA !== null ? (
                             <>
-                              <span className={`font-mono text-xs truncate ${row.status === 'different' ? 'text-red-300' : 'text-gray-300'}`} title={row.valA}>{row.valA}</span>
+                              {row.status === 'different' ? (() => {
+                                const { aTokens } = wordDiff(row.valA, row.valB);
+                                return (
+                                  <span className="font-mono text-xs leading-snug break-all line-clamp-2 flex-1 min-w-0" title={row.valA}>
+                                    {aTokens.map((t, i) => (
+                                      <span key={i} className={t.changed ? 'bg-red-500/25 text-red-200 rounded-sm px-0.5' : 'text-gray-300'}>{t.word}</span>
+                                    ))}
+                                  </span>
+                                );
+                              })() : (
+                                <span className="font-mono text-xs text-gray-300 truncate" title={row.valA}>{row.valA}</span>
+                              )}
                               <CopyBtn text={row.valA} />
                             </>
                           ) : <span className="text-[10px] text-gray-700 italic">not set</span>}
                         </div>
-                        {/* Value B */}
+                        {/* Value B — inline word-diff for DIFF rows */}
                         <div className="flex items-center gap-1.5 min-w-0" onClick={e => e.stopPropagation()}>
                           {row.valB !== null ? (
                             <>
-                              <span className={`font-mono text-xs truncate ${row.status === 'different' ? 'text-orange-300' : 'text-gray-300'}`} title={row.valB}>{row.valB}</span>
+                              {row.status === 'different' ? (() => {
+                                const { bTokens } = wordDiff(row.valA, row.valB);
+                                return (
+                                  <span className="font-mono text-xs leading-snug break-all line-clamp-2 flex-1 min-w-0" title={row.valB}>
+                                    {bTokens.map((t, i) => (
+                                      <span key={i} className={t.changed ? 'bg-amber-500/25 text-amber-200 rounded-sm px-0.5' : 'text-gray-300'}>{t.word}</span>
+                                    ))}
+                                  </span>
+                                );
+                              })() : (
+                                <span className="font-mono text-xs text-gray-300 truncate" title={row.valB}>{row.valB}</span>
+                              )}
                               <CopyBtn text={row.valB} />
                             </>
                           ) : <span className="text-[10px] text-gray-700 italic">not set</span>}
