@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { X, Globe, Check, Search, SlidersHorizontal, RefreshCw } from 'lucide-react';
 
-// Re-export filter utilities from the canonical location.
-// EnvFilterModal is a UI component — the utility functions live in filterUtils.js.
-export {
-  ENV_FILTER_KEY,
-  getVisibleEnvIds,
-  saveVisibleEnvIds,
-  applyEnvFilter,
-} from '../utils/filterUtils';
+// Import for internal use within this component
+import { getVisibleEnvIds, saveVisibleEnvIds } from '../utils/filterUtils';
+
+// Re-export so existing callers can still import from this file
+export { ENV_FILTER_KEY, getVisibleEnvIds, saveVisibleEnvIds, applyEnvFilter } from '../utils/filterUtils';
 
 const ENV_TYPE_COLOR = {
   production: 'bg-green-400',

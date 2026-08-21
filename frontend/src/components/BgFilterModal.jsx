@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { X, Building2, Check, Search, SlidersHorizontal, RefreshCw } from 'lucide-react';
 
-// Re-export filter utilities from the canonical location.
-// BgFilterModal is a UI component — the utility functions live in filterUtils.js.
-export {
-  BG_FILTER_KEY,
-  getVisibleBgIds,
-  saveVisibleBgIds,
-  applyBgFilter,
-} from '../utils/filterUtils';
+// Import for internal use within this component
+import { getVisibleBgIds, saveVisibleBgIds } from '../utils/filterUtils';
+
+// Re-export so existing callers can still import from this file
+export { BG_FILTER_KEY, getVisibleBgIds, saveVisibleBgIds, applyBgFilter } from '../utils/filterUtils';
 
 export default function BgFilterModal({ businessGroups = [], onClose, onSaved }) {
   const [search, setSearch] = useState('');
