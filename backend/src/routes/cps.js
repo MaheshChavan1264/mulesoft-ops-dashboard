@@ -293,6 +293,74 @@ router.get('/fetch', authMiddleware, async (req, res) => {
         console.warn(`CPS 401 — no alt credentials available; CSV may not contain a valid credential for this server`);
       }
     }
+
+    // ── Per-group credential resolution for secure fetches ─────────────────────
+    // When secure properties are requested with multiple group keys, different
+    // groups on the same CPS server may require DIFFERENT credentials.
+    // After the main retry resolves a credential for SOME groups, check if
+    // any groups still returned "COULD NOT ACCESS" and try the remaining
+    // credentials specifically for those groups, then merge the results.
+    if ((type === 'secure' || type === 'secure-all') &&
+        response?.status === 200 &&
+        Array.isArray(response?.data?.responses)) {
+
+      const failedKeys = response.data.responses
+        .filter(r => typeof r.properties === 'string')   // "COULD NOT ACCESS" = string value
+        .map(r => r.key)
+        .filter(Boolean);
+
+      if (failedKeys.length > 0) {
+        console.log(`CPS per-group retry — ${failedKeys.length} group(s) still COULD NOT ACCESS after main retry`);
+
+        // Collect all unique credentials from session (excluding the one already used)
+        const sessionCreds = req.session.cpsCreds || {};
+        const usedClientId = creds.clientId;
+        const altCreds = Object.values(sessionCreds)
+          .filter(c => c?.clientId && c?.clientId !== usedClientId && c?.clientSecret)
+          // Deduplicate by clientId
+          .filter((c, i, arr) => arr.findIndex(x => x.clientId === c.clientId) === i);
+
+        // Try each alt credential against ONLY the failed group keys
+        const remaining = new Set(failedKeys);
+        for (const altCred of altCreds) {
+          if (remaining.size === 0) break;
+          try {
+            const altParams = { ...params, keys: [...remaining].join(',') };
+            const altRes = await axios.get(fullUrl, {
+              headers: { 'client_id': altCred.clientId, 'client_secret': altCred.clientSecret, 'Content-Type': 'application/json' },
+              params: altParams,
+              timeout: 8000,
+              validateStatus: () => true,
+            });
+
+            if (altRes.status === 200 && Array.isArray(altRes.data?.responses)) {
+              let resolved = 0;
+              for (const group of altRes.data.responses) {
+                // Only merge if this group now has actual properties (not COULD NOT ACCESS)
+                if (typeof group.properties === 'object' && group.properties !== null &&
+                    Object.keys(group.properties).length > 0) {
+                  const idx = response.data.responses.findIndex(r => r.key === group.key);
+                  if (idx >= 0) {
+                    response.data.responses[idx] = group;  // replace COULD NOT ACCESS with real data
+                    remaining.delete(group.key);
+                    resolved++;
+                  }
+                }
+              }
+              if (resolved > 0) {
+                console.log(`CPS per-group retry — clientId="${altCred.clientId.slice(0,8)}…" resolved ${resolved} group(s) (${remaining.size} still failing)`);
+              }
+            }
+          } catch { /* skip this credential */ }
+        }
+
+        if (remaining.size < failedKeys.length) {
+          console.log(`CPS per-group retry complete — resolved ${failedKeys.length - remaining.size}/${failedKeys.length} previously-failing group(s)`);
+        } else {
+          console.log(`CPS per-group retry complete — no additional groups resolved (all ${failedKeys.length} require credentials not in the uploaded CSV)`);
+        }
+      }
+    }
   } catch (fetchErr) {
     const msg = fetchErr.code === 'ECONNABORTED' || fetchErr.code === 'ETIMEDOUT'
       ? `CPS request timed out after ${fetchErr.config?.timeout || 20000}ms`
