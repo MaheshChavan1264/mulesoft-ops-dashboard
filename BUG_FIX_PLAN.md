@@ -211,9 +211,9 @@ axiosClient.interceptors.response.use(null, (error) => {
 
 ---
 
-### BUG-07 🔴 — `api.js` facade missing `patch()` and `put()` methods
+### BUG-07 ✅ — `api.js` facade missing `patch()` and `put()` methods
 
-**Status:** 🔴 Not Started  
+**Status:** ✅ Fixed — added `patch()` and `put()` to the `api` facade  
 **File:** `frontend/src/services/api.js`  
 **Severity:** Medium — Incomplete facade; any future component using `api.patch()` will crash
 
@@ -554,7 +554,7 @@ cd frontend && npm install -D vitest @vitest/ui
 | BUG-04 Session secret + cookie | ✅ Fixed | `server.js`, `.env.example` | Validation + secure/httpOnly/sameSite cookie |
 | BUG-05 Dead setSessionFromResult | ✅ Fixed | `LoginPage.jsx` | Removed dead ref + merged double useAuth() call |
 | BUG-06 _redirecting never resets | ✅ Fixed | `api.js` | Added 5s reset timer after redirect |
-| BUG-07 Missing patch/put in api | 🔴 Not Started | `api.js` | |
+| BUG-07 Missing patch/put in api | ✅ Fixed | `api.js` | Added patch() and put() with demo mode support |
 | BUG-08 Global 50MB body limit | 🔴 Not Started | `server.js` | |
 | BUG-09 ping-spec route order | 🔴 Not Started | `exchange.js` | |
 | IMP-01 Move filter utils | 🔴 Not Started | `BgFilterModal`, `EnvFilterModal` | |

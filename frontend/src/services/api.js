@@ -137,7 +137,15 @@ const api = {
   delete: async (url, config = {}) => {
     if (isDemoMode()) return { data: { success: true } };
     return axiosClient.delete(url, config);
-  }
+  },
+  patch: async (url, data, config = {}) => {
+    if (isDemoMode()) return { data: { success: true } };
+    return axiosClient.patch(url, data, config);
+  },
+  put: async (url, data, config = {}) => {
+    if (isDemoMode()) return { data: { success: true } };
+    return axiosClient.put(url, data, config);
+  },
 };
 
 export default api;
