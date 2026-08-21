@@ -108,6 +108,9 @@ axiosClient.interceptors.response.use(
 
       if (!skipRedirect) {
         _redirecting = true;
+        // Reset after 5 s so that if the user navigates back (without a full
+        // page reload) and their session has expired again, the redirect fires.
+        setTimeout(() => { _redirecting = false; }, 5000);
         window.location.href = '/login';
       }
     }

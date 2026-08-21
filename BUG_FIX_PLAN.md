@@ -161,9 +161,9 @@ const { login, tokenLogin, connectedAppLogin, demoLogin } = useAuth();
 
 ---
 
-### BUG-06 🔴 — `_redirecting` flag in `api.js` never resets after 401 redirect
+### BUG-06 ✅ — `_redirecting` flag in `api.js` never resets after 401 redirect
 
-**Status:** 🔴 Not Started  
+**Status:** ✅ Fixed — added `setTimeout(() => { _redirecting = false; }, 5000)` after redirect  
 **File:** `frontend/src/services/api.js`  
 **Severity:** Medium — After first session expiry redirect, future expiries silently fail
 
@@ -553,7 +553,7 @@ cd frontend && npm install -D vitest @vitest/ui
 | BUG-03 Unauthenticated /ping | ✅ Fixed | `health.js` | Added `authMiddleware` to `/ping` and `/oauth2-token` |
 | BUG-04 Session secret + cookie | ✅ Fixed | `server.js`, `.env.example` | Validation + secure/httpOnly/sameSite cookie |
 | BUG-05 Dead setSessionFromResult | ✅ Fixed | `LoginPage.jsx` | Removed dead ref + merged double useAuth() call |
-| BUG-06 _redirecting never resets | 🔴 Not Started | `api.js` | |
+| BUG-06 _redirecting never resets | ✅ Fixed | `api.js` | Added 5s reset timer after redirect |
 | BUG-07 Missing patch/put in api | 🔴 Not Started | `api.js` | |
 | BUG-08 Global 50MB body limit | 🔴 Not Started | `server.js` | |
 | BUG-09 ping-spec route order | 🔴 Not Started | `exchange.js` | |
