@@ -65,14 +65,6 @@ export const MOCK_APPS = [
   }
 ];
 
-export const MOCK_METRICS = {
-  totalApplications: 8,
-  running: 5,
-  failed: 1,
-  stopped: 1,
-  environments: 4
-};
-
 export const MOCK_EXCHANGE_SUMMARY = {
   'rest-api': 12,
   'soap-api': 3,
