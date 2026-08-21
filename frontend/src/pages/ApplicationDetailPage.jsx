@@ -1633,7 +1633,7 @@ export default function ApplicationDetailPage() {
           pingSpec={pingSpec}
           pingSpecLoading={pingSpecLoading}
           envType={app.environment?.type || ''}
-          envName={app.environment?.name || ''}
+          envName={resolvedEnvName || app.environment?.name || ''}
         />
       )}
 
