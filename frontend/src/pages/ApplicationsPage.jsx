@@ -504,6 +504,7 @@ function BulkPingModal({ apps, onClose }) {
           clientSecret: useClientSecret,
           transactionId: transactionId.trim() || 'smokeTest',
           envType: app.environment?.type || '',
+          envName: app.environment?.name || '',
         });
 
         // If ping returned 4xx (PARTIAL), try auto-fetching JWT and retrying
@@ -518,6 +519,7 @@ function BulkPingModal({ apps, onClose }) {
                 bearerToken: jwt,
                 transactionId: transactionId.trim() || 'smokeTest',
                 envType: app.environment?.type || '',
+                envName: app.environment?.name || '',
               });
               return { appId: app.id, result: { ...jwtData.data, _jwtUsed: true } };
             } catch { /* fall through to original result */ }

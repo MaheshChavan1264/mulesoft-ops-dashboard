@@ -179,8 +179,13 @@ export function downloadCsv(rows, filename) {
  * @returns {string}  qualifier segment, or empty string for standard envs
  */
 export function getDomainQualifier(normalizedEnvName) {
+  // EI-FI-FINANCIALS-* environments — explicit "FINANCIALS" keyword
   if (normalizedEnvName.includes('FINANCIALS')) return 'fin';
-  // if (normalizedEnvName.includes('SECURITY')) return 'sec';
+  // EI-FI-* environments (Financial Infrastructure bucket — e.g. EI-FI-FS2, EI-FI-STAGING)
+  // The "-FI-" segment identifies the Financial Infrastructure org; all these apps
+  // route through the .fin. sub-domain regardless of the tier suffix.
+  if (/-FI-/.test(normalizedEnvName)) return 'fin';
+  // if (/-SEC-/.test(normalizedEnvName)) return 'sec';
   return '';
 }
 
