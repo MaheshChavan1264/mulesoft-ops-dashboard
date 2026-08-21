@@ -142,6 +142,14 @@ router.post('/ping', authMiddleware, async (req, res) => {
 
   const base = buildBaseUrl(targetType, appName, ch2IngressUrl, envType, envName);
 
+  // For domain-qualified environments (e.g. EI-FI-* → .fin.), also build a standard
+  // fallback base without the qualifier. We try qualified paths first; if all fail/timeout
+  // we fall back to the standard URL so the test can still succeed if the detection was wrong.
+  const qualifier = getDomainQualifier((envName || '').toUpperCase());
+  const standardBase = (qualifier && targetType !== 'CH2')
+    ? buildBaseUrl(targetType, appName, ch2IngressUrl, envType, '') // pass empty envName → no qualifier
+    : null;
+
   const outboundHeaders = {
     Accept: 'application/json, */*',
     'Content-Type': 'application/json', // always sent — required by many Mule APIs
@@ -159,11 +167,17 @@ router.post('/ping', authMiddleware, async (req, res) => {
     ...(clientSecret ? { client_secret: `${clientSecret.slice(0, 4)}… (len ${clientSecret.length})` } : {}),
   });
 
+  // Build the ordered URL list:
+  //   1. All qualified (.fin.) paths  — tried first
+  //   2. All standard paths           — tried only if all qualified paths fail
+  const urlsToTry = [
+    ...PING_PATHS.map(p => queryParams ? `${base}${p}?${queryParams}` : `${base}${p}`),
+    ...(standardBase ? PING_PATHS.map(p => queryParams ? `${standardBase}${p}?${queryParams}` : `${standardBase}${p}`) : []),
+  ];
+
   const attempts = [];
 
-  for (const path of PING_PATHS) {
-    // Append optional query parameters
-    const url = queryParams ? `${base}${path}?${queryParams}` : `${base}${path}`;
+  for (const url of urlsToTry) {
     const t0 = Date.now();
 
     try {
