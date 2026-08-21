@@ -67,6 +67,8 @@ function buildBaseUrl(targetType, appName, ch2IngressUrl, envType, envName) {
   // CH1: non-production environments use the stage subdomain.
   // Only treat as production when envType is explicitly 'production';
   // empty / unknown defaults to stage (all non-prod CH1 apps are on stage).
+  // Note: envName slug mapping is handled by the frontend's buildPingUrl;
+  // here we only care about prod vs non-prod via envType.
   const isProd = (envType || '').toLowerCase() === 'production';
   const slug = isProd ? 'prod' : 'stage';
 
