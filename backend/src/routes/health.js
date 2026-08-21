@@ -153,9 +153,9 @@ router.post('/ping', authMiddleware, async (req, res) => {
     : null;
 
   if (qualifier) {
-    console.log(`[Ping] Domain qualifier detected: "${qualifier}" (envName="${envName}") → .${qualifier}. injected in base URL`);
+    console.log(`[Ping] Domain qualifier detected: "${qualifier}" (envName="${envName}") → primary base: ${base}`);
     if (standardBase) {
-      console.log(`[Ping] Standard fallback base: ${standardBase} (tried after all .${qualifier}. paths fail)`);
+      console.log(`[Ping] Fallback ready (used only if ALL .${qualifier}. paths fail): ${standardBase}`);
     }
   }
 
@@ -184,9 +184,19 @@ router.post('/ping', authMiddleware, async (req, res) => {
     ...(standardBase ? PING_PATHS.map(p => queryParams ? `${standardBase}${p}?${queryParams}` : `${standardBase}${p}`) : []),
   ];
 
+  const qualifiedPathCount = PING_PATHS.length; // number of .fin. paths before fallback starts
+  let loggedFallbackStart = false;
   const attempts = [];
 
-  for (const url of urlsToTry) {
+  for (let _i = 0; _i < urlsToTry.length; _i++) {
+    const url = urlsToTry[_i];
+
+    // Log once when we exhaust all qualified (.fin.) paths and start the standard fallback
+    if (standardBase && _i === qualifiedPathCount && !loggedFallbackStart) {
+      loggedFallbackStart = true;
+      console.log(`[Ping] All .${qualifier}. paths exhausted — now trying standard fallback: ${standardBase}`);
+    }
+
     const t0 = Date.now();
 
     try {
