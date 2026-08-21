@@ -152,9 +152,12 @@ router.post('/ping', authMiddleware, async (req, res) => {
     ? buildBaseUrl(targetType, appName, ch2IngressUrl, envType, '') // pass empty envName → no qualifier
     : null;
 
+  // HTTP variant of the qualified base (tried if HTTPS TLS fails on .fin. servers)
+  const httpBase = qualifier ? base.replace(/^https:\/\//, 'http://') : null;
+
   if (qualifier) {
     console.log(`[Ping] Domain qualifier detected: "${qualifier}" (envName="${envName}") → primary base: ${base}`);
-    if (httpBase)    console.log(`[Ping] HTTP fallback: ${httpBase} (tried if HTTPS .${qualifier}. TLS fails)`);
+    if (httpBase)     console.log(`[Ping] HTTP fallback: ${httpBase} (tried if HTTPS .${qualifier}. TLS fails)`);
     if (standardBase) console.log(`[Ping] Standard fallback: ${standardBase} (tried if ALL .${qualifier}. paths fail)`);
   }
 
@@ -179,7 +182,6 @@ router.post('/ping', authMiddleware, async (req, res) => {
   //   1. HTTPS qualified (.fin.) paths  — tried first (correct URL, prefer HTTPS)
   //   2. HTTP qualified (.fin.) paths   — tried if HTTPS fails (some .fin. servers use HTTP)
   //   3. HTTPS standard paths           — final fallback (no qualifier)
-  const httpBase = qualifier ? base.replace(/^https:\/\//, 'http://') : null;
   const urlsToTry = [
     // HTTPS .fin. paths
     ...PING_PATHS.map(p => queryParams ? `${base}${p}?${queryParams}` : `${base}${p}`),
