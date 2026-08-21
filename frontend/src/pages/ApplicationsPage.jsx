@@ -703,6 +703,16 @@ export default function ApplicationsPage() {
     if (filterType) localStorage.setItem('mule_dashboard_filter_type', filterType);
     else localStorage.removeItem('mule_dashboard_filter_type');
   }, [filterType]);
+  // ── Env filter version ────────────────────────────────────────────────────
+  // Increments whenever the EnvFilterModal saves a new selection to localStorage.
+  // This triggers the `filtered` useMemo to re-run and pick up the new filter.
+  const [envFilterVersion, setEnvFilterVersion] = useState(0);
+  useEffect(() => {
+    const handler = () => setEnvFilterVersion(v => v + 1);
+    window.addEventListener('envFilterChanged', handler);
+    return () => window.removeEventListener('envFilterChanged', handler);
+  }, []);
+
   const [error, setError] = useState('');
   const [showExport, setShowExport] = useState(false);
   const [showBulkPing, setShowBulkPing] = useState(false);
@@ -897,13 +907,23 @@ export default function ApplicationsPage() {
   };
 
   /* ── Multi-select ──────────────────────────────────── */
-  const filtered = useMemo(() => apps.filter((a) => {
-    const matchSearch = !search || a.name?.toLowerCase().includes(search.toLowerCase());
-    const matchEnv = !filterEnv || a.environment?.id === filterEnv;
-    const matchStatus = !filterStatus || (a.status || '').toUpperCase() === filterStatus.toUpperCase();
-    const matchType = !filterType || a.deploymentType === filterType;
-    return matchSearch && matchEnv && matchStatus && matchType;
-  }), [apps, search, filterEnv, filterStatus, filterType]);
+  const filtered = useMemo(() => {
+    // Env filter modal: build a Set of visible env IDs from localStorage.
+    // Called inside the memo so it always reads the current localStorage value
+    // when envFilterVersion changes (i.e. after the modal saves).
+    const visEnvIds = new Set(applyEnvFilter(environments).map(e => e.id));
+    const envModalActive = environments.length > 0 && visEnvIds.size < environments.length;
+
+    return apps.filter((a) => {
+      // If env filter modal is active, only show apps whose environment is visible
+      if (envModalActive && !visEnvIds.has(a.environment?.id)) return false;
+      const matchSearch = !search || a.name?.toLowerCase().includes(search.toLowerCase());
+      const matchEnv = !filterEnv || a.environment?.id === filterEnv;
+      const matchStatus = !filterStatus || (a.status || '').toUpperCase() === filterStatus.toUpperCase();
+      const matchType = !filterType || a.deploymentType === filterType;
+      return matchSearch && matchEnv && matchStatus && matchType;
+    });
+  }, [apps, environments, search, filterEnv, filterStatus, filterType, envFilterVersion]);
 
   const allSelected = filtered.length > 0 && filtered.every((a) => selectedIds.has(a.id));
   const someSelected = !allSelected && filtered.some((a) => selectedIds.has(a.id));
