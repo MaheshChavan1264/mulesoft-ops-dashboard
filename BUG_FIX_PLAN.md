@@ -78,9 +78,9 @@ router.post('/oauth2-token', authMiddleware, async (req, res) => { ... });
 
 ---
 
-### BUG-04 🔴 — SESSION_SECRET defaults to known string; cookie `secure: false` hardcoded
+### BUG-04 ✅ — SESSION_SECRET defaults to known string; cookie `secure: false` hardcoded
 
-**Status:** 🔴 Not Started  
+**Status:** ✅ Fixed — startup validation added; cookie hardened with `secure`, `httpOnly`, `sameSite`  
 **File:** `backend/src/server.js`  
 **Severity:** Critical Security — sessions can be forged; token transmitted in plaintext
 
@@ -551,7 +551,7 @@ cd frontend && npm install -D vitest @vitest/ui
 | ~~BUG-01 Missing routes~~ | ✅ Resolved | Deleted `DashboardPage`, `BusinessGroupsPage`, `EnvironmentsPage`, `StatCard`; removed `recharts` from `package.json` | Features removed per decision |
 | ~~BUG-02 Missing sidebar links~~ | ✅ Resolved | N/A | Resolved by removing the pages |
 | BUG-03 Unauthenticated /ping | ✅ Fixed | `health.js` | Added `authMiddleware` to `/ping` and `/oauth2-token` |
-| BUG-04 Session secret + cookie | 🔴 Not Started | `server.js` | Security |
+| BUG-04 Session secret + cookie | ✅ Fixed | `server.js`, `.env.example` | Validation + secure/httpOnly/sameSite cookie |
 | BUG-05 Dead setSessionFromResult | 🔴 Not Started | `LoginPage.jsx` | |
 | BUG-06 _redirecting never resets | 🔴 Not Started | `api.js` | |
 | BUG-07 Missing patch/put in api | 🔴 Not Started | `api.js` | |
