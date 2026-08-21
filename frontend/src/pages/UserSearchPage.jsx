@@ -44,8 +44,15 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
   const [loading, setLoading] = useState(true); // true by default — envs load on mount
   const [selections, setSelections] = useState(new Set()); // "bgId:envId"
   const [search, setSearch] = useState('');
+  // Re-run the env-loading effect when the Env Filter modal saves
+  const [envFilterVersion, setEnvFilterVersion] = useState(0);
+  useEffect(() => {
+    const h = () => setEnvFilterVersion(v => v + 1);
+    window.addEventListener('envFilterChanged', h);
+    return () => window.removeEventListener('envFilterChanged', h);
+  }, []);
 
-  // Load ALL envs from all visible BGs (parallel) whenever businessGroups changes
+  // Load ALL envs from all visible BGs (parallel) whenever businessGroups or env filter changes
   useEffect(() => {
     const visible = applyBgFilter(businessGroups);
     if (!visible.length) {
@@ -75,7 +82,7 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
       setAllEnvs(envFiltered.length > 0 ? envFiltered : flat);
       setLoading(false);
     });
-  }, [businessGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [businessGroups, envFilterVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const sel = allEnvs.filter(e => selections.has(`${e.bgId}:${e.envId}`));

@@ -449,6 +449,15 @@ export default function CpsComparisonPage() {
   const { getSecret, hasCredentials, getAllCredentials } = useCpsCredentialStore();
   const [allBgs, setAllBgs] = useState([]);
   const [showBgFilter, setShowBgFilter] = useState(false);
+  // ── Env filter version ────────────────────────────────────────────────────
+  // Increments when the Env Filter modal saves — causes SidePanel to re-render
+  // and call applyEnvFilter(envs) with the fresh localStorage value.
+  const [envFilterVer, setEnvFilterVer] = useState(0); // eslint-disable-line no-unused-vars
+  useEffect(() => {
+    const h = () => setEnvFilterVer(v => v + 1);
+    window.addEventListener('envFilterChanged', h);
+    return () => window.removeEventListener('envFilterChanged', h);
+  }, []);
   const [compareMode, setCompareMode] = useState('single'); // 'single' | 'multi'
   // Each side has its own property type
   const [propTypeA, setPropTypeA] = useState('non-secure');
