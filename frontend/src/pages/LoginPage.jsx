@@ -11,7 +11,7 @@ const TABS = [
 ];
 
 export default function LoginPage() {
-  const { login, demoLogin, setSessionFromResult } = useAuth();
+  const { login, tokenLogin, connectedAppLogin, demoLogin } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState('app');
   const [username, setUsername] = useState('');
@@ -24,8 +24,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showTokenGuide, setShowTokenGuide] = useState(false);
-
-  const { tokenLogin, connectedAppLogin } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
