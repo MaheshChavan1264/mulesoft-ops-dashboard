@@ -306,9 +306,9 @@ router.get('/:groupId/:assetId/:version', ...);
 
 ---
 
-### IMP-01 🔴 — Move filter utility functions out of modal components
+### IMP-01 ✅ — Move filter utility functions out of modal components
 
-**Status:** 🔴 Not Started  
+**Status:** ✅ Fixed — extracted to `filterUtils.js`; modals re-export for backward compat  
 **Files:** `frontend/src/components/BgFilterModal.jsx`, `frontend/src/components/EnvFilterModal.jsx`  
 **Severity:** Low — Design smell; utility logic coupled to UI component files
 
@@ -557,7 +557,7 @@ cd frontend && npm install -D vitest @vitest/ui
 | BUG-07 Missing patch/put in api | ✅ Fixed | `api.js` | Added patch() and put() with demo mode support |
 | BUG-08 Global 50MB body limit | ✅ Fixed | `server.js` | Global 1MB; 50MB scoped to /api/cps only |
 | BUG-09 ping-spec route order | ✅ Fixed | `exchange.js` | Handler extracted to named function; registered before wildcards |
-| IMP-01 Move filter utils | 🔴 Not Started | `BgFilterModal`, `EnvFilterModal` | |
+| IMP-01 Move filter utils | ✅ Fixed | `filterUtils.js`, `BgFilterModal`, `EnvFilterModal` | Canonical utils in filterUtils.js; modals re-export |
 | IMP-02 Rate limit auth routes | 🔴 Not Started | `server.js` / `auth.js` | |
 | IMP-03 Persistent session store | 🔴 Not Started | `server.js` | |
 | IMP-04 React Error Boundaries | 🔴 Not Started | `App.jsx` | |

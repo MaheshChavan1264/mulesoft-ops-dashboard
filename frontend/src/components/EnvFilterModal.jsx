@@ -1,37 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { X, Globe, Check, Search, SlidersHorizontal, RefreshCw } from 'lucide-react';
 
-export const ENV_FILTER_KEY = 'mulesoft_visible_envs';
-
-// Returns the set of visible environment IDs from localStorage.
-// Empty set = "show all" (no filter applied)
-export function getVisibleEnvIds() {
-  try {
-    const raw = localStorage.getItem(ENV_FILTER_KEY);
-    if (!raw) return new Set();
-    return new Set(JSON.parse(raw));
-  } catch {
-    return new Set();
-  }
-}
-
-// Save the visible env IDs to localStorage.
-// Pass empty set (or null) to clear filter (show all).
-export function saveVisibleEnvIds(idSet) {
-  if (!idSet || idSet.size === 0) {
-    localStorage.removeItem(ENV_FILTER_KEY);
-  } else {
-    localStorage.setItem(ENV_FILTER_KEY, JSON.stringify([...idSet]));
-  }
-}
-
-// Filter a list of environments by the saved visible env IDs.
-// If no filter is active, returns the full list.
-export function applyEnvFilter(envs) {
-  const visible = getVisibleEnvIds();
-  if (visible.size === 0) return envs; // no filter = show all
-  return envs.filter((e) => visible.has(e.id));
-}
+// Re-export filter utilities from the canonical location.
+// EnvFilterModal is a UI component — the utility functions live in filterUtils.js.
+export {
+  ENV_FILTER_KEY,
+  getVisibleEnvIds,
+  saveVisibleEnvIds,
+  applyEnvFilter,
+} from '../utils/filterUtils';
 
 const ENV_TYPE_COLOR = {
   production: 'bg-green-400',

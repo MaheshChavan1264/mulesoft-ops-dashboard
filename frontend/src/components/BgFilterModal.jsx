@@ -1,37 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { X, Building2, Check, Search, SlidersHorizontal, RefreshCw } from 'lucide-react';
 
-export const BG_FILTER_KEY = 'mulesoft_visible_bgs';
-
-// Returns the set of visible BG IDs from localStorage.
-// Empty set = "show all" (no filter applied)
-export function getVisibleBgIds() {
-  try {
-    const raw = localStorage.getItem(BG_FILTER_KEY);
-    if (!raw) return new Set();
-    return new Set(JSON.parse(raw));
-  } catch {
-    return new Set();
-  }
-}
-
-// Save the visible BG IDs to localStorage.
-// Pass empty set (or null) to clear filter (show all).
-export function saveVisibleBgIds(idSet) {
-  if (!idSet || idSet.size === 0) {
-    localStorage.removeItem(BG_FILTER_KEY);
-  } else {
-    localStorage.setItem(BG_FILTER_KEY, JSON.stringify([...idSet]));
-  }
-}
-
-// Filter a list of BG options by the saved visible BG IDs.
-// If no filter is active, returns the full list.
-export function applyBgFilter(groups) {
-  const visible = getVisibleBgIds();
-  if (visible.size === 0) return groups; // no filter = show all
-  return groups.filter((g) => visible.has(g.id));
-}
+// Re-export filter utilities from the canonical location.
+// BgFilterModal is a UI component — the utility functions live in filterUtils.js.
+export {
+  BG_FILTER_KEY,
+  getVisibleBgIds,
+  saveVisibleBgIds,
+  applyBgFilter,
+} from '../utils/filterUtils';
 
 export default function BgFilterModal({ businessGroups = [], onClose, onSaved }) {
   const [search, setSearch] = useState('');
