@@ -48,8 +48,11 @@ app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:3000'],
   credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Default body size limit — small and safe for all general routes.
+// CPS payloads (bulk property lists) can be large, so the limit is overridden
+// specifically for /api/cps below before mounting its router.
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
 app.use(session({
   secret: SESSION_SECRET || DEFAULT_SECRET,
   resave: false,
@@ -70,6 +73,8 @@ app.use('/api/applications', applicationsRoutes);
 app.use('/api/apis', apisRoutes);
 app.use('/api/exchange', exchangeRoutes);
 app.use('/api/metrics', metricsRoutes);
+// CPS routes receive a higher body-size limit — property payloads can be large
+app.use('/api/cps', express.json({ limit: '50mb' }));
 app.use('/api/cps', cpsRoutes);
 app.use('/api/health', healthRoutes);
 
