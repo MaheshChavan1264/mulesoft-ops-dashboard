@@ -60,13 +60,16 @@ export function getVisibleEnvIds() {
   }
 }
 
-/** Persist the visible env IDs to localStorage. Empty set clears the filter. */
+/** Persist the visible env IDs to localStorage. Empty set clears the filter.
+ *  Dispatches a 'envFilterChanged' CustomEvent so pages can react immediately
+ *  without a storage listener (which only fires cross-tab in the same browser). */
 export function saveVisibleEnvIds(idSet) {
   if (!idSet || idSet.size === 0) {
     localStorage.removeItem(ENV_FILTER_KEY);
   } else {
     localStorage.setItem(ENV_FILTER_KEY, JSON.stringify([...idSet]));
   }
+  window.dispatchEvent(new CustomEvent('envFilterChanged'));
 }
 
 /**
