@@ -247,9 +247,9 @@ const api = {
 
 ---
 
-### BUG-08 🔴 — 50MB JSON body limit applied globally to all routes
+### BUG-08 ✅ — 50MB JSON body limit applied globally to all routes
 
-**Status:** 🔴 Not Started  
+**Status:** ✅ Fixed — global limit reduced to 1MB; 50MB scoped to `/api/cps` only  
 **File:** `backend/src/server.js`  
 **Severity:** Medium — Security/performance: unauthenticated endpoints accept 50MB payloads
 
@@ -555,7 +555,7 @@ cd frontend && npm install -D vitest @vitest/ui
 | BUG-05 Dead setSessionFromResult | ✅ Fixed | `LoginPage.jsx` | Removed dead ref + merged double useAuth() call |
 | BUG-06 _redirecting never resets | ✅ Fixed | `api.js` | Added 5s reset timer after redirect |
 | BUG-07 Missing patch/put in api | ✅ Fixed | `api.js` | Added patch() and put() with demo mode support |
-| BUG-08 Global 50MB body limit | 🔴 Not Started | `server.js` | |
+| BUG-08 Global 50MB body limit | ✅ Fixed | `server.js` | Global 1MB; 50MB scoped to /api/cps only |
 | BUG-09 ping-spec route order | 🔴 Not Started | `exchange.js` | |
 | IMP-01 Move filter utils | 🔴 Not Started | `BgFilterModal`, `EnvFilterModal` | |
 | IMP-02 Rate limit auth routes | 🔴 Not Started | `server.js` / `auth.js` | |
