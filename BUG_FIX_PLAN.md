@@ -273,9 +273,9 @@ app.use('/api/cps', express.json({ limit: '50mb' }));
 
 ---
 
-### BUG-09 🔴 — `ping-spec` route defined after wildcard routes in `exchange.js`
+### BUG-09 ✅ — `ping-spec` route defined after wildcard routes in `exchange.js`
 
-**Status:** 🔴 Not Started  
+**Status:** ✅ Fixed — extracted handler to `handlePingSpec()` function; route registered before wildcards  
 **File:** `backend/src/routes/exchange.js`  
 **Severity:** Low — Currently safe but creates maintenance trap
 
@@ -556,7 +556,7 @@ cd frontend && npm install -D vitest @vitest/ui
 | BUG-06 _redirecting never resets | ✅ Fixed | `api.js` | Added 5s reset timer after redirect |
 | BUG-07 Missing patch/put in api | ✅ Fixed | `api.js` | Added patch() and put() with demo mode support |
 | BUG-08 Global 50MB body limit | ✅ Fixed | `server.js` | Global 1MB; 50MB scoped to /api/cps only |
-| BUG-09 ping-spec route order | 🔴 Not Started | `exchange.js` | |
+| BUG-09 ping-spec route order | ✅ Fixed | `exchange.js` | Handler extracted to named function; registered before wildcards |
 | IMP-01 Move filter utils | 🔴 Not Started | `BgFilterModal`, `EnvFilterModal` | |
 | IMP-02 Rate limit auth routes | 🔴 Not Started | `server.js` / `auth.js` | |
 | IMP-03 Persistent session store | 🔴 Not Started | `server.js` | |
