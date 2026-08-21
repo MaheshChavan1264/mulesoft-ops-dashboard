@@ -154,9 +154,8 @@ router.post('/ping', authMiddleware, async (req, res) => {
 
   if (qualifier) {
     console.log(`[Ping] Domain qualifier detected: "${qualifier}" (envName="${envName}") → primary base: ${base}`);
-    if (standardBase) {
-      console.log(`[Ping] Fallback ready (used only if ALL .${qualifier}. paths fail): ${standardBase}`);
-    }
+    if (httpBase)    console.log(`[Ping] HTTP fallback: ${httpBase} (tried if HTTPS .${qualifier}. TLS fails)`);
+    if (standardBase) console.log(`[Ping] Standard fallback: ${standardBase} (tried if ALL .${qualifier}. paths fail)`);
   }
 
   const outboundHeaders = {
@@ -177,24 +176,39 @@ router.post('/ping', authMiddleware, async (req, res) => {
   });
 
   // Build the ordered URL list:
-  //   1. All qualified (.fin.) paths  — tried first
-  //   2. All standard paths           — tried only if all qualified paths fail
+  //   1. HTTPS qualified (.fin.) paths  — tried first (correct URL, prefer HTTPS)
+  //   2. HTTP qualified (.fin.) paths   — tried if HTTPS fails (some .fin. servers use HTTP)
+  //   3. HTTPS standard paths           — final fallback (no qualifier)
+  const httpBase = qualifier ? base.replace(/^https:\/\//, 'http://') : null;
   const urlsToTry = [
+    // HTTPS .fin. paths
     ...PING_PATHS.map(p => queryParams ? `${base}${p}?${queryParams}` : `${base}${p}`),
+    // HTTP .fin. paths (fallback when HTTPS TLS fails on internal FIN servers)
+    ...(httpBase ? PING_PATHS.map(p => queryParams ? `${httpBase}${p}?${queryParams}` : `${httpBase}${p}`) : []),
+    // Standard HTTPS paths (no .fin. qualifier — final fallback)
     ...(standardBase ? PING_PATHS.map(p => queryParams ? `${standardBase}${p}?${queryParams}` : `${standardBase}${p}`) : []),
   ];
 
+  // Thresholds for phase-change logging
+  const httpsQualifiedCount = PING_PATHS.length;
+  const httpQualifiedCount  = httpBase ? PING_PATHS.length * 2 : PING_PATHS.length;
   const qualifiedPathCount = PING_PATHS.length; // number of .fin. paths before fallback starts
-  let loggedFallbackStart = false;
+  let loggedHttpFallback = false;
+  let loggedStandardFallback = false;
   const attempts = [];
 
   for (let _i = 0; _i < urlsToTry.length; _i++) {
     const url = urlsToTry[_i];
 
-    // Log once when we exhaust all qualified (.fin.) paths and start the standard fallback
-    if (standardBase && _i === qualifiedPathCount && !loggedFallbackStart) {
-      loggedFallbackStart = true;
-      console.log(`[Ping] All .${qualifier}. paths exhausted — now trying standard fallback: ${standardBase}`);
+    // Log when switching from HTTPS .fin. → HTTP .fin.
+    if (httpBase && _i === httpsQualifiedCount && !loggedHttpFallback) {
+      loggedHttpFallback = true;
+      console.log(`[Ping] HTTPS .${qualifier}. paths failed — now trying HTTP .${qualifier}.: ${httpBase}`);
+    }
+    // Log when switching from HTTP .fin. → standard HTTPS
+    if (standardBase && _i === httpQualifiedCount && !loggedStandardFallback) {
+      loggedStandardFallback = true;
+      console.log(`[Ping] All .${qualifier}. paths (HTTPS+HTTP) exhausted — now trying standard fallback: ${standardBase}`);
     }
 
     const t0 = Date.now();
