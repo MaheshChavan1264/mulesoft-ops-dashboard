@@ -8,7 +8,11 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
-        changeOrigin: true
+        changeOrigin: true,
+        // Extend proxy timeout to handle long-running ping tests
+        // (worst case: 12 paths × 30s each = 6 min; plus client 95s safety cutoff)
+        proxyTimeout: 120000,   // 2 minutes — covers 95s client timeout + backend overhead
+        timeout: 120000,
       }
     }
   },
