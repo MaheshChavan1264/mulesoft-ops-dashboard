@@ -219,10 +219,11 @@ export function buildPingUrl(appName, envName) {
   const n = (envName || '').toUpperCase();
 
   // Map env name → slug
+  // Note: "STAG" catches STAGING/STAGE; /\bSTG\b/ catches STG tier suffix (e.g. EI-FI-FINANCIALS-STG)
   let envSlug;
-  if (n.includes('PROD'))                          envSlug = 'prod';
-  else if (n.includes('STAG'))                     envSlug = 'stage';
-  else if (n.includes('UAT'))                      envSlug = 'uat';
+  if (n.includes('PROD'))                                   envSlug = 'prod';
+  else if (n.includes('STAG') || /\bSTG\b/.test(n))        envSlug = 'stage';
+  else if (n.includes('UAT'))                               envSlug = 'uat';
   else if (n.includes('DEV'))                      envSlug = 'dev';
   else if (n.includes('QA'))                       envSlug = 'qa';
   else if (n.includes('SAND') || n.includes('SB')) envSlug = 'sb';
