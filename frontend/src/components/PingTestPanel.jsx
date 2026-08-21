@@ -247,6 +247,16 @@ export default function PingTestPanel({
     const txId = generateTxId();
     setTransactionId(txId); // update field + curl command with the generated UUID
     setLoading(true); setResult(null); setError(null);
+
+    // Client-side safety timeout — prevents the button staying disabled forever
+    // if the backend is slow (6 paths × 30s each = up to 3 min worst case).
+    // After 95s the frontend stops waiting and shows a timeout error.
+    const clientTimeout = setTimeout(() => {
+      setError('Ping timed out waiting for response (95s). The backend may still be running — try again in a moment.');
+      setLoading(false);
+      setConfigOpen(false);
+    }, 95000);
+
     try {
       const { data } = await api.post('/health/ping', {
         targetType, appName,
@@ -259,9 +269,12 @@ export default function PingTestPanel({
         transactionId: txId,
         queryParams: queryParams.trim() || undefined,
       });
+      clearTimeout(clientTimeout);
       setResult(data);
-    } catch (err) { setError(err.response?.data?.error || err.message || 'Ping request failed'); }
-    finally {
+    } catch (err) {
+      clearTimeout(clientTimeout);
+      setError(err.response?.data?.error || err.message || 'Ping request failed');
+    } finally {
       setLoading(false);
       setConfigOpen(false); // collapse config after ping completes
     }
