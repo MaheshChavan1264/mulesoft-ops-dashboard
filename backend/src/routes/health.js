@@ -21,7 +21,32 @@ const PING_PATHS = [
 ];
 const PING_TIMEOUT_MS = 30000; // 30 s — some apps (e.g. PAPIs calling Oracle) need more time
 
-function buildBaseUrl(targetType, appName, ch2IngressUrl, envType) {
+/**
+ * Returns a domain-qualifier segment to insert between the env slug and
+ * "internalapi.sfdcbt.net" for environment families that use a dedicated
+ * sub-domain.
+ *
+ * EI-FI-FINANCIALS-*  →  "fin"
+ *   e.g.  app.stage.fin.internalapi.sfdcbt.net
+ *
+ * Add more rules here as new environment families are discovered.
+ */
+function getDomainQualifier(normalizedEnvName) {
+  if (normalizedEnvName.includes('FINANCIALS')) return 'fin';
+  return '';
+}
+
+/**
+ * Build the base URL for a CH1 or CH2 ping.
+ *
+ * @param {string} targetType      'CH1' | 'CH2'
+ * @param {string} appName         Application name
+ * @param {string} ch2IngressUrl   CH2 ingress URL (may be comma-separated)
+ * @param {string} envType         'production' | 'sandbox' | 'design' (Anypoint env type)
+ * @param {string} [envName]       Full environment display name e.g. "EI-FI-FINANCIALS-STAGING"
+ *                                 Used to detect domain families that need a qualifier segment.
+ */
+function buildBaseUrl(targetType, appName, ch2IngressUrl, envType, envName) {
   const safe = (appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
 
   if (targetType === 'CH2' && ch2IngressUrl) {
@@ -40,9 +65,17 @@ function buildBaseUrl(targetType, appName, ch2IngressUrl, envType) {
   // Only treat as production when envType is explicitly 'production';
   // empty / unknown defaults to stage (all non-prod CH1 apps are on stage).
   const isProd = (envType || '').toLowerCase() === 'production';
-  return isProd
-    ? `https://${safe}.internalapi.sfdcbt.net`
-    : `https://${safe}.stage.internalapi.sfdcbt.net`;
+  const slug = isProd ? 'prod' : 'stage';
+
+  // Detect optional domain qualifier from the full environment name.
+  // e.g. "EI-FI-FINANCIALS-STAGING" → qualifier = "fin"
+  //      → ei-sapi-et-orafin-invoice-v1-uw2-fs2.stage.fin.internalapi.sfdcbt.net
+  const qualifier = getDomainQualifier((envName || '').toUpperCase());
+  const domain = qualifier
+    ? `${slug}.${qualifier}.internalapi.sfdcbt.net`
+    : `${slug}.internalapi.sfdcbt.net`;
+
+  return `https://${safe}.${domain}`;
 }
 
 // ─── POST /api/health/oauth2-token ───────────────────────────────────────────
@@ -97,13 +130,14 @@ router.post('/ping', authMiddleware, async (req, res) => {
     transactionId = 'smokeTest',
     queryParams = '',   // optional: "key1=val1&key2=val2" appended to every ping URL
     envType = '',       // 'production' | 'sandbox' | 'design' — selects CH1 domain
+    envName = '',       // full env display name e.g. "EI-FI-FINANCIALS-STAGING" — used for domain qualifier
   } = req.body || {};
 
   if (!appName) {
     return res.status(400).json({ error: 'appName is required' });
   }
 
-  const base = buildBaseUrl(targetType, appName, ch2IngressUrl, envType);
+  const base = buildBaseUrl(targetType, appName, ch2IngressUrl, envType, envName);
 
   const outboundHeaders = {
     Accept: 'application/json, */*',

@@ -5,12 +5,14 @@ import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { findOAuth2Url, flattenCpsResponse } from '../utils/cpsHelpers';
 import AttemptLog from './AttemptLog';
+import { buildPingUrl } from '../utils/appUtils';
 export default function PingTestPanel({
   appName, isCH1, ch2IngressUrl, orgId, envId,
   defaultClientId = '', defaultClientSecret = '',
   cpsBaseUrl = '', cpsClientId = '', cpsKey = '', cpsEnv = '',
   pingSpec = null, pingSpecLoading = false,
   envType = '',   // 'production' | 'sandbox' | 'design' — selects CH1 domain
+  envName = '',   // full env display name e.g. "EI-FI-FINANCIALS-STAGING" — used for domain qualifier
 }) {
   const { hasCredentials, resolveFromCandidates } = useCredentialStore();
   const { getSecret: getCpsSecret, hasCredentials: hasCpsCreds } = useCpsCredentialStore();
@@ -224,12 +226,20 @@ export default function PingTestPanel({
   };
 
   const targetType = isCH1 ? 'CH1' : 'CH2';
-  // Only use prod URL when envType is explicitly 'production'; everything else → stage
+  // Build CH1 base URL — injects .fin. (or other qualifier) when environment name
+  // signals a domain family e.g. EI-FI-FINANCIALS-STAGING → app.stage.fin.internalapi.sfdcbt.net
+  // Falls back to prod vs stage selection when envName is not provided (old callers).
   const isProdEnv = (envType || '').toLowerCase() === 'production';
   const safeName = (appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-  const ch1Base = isProdEnv
-    ? `https://${safeName}.internalapi.sfdcbt.net`
-    : `https://${safeName}.stage.internalapi.sfdcbt.net`;
+  const ch1Base = (() => {
+    if (envName) {
+      const built = buildPingUrl(appName, envName);
+      if (built) return `https://${built}`;
+    }
+    return isProdEnv
+      ? `https://${safeName}.internalapi.sfdcbt.net`
+      : `https://${safeName}.stage.internalapi.sfdcbt.net`;
+  })();
   const displayBase = isCH1 ? ch1Base : ch2IngressUrl || '(no ingress URL detected)';
 
   // Auto-collapse config panel when ping completes
@@ -242,6 +252,7 @@ export default function PingTestPanel({
         targetType, appName,
         ch2IngressUrl: isCH1 ? undefined : ch2IngressUrl,
         envType: isCH1 ? envType : undefined,
+        envName: isCH1 ? envName : undefined,  // full name — backend injects .fin. for FINANCIALS envs
         ...(authMode === 'bearer-token'
           ? { bearerToken: bearerToken.trim() || undefined }
           : { clientId: clientId.trim() || undefined, clientSecret: clientSecret.trim() || undefined }),

@@ -161,3 +161,74 @@ export function downloadCsv(rows, filename) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ── Ping URL construction ─────────────────────────────────────────────────────
+
+/**
+ * Returns an optional domain-qualifier segment to insert between the env slug
+ * and the shared "internalapi" base hostname.
+ *
+ * Some environment families are routed through a dedicated sub-domain:
+ *
+ *   EI-FI-FINANCIALS-*  →  "fin"
+ *     {app}.stage.fin.internalapi.sfdcbt.net
+ *
+ * Add more rules here as new environment families are discovered.
+ *
+ * @param {string} normalizedEnvName  Upper-cased environment name
+ * @returns {string}  qualifier segment, or empty string for standard envs
+ */
+export function getDomainQualifier(normalizedEnvName) {
+  if (normalizedEnvName.includes('FINANCIALS')) return 'fin';
+  // if (normalizedEnvName.includes('SECURITY')) return 'sec';
+  return '';
+}
+
+/**
+ * Build the ping URL for a CloudHub 1.0 application.
+ *
+ * Standard pattern:
+ *   {appName}.{envSlug}.internalapi.sfdcbt.net
+ *
+ * With domain qualifier (e.g. EI-FI-FINANCIALS-* environments):
+ *   {appName}.{envSlug}.fin.internalapi.sfdcbt.net
+ *
+ * envSlug mapping from environment name:
+ *   "PROD" / "Production" / "EI-PROD"          → "prod"
+ *   "EI-STAGING" / "EI-STAGING2" / "STAG"      → "stage"
+ *   "EI-UAT"                                   → "uat"
+ *   "EI-DEV"                                   → "dev"
+ *   "EI-QA"                                    → "qa"
+ *   "EI-SANDBOX" / "FI-SANDBOX" / "SB"         → "sb"
+ *   "EI-FI-FINANCIALS-STAGING"                 → "stage" with "fin" qualifier
+ *   other                                       → lower-case env name
+ *
+ * Falls back to app.domain / app.defaultDomain when the env name cannot be mapped.
+ *
+ * @param {string} appName   Application name (used as hostname label)
+ * @param {string} envName   Environment display name
+ * @returns {string}
+ */
+export function buildPingUrl(appName, envName) {
+  const name = (appName || '').toLowerCase();
+  const n = (envName || '').toUpperCase();
+
+  // Map env name → slug
+  let envSlug;
+  if (n.includes('PROD'))                          envSlug = 'prod';
+  else if (n.includes('STAG'))                     envSlug = 'stage';
+  else if (n.includes('UAT'))                      envSlug = 'uat';
+  else if (n.includes('DEV'))                      envSlug = 'dev';
+  else if (n.includes('QA'))                       envSlug = 'qa';
+  else if (n.includes('SAND') || n.includes('SB')) envSlug = 'sb';
+  else                                             envSlug = (envName || '').toLowerCase();
+
+  if (!name || !envSlug) return '';
+
+  // Insert optional domain qualifier between envSlug and internalapi
+  // e.g. EI-FI-FINANCIALS-STAGING → slug=stage, qualifier=fin
+  //      → ei-app.stage.fin.internalapi.sfdcbt.net
+  const qualifier = getDomainQualifier(n);
+  const domainPart = qualifier ? `${envSlug}.${qualifier}` : envSlug;
+  return `${name}.${domainPart}.internalapi.sfdcbt.net`;
+}
