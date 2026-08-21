@@ -45,11 +45,6 @@ const mockHandler = async (url, params) => {
     return { data: mock.MOCK_BUSINESS_GROUPS[0] };
   }
 
-  // Metrics
-  if (url.startsWith('/metrics/summary')) {
-    return { summary: mock.MOCK_METRICS };
-  }
-
   // API Manager
   if (url.includes('/policies')) {
     return { policies: mock.MOCK_POLICIES };

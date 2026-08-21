@@ -53,7 +53,7 @@ function buildBaseUrl(targetType, appName, ch2IngressUrl, envType) {
  * Body: { tokenUrl, clientId, clientSecret, grantType?, scope? }
  * Response: { access_token, token_type, expires_in }
  */
-router.post('/oauth2-token', async (req, res) => {
+router.post('/oauth2-token', authMiddleware, async (req, res) => {
   const { tokenUrl, clientId, clientSecret, grantType = 'client_credentials', scope } = req.body || {};
   if (!tokenUrl || !clientId || !clientSecret) {
     return res.status(400).json({ error: 'tokenUrl, clientId, and clientSecret are required' });
@@ -86,7 +86,7 @@ router.post('/oauth2-token', async (req, res) => {
 /**
  * POST /api/health/ping
  */
-router.post('/ping', async (req, res) => {
+router.post('/ping', authMiddleware, async (req, res) => {
   const {
     targetType = 'CH1',
     appName,
