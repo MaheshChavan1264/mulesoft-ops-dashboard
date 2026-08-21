@@ -1342,8 +1342,23 @@ export default function ApplicationDetailPage() {
                   <button
                     disabled={secureLoading}
                     onClick={async () => {
-                      setSecureLoading(true);
                       try {
+                        setSecureLoading(true);
+                        // Re-post ALL CSV credentials before the secure fetch.
+                        // The session may have expired or been cleared since the
+                        // non-secure load — this ensures getCredentials() can find
+                        // a valid credential and doesn't return 422.
+                        if (hasCpsCsvCredentials && cpsBaseUrl) {
+                          const normBase = cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+                          const allCreds = getAllCredentials();
+                          if (allCreds.length > 0) {
+                            const credMap = {};
+                            for (const { clientId, clientSecret } of allCreds) {
+                              credMap[`${normBase}::${clientId}`] = { clientId, clientSecret };
+                            }
+                            try { await api.post('/cps/credentials', { credentials: credMap }); } catch {}
+                          }
+                        }
                         const sr = await api.get('/cps/fetch', { params: {
                           baseUrl: cpsBaseUrl, type: 'secure', environment: cpsData.useEnv,
                           keys: cpsData.secureKeys, deploymentType: cpsDepType, envName: appEnvName, bgOrgId: orgId
