@@ -150,6 +150,13 @@ router.post('/ping', authMiddleware, async (req, res) => {
     ? buildBaseUrl(targetType, appName, ch2IngressUrl, envType, '') // pass empty envName → no qualifier
     : null;
 
+  if (qualifier) {
+    console.log(`[Ping] Domain qualifier detected: "${qualifier}" (envName="${envName}") → .${qualifier}. injected in base URL`);
+    if (standardBase) {
+      console.log(`[Ping] Standard fallback base: ${standardBase} (tried after all .${qualifier}. paths fail)`);
+    }
+  }
+
   const outboundHeaders = {
     Accept: 'application/json, */*',
     'Content-Type': 'application/json', // always sent — required by many Mule APIs
