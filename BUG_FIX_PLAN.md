@@ -136,9 +136,9 @@ if (process.env.NODE_ENV === 'production') {
 
 ---
 
-### BUG-05 🔴 — Dead context reference + double `useAuth()` call in `LoginPage`
+### BUG-05 ✅ — Dead context reference + double `useAuth()` call in `LoginPage`
 
-**Status:** 🔴 Not Started  
+**Status:** ✅ Fixed — removed `setSessionFromResult`; merged into single `useAuth()` call  
 **File:** `frontend/src/pages/LoginPage.jsx`  
 **Severity:** Medium — Dead code from incomplete refactor; `setSessionFromResult` is `undefined`
 
@@ -552,7 +552,7 @@ cd frontend && npm install -D vitest @vitest/ui
 | ~~BUG-02 Missing sidebar links~~ | ✅ Resolved | N/A | Resolved by removing the pages |
 | BUG-03 Unauthenticated /ping | ✅ Fixed | `health.js` | Added `authMiddleware` to `/ping` and `/oauth2-token` |
 | BUG-04 Session secret + cookie | ✅ Fixed | `server.js`, `.env.example` | Validation + secure/httpOnly/sameSite cookie |
-| BUG-05 Dead setSessionFromResult | 🔴 Not Started | `LoginPage.jsx` | |
+| BUG-05 Dead setSessionFromResult | ✅ Fixed | `LoginPage.jsx` | Removed dead ref + merged double useAuth() call |
 | BUG-06 _redirecting never resets | 🔴 Not Started | `api.js` | |
 | BUG-07 Missing patch/put in api | 🔴 Not Started | `api.js` | |
 | BUG-08 Global 50MB body limit | 🔴 Not Started | `server.js` | |
