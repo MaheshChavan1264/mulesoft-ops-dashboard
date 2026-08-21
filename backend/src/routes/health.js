@@ -198,6 +198,7 @@ router.post('/ping', authMiddleware, async (req, res) => {
     }
 
     const t0 = Date.now();
+    console.log(`[Ping] → Trying: ${url}`);
 
     try {
       const response = await axios.get(url, {
@@ -208,7 +209,7 @@ router.post('/ping', authMiddleware, async (req, res) => {
         httpsAgent,
       });
 
-      console.log(`[Ping] ${url} → ${response.status}`);
+      console.log(`[Ping] ✓ ${url} → HTTP ${response.status} (${Date.now() - t0}ms)`);
 
       const responseTimeMs = Date.now() - t0;
       const httpStatus = response.status;
@@ -301,6 +302,7 @@ router.post('/ping', authMiddleware, async (req, res) => {
         errorDetail = 'SSL certificate error';
       }
 
+      console.log(`[Ping] ✗ ${url} → ${errorDetail} (${responseTimeMs}ms)`);
       attempts.push({ url, error: errorDetail, responseTimeMs, payload: null });
     }
   }
