@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
+const rateLimit = require('express-rate-limit');
 
 // ── Session secret validation ─────────────────────────────────────────────────
 // Fail fast in production if SESSION_SECRET is not set or is the known default.
@@ -64,6 +65,23 @@ app.use(session({
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
+
+// ── Rate limiting — auth endpoints only ─────────────────────────────────────
+// Limit login attempts to prevent brute-force attacks.
+// 20 attempts per IP per 15-minute window is generous for legitimate use
+// while blocking automated credential-stuffing.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 20,                    // max 20 login attempts per IP per window
+  standardHeaders: true,      // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false,       // Disable the `X-RateLimit-*` headers
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  skip: (req) => process.env.NODE_ENV !== 'production', // only enforce in production
+});
+
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/token-login', authLimiter);
+app.use('/api/auth/connected-app-login', authLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);

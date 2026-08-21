@@ -325,9 +325,9 @@ import { applyEnvFilter } from '../components/EnvFilterModal';
 
 ---
 
-### IMP-02 🔴 — Add `express-rate-limit` to authentication routes
+### IMP-02 ✅ — Add `express-rate-limit` to authentication routes
 
-**Status:** 🔴 Not Started  
+**Status:** ✅ Fixed — 20 req/15 min per IP; production-only enforcement  
 **File:** `backend/src/server.js` or `backend/src/routes/auth.js`  
 **Severity:** Medium Security — No brute-force protection on login
 
@@ -558,7 +558,7 @@ cd frontend && npm install -D vitest @vitest/ui
 | BUG-08 Global 50MB body limit | ✅ Fixed | `server.js` | Global 1MB; 50MB scoped to /api/cps only |
 | BUG-09 ping-spec route order | ✅ Fixed | `exchange.js` | Handler extracted to named function; registered before wildcards |
 | IMP-01 Move filter utils | ✅ Fixed | `filterUtils.js`, `BgFilterModal`, `EnvFilterModal` | Canonical utils in filterUtils.js; modals re-export |
-| IMP-02 Rate limit auth routes | 🔴 Not Started | `server.js` / `auth.js` | |
+| IMP-02 Rate limit auth routes | ✅ Fixed | `server.js` | 20 req/15 min per IP on login routes; prod-only |
 | IMP-03 Persistent session store | 🔴 Not Started | `server.js` | |
 | IMP-04 React Error Boundaries | 🔴 Not Started | `App.jsx` | |
 | IMP-05 Fix README routes | 🔴 Not Started | `README.md` | |
