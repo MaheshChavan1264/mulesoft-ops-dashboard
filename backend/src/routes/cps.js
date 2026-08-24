@@ -495,6 +495,15 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     return '';
   }
 
+  /** Check if a non-secure CPS response contains no usable data */
+  function isEmptyNsResponse(data) {
+    if (!data) return true;
+    if (Array.isArray(data?.responses)) return data.responses.every(r => !r?.properties || Object.keys(r.properties).length === 0);
+    if (Array.isArray(data)) return data.length === 0;
+    if (typeof data === 'object') return Object.keys(data).length === 0;
+    return true;
+  }
+
   /** Process one app — fetch non-secure + optionally secure, return matched props */
   async function processApp(appEntry) {
     const { appName, appId, cpsBaseUrl, cpsKey, cpsEnv, deploymentType, envName, bgOrgId } = appEntry;
@@ -502,22 +511,60 @@ router.post('/search-user', authMiddleware, async (req, res) => {
 
     const envType = detectEnvType(cpsBaseUrl, cpsEnv, envName);
     const chType = detectChType(deploymentType || '');
-    const creds = getCredentials(req, cpsBaseUrl, bgOrgId, envType, chType);
-    if (!creds) return null; // no credentials — skip silently
+    let creds = getCredentials(req, cpsBaseUrl, bgOrgId, envType, chType);
+    if (!creds) return null; // no credentials configured — skip silently
 
     const cleanBase = normaliseUrl(cpsBaseUrl);
     const params = { environment: cpsEnv, keys: cpsKey };
+    const nsUrl = `${cleanBase}/api/v2/properties/non-secure`;
 
     let matchedProps = [];
 
-    // ── Non-secure fetch ──────────────────────────────────────────────────
+    // ── Non-secure fetch with credential retry ────────────────────────────
+    // Unlike /fetch, processApp previously had no retry logic — wrong-credential
+    // apps were silently skipped. Now mirrors /fetch retry behaviour.
+    let nsRes;
     try {
-      const nsUrl = `${cleanBase}/api/v2/properties/non-secure`;
-      const nsRes = await axios.get(nsUrl, {
+      nsRes = await axios.get(nsUrl, {
         headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
         params,
         timeout: 15000,
+        validateStatus: () => true,
       });
+
+      // Retry on 401 or empty response — try all other session credentials
+      if (nsRes.status === 401 || (nsRes.status === 200 && isEmptyNsResponse(nsRes.data))) {
+        const reason = nsRes.status === 401 ? '401' : 'empty response';
+        const sessionCreds = req.session.cpsCreds || {};
+        const altEntries = Object.entries(sessionCreds)
+          .filter(([k, v]) => k.startsWith(`${cleanBase}::`) && v?.clientId && v?.clientId !== creds.clientId && v?.clientSecret);
+        if (altEntries.length > 0) {
+          console.log(`[search-user] "${appName}" — ${reason}, trying ${altEntries.length} alt credential(s)`);
+          for (const [, altCred] of altEntries) {
+            try {
+              const retry = await axios.get(nsUrl, {
+                headers: { client_id: altCred.clientId, client_secret: altCred.clientSecret, 'Content-Type': 'application/json' },
+                params,
+                timeout: 8000,
+                validateStatus: () => true,
+              });
+              if (retry.status !== 401 && !(retry.status === 200 && isEmptyNsResponse(retry.data))) {
+                nsRes = retry;
+                creds = altCred; // use this cred for secure fetch too
+                console.log(`[search-user] "${appName}" — alt credential resolved ✅`);
+                break;
+              }
+            } catch { /* try next */ }
+          }
+        }
+      }
+
+      // After retry, if still 401 or error — skip
+      if (nsRes.status === 401 || nsRes.status >= 500) {
+        console.warn(`[search-user] "${appName}" — HTTP ${nsRes.status} after retry, skipping`);
+        return null;
+      }
+
       const nsFlat = flattenProps(nsRes.data);
       const nsHits = scanProps(nsFlat, 'non-secure').map(h => ({
         ...h, secureGroupKey: '', password: findPassword(nsFlat, h.key),
@@ -533,6 +580,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
             params: { environment: cpsEnv, keys: secureKeyStr },
             timeout: 15000,
+            validateStatus: () => true,
           });
           // Parse per-group to track which secure group each match came from
           const sData = sRes.data;
@@ -551,7 +599,12 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           }
         } catch { /* secure fetch failed — continue with non-secure results */ }
       }
-    } catch { return null; }
+    } catch (err) {
+      // Log the error type so logs distinguish timeout/network from no-match
+      const code = err.code || (err.response?.status ? `HTTP ${err.response.status}` : 'ERR');
+      console.warn(`[search-user] processApp failed for "${appName}" [${code}]: ${err.message}`);
+      return null;
+    }
 
     if (matchedProps.length === 0) return null;
     return {
@@ -567,8 +620,9 @@ router.post('/search-user', authMiddleware, async (req, res) => {
 
   // ── Concurrency-limited fan-out ──────────────────────────────────────────
   const results = [];
-  let skipped = 0;
-  let scanned = 0;
+  let skipped = 0;   // apps with no CPS config or no credentials
+  let scanned = 0;   // apps successfully queried (with or without matches)
+  let matched = 0;   // apps with at least one matching property
 
   for (let i = 0; i < apps.length; i += CONCURRENCY) {
     const batch = apps.slice(i, i + CONCURRENCY);
@@ -579,6 +633,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           skipped++;
         } else {
           scanned++;
+          matched++;
           results.push(outcome.value);
         }
       } else {
@@ -587,8 +642,8 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     }
   }
 
-  console.log(`[search-user] "${username}" — scanned ${scanned}, matched ${results.length}, skipped ${skipped}`);
-  res.json({ results, scanned: scanned + results.length, skipped });
+  console.log(`[search-user] "${username}" — total: ${apps.length}, matched: ${matched}, skipped/no-match: ${skipped}`);
+  res.json({ results, scanned: apps.length, matched, skipped });
 });
 
 module.exports = router;
