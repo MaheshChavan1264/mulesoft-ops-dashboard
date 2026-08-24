@@ -26,7 +26,7 @@ function chLabel(dt) {
 function extractCpsConfig(app, orgId) {
   const ds = app.target?.deploymentSettings || {};
   const ps = (app.application?.configuration || {})['mule.agent.application.properties.service'] || {};
-  const p = { ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}), ...(app.properties || {}) };
+  const p = { ...(ps.properties || {}), ...(ds.runtimeProperties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}), ...(app.properties || {}) };
   return {
     cpsBaseUrl: p['cps.configServerBaseUrl'] || p['config.server.base.url'] || '',
     cpsKey: p['cps.projectName'] || p['cloudhub.api.name'] || app.name || '',
