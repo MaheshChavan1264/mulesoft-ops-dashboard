@@ -291,7 +291,7 @@ export default function UserSearchPage() {
       bgEnvSelections.map(async (sel) => {
         const apps = await fetchAppsForEnv(sel.bgId, sel.envId, sel.envName);
         const entries = apps
-          .map(a => ({ appName: a.name, appId: a.id || a.name, ...extractCpsConfig(a, sel.bgId) }))
+          .map(a => ({ appName: a.name, appId: a.id || a.name, ...extractCpsConfig(a, sel.bgId), envName: a.environment?.name || sel.envName }))
           .filter(e => e.cpsBaseUrl && e.cpsKey);
         // Fire-and-forget credentials (no await)
         if (entries.length) postCreds(entries);
