@@ -192,20 +192,26 @@ export default function UserSearchPage() {
     if (!hasCpsCreds) return;
     const allCreds = getAllCredentials();
     if (!allCreds.length) return;
-    const urlMap = new Map();
+    // Key by norm-url::bgOrgId so each BG gets its own correct credential entry.
+    // Previously keyed by norm-url only → always stored under entries[0].bgOrgId
+    // which caused credential lookups for other BGs to silently fail.
+    const urlBgMap = new Map();
     for (const e of entries) {
       if (!e.cpsBaseUrl) continue;
       const norm = e.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
-      if (urlMap.has(norm)) continue;
-      if (e.cpsClientId) { const s = getSecret(e.cpsClientId); if (s) { urlMap.set(norm, { clientId: e.cpsClientId, clientSecret: s }); continue; } }
-      if (allCreds.length) urlMap.set(norm, allCreds[0]);
+      const bgKey = `${norm}::${e.bgOrgId}`;
+      if (urlBgMap.has(bgKey)) continue;
+      let cred = null;
+      if (e.cpsClientId) { const s = getSecret(e.cpsClientId); if (s) cred = { clientId: e.cpsClientId, clientSecret: s }; }
+      if (!cred && allCreds.length) cred = allCreds[0];
+      if (cred) urlBgMap.set(bgKey, { norm, bgOrgId: e.bgOrgId, ...cred });
     }
     // Fire without await — credentials are stored in session for the backend,
     // the CPS search itself handles 401-retry, so no need to block on this
-    for (const [norm, { clientId, clientSecret }] of urlMap.entries()) {
+    for (const [bgKey, { norm, clientId, clientSecret }] of urlBgMap.entries()) {
       api.post('/cps/credentials', { credentials: {
-        [norm + '::' + (entries[0]?.bgOrgId || '')]: { clientId, clientSecret },
-        [norm]: { clientId, clientSecret },
+        [bgKey]: { clientId, clientSecret },  // ← correct BG-specific key (norm::bgOrgId)
+        [norm]:  { clientId, clientSecret },  // ← URL-only fallback for non-BG lookups
       }}).catch(() => {});
     }
   }, [hasCpsCreds, getAllCredentials, getSecret]);
