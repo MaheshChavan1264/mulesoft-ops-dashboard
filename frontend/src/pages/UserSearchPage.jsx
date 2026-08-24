@@ -374,7 +374,7 @@ export default function UserSearchPage() {
   };
 
   const selCount = bgEnvSelections.length;
-  const COL_HEADERS = ['Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
+  const COL_HEADERS = ['#', 'Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
 
   return (
     <div className="space-y-6">
@@ -491,8 +491,9 @@ export default function UserSearchPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {results.map((row, i) => (
+                      {results.map((row, i) => (
                       <tr key={i} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors last:border-0">
+                        <td className="px-3 py-3 text-xs text-slate-600 font-mono tabular-nums text-right select-none w-8">{i + 1}</td>
                         <td className="px-3 py-3 text-xs text-slate-300 whitespace-nowrap">{row.chEnv}</td>
                         <td className="px-3 py-3 whitespace-nowrap">
                           <span className={'text-[10px] px-2 py-0.5 rounded font-bold border ' + (row.chVersion === 'CloudHub 2.0' ? 'bg-blue-950/40 text-blue-300 border-blue-700/40' : 'bg-purple-950/40 text-purple-300 border-purple-700/40')}>
