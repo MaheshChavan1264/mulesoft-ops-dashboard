@@ -216,7 +216,9 @@ export default function UserSearchPage() {
     let ch2List = [];
 
     // ── Try app summary cache first (already loaded by ApplicationsPage) ──
-    const cacheKey = `apps:__all__:${bgId}`;
+    // ApplicationsPage stores with key: apps:${bgId}:${bgIds.join(',')}
+    // For a single BG that resolves to: apps:${bgId}:${bgId}
+    const cacheKey = `apps:${bgId}:${bgId}`;
     const cachedSummary = getCached(cacheKey);
     // ── CH2: use summary cache for list (avoids fresh list fetch) ─────────
     if (cachedSummary?.apps) {
