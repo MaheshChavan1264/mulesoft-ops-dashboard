@@ -124,7 +124,9 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
         {search && <button onClick={() => setSearch('')} className="text-slate-500 hover:text-slate-300 text-xs flex-shrink-0">✕</button>}
         <div className="flex items-center gap-2 flex-shrink-0 border-l border-slate-700/60 pl-2">
           <span className="text-[10px] text-slate-500">{selections.size}/{allEnvs.length}</span>
-          <button onClick={selectAll} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium">All</button>
+          <button onClick={selectAll} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium">
+            {searchLo ? 'Select visible' : 'All'}
+          </button>
           <button onClick={clearAll} className="text-[10px] text-slate-500 hover:text-slate-300">Clear</button>
         </div>
       </div>
@@ -311,6 +313,12 @@ export default function UserSearchPage() {
       })
     );
 
+    // ── Bug 7: surface env-level fetch failures to the user ───────────────
+    const failedEnvCount = envResults.filter(r => r.status === 'rejected').length;
+    if (failedEnvCount > 0) {
+      setError(`Warning: ${failedEnvCount} environment${failedEnvCount !== 1 ? 's' : ''} could not be loaded and were skipped. Results may be incomplete.`);
+    }
+
     // ── Phase 2: Flatten + deduplicate entries ─────────────────────────────
     const seen = new Set();
     const allEntries = envResults
@@ -431,7 +439,10 @@ export default function UserSearchPage() {
           </div>
           <div className="w-full max-w-xs">
             <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-cyan-600 rounded-full animate-pulse w-full" />
+              <div
+                className="h-full bg-cyan-600 rounded-full transition-all duration-300"
+                style={{ width: progress.envsTotal > 0 ? `${Math.round((progress.envsDone / progress.envsTotal) * 100)}%` : '0%' }}
+              />
             </div>
           </div>
         </div>
