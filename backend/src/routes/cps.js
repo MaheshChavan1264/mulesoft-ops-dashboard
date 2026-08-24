@@ -63,7 +63,8 @@ function getCredentials(req, rawBaseUrl, bgOrgId, envType, chType) {
 function detectEnvType(baseUrl = '', environment = '', envName = '') {
   const s = `${baseUrl} ${environment} ${envName}`.toLowerCase();
   if (/\b(prod|pd)\b/.test(s)) return 'prod';
-  if (/\b(uat|ut|stage|stg|uap|sandbox)\b/.test(s)) return 'uat';
+  // \bstage\b does NOT match "staging" — use stag(e|ing)? to cover both
+  if (/\b(uat|ut|stag(e|ing)?|stg|uap|sandbox)\b/.test(s)) return 'uat';
   return 'prod';
 }
 
