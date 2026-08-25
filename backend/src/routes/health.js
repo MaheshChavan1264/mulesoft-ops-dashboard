@@ -32,10 +32,8 @@ const PING_TIMEOUT_MS = 30000; // 30 s — some apps (e.g. PAPIs calling Oracle)
  * Add more rules here as new environment families are discovered.
  */
 function getDomainQualifier(normalizedEnvName) {
-  // EI-FI-FINANCIALS-* — explicit "FINANCIALS" keyword
+  // EI-FI-FINANCIALS-* — explicit "FINANCIALS" keyword only
   if (normalizedEnvName.includes('FINANCIALS')) return 'fin';
-  // EI-FI-* — Financial Infrastructure bucket (e.g. EI-FI-FS2, EI-FI-STAGING)
-  if (/-FI-/.test(normalizedEnvName)) return 'fin';
   return '';
 }
 
