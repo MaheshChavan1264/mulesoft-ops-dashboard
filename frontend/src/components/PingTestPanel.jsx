@@ -424,7 +424,7 @@ export default function PingTestPanel({
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">x-transaction-id</label>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1"><Terminal size={9} /> x-transaction-id</label>
                 <input value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="smokeTest" className={inputCls} />
               </div>
             </div>
@@ -445,8 +445,8 @@ export default function PingTestPanel({
                 {tokenExpiresIn && <p className="text-[10px] text-emerald-500">✓ Token fetched — expires in {tokenExpiresIn}s</p>}
                 {bearerToken && !tokenExpiresIn && <p className="text-[10px] text-blue-400/70">🎟 Will send as <code className="text-blue-300">Authorization: Bearer …</code></p>}
               </div>
-              <div className="space-y-1 w-48">
-                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">x-transaction-id</label>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1"><Terminal size={9} /> x-transaction-id</label>
                 <input value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="smokeTest" className={inputCls} />
               </div>
               {/* OAuth2 helper */}
