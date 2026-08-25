@@ -575,15 +575,15 @@ export default function PingTestPage() {
       const cpsApiId = findApiId(nsFlat);
       let tokenUrl = findOAuth2Url(nsFlat);
 
-      // Step 3: If token URL not in non-secure, scan secure CPS
+      // Step 3: If token URL not in non-secure, scan ALL secure keys for OAuth2 URL.
+      // Token URLs can be in any secure group, not just jwt/auth named keys.
       if (!tokenUrl) {
         const secureKeys = (nsFlat['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean);
-        const jwtKey = secureKeys.find(k => k.toLowerCase().includes('jwt') || k.toLowerCase().includes('auth'));
-        if (jwtKey) {
+        if (secureKeys.length > 0) {
           try {
-            const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: jwtKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
+            const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: secureKeys.join(','), ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
             const sg = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
-            for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } } // findOAuth2Url from cpsHelpers
+            for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } }
           } catch {}
         }
       }

@@ -149,11 +149,12 @@ export default function PingTestPanel({
         const nsProps = flattenCpsProps(nsRes.data);
         foundTokenUrl = findOAuth2Url(nsProps);
 
-        // If not found in non-secure, try CPS secure (jwt-auth-details group)
+        // If not found in non-secure, scan ALL secure keys for an OAuth2 token URL.
+        // Previously only searched keys named "jwt" or "auth" — token URLs can be
+        // in any secure group (e.g. salesforce-details, oracle-details, etc.).
         if (!foundTokenUrl) {
           const secureKeys = (nsProps['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean);
-          const jwtKey = secureKeys.find(k => k.toLowerCase().includes('jwt') || k.toLowerCase().includes('auth'));
-          if (jwtKey) {
+          if (secureKeys.length > 0) {
             try {
               if (cpsClientId && hasCpsCreds) {
                 const secret = getCpsSecret(cpsClientId);
@@ -162,7 +163,8 @@ export default function PingTestPanel({
                   await api.post('/cps/credentials', { credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } } });
                 }
               }
-              const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: jwtKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
+              // Fetch all secure keys at once — each group is a separate response entry
+              const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: secureKeys.join(','), ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
               const sg = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
               for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { foundTokenUrl = u; break; } }
             } catch { /* continue */ }

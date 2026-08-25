@@ -439,10 +439,10 @@ function BulkPingModal({ apps, onClose }) {
           const nsProps = flattenCpsResponse(nsRes.data);
           tokenUrl = findOAuth2Url(nsProps) || null;
           if (!tokenUrl) {
+            // Scan ALL secure keys for an OAuth2 token URL (not just jwt/auth named keys)
             const secKeys = (nsProps['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean);
-            const jwtKey = secKeys.find(k => k.toLowerCase().includes('jwt') || k.toLowerCase().includes('auth'));
-            if (jwtKey) {
-              const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: jwtKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: bgId } });
+            if (secKeys.length > 0) {
+              const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: secKeys.join(','), ...(cpsEnv && { environment: cpsEnv }), bgOrgId: bgId } });
               const groups = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data) ? sr.data : [];
               for (const g of groups) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } }
             }
