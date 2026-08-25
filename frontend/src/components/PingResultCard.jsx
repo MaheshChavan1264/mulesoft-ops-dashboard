@@ -32,7 +32,7 @@ const STATUS_CONFIG = {
  *   selected {boolean} — whether this card is selected for ping
  *   onToggle {function} — callback to toggle selection
  */
-export default function PingResultCard({ app, result, loading, selected, onToggle }) {
+export default function PingResultCard({ app, result, loading, selected, onToggle, autoResolved }) {
   // Auto-expand payload for 5xx responses so the error body is immediately visible
   const [showPayload, setShowPayload] = useState(false);
 
@@ -127,6 +127,25 @@ export default function PingResultCard({ app, result, loading, selected, onToggl
               </div>
             )}
           </div>
+
+          {/* Auto-resolved credential info — shown when bulk ping resolved creds automatically */}
+          {autoResolved && !autoResolved.error && (
+            <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border ${
+              autoResolved.source === 'contract-pending'
+                ? 'bg-orange-950/20 border-orange-800/40 text-orange-400/80'
+                : 'bg-emerald-950/20 border-emerald-800/40 text-emerald-400/80'
+            }`}>
+              <span className="flex-shrink-0">🔑</span>
+              <span>
+                {autoResolved.source === 'contract' ? 'Contract: ' : autoResolved.source === 'contract-pending' ? 'Pending: ' : ''}
+                <span className="font-medium">{autoResolved.apiInstanceName}</span>
+                {' → '}<span className="font-mono">{autoResolved.clientId?.slice(0, 8)}…</span>
+                {autoResolved.contractApp && autoResolved.contractApp !== '—' && (
+                  <span className="text-emerald-400/60"> ({autoResolved.contractApp})</span>
+                )}
+              </span>
+            </div>
+          )}
 
           {/* JWT auto-used indicator */}
           {result._jwtUsed && (

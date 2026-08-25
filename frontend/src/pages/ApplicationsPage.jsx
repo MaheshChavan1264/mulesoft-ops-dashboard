@@ -640,6 +640,7 @@ function BulkPingModal({ apps, onClose }) {
               app={app}
               result={results[app.id]}
               loading={running && !results[app.id]}
+              autoResolved={autoResolvedMap[app.id]}
             />
           ))}
         </div>
