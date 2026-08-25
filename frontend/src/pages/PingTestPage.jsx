@@ -550,21 +550,40 @@ export default function PingTestPage() {
       const orgId = app._bgId;
 
       // Step 1: Fetch full app detail to extract CPS config + ingress URL
-      let detail = null;
+      // CH2: fetch deployment detail (has target.deploymentSettings.{properties,runtimeProperties})
+      // CH1: fetch app properties directly (/cloudhub1/:envId/:appName/properties)
       let ch2IngressUrl;
+      let allProps = {};
+
       if (!isCH1 && orgId && app.environment?.id) {
         try {
           const r = await api.get(`/applications/cloudhub2/${orgId}/${app.environment.id}/${app.id}`);
-          detail = r.data;
-          const ds2 = detail?.target?.deploymentSettings || {};
-          const hi = ds2.http?.inbound || {};
-          const eps2 = hi.endpoints || [];
-          ch2IngressUrl = hi.publicUrl || eps2.find(e => e.access === 'external')?.url || eps2[0]?.url;
+          const detail = r.data;
+          const ds = detail?.target?.deploymentSettings || {};
+          const ps = (detail?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
+          // Also check _settings (populated by backend from /deployments/:id/settings)
+          const settingsProps = detail?._settings?.properties || {};
+          allProps = {
+            ...(detail?.properties || {}),
+            ...(ps.properties || {}),
+            ...(ds.runtimeProperties || {}),
+            ...(ds.properties || {}),
+            ...(ds.environmentVariables || ds.environmentVars || {}),
+            ...settingsProps,
+          };
+          const hi = ds.http?.inbound || {};
+          const eps = hi.endpoints || [];
+          ch2IngressUrl = hi.publicUrl || eps.find(e => e.access === 'external')?.url || eps[0]?.url;
+        } catch {}
+      } else if (isCH1 && app.environment?.id && app.name) {
+        // CH1: properties are returned by the list/detail endpoint directly
+        try {
+          const r = await api.get(`/applications/cloudhub1/${app.environment.id}/${app.name}/properties`,
+            { params: { orgId: orgId || app._bgId } });
+          allProps = { ...(r.data?.properties || {}) };
         } catch {}
       }
-      const ds = detail?.target?.deploymentSettings || {};
-      const ps = (detail?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
-      const allProps = { ...(ps.properties || {}), ...(ds.runtimeProperties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}) };
+
       const cpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'] || '';
       const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
       const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || '';
