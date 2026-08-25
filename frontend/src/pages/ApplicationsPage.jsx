@@ -14,7 +14,7 @@ import PingResultCard from '../components/PingResultCard';
 import CopyBtn from '../components/CopyBtn';
 import api from '../services/api';
 import { getCached, setCached, bustCache } from '../services/apiCache';
-import { availableActions, ACTION_CONFIG, ENV_BADGE } from '../utils/appUtils';
+import { availableActions, ACTION_CONFIG, ENV_BADGE, generateTxId } from '../utils/appUtils';
 import { findOAuth2Url, flattenCpsResponse } from '../utils/cpsHelpers';
 
 const ENV_TAG_COLOR = {
@@ -502,7 +502,7 @@ function BulkPingModal({ apps, onClose }) {
           ch2IngressUrl,
           clientId: useClientId,
           clientSecret: useClientSecret,
-          transactionId: transactionId.trim() || 'smokeTest',
+          transactionId: transactionId.trim() && transactionId.trim() !== 'smokeTest' ? transactionId.trim() : generateTxId(),
           envType: app.environment?.type || '',
           envName: app.environment?.name || '',
         });
@@ -517,7 +517,7 @@ function BulkPingModal({ apps, onClose }) {
                 appName: app.name,
                 ch2IngressUrl,
                 bearerToken: jwt,
-                transactionId: transactionId.trim() || 'smokeTest',
+                transactionId: transactionId.trim() && transactionId.trim() !== 'smokeTest' ? transactionId.trim() : generateTxId(),
                 envType: app.environment?.type || '',
                 envName: app.environment?.name || '',
               });
