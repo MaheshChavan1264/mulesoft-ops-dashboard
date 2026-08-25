@@ -427,7 +427,7 @@ function BulkPingModal({ apps, onClose }) {
           const ds = r.data?.target?.deploymentSettings || {};
           const appCfg = r.data?.application?.configuration || {};
           const ps = appCfg['mule.agent.application.properties.service'] || {};
-          const rp = { ...r.data?.properties, ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || {}) };
+          const rp = { ...r.data?.properties, ...(ps.properties || {}), ...(ds.runtimeProperties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || {}) };
           cpsBaseUrl = rp['cps.configServerBaseUrl'] || rp['config.server.base.url'] || '';
           cpsKey = rp['cps.projectName'] || rp['cloudhub.api.name'] || app.name;
           cpsEnv = rp['cps.prefix'] || rp['cps.environment'] || '';
