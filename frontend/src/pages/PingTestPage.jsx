@@ -564,7 +564,7 @@ export default function PingTestPage() {
       }
       const ds = detail?.target?.deploymentSettings || {};
       const ps = (detail?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
-      const allProps = { ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}) };
+      const allProps = { ...(ps.properties || {}), ...(ds.runtimeProperties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}) };
       const cpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'] || '';
       const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
       const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || '';
