@@ -704,7 +704,7 @@ export default function PingTestPage() {
       let payloadStr = '—';
       if (result?.payload != null) {
         payloadStr = typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload);
-        if (payloadStr.length > 1000) payloadStr = payloadStr.slice(0, 1000) + '…';
+        // No truncation — full response is exported; downloadCsv handles quoting/escaping
       }
       rows.push([app.name, app.environment?.name || '—', isCH1 ? 'CH1' : 'CH2', statusLabel,
         result?.httpStatus ?? '—', result?.activeEndpoint || '—', result?.responseTimeMs ?? '—',
