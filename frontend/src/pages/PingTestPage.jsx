@@ -902,8 +902,10 @@ export default function PingTestPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Re-resolve credentials for apps without auto-creds */}
-          {hasCredentials && unresolvedApps.length > 0 && (
+          {/* Re-resolve credentials for apps without auto-creds.
+              Shown whenever unresolved apps exist — does not require CSV since
+              it also tries the auto-contract-creds (API Manager contract) path. */}
+          {unresolvedApps.length > 0 && (
             <button onClick={resolveUnresolved} disabled={resolvingAll}
               title={`Auto-resolve credentials for ${unresolvedApps.length} app${unresolvedApps.length !== 1 ? 's' : ''} that have no credentials yet`}
               className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg disabled:opacity-50 transition-colors">
