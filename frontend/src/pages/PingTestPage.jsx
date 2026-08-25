@@ -8,6 +8,7 @@ import {
 import api from '../services/api';
 import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId, downloadCsv } from '../utils/appUtils';
 import { findOAuth2Url, findApiIdInProps as findApiId, flattenCpsResponse } from '../utils/cpsHelpers';
+import { useCredentialStore } from '../context/CredentialStoreContext';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -380,9 +381,11 @@ export default function PingTestPage() {
   const [showAll, setShowAll] = useState(false);
 
   // Feature 1: per-app retry state
+  const { hasCredentials, resolveFromCandidates } = useCredentialStore();
   const [retryingIds, setRetryingIds] = useState(new Set());
   const [checkingContractIds, setCheckingContractIds] = useState(new Set());
   const [jwtLoadingIds, setJwtLoadingIds] = useState(new Set());
+  const [resolvingAll, setResolvingAll] = useState(false);
 
   // Feature 2: CSV upload state
   const [csvMatchedNames, setCsvMatchedNames] = useState(null); // null = not uploaded yet
@@ -779,6 +782,71 @@ export default function PingTestPage() {
     setRetryingAll(false);
   }, [testedApps, results, retryApp]);
 
+  // ─── Re-resolve credentials for apps that don't have them yet ────────────
+  const unresolvedApps = useMemo(() =>
+    apps.filter(a =>
+      results[a.id] &&
+      !autoResolvedMap[a.id] &&
+      results[a.id].status !== 'SKIPPED_CONTRACT_PENDING'
+    ),
+  [apps, results, autoResolvedMap]);
+
+  const resolveUnresolved = useCallback(async () => {
+    if (!unresolvedApps.length) return;
+    setResolvingAll(true);
+    const settled = await Promise.allSettled(
+      unresolvedApps.map(async (app) => {
+        const bgId = app._bgId;
+        const envId = app.environment?.id;
+        if (!bgId || !envId) return null;
+        try {
+          const { data } = await api.post('/health/auto-credentials', {
+            orgId: bgId, envId, appName: app.name,
+          });
+          if (data.found && data.matchInfo?.length > 0) {
+            const matched = resolveFromCandidates(data.matchInfo.map(m => m.clientId));
+            if (matched) {
+              const meta = data.matchInfo.find(m => m.clientId === matched.clientId);
+              return {
+                appId: app.id,
+                ...matched,
+                apiInstanceName: meta?.apiInstanceName || '—',
+                contractApp: meta?.contractApp || '—',
+                source: 'csv',
+              };
+            }
+            const apiInstanceId = data.matchedApis?.[0]?.id;
+            if (apiInstanceId) {
+              try {
+                const cd = (await api.post('/health/auto-contract-creds', {
+                  orgId: bgId, envId, apiId: apiInstanceId,
+                  envType: app.environment?.type || '',
+                })).data;
+                if (cd.clientId && cd.clientSecret && cd.contractStatus === 'approved') {
+                  return {
+                    appId: app.id,
+                    clientId: cd.clientId,
+                    clientSecret: cd.clientSecret,
+                    apiInstanceName: data.matchedApis[0]?.label || '—',
+                    contractApp: cd.appName || '—',
+                    source: 'contract',
+                  };
+                }
+              } catch {}
+            }
+          }
+          return null;
+        } catch { return null; }
+      })
+    );
+    const newlyResolved = {};
+    settled.forEach(r => { if (r.status === 'fulfilled' && r.value) newlyResolved[r.value.appId] = r.value; });
+    if (Object.keys(newlyResolved).length > 0) {
+      setAutoResolvedMap(prev => ({ ...prev, ...newlyResolved }));
+    }
+    setResolvingAll(false);
+  }, [unresolvedApps, resolveFromCandidates]);
+
   const checkAllContracts = useCallback(async () => {
     const pendingApps = testedApps.filter(a => results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING');
     if (!pendingApps.length) return;
@@ -834,6 +902,15 @@ export default function PingTestPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Re-resolve credentials for apps without auto-creds */}
+          {hasCredentials && unresolvedApps.length > 0 && (
+            <button onClick={resolveUnresolved} disabled={resolvingAll}
+              title={`Auto-resolve credentials for ${unresolvedApps.length} app${unresolvedApps.length !== 1 ? 's' : ''} that have no credentials yet`}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg disabled:opacity-50 transition-colors">
+              <ShieldCheck size={13} className={resolvingAll ? 'animate-spin' : ''} />
+              {resolvingAll ? 'Resolving…' : `Re-resolve Creds (${unresolvedApps.length})`}
+            </button>
+          )}
           {/* Retry all failed */}
           {failedCount > 0 && (
             <button onClick={retryAllFailed} disabled={retryingAll}
