@@ -190,33 +190,57 @@ export default function UserSearchPage() {
     api.get('/organizations/business-groups').then(r => setBgs(r.data?.data || [])).catch(() => {}).finally(() => setBgsLoad(false));
   }, []);
 
-  // Fire-and-forget credential posting — no await, runs in background
+  // Fire-and-forget credential posting — no await, runs in background.
+  //
+  // KEY FIX: store ALL CSV credentials as {url}::{clientId} entries so the
+  // backend retry loop (which searches for {url}::* entries) can try every
+  // credential when the primary one returns 401.
+  // Previously only ONE credential was stored per URL+BG, so if that credential
+  // didn't have access, ALL retries failed (nothing to retry with).
   const postCreds = useCallback((entries) => {
     if (!hasCpsCreds) return;
     const allCreds = getAllCredentials();
     if (!allCreds.length) return;
-    // Key by norm-url::bgOrgId so each BG gets its own correct credential entry.
-    // Previously keyed by norm-url only → always stored under entries[0].bgOrgId
-    // which caused credential lookups for other BGs to silently fail.
-    const urlBgMap = new Map();
+
+    // Collect unique normalised CPS base URLs from this batch of entries
+    const uniqueNorms = new Set();
+    const primaryByBg = new Map(); // {norm}::{bgOrgId} → best cred from app properties
+
     for (const e of entries) {
       if (!e.cpsBaseUrl) continue;
       const norm = e.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+      uniqueNorms.add(norm);
+
+      // If the app declares its own clientId and we have its secret, use it as primary
       const bgKey = `${norm}::${e.bgOrgId}`;
-      if (urlBgMap.has(bgKey)) continue;
-      let cred = null;
-      if (e.cpsClientId) { const s = getSecret(e.cpsClientId); if (s) cred = { clientId: e.cpsClientId, clientSecret: s }; }
-      if (!cred && allCreds.length) cred = allCreds[0];
-      if (cred) urlBgMap.set(bgKey, { norm, bgOrgId: e.bgOrgId, ...cred });
+      if (!primaryByBg.has(bgKey) && e.cpsClientId) {
+        const s = getSecret(e.cpsClientId);
+        if (s) primaryByBg.set(bgKey, { clientId: e.cpsClientId, clientSecret: s });
+      }
     }
-    // Fire without await — credentials are stored in session for the backend,
-    // the CPS search itself handles 401-retry, so no need to block on this
-    for (const [bgKey, { norm, clientId, clientSecret }] of urlBgMap.entries()) {
-      api.post('/cps/credentials', { credentials: {
-        [bgKey]: { clientId, clientSecret },  // ← correct BG-specific key (norm::bgOrgId)
-        [norm]:  { clientId, clientSecret },  // ← URL-only fallback for non-BG lookups
-      }}).catch(() => {});
+
+    if (!uniqueNorms.size) return;
+
+    // Build credential map to post to the session:
+    //   {norm}::{bgOrgId}    → app-specific primary (from cpsClientId in ARM properties)
+    //   {norm}::{clientId}   → ALL CSV credentials as alt entries for the retry loop
+    //   {norm}               → URL-only fallback
+    const credMap = {};
+    for (const norm of uniqueNorms) {
+      // App-specific primaries
+      for (const [bgKey, cred] of primaryByBg.entries()) {
+        if (bgKey.startsWith(`${norm}::`)) credMap[bgKey] = cred;
+      }
+      // ALL CSV credentials stored under {url}::{clientId} so retry loop finds them
+      for (const { clientId, clientSecret } of allCreds) {
+        credMap[`${norm}::${clientId}`] = { clientId, clientSecret };
+      }
+      // URL-only fallback: use first credential from CSV
+      credMap[norm] = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
     }
+
+    // Fire without await — credentials are stored in session for the backend
+    api.post('/cps/credentials', { credentials: credMap }).catch(() => {});
   }, [hasCpsCreds, getAllCredentials, getSecret]);
 
   const fetchAppsForEnv = useCallback(async (bgId, envId, envName) => {
