@@ -29,6 +29,7 @@ export default function CpsDeleteProjectModal({
   isProd = false,
   onClose,
   onDeleted,
+  onResult,
 }) {
   const [confirmText, setConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -41,13 +42,38 @@ export default function CpsDeleteProjectModal({
     if (!confirmMatch) return;
     setError('');
     setDeleting(true);
+
+    const pathMap = { 'non-secure': '/api/v2/properties/non-secure', secure: '/api/v2/properties/secure', binaries: '/api/v2/binaries/secure' };
+    const cleanBase = baseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+    const fallbackReqDetails = {
+      method: 'DELETE',
+      url: `${cleanBase}${pathMap[type] || pathMap['non-secure']}`,
+      params: { environment, keys: projectKey },
+    };
+
     try {
-      await api.delete('/cps/project', {
+      const resp = await api.delete('/cps/project', {
         data: { baseUrl, type, environment, projectKey, bgOrgId },
+      });
+      const { requestDetails, responseDetails } = resp.data || {};
+      onResult?.({
+        label: 'Delete Project',
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: 200, body: resp.data },
+        success: true,
       });
       onDeleted?.(projectKey);
       onClose();
     } catch (err) {
+      const { requestDetails, responseDetails } = err.response?.data || {};
+      onResult?.({
+        label: 'Delete Project',
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: err.response?.status, body: err.response?.data },
+        success: false,
+      });
       setError(err.response?.data?.error || err.message || 'Failed to delete CPS project entry');
     }
     setDeleting(false);

@@ -743,12 +743,18 @@ router.post('/write', authMiddleware, async (req, res) => {
       validateStatus: () => true,
     });
 
+    const reqDetails = { method: httpMethod, url: fullUrl, body };
+    const resDetails = { status: response.status, body: response.data };
+
     if (response.status >= 400) {
       const errMsg = response.data?.message || response.data?.description || response.data?.error
         || (typeof response.data === 'string' ? response.data : null)
         || `CPS ${httpMethod} failed with HTTP ${response.status}`;
       console.error(`[CPS Write] ${httpMethod} failed (${response.status}): ${errMsg}`);
-      return res.status(response.status).json({ error: errMsg, details: response.data });
+      return res.status(response.status).json({
+        error: errMsg, details: response.data,
+        requestDetails: reqDetails, responseDetails: resDetails,
+      });
     }
 
     return res.json({
@@ -758,6 +764,8 @@ router.post('/write', authMiddleware, async (req, res) => {
       environment,
       type,
       propertyCount: Object.keys(properties).length,
+      requestDetails: reqDetails,
+      responseDetails: resDetails,
     });
   } catch (err) {
     const msg = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT'
@@ -816,14 +824,27 @@ router.delete('/project', authMiddleware, async (req, res) => {
       validateStatus: () => true,
     });
 
+    const delReqDetails = {
+      method: 'DELETE', url: fullUrl,
+      params: { environment, keys: projectKey },
+    };
+    const delResDetails = { status: response.status, body: response.data };
+
     if (response.status >= 400) {
       const errMsg = response.data?.message || response.data?.error
         || `CPS DELETE failed with HTTP ${response.status}`;
       console.error(`[CPS Write] DELETE failed (${response.status}): ${errMsg}`);
-      return res.status(response.status).json({ error: errMsg });
+      return res.status(response.status).json({
+        error: errMsg,
+        requestDetails: delReqDetails, responseDetails: delResDetails,
+      });
     }
 
-    return res.json({ success: true, deleted: projectKey, environment, type });
+    return res.json({
+      success: true, deleted: projectKey, environment, type,
+      requestDetails: delReqDetails,
+      responseDetails: delResDetails,
+    });
   } catch (err) {
     const msg = err.code === 'ECONNABORTED' ? 'CPS request timed out' : err.message;
     return res.status(504).json({ error: msg });
@@ -947,10 +968,16 @@ router.post('/auth', authMiddleware, async (req, res) => {
       validateStatus: () => true,
     });
 
+    const authReqDetails = { method: 'PUT', url: fullUrl, body };
+    const authResDetails = { status: response.status, body: response.data };
+
     if (response.status >= 400) {
       const errMsg = response.data?.message || response.data?.error
         || `CPS auth update failed with HTTP ${response.status}`;
-      return res.status(response.status).json({ error: errMsg });
+      return res.status(response.status).json({
+        error: errMsg,
+        requestDetails: authReqDetails, responseDetails: authResDetails,
+      });
     }
 
     return res.json({
@@ -960,6 +987,8 @@ router.post('/auth', authMiddleware, async (req, res) => {
       environment,
       allowedClientIds,
       readOnlyClientIds,
+      requestDetails: authReqDetails,
+      responseDetails: authResDetails,
     });
   } catch (err) {
     return res.status(504).json({ error: err.message || 'CPS auth update failed' });
@@ -1082,11 +1111,21 @@ router.post('/binary', authMiddleware, async (req, res) => {
       maxContentLength: 50 * 1024 * 1024,
     });
 
+    const binReqDetails = {
+      method: 'POST', url: fullUrl,
+      headers: { 'Content-Type': 'application/octet-stream', key: fileName, environment },
+      body: `[Binary data: ${fileBuffer.length} bytes]`,
+    };
+    const binResDetails = { status: response.status, body: response.data };
+
     if (response.status >= 400) {
       const errMsg = response.data?.message || response.data?.error
         || `CPS binary upload failed with HTTP ${response.status}`;
       console.error(`[CPS Binary] Upload failed (${response.status}): ${errMsg}`);
-      return res.status(response.status).json({ error: errMsg });
+      return res.status(response.status).json({
+        error: errMsg,
+        requestDetails: binReqDetails, responseDetails: binResDetails,
+      });
     }
 
     return res.json({
@@ -1094,6 +1133,8 @@ router.post('/binary', authMiddleware, async (req, res) => {
       uploaded: fileName,
       environment,
       sizeBytes: fileBuffer.length,
+      requestDetails: binReqDetails,
+      responseDetails: binResDetails,
     });
   } catch (err) {
     const msg = err.code === 'ECONNABORTED' ? 'CPS binary upload timed out' : err.message;

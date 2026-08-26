@@ -23,6 +23,7 @@ export default function CpsCreateModal({
   isProd = false,
   onClose,
   onCreated,
+  onResult,
 }) {
   const [projectKey, setProjectKey] = useState('');
   const [type, setType] = useState('non-secure');
@@ -51,8 +52,16 @@ export default function CpsCreateModal({
       if (key.trim()) properties[key.trim()] = value;
     });
 
+    // Build a fallback requestDetails in case backend doesn't return one (demo mode)
+    const pathSuffix = type === 'secure' ? '/api/v2/properties/secure' : '/api/v2/properties/non-secure';
+    const fallbackReqDetails = {
+      method: 'POST',
+      url: `${baseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}${pathSuffix}`,
+      body: { properties: [{ environment, key: projectKey.trim(), properties }] },
+    };
+
     try {
-      await api.post('/cps/write', {
+      const resp = await api.post('/cps/write', {
         baseUrl,
         type,
         method: 'POST',
@@ -61,9 +70,25 @@ export default function CpsCreateModal({
         properties,
         bgOrgId,
       });
+      const { requestDetails, responseDetails } = resp.data || {};
+      onResult?.({
+        label: 'Create Project',
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: 200, body: resp.data },
+        success: true,
+      });
       onCreated?.(projectKey.trim());
       onClose();
     } catch (err) {
+      const { requestDetails, responseDetails } = err.response?.data || {};
+      onResult?.({
+        label: 'Create Project',
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: err.response?.status, body: err.response?.data },
+        success: false,
+      });
       setError(err.response?.data?.error || err.message || 'Failed to create CPS project entry');
     }
     setSaving(false);

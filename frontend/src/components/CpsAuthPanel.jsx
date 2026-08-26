@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Plus, X, RefreshCw, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ShieldCheck, Plus, X, RefreshCw, AlertTriangle, Search } from 'lucide-react';
 import api from '../services/api';
 
 /**
@@ -19,7 +19,7 @@ import api from '../services/api';
  *   projectKey  {string}  CPS project key
  *   bgOrgId     {string}  Business Group org ID
  */
-export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment, projectKey, bgOrgId }) {
+export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment, projectKey, bgOrgId, onResult }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -29,6 +29,18 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
   const [replaceMode, setReplaceMode] = useState(false);
   const [newAllowed, setNewAllowed] = useState('');
   const [newReadOnly, setNewReadOnly] = useState('');
+  const [searchAllowed, setSearchAllowed] = useState('');
+  const [searchReadOnly, setSearchReadOnly] = useState('');
+
+  const filteredAllowed = useMemo(() => {
+    const q = searchAllowed.trim().toLowerCase();
+    return q ? allowedClientIds.filter(id => id.toLowerCase().includes(q)) : allowedClientIds;
+  }, [allowedClientIds, searchAllowed]);
+
+  const filteredReadOnly = useMemo(() => {
+    const q = searchReadOnly.trim().toLowerCase();
+    return q ? readOnlyClientIds.filter(id => id.toLowerCase().includes(q)) : readOnlyClientIds;
+  }, [readOnlyClientIds, searchReadOnly]);
 
   const canLoad = !!(baseUrl && environment && projectKey);
 
@@ -69,15 +81,46 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
     if (allowedClientIds.length === 0) { setError('allowedClientIds must have at least one entry'); return; }
     setError('');
     setSaving(true);
+
+    const authPath = { 'non-secure': '/api/v2/properties/non-secure/auth', secure: '/api/v2/properties/secure/auth', binaries: '/api/v2/binaries/secure/auth' };
+    const cleanBase = baseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+    const suffix = replaceMode ? '' : '/add';
+    const fallbackReqDetails = {
+      method: 'PUT',
+      url: `${cleanBase}${authPath[type] || authPath['non-secure']}${suffix}`,
+      body: {
+        properties: [{
+          environment, key: projectKey, allowedClientIds,
+          ...(readOnlyClientIds.length > 0 && { readOnlyClientIds }),
+        }],
+      },
+    };
+
     try {
-      await api.post('/cps/auth', {
+      const resp = await api.post('/cps/auth', {
         baseUrl, type, environment, projectKey,
         allowedClientIds, readOnlyClientIds,
         replace: replaceMode, bgOrgId,
       });
+      const { requestDetails, responseDetails } = resp.data || {};
+      onResult?.({
+        label: `Update Auth (${replaceMode ? 'Replace' : 'Add'})`,
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: 200, body: resp.data },
+        success: true,
+      });
       setSuccessMsg(`Access control ${replaceMode ? 'replaced' : 'updated'} successfully`);
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
+      const { requestDetails, responseDetails } = err.response?.data || {};
+      onResult?.({
+        label: `Update Auth (${replaceMode ? 'Replace' : 'Add'})`,
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: err.response?.status, body: err.response?.data },
+        success: false,
+      });
       setError(err.response?.data?.error || err.message || 'Failed to update access control');
     }
     setSaving(false);
@@ -158,12 +201,36 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
         <p className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
           Allowed ClientIds (read + write)
           <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-blue-500/20">{allowedClientIds.length}</span>
+          {searchAllowed && filteredAllowed.length !== allowedClientIds.length && (
+            <span className="text-[9px] text-gray-500 font-normal normal-case">
+              {filteredAllowed.length} shown
+            </span>
+          )}
         </p>
+        {/* Search */}
+        {allowedClientIds.length > 3 && (
+          <div className="relative">
+            <Search size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            <input
+              value={searchAllowed}
+              onChange={e => setSearchAllowed(e.target.value)}
+              placeholder="Search allowed IDs…"
+              className="w-full bg-gray-800/60 border border-gray-700/60 rounded-lg pl-7 pr-3 py-1 text-[10px] text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-blue-600/40"
+            />
+            {searchAllowed && (
+              <button onClick={() => setSearchAllowed('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400">
+                <X size={9} />
+              </button>
+            )}
+          </div>
+        )}
         <div className="max-h-40 overflow-y-auto space-y-1 pr-0.5">
           {allowedClientIds.length === 0 ? (
             <p className="text-[10px] text-gray-600 italic px-1">No client IDs configured</p>
+          ) : filteredAllowed.length === 0 ? (
+            <p className="text-[10px] text-gray-600 italic px-1">No matches for "{searchAllowed}"</p>
           ) : (
-            allowedClientIds.map((id) => (
+            filteredAllowed.map((id) => (
               <div key={id} className="flex items-center justify-between bg-blue-950/20 border border-blue-800/30 rounded-lg px-2.5 py-1.5">
                 <span className="font-mono text-[10px] text-gray-200 truncate flex-1">{id}</span>
                 <button onClick={() => removeId(setAllowedClientIds, id)} className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0 ml-2">
@@ -197,12 +264,36 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
           Read-Only ClientIds
           <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-purple-500/20">{readOnlyClientIds.length}</span>
           <span className="text-gray-600 font-normal normal-case">(optional)</span>
+          {searchReadOnly && filteredReadOnly.length !== readOnlyClientIds.length && (
+            <span className="text-[9px] text-gray-500 font-normal normal-case">
+              {filteredReadOnly.length} shown
+            </span>
+          )}
         </p>
+        {/* Search */}
+        {readOnlyClientIds.length > 3 && (
+          <div className="relative">
+            <Search size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            <input
+              value={searchReadOnly}
+              onChange={e => setSearchReadOnly(e.target.value)}
+              placeholder="Search read-only IDs…"
+              className="w-full bg-gray-800/60 border border-gray-700/60 rounded-lg pl-7 pr-3 py-1 text-[10px] text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-purple-600/40"
+            />
+            {searchReadOnly && (
+              <button onClick={() => setSearchReadOnly('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400">
+                <X size={9} />
+              </button>
+            )}
+          </div>
+        )}
         <div className="max-h-32 overflow-y-auto space-y-1 pr-0.5">
           {readOnlyClientIds.length === 0 ? (
             <p className="text-[10px] text-gray-600 italic px-1">No read-only client IDs configured</p>
+          ) : filteredReadOnly.length === 0 ? (
+            <p className="text-[10px] text-gray-600 italic px-1">No matches for "{searchReadOnly}"</p>
           ) : (
-            readOnlyClientIds.map((id) => (
+            filteredReadOnly.map((id) => (
               <div key={id} className="flex items-center justify-between bg-purple-950/20 border border-purple-800/30 rounded-lg px-2.5 py-1.5">
                 <span className="font-mono text-[10px] text-gray-200 truncate flex-1">{id}</span>
                 <button onClick={() => removeId(setReadOnlyClientIds, id)} className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0 ml-2">
