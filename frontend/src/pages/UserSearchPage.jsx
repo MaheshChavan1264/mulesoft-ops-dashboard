@@ -23,12 +23,12 @@ function chLabel(dt) {
   return (d.includes('2') || d === 'ch2') ? 'CloudHub 2.0' : 'CloudHub 1.0';
 }
 
-function extractCpsConfig(app, orgId) {
-  // Merge all possible property sources from both CH1 and CH2 detail responses
+// Extract the full merged property map from a CH2 detail or CH1 app object
+function mergeAppProps(app) {
   const ds = app.target?.deploymentSettings || {};
   const appCfg = app.application?.configuration || {};
   const ps = appCfg['mule.agent.application.properties.service'] || {};
-  const p = {
+  return {
     ...(ps.properties || {}),
     ...(ds.runtimeProperties || {}),
     ...(ds.properties || {}),
@@ -37,6 +37,11 @@ function extractCpsConfig(app, orgId) {
     ...(app.application?.properties || {}),
     ...(app.properties || {}),
   };
+}
+
+function extractCpsConfig(app, orgId) {
+  // Merge all possible property sources from both CH1 and CH2 detail responses
+  const p = mergeAppProps(app);
 
   // ── CPS Base URL — try all known key variants ─────────────────────────
   let cpsBaseUrl =
@@ -437,7 +442,10 @@ export default function UserSearchPage() {
     setLoading(true); setError(''); setResults(null); setCredentialErrors(0); setEnvStats([]);
     setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0 });
 
-    // ── Phase 1: Fetch all envs in PARALLEL (was sequential) ──────────────
+    // ── Phase 1: Fetch all envs in PARALLEL ───────────────────────────────
+    const searchTermLo = query.trim().toLowerCase();
+    const armRows = []; // direct ARM/deployment property matches (no CPS)
+
     const envResults = await Promise.allSettled(
       bgEnvSelections.map(async (sel) => {
         const apps = await fetchAppsForEnv(sel.bgId, sel.envId, sel.envName);
@@ -447,14 +455,39 @@ export default function UserSearchPage() {
             appId: a.id || a.name,
             ...extractCpsConfig(a, sel.bgId),
             envName: a.environment?.name || sel.envName,
-            // envId is the CloudHub environment UUID — guaranteed unique per BG+env
             envId: sel.envId,
-            // Include app status (RUNNING / STOPPED etc.) from the deployment
             status: a.status || a.target?.desiredStatus || a.target?.status || '',
           }))
           .filter(e => e.cpsBaseUrl && e.cpsKey);
         // Fire-and-forget credentials (no await)
         if (entries.length) postCreds(entries);
+
+        // ── Also scan ARM deployment properties directly ───────────────
+        // Some apps store credentials as CloudHub env vars (not in CPS).
+        // This catches them even when they have no cpsBaseUrl.
+        for (const a of apps) {
+          const p = mergeAppProps(a);
+          const hits = Object.entries(p).filter(
+            ([, v]) => typeof v === 'string' && v.toLowerCase().includes(searchTermLo)
+          );
+          if (hits.length > 0) {
+            // Avoid duplicate with CPS results — CPS search is more authoritative
+            armRows.push({
+              chEnv: a.environment?.name || sel.envName,
+              chVersion: chLabel(a._type === 'ch1' ? 'ch1' : 'ch2'),
+              appName: a.name,
+              status: a.status || '',
+              nsKey: '(ARM props)',
+              cpsPrefix: '—',
+              secureKey: '',
+              propKey: hits.map(([k]) => k).join(', '),
+              apiUser: hits[0][1],
+              password: '—',
+              source: 'arm-props',
+            });
+          }
+        }
+
         // Per-env stat tracking
         setEnvStats(prev => [...prev, {
           envName: sel.envName, bgName: sel.bgName,
@@ -516,7 +549,10 @@ export default function UserSearchPage() {
           });
         }
       }
-      setResults(rows);
+      // Merge ARM direct hits (exclude apps already found via CPS)
+      const cpsAppNames = new Set(rows.map(r => r.appName));
+      const uniqueArmRows = armRows.filter(r => !cpsAppNames.has(r.appName));
+      setResults([...rows, ...uniqueArmRows]);
     } catch (e) { setError(e.response?.data?.error || e.message || 'Search failed'); }
     setLoading(false);
   };
