@@ -335,6 +335,8 @@ export default function UserSearchPage() {
             appId: a.id || a.name,
             ...extractCpsConfig(a, sel.bgId),
             envName: a.environment?.name || sel.envName,
+            // envId is the CloudHub environment UUID — guaranteed unique per BG+env
+            envId: sel.envId,
             // Include app status (RUNNING / STOPPED etc.) from the deployment
             status: a.status || a.target?.desiredStatus || a.target?.status || '',
           }))
@@ -362,10 +364,11 @@ export default function UserSearchPage() {
       const allEntries = envResults
         .flatMap(r => r.status === 'fulfilled' ? r.value : [])
         .filter(e => {
-          // Deduplicate by cpsUrl + cpsKey + cpsEnv + bgOrgId + envName
-          // envName is included so the same CPS config in different CloudHub environments
-          // (e.g., prod env and uat env) is NOT deduplicated — both get searched.
-          const k = `${e.cpsBaseUrl}||${e.cpsKey}||${e.cpsEnv}||${e.bgOrgId}||${e.envName}`;
+          // Deduplicate by cpsUrl + cpsKey + cpsEnv + bgOrgId + envId
+          // Use envId (CloudHub UUID) instead of envName — envName can be identical
+          // across BGs (e.g., both EI-FI-PROD and BT-FINANCE-PROD have CH env named
+          // "Production"), while envId is always unique per BG+environment combination.
+          const k = `${e.cpsBaseUrl}||${e.cpsKey}||${e.cpsEnv}||${e.bgOrgId}||${e.envId || e.envName}`;
           if (seen.has(k)) return false;
           seen.add(k);
           return true;
@@ -556,6 +559,12 @@ export default function UserSearchPage() {
                             {row.chVersion}
                           </span>
                         </td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-1 group/cell">
+                            <span className="text-xs font-mono text-white font-medium">{row.appName}</span>
+                            <CopyBtn text={row.appName} />
+                          </div>
+                        </td>
                         <td className="px-3 py-3 whitespace-nowrap">
                           {row.status ? (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${
@@ -568,12 +577,6 @@ export default function UserSearchPage() {
                               {row.status.toUpperCase()}
                             </span>
                           ) : <span className="text-slate-700 text-[10px]">—</span>}
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-1 group/cell">
-                            <span className="text-xs font-mono text-white font-medium">{row.appName}</span>
-                            <CopyBtn text={row.appName} />
-                          </div>
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-1 group/cell">
