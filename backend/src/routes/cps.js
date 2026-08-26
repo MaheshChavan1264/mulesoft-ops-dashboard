@@ -570,9 +570,12 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         }
       }
 
-      // After retry, if still 401 or error — skip silently
-      if (nsRes.status === 401 || nsRes.status >= 500) {
-        console.warn(`[search-user] "${appName}" — HTTP ${nsRes.status} after retry, skipping`);
+      // After retry, if still 401 — credential not found for this app's CPS server
+      if (nsRes.status === 401) {
+        return { _authError: true, appName };
+      }
+      // Server error — skip silently
+      if (nsRes.status >= 500) {
         return null;
       }
 
@@ -631,9 +634,10 @@ router.post('/search-user', authMiddleware, async (req, res) => {
 
   // ── Concurrency-limited fan-out ──────────────────────────────────────────
   const results = [];
-  let skipped = 0;   // apps with no CPS config or no credentials
-  let scanned = 0;   // apps successfully queried (with or without matches)
-  let matched = 0;   // apps with at least one matching property
+  let skipped = 0;          // apps with no CPS config or no credentials
+  let scanned = 0;          // apps successfully queried (with or without matches)
+  let matched = 0;          // apps with at least one matching property
+  let credentialErrors = 0; // apps skipped due to 401 (missing / invalid CPS credentials)
 
   for (let i = 0; i < apps.length; i += CONCURRENCY) {
     const batch = apps.slice(i, i + CONCURRENCY);
@@ -641,6 +645,10 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     for (const outcome of settled) {
       if (outcome.status === 'fulfilled') {
         if (outcome.value === null) {
+          skipped++;
+        } else if (outcome.value?._authError) {
+          // 401 after exhausting all credentials — count separately
+          credentialErrors++;
           skipped++;
         } else {
           scanned++;
@@ -653,8 +661,11 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     }
   }
 
-  console.log(`[search-user] "${username}" — total: ${apps.length}, matched: ${matched}, skipped/no-match: ${skipped}`);
-  res.json({ results, scanned: apps.length, matched, skipped });
+  if (credentialErrors > 0) {
+    console.warn(`[search-user] "${username}" — ${credentialErrors} app(s) returned HTTP 401 for all credentials; upload a CPS CSV with broader credentials to include those apps`);
+  }
+  console.log(`[search-user] "${username}" — total: ${apps.length}, matched: ${matched}, credentialErrors: ${credentialErrors}, skipped/no-match: ${skipped - credentialErrors}`);
+  res.json({ results, scanned: apps.length, matched, skipped, credentialErrors });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

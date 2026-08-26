@@ -182,6 +182,7 @@ export default function UserSearchPage() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
   const [error, setError] = useState('');
+  const [credentialErrors, setCredentialErrors] = useState(0);
   const [progress, setProgress] = useState({ envsDone: 0, envsTotal: 0, appsT: 0, appsN: 0 });
 
   useEffect(() => {
@@ -291,7 +292,7 @@ export default function UserSearchPage() {
   const runSearch = async () => {
     if (!query.trim()) { setError('Enter a search term.'); return; }
     if (!bgEnvSelections.length) { setError('Select at least one Environment.'); return; }
-    setLoading(true); setError(''); setResults(null);
+    setLoading(true); setError(''); setResults(null); setCredentialErrors(0);
     setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0 });
 
     // ── Phase 1: Fetch all envs in PARALLEL (was sequential) ──────────────
@@ -338,6 +339,7 @@ export default function UserSearchPage() {
     // ── Phase 3: Backend CPS fan-out search ───────────────────────────────
     try {
       const r = await api.post('/cps/search-user', { username: query.trim(), apps: allEntries });
+      setCredentialErrors(r.data?.credentialErrors || 0);
       const rows = [];
       for (const item of r.data?.results || []) {
         for (const prop of item.matchedProps || []) {
@@ -473,6 +475,20 @@ export default function UserSearchPage() {
               </button>
             )}
           </div>
+
+          {credentialErrors > 0 && (
+            <div className="flex items-start gap-3 bg-yellow-950/20 border border-yellow-800/40 rounded-xl px-4 py-3">
+              <AlertTriangle size={13} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-yellow-300 text-xs font-semibold">
+                  {credentialErrors} app{credentialErrors !== 1 ? 's' : ''} not searched — missing CPS credentials
+                </p>
+                <p className="text-yellow-500/80 text-[10px] mt-0.5">
+                  These apps use a CPS server not covered by your uploaded credentials CSV. Upload a broader CSV via the <strong className="text-yellow-400">CPS CSV import</strong> button in the header to include them.
+                </p>
+              </div>
+            </div>
+          )}
 
           {results.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3 bg-slate-900/40 border border-slate-800/60 rounded-2xl">
