@@ -190,6 +190,7 @@ export default function UserSearchPage() {
   const [error, setError] = useState('');
   const [credentialErrors, setCredentialErrors] = useState(0);
   const [progress, setProgress] = useState({ envsDone: 0, envsTotal: 0, appsT: 0, appsN: 0 });
+  const [envStats, setEnvStats] = useState([]); // per-env: [{envName, bgName, total, withCps}]
 
   useEffect(() => {
     setBgsLoad(true);
@@ -251,8 +252,10 @@ export default function UserSearchPage() {
 
   const fetchAppsForEnv = useCallback(async (bgId, envId, envName) => {
     const apps = [];
-    const DETAIL_BATCH = 50; // increased from 15 — fetch 50 CH2 details in parallel
+    const DETAIL_BATCH = 50;
     let ch2List = [];
+    // Track status from the list (summary) to fall back on if detail doesn't have it
+    const listStatusMap = {}; // id → status string
 
     // ── Try app summary cache first (already loaded by ApplicationsPage) ──
     // ApplicationsPage stores with key: apps:${bgId}:${bgIds.join(',')}
@@ -264,7 +267,8 @@ export default function UserSearchPage() {
       ch2List = cachedSummary.apps.filter(
         a => a.environment?.id === envId && a.deploymentType === 'CloudHub 2.0'
       );
-      // Note: CH1 from summary has NO runtime properties → always fetch fresh below
+      // Build status map from summary (which has normalised status)
+      ch2List.forEach(a => { if (a.id && a.status) listStatusMap[a.id] = a.status; });
     } else {
       // Fresh CH2 list fetch (paginated)
       try {
@@ -273,6 +277,7 @@ export default function UserSearchPage() {
           const r = await api.get(`/applications/cloudhub2/${bgId}/${envId}`, { params: { limit: 100, offset } });
           const items = r.data?.items || r.data?.deployments || r.data?.content || (Array.isArray(r.data) ? r.data : []);
           if (!items.length) break;
+          items.forEach(a => { if (a.id && a.status) listStatusMap[a.id] = a.status; });
           ch2List.push(...items);
           const total = r.data?.total ?? r.data?.totalItems ?? items.length;
           if (ch2List.length >= total || items.length < 100) break;
@@ -289,10 +294,23 @@ export default function UserSearchPage() {
         ch2List.slice(i, i + DETAIL_BATCH).map(a => {
           const appKey = `ch2detail:${a.id}:${envId}`;
           const cached = getCached(appKey);
-          if (cached) return Promise.resolve(cached);
+          // Merge summary status into cached detail if detail lacks it
+          if (cached) {
+            if (!cached.status && listStatusMap[a.id]) cached.status = listStatusMap[a.id];
+            return Promise.resolve(cached);
+          }
           return api.get(`/applications/cloudhub2/${bgId}/${envId}/${a.id}`)
-            .then(r => { setCached(appKey, r.data); return r.data; })
-            .catch(() => a);
+            .then(r => {
+              const detail = r.data;
+              // CH2 detail: status is in application.status, desiredStatus, or top-level status
+              if (!detail.status) {
+                detail.status = detail.application?.status || detail.desiredStatus
+                  || listStatusMap[a.id] || '';
+              }
+              setCached(appKey, detail);
+              return detail;
+            })
+            .catch(() => ({ ...a, status: listStatusMap[a.id] || a.status || '' }));
         })
       );
       settled.forEach(s => { if (s.status === 'fulfilled' && s.value) apps.push(s.value); });
@@ -312,6 +330,7 @@ export default function UserSearchPage() {
       apps.push(...ch1Data.map(c => ({
         _type: 'ch1', id: c.domain, name: c.domain,
         properties: c.properties || {}, // full properties from CH1 list API
+        status: c.status || '',          // CH1 status (STARTED / STOPPED etc.)
         environment: { name: envName, id: envId },
       })));
     } catch {}
@@ -322,7 +341,7 @@ export default function UserSearchPage() {
   const runSearch = async () => {
     if (!query.trim()) { setError('Enter a search term.'); return; }
     if (!bgEnvSelections.length) { setError('Select at least one Environment.'); return; }
-    setLoading(true); setError(''); setResults(null); setCredentialErrors(0);
+    setLoading(true); setError(''); setResults(null); setCredentialErrors(0); setEnvStats([]);
     setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0 });
 
     // ── Phase 1: Fetch all envs in PARALLEL (was sequential) ──────────────
@@ -343,7 +362,11 @@ export default function UserSearchPage() {
           .filter(e => e.cpsBaseUrl && e.cpsKey);
         // Fire-and-forget credentials (no await)
         if (entries.length) postCreds(entries);
-        // Atomic progress increment
+        // Per-env stat tracking
+        setEnvStats(prev => [...prev, {
+          envName: sel.envName, bgName: sel.bgName,
+          total: apps.length, withCps: entries.length,
+        }]);
         setProgress(p => ({
           ...p,
           appsT: p.appsT + apps.length,
@@ -511,6 +534,18 @@ export default function UserSearchPage() {
                 {results.length} match{results.length !== 1 ? 'es' : ''}
               </span>
             </div>
+            {/* Per-env diagnostic — helps identify BGs where apps have no CPS config */}
+            {envStats.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {envStats.map((s, i) => (
+                  <span key={i} className={`text-[9px] px-2 py-0.5 rounded-full border font-mono ${
+                    s.withCps === 0 ? 'bg-yellow-950/30 text-yellow-500 border-yellow-800/40' : 'bg-slate-800/40 text-slate-500 border-slate-700/40'
+                  }`} title={`${s.bgName} / ${s.envName}: ${s.total} apps, ${s.withCps} with CPS config`}>
+                    {s.bgName}/{s.envName}: {s.withCps}/{s.total} CPS
+                  </span>
+                ))}
+              </div>
+            )}
             {results.length > 0 && (
               <button onClick={exportCsv}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 rounded-xl transition-colors font-medium">
