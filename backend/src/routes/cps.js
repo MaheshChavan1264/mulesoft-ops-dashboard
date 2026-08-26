@@ -601,6 +601,13 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           const groups = Array.isArray(sData?.responses) ? sData.responses
             : Array.isArray(sData) ? sData
             : (sData && typeof sData === 'object' ? [{ key: secureKeyStr.split(',')[0].trim(), properties: sData }] : []);
+          // ── DEBUG: log secure fetch result ──
+          const secureStatus = sRes.status;
+          const accessDeniedGroups = groups.filter(g => typeof g.properties === 'string').length;
+          const accessibleGroups = groups.filter(g => typeof g.properties === 'object' && g.properties).length;
+          if (secureStatus !== 200 || accessDeniedGroups > 0) {
+            console.log(`[search-user] "${appName}" secure HTTP=${secureStatus} groups=${groups.length} accessible=${accessibleGroups} denied=${accessDeniedGroups}`);
+          }
           for (const group of groups) {
             if (!group) continue;
             const gKey = group.key || secureKeyStr.split(',')[0].trim() || '';
@@ -611,7 +618,15 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             }));
             matchedProps = matchedProps.concat(sHits);
           }
-        } catch { /* secure fetch failed — continue with non-secure results */ }
+        } catch (sErr) {
+          console.log(`[search-user] "${appName}" secure fetch FAILED: ${sErr.code || sErr.message}`);
+        }
+      } else {
+        // ── DEBUG: log when app has no secure properties ─────────────────
+        const nsKeyCount = Object.keys(nsFlat).length;
+        if (nsKeyCount < 5) {
+          console.log(`[search-user] "${appName}" ns-props=${nsKeyCount} keys=[${Object.keys(nsFlat).join(', ')}]`);
+        }
       }
     } catch (err) {
       // Log the error type so logs distinguish timeout/network from no-match
