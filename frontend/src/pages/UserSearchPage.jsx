@@ -64,6 +64,16 @@ function extractCpsConfig(app, orgId) {
     }
   }
 
+  // ── DEBUG: log apps with no CPS URL so user can see raw property keys ─
+  if (!cpsBaseUrl && app.name) {
+    const urlLike = Object.entries(p).filter(([, v]) => typeof v === 'string' && /^https?:\/\//i.test(v));
+    console.debug(
+      `[extractCpsConfig] "${app.name}" — no CPS URL found.\n` +
+      `  All property keys: [${Object.keys(p).join(', ')}]\n` +
+      `  URL-like values: [${urlLike.map(([k, v]) => `${k}=${v}`).join(', ')}]`
+    );
+  }
+
   // ── CPS Project Key ───────────────────────────────────────────────────
   const cpsKey =
     p['cps.projectName']    ||
@@ -400,6 +410,24 @@ export default function UserSearchPage() {
       })));
     } catch {}
 
+    console.debug(
+      `[fetchAppsForEnv] bgId=${bgId} envId=${envId} envName="${envName}" ` +
+      `→ CH2=${ch2List.length} details=${apps.filter(a => a._type !== 'ch1').length} CH1=${apps.filter(a => a._type === 'ch1').length} total=${apps.length}`
+    );
+    if (apps.length > 0 && apps[0]._type !== 'ch1') {
+      const a = apps[0];
+      const ds = a.target?.deploymentSettings || {};
+      const appCfg = a.application?.configuration || {};
+      const ps = appCfg['mule.agent.application.properties.service'] || {};
+      console.debug(
+        `[fetchAppsForEnv] First CH2 app "${a.name}" raw property paths:\n` +
+        `  ps.properties keys: [${Object.keys(ps.properties || {}).slice(0, 10).join(', ')}]\n` +
+        `  ds.properties keys: [${Object.keys(ds.properties || {}).slice(0, 10).join(', ')}]\n` +
+        `  ds.environmentVariables keys: [${Object.keys(ds.environmentVariables || {}).slice(0, 10).join(', ')}]\n` +
+        `  app.application.properties keys: [${Object.keys(a.application?.properties || {}).slice(0, 10).join(', ')}]\n` +
+        `  app.properties keys: [${Object.keys(a.properties || {}).slice(0, 10).join(', ')}]`
+      );
+    }
     return apps;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
