@@ -330,7 +330,14 @@ export default function UserSearchPage() {
       bgEnvSelections.map(async (sel) => {
         const apps = await fetchAppsForEnv(sel.bgId, sel.envId, sel.envName);
         const entries = apps
-          .map(a => ({ appName: a.name, appId: a.id || a.name, ...extractCpsConfig(a, sel.bgId), envName: a.environment?.name || sel.envName }))
+          .map(a => ({
+            appName: a.name,
+            appId: a.id || a.name,
+            ...extractCpsConfig(a, sel.bgId),
+            envName: a.environment?.name || sel.envName,
+            // Include app status (RUNNING / STOPPED etc.) from the deployment
+            status: a.status || a.target?.desiredStatus || a.target?.status || '',
+          }))
           .filter(e => e.cpsBaseUrl && e.cpsKey);
         // Fire-and-forget credentials (no await)
         if (entries.length) postCreds(entries);
@@ -352,15 +359,17 @@ export default function UserSearchPage() {
 
     // ── Phase 2: Flatten + deduplicate entries ─────────────────────────────
     const seen = new Set();
-    const allEntries = envResults
-      .flatMap(r => r.status === 'fulfilled' ? r.value : [])
-      .filter(e => {
-        // Deduplicate by cpsUrl + cpsKey + cpsEnv + bgOrgId
-        const k = `${e.cpsBaseUrl}||${e.cpsKey}||${e.cpsEnv}||${e.bgOrgId}`;
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
+      const allEntries = envResults
+        .flatMap(r => r.status === 'fulfilled' ? r.value : [])
+        .filter(e => {
+          // Deduplicate by cpsUrl + cpsKey + cpsEnv + bgOrgId + envName
+          // envName is included so the same CPS config in different CloudHub environments
+          // (e.g., prod env and uat env) is NOT deduplicated — both get searched.
+          const k = `${e.cpsBaseUrl}||${e.cpsKey}||${e.cpsEnv}||${e.bgOrgId}||${e.envName}`;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
 
     setProgress(p => ({ ...p, appsN: allEntries.length }));
 
@@ -377,6 +386,7 @@ export default function UserSearchPage() {
             chEnv: item.envName || '—',
             chVersion: chLabel(item.deploymentType),
             appName: item.appName,
+            status: item.status || '',
             nsKey: item.cpsKey || '—',
             cpsPrefix: item.cpsPrefix || '—',
             secureKey: prop.secureGroupKey || (prop.source === 'secure' ? '(secure)' : ''),
@@ -406,7 +416,7 @@ export default function UserSearchPage() {
   };
 
   const selCount = bgEnvSelections.length;
-  const COL_HEADERS = ['#', 'Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
+  const COL_HEADERS = ['#', 'Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Status', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
 
   return (
     <div className="space-y-6">
@@ -545,6 +555,19 @@ export default function UserSearchPage() {
                           <span className={'text-[10px] px-2 py-0.5 rounded font-bold border ' + (row.chVersion === 'CloudHub 2.0' ? 'bg-blue-950/40 text-blue-300 border-blue-700/40' : 'bg-purple-950/40 text-purple-300 border-purple-700/40')}>
                             {row.chVersion}
                           </span>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {row.status ? (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${
+                              row.status.toUpperCase() === 'RUNNING'   ? 'bg-green-950/40 text-green-400 border-green-700/40' :
+                              row.status.toUpperCase() === 'STOPPED'   ? 'bg-gray-800/60 text-gray-500 border-gray-600/40' :
+                              row.status.toUpperCase() === 'FAILED'    ? 'bg-red-950/40 text-red-400 border-red-700/40' :
+                              row.status.toUpperCase() === 'DEPLOYING' ? 'bg-blue-950/40 text-blue-400 border-blue-700/40' :
+                              'bg-yellow-950/40 text-yellow-400 border-yellow-700/40'
+                            }`}>
+                              {row.status.toUpperCase()}
+                            </span>
+                          ) : <span className="text-slate-700 text-[10px]">—</span>}
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-1 group/cell">
