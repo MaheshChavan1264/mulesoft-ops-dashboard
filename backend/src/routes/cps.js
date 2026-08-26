@@ -629,11 +629,24 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           console.log(`[search-user] "${appName}" secure fetch FAILED: ${sErr.code || sErr.message}`);
         }
       } else {
-        // ── DEBUG: log when app has no secure properties ─────────────────
-        const nsKeyCount = Object.keys(nsFlat).length;
-        if (nsKeyCount < 5) {
-          console.log(`[search-user] "${appName}" ns-props=${nsKeyCount} keys=[${Object.keys(nsFlat).join(', ')}]`);
-        }
+        // ── No reference key in non-secure — try secure fetch anyway ──────
+        // CH2 apps may store API credentials in secure properties without
+        // a cps.secure.properties reference key in non-secure.
+        try {
+          const sUrl2 = `${cleanBase}/api/v2/properties/secure`;
+          const sRes2 = await axios.get(sUrl2, {
+            headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
+            params: { environment: cpsEnv, keys: cpsKey },
+            timeout: 8000, httpsAgent, validateStatus: () => true,
+          });
+          if (sRes2.status === 200) {
+            const s2Flat = flattenProps(sRes2.data);
+            const s2Hits = scanProps(s2Flat, 'secure').map(h => ({ ...h, secureGroupKey: cpsKey, password: findPassword(s2Flat, h.key) }));
+            if (s2Hits.length > 0) matchedProps = matchedProps.concat(s2Hits);
+          } else if (sRes2.status !== 404) {
+            console.log(`[search-user] "${appName}" fallback-secure HTTP=${sRes2.status} cpsEnv="${cpsEnv}" cpsKey="${cpsKey}"`);
+          }
+        } catch { /* skip — secure properties optional */ }
       }
     } catch (err) {
       // Log the error type so logs distinguish timeout/network from no-match
