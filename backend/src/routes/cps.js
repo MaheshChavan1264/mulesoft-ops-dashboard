@@ -585,8 +585,15 @@ router.post('/search-user', authMiddleware, async (req, res) => {
       }));
       matchedProps = matchedProps.concat(nsHits);
 
-      // ── Secure fetch (only if cps.secure.properties key exists) ──────────
-      const secureKeyStr = nsFlat['cps.secure.properties'] || '';
+      // ── Secure fetch — check all common key names used to reference secure groups ──
+      const secureKeyStr =
+        nsFlat['cps.secure.properties']       ||  // standard
+        nsFlat['cps.secure.keys']              ||  // alternative
+        nsFlat['cps.secureProperties']         ||  // camelCase variant
+        nsFlat['cps.security.properties']      ||  // security namespace
+        nsFlat['cps.properties.secure']        ||  // reversed order
+        nsFlat['anypoint.config.secure.properties'] ||
+        '';
       if (secureKeyStr) {
         try {
           const sUrl = `${cleanBase}/api/v2/properties/secure`;
