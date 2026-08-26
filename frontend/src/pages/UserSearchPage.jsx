@@ -543,6 +543,18 @@ export default function UserSearchPage() {
       setResults([]); setLoading(false); return;
     }
 
+    // ── Log sample of entries being sent to backend ───────────────────────
+    if (allEntries.length > 0) {
+      const uniqueServers = [...new Set(allEntries.map(e => e.cpsBaseUrl.replace(/^https?:\/\//, '').split('/')[0]))];
+      const uniqueEnvs = [...new Set(allEntries.map(e => e.cpsEnv).filter(Boolean))];
+      log(`🔎 CPS Servers: [${uniqueServers.slice(0, 3).join(', ')}${uniqueServers.length > 3 ? '...' : ''}]`);
+      log(`🔎 CPS Envs: [${uniqueEnvs.slice(0, 5).join(', ') || '(empty)'}]`);
+      // Log first 3 entries as sample
+      allEntries.slice(0, 3).forEach((e, i) => {
+        log(`  #${i + 1} "${e.appName}" → key="${e.cpsKey}" env="${e.cpsEnv || '(none)'}" server="${e.cpsBaseUrl.replace(/^https?:\/\//, '').split('/')[0]}"`);
+      });
+      if (allEntries.length > 3) log(`  ... and ${allEntries.length - 3} more`);
+    }
     log(`🚀 Phase 3: Sending ${allEntries.length} apps to backend CPS search...`);
     // ── Phase 3: Backend CPS fan-out search ───────────────────────────────
     try {
