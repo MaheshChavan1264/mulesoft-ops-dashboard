@@ -24,6 +24,7 @@ export default function CpsBinaryUploadPanel({
   existingKeys = [],
   isProd = false,
   onUploaded,
+  onResult,
 }) {
   const fileInputRef = useRef(null);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -64,18 +65,48 @@ export default function CpsBinaryUploadPanel({
         reader.onerror = reject;
         reader.readAsDataURL(selectedFile);
       });
-      await api.post('/cps/binary', {
+
+      const cleanBase = baseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+      const fallbackReqDetails = {
+        method: 'POST',
+        url: `${cleanBase}/api/v2/binaries/secure`,
+        headers: { 'Content-Type': 'application/octet-stream', key: fileNameOverride.trim(), environment },
+        body: `[Binary data: ${selectedFile.size} bytes]`,
+      };
+
+      const resp = await api.post('/cps/binary', {
         baseUrl,
         environment,
         key: fileNameOverride.trim(),
         bgOrgId,
         fileData: base64,
       });
+      const { requestDetails, responseDetails } = resp.data || {};
+      onResult?.({
+        label: `Upload Binary (${fileNameOverride.trim()})`,
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: 200, body: resp.data },
+        success: true,
+      });
       setUploadedFiles(prev => [...new Set([...prev, fileNameOverride.trim()])]);
       onUploaded?.(fileNameOverride.trim());
       setSelectedFile(null);
       setFileNameOverride('');
     } catch (err) {
+      const { requestDetails, responseDetails } = err.response?.data || {};
+      const cleanBase = baseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+      onResult?.({
+        label: `Upload Binary (${fileNameOverride.trim()})`,
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || {
+          method: 'POST', url: `${cleanBase}/api/v2/binaries/secure`,
+          headers: { 'Content-Type': 'application/octet-stream', key: fileNameOverride.trim(), environment },
+          body: `[Binary data: ${selectedFile?.size || 0} bytes]`,
+        },
+        responseDetails: responseDetails || { status: err.response?.status, body: err.response?.data },
+        success: false,
+      });
       setError(err.response?.data?.error || err.message || 'Binary upload failed');
     }
     setUploading(false);

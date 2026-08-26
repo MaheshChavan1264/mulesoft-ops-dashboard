@@ -15,6 +15,7 @@ import CpsAuthPanel from '../components/CpsAuthPanel';
 import CpsImportModal from '../components/CpsImportModal';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 import CpsCredTestButton from '../components/CpsCredTestButton';
+import CpsRequestResponsePanel from '../components/CpsRequestResponsePanel';
 import api from '../services/api';
 import { extractCpsConfig } from '../utils/cpsHelpers';
 import { flattenCpsResponse } from '../utils/cpsHelpers';
@@ -97,6 +98,7 @@ export default function CpsManagerPage() {
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
   const [toast, setToast] = useState(null);
+  const [lastOperation, setLastOperation] = useState(null);
 
   // ── Modals ───────────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
@@ -326,21 +328,47 @@ export default function CpsManagerPage() {
     if (!hasPendingChanges || !cpsBaseUrl || !cpsKey) return;
     setSaving(true);
     setSaveError('');
+
+    const propType = activeTab === 'secure' ? 'secure' : 'non-secure';
+    const pathSuffix = propType === 'secure' ? '/api/v2/properties/secure' : '/api/v2/properties/non-secure';
+    const cleanBase = cpsBaseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+    const fallbackReqDetails = {
+      method: 'PUT',
+      url: `${cleanBase}${pathSuffix}`,
+      body: { properties: [{ environment: cpsEnv, key: cpsKey, properties: mergedProps }] },
+    };
+
     try {
-      await api.post('/cps/write', {
+      const resp = await api.post('/cps/write', {
         baseUrl: cpsBaseUrl,
-        type: activeTab === 'secure' ? 'secure' : 'non-secure',
+        type: propType,
         method: 'PUT',
         environment: cpsEnv,
         projectKey: cpsKey,
         properties: mergedProps,
         bgOrgId: resolvedBgId,
       });
+      const { requestDetails, responseDetails } = resp.data || {};
+      setLastOperation({
+        label: 'Save Properties',
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: 200, body: resp.data },
+        success: true,
+      });
       setOriginalProps(mergedProps);
       setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
       showToast('Properties saved successfully', 'success');
       await loadProperties();
     } catch (err) {
+      const { requestDetails, responseDetails } = err.response?.data || {};
+      setLastOperation({
+        label: 'Save Properties',
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: err.response?.status, body: err.response?.data },
+        success: false,
+      });
       setSaveError(err.response?.data?.error || err.message || 'Save failed');
     }
     setSaving(false);
@@ -397,6 +425,7 @@ export default function CpsManagerPage() {
           baseUrl={cpsBaseUrl} environment={cpsEnv} bgOrgId={resolvedBgId} isProd={isProd}
           onClose={() => setShowCreate(false)}
           onCreated={k => { showToast(`Project "${k}" created`); loadProperties(); }}
+          onResult={setLastOperation}
         />
       )}
       {showDelete && (
@@ -405,6 +434,7 @@ export default function CpsManagerPage() {
           environment={cpsEnv} projectKey={cpsKey} bgOrgId={resolvedBgId} isProd={isProd}
           onClose={() => setShowDelete(false)}
           onDeleted={k => { showToast(`Project "${k}" deleted`); setOriginalProps({}); setPendingChanges({ added: {}, modified: {}, deleted: new Set() }); }}
+          onResult={setLastOperation}
         />
       )}
       {showImport && (
@@ -631,34 +661,27 @@ export default function CpsManagerPage() {
 
           {/* Secure Tab */}
           {activeTab === 'secure' && !propsLoading && (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {secureGroups.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 gap-3 bg-gray-900 border border-gray-800 rounded-xl">
                   <Key size={28} className="text-gray-700" />
-                  <p className="text-gray-500 text-sm">No secure properties configured (cps.secure.properties not set)</p>
+                  <p className="text-gray-500 text-sm">No secure properties configured (<code className="text-gray-500">cps.secure.properties</code> not set in non-secure)</p>
                 </div>
               ) : (
                 secureGroups.map(group => (
-                  <div key={group.key} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 bg-orange-950/20 border-b border-orange-900/30 flex items-center gap-2">
-                      <Key size={12} className="text-orange-400" />
-                      <span className="text-orange-300 text-xs font-semibold">{group.key}</span>
-                      <span className="text-[10px] text-orange-500/70 ml-auto">Secure group — values are write-only</span>
-                    </div>
-                    {typeof group.properties === 'string' ? (
-                      <div className="px-4 py-3 text-yellow-500/80 text-xs">COULD NOT ACCESS — credential may not have permission to this group</div>
-                    ) : (
-                      <div className="divide-y divide-gray-800/40">
-                        {Object.entries(group.properties || {}).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => (
-                          <div key={k} className="group flex items-center gap-3 px-4 py-2.5 hover:bg-gray-800/20">
-                            <span className="text-xs text-gray-400 font-mono w-56 truncate">{k}</span>
-                            <SecretValue value={v} />
-                            <CopyBtn text={String(v)} />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <SecureGroupEditor
+                    key={group.key}
+                    group={group}
+                    baseUrl={cpsBaseUrl}
+                    environment={cpsEnv}
+                    bgOrgId={resolvedBgId}
+                    isProd={isProd}
+                    onResult={setLastOperation}
+                    onGroupDeleted={deletedKey => {
+                      setSecureGroups(prev => prev.filter(g => g.key !== deletedKey));
+                      showToast(`Secure group "${deletedKey}" deleted`);
+                    }}
+                  />
                 ))
               )}
             </div>
@@ -674,21 +697,21 @@ export default function CpsManagerPage() {
                 existingKeys={binaryKeys}
                 isProd={isProd}
                 onUploaded={key => { showToast(`Binary "${key}" uploaded`); loadProperties(); }}
+                onResult={setLastOperation}
               />
             </div>
           )}
 
           {/* Access Control Tab */}
           {activeTab === 'auth' && !propsLoading && (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <CpsAuthPanel
-                baseUrl={cpsBaseUrl}
-                type="non-secure"
-                environment={cpsEnv}
-                projectKey={cpsKey}
-                bgOrgId={resolvedBgId}
-              />
-            </div>
+            <AuthTabWithSearch
+              cpsBaseUrl={cpsBaseUrl}
+              cpsEnv={cpsEnv}
+              cpsKey={cpsKey}
+              secureGroups={secureGroups}
+              resolvedBgId={resolvedBgId}
+              setLastOperation={setLastOperation}
+            />
           )}
         </div>
       )}
@@ -708,6 +731,14 @@ export default function CpsManagerPage() {
             <RefreshCw size={13} /> Load Properties
           </button>
         </div>
+      )}
+
+      {/* Request / Response debug panel */}
+      {lastOperation && (
+        <CpsRequestResponsePanel
+          operation={lastOperation}
+          onDismiss={() => setLastOperation(null)}
+        />
       )}
 
       {/* No CPS config state */}
@@ -737,6 +768,44 @@ function PropertyTable({
   const [newValue, setNewValue] = useState('');
   const [editingKey, setEditingKey] = useState(null);
   const [editValue, setEditValue] = useState('');
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+
+  // Parse bulk text → array of { key, value }
+  const parseBulk = (text) => {
+    if (!text.trim()) return [];
+    // Try JSON first
+    try {
+      const obj = JSON.parse(text.trim());
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        return Object.entries(obj).map(([k, v]) => ({ key: String(k), value: String(v ?? '') }));
+      }
+    } catch { /* not JSON, fall through */ }
+    // Parse key=value or key: value lines
+    return text.split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#') && !line.startsWith('//'))
+      .map(line => {
+        const eqIdx = line.indexOf('=');
+        const colIdx = line.indexOf(':');
+        let sep = -1;
+        if (eqIdx >= 0 && colIdx >= 0) sep = Math.min(eqIdx, colIdx);
+        else if (eqIdx >= 0) sep = eqIdx;
+        else if (colIdx >= 0) sep = colIdx;
+        if (sep <= 0) return null;
+        return { key: line.slice(0, sep).trim(), value: line.slice(sep + 1).trim() };
+      })
+      .filter(Boolean)
+      .filter(({ key }) => key.length > 0);
+  };
+
+  const bulkParsed = parseBulk(bulkText);
+
+  const applyBulk = () => {
+    bulkParsed.forEach(({ key, value }) => onAdd(key, value));
+    setBulkText('');
+    setShowBulkAdd(false);
+  };
 
   const allEntries = Object.entries(props).sort(([a], [b]) => a.localeCompare(b));
   const filtered = search.trim()
@@ -762,13 +831,24 @@ function PropertyTable({
 
   return (
     <div className="space-y-3">
-      {/* Search + add row */}
+      {/* Search + toolbar row */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search properties…"
             className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
         </div>
+        {/* Bulk Add toggle */}
+        <button
+          onClick={() => setShowBulkAdd(s => !s)}
+          className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
+            showBulkAdd
+              ? 'bg-purple-700/40 border-purple-700/60 text-purple-200'
+              : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-purple-300 hover:border-purple-700/50'
+          }`}
+        >
+          <Plus size={11} /> Bulk Add
+        </button>
         {hasPendingChanges && (
           <>
             <button onClick={onDiscard} disabled={saving}
@@ -786,6 +866,55 @@ function PropertyTable({
           </>
         )}
       </div>
+
+      {/* Bulk Add panel */}
+      {showBulkAdd && (
+        <div className="bg-gray-900 border border-purple-800/40 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-purple-300">Bulk Add Properties</p>
+            <button onClick={() => { setShowBulkAdd(false); setBulkText(''); }}
+              className="text-gray-600 hover:text-gray-300 transition-colors">
+              <X size={13} />
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-500 leading-relaxed">
+            Paste <code className="text-gray-400 bg-gray-800 px-1 rounded">key=value</code> lines (one per line),
+            or a <code className="text-gray-400 bg-gray-800 px-1 rounded">{'{"key":"value"}'}</code> JSON object.
+            Lines starting with <code className="text-gray-400 bg-gray-800 px-1 rounded">#</code> are ignored.
+          </p>
+          <textarea
+            value={bulkText}
+            onChange={e => setBulkText(e.target.value)}
+            placeholder={`# Paste key=value pairs or JSON\ndb.host=localhost\ndb.port=5432\ndb.name=myapp\n\n# Or paste JSON:\n# { "db.host": "localhost", "db.port": "5432" }`}
+            rows={8}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-purple-600/50 resize-y min-h-[120px]"
+          />
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-medium ${bulkParsed.length > 0 ? 'text-purple-300' : 'text-gray-600'}`}>
+              {bulkText.trim()
+                ? bulkParsed.length > 0
+                  ? `✓ ${bulkParsed.length} propert${bulkParsed.length === 1 ? 'y' : 'ies'} parsed`
+                  : '⚠ Could not parse — check format'
+                : 'Paste content above to preview'}
+            </span>
+            <div className="flex items-center gap-2">
+              {/* Preview parsed entries */}
+              {bulkParsed.length > 0 && bulkParsed.length <= 5 && (
+                <span className="text-[9px] text-gray-600 font-mono truncate max-w-48">
+                  {bulkParsed.slice(0, 3).map(e => e.key).join(', ')}{bulkParsed.length > 3 ? ', …' : ''}
+                </span>
+              )}
+              <button
+                onClick={applyBulk}
+                disabled={bulkParsed.length === 0}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded-lg disabled:opacity-40 transition-colors"
+              >
+                <Plus size={11} /> Add {bulkParsed.length > 0 ? `${bulkParsed.length} ` : ''}Properties
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Property table */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
@@ -898,6 +1027,400 @@ function PropertyTable({
         {filtered.length} of {allEntries.length} properties shown
         {hasPendingChanges && <span className="ml-2 text-cyan-500">{pendingCount} unsaved change{pendingCount !== 1 ? 's' : ''}</span>}
       </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SecureGroupEditor — full CRUD + Auth panel for a single CPS secure group
+// ─────────────────────────────────────────────────────────────────────────────
+function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onResult, onGroupDeleted }) {
+  const isAccessDenied = typeof group.properties === 'string';
+  const [originalProps, setOriginalProps] = useState(!isAccessDenied ? (group.properties || {}) : {});
+  const [pendingChanges, setPendingChanges] = useState({ added: {}, modified: {}, deleted: new Set() });
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [showAuth, setShowAuth] = useState(false);
+  const [search, setSearch] = useState('');
+  const [collapsed, setCollapsed] = useState(false);
+
+  const mergedProps = useMemo(() => {
+    const m = { ...originalProps, ...pendingChanges.modified, ...pendingChanges.added };
+    pendingChanges.deleted.forEach(k => delete m[k]);
+    return m;
+  }, [originalProps, pendingChanges]);
+
+  const pendingCount = Object.keys(pendingChanges.added).length
+    + Object.keys(pendingChanges.modified).length
+    + pendingChanges.deleted.size;
+  const hasPendingChanges = pendingCount > 0;
+
+  const updateProperty = (key, newValue) => {
+    setPendingChanges(prev => {
+      const next = { ...prev, added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) };
+      if (key in prev.added) { next.added = { ...prev.added, [key]: newValue }; }
+      else { next.modified = { ...prev.modified, [key]: newValue }; }
+      return next;
+    });
+  };
+
+  const addProperty = (key, value) => {
+    if (!key.trim()) return;
+    setPendingChanges(prev => ({
+      ...prev,
+      added: { ...prev.added, [key.trim()]: value },
+      deleted: (() => { const s = new Set(prev.deleted); s.delete(key.trim()); return s; })(),
+    }));
+  };
+
+  const markDeleted = (key) => {
+    setPendingChanges(prev => {
+      const next = { ...prev, added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) };
+      if (key in next.added) { delete next.added[key]; }
+      else { next.deleted.add(key); delete next.modified[key]; }
+      return next;
+    });
+  };
+
+  const discardChanges = () => setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+
+  const saveGroup = async () => {
+    if (!hasPendingChanges) return;
+    setSaving(true);
+    setSaveError('');
+    const cleanBase = baseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+    const fallbackReqDetails = {
+      method: 'PUT',
+      url: `${cleanBase}/api/v2/properties/secure`,
+      body: { properties: [{ environment, key: group.key, properties: mergedProps }] },
+    };
+    try {
+      const resp = await api.post('/cps/write', {
+        baseUrl, type: 'secure', method: 'PUT',
+        environment, projectKey: group.key, properties: mergedProps, bgOrgId,
+      });
+      const { requestDetails, responseDetails } = resp.data || {};
+      onResult?.({
+        label: `Save Secure Group (${group.key})`,
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: 200, body: resp.data },
+        success: true,
+      });
+      setOriginalProps(mergedProps);
+      setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+    } catch (err) {
+      const { requestDetails, responseDetails } = err.response?.data || {};
+      onResult?.({
+        label: `Save Secure Group (${group.key})`,
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: err.response?.status, body: err.response?.data },
+        success: false,
+      });
+      setSaveError(err.response?.data?.error || err.message || 'Save failed');
+    }
+    setSaving(false);
+  };
+
+  const deleteGroup = async () => {
+    if (isProd && deleteConfirmText.trim() !== group.key) return;
+    setDeleting(true);
+    const cleanBase = baseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+    const fallbackReqDetails = {
+      method: 'DELETE',
+      url: `${cleanBase}/api/v2/properties/secure`,
+      params: { environment, keys: group.key },
+    };
+    try {
+      const resp = await api.delete('/cps/project', {
+        data: { baseUrl, type: 'secure', environment, projectKey: group.key, bgOrgId },
+      });
+      const { requestDetails, responseDetails } = resp.data || {};
+      onResult?.({
+        label: `Delete Secure Group (${group.key})`,
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: 200, body: resp.data },
+        success: true,
+      });
+      onGroupDeleted?.(group.key);
+    } catch (err) {
+      const { requestDetails, responseDetails } = err.response?.data || {};
+      onResult?.({
+        label: `Delete Secure Group (${group.key})`,
+        timestamp: new Date().toISOString(),
+        requestDetails: requestDetails || fallbackReqDetails,
+        responseDetails: responseDetails || { status: err.response?.status, body: err.response?.data },
+        success: false,
+      });
+    }
+    setDeleting(false);
+    setShowDeleteConfirm(false);
+  };
+
+  return (
+    <div className="bg-gray-900 border border-orange-800/30 rounded-xl overflow-hidden">
+      {/* Group header */}
+      <div className="px-4 py-3 bg-orange-950/20 border-b border-orange-900/30 flex items-center gap-2 flex-wrap">
+        <button onClick={() => setCollapsed(c => !c)} className="flex items-center gap-2 flex-1 min-w-0">
+          <Key size={12} className="text-orange-400 flex-shrink-0" />
+          <span className="text-orange-300 text-xs font-semibold font-mono truncate">{group.key}</span>
+          {isAccessDenied && (
+            <span className="text-[9px] text-yellow-400 bg-yellow-500/10 border border-yellow-700/40 px-1.5 py-0.5 rounded-full flex-shrink-0">
+              ⚠ Access Denied
+            </span>
+          )}
+          {hasPendingChanges && !collapsed && (
+            <span className="text-[9px] text-cyan-400 bg-cyan-500/10 border border-cyan-700/40 px-1.5 py-0.5 rounded-full flex-shrink-0">
+              {pendingCount} unsaved
+            </span>
+          )}
+        </button>
+        {/* Toolbar */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {hasPendingChanges && (
+            <>
+              <button onClick={discardChanges} disabled={saving}
+                className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-white bg-gray-800 border border-gray-700 px-2 py-1 rounded-lg transition-colors disabled:opacity-50">
+                <X size={9} /> Discard
+              </button>
+              <button onClick={saveGroup} disabled={saving}
+                className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg transition-colors disabled:opacity-50 ${
+                  isProd ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-orange-700 hover:bg-orange-600 text-white'
+                }`}>
+                {saving ? <><RefreshCw size={9} className="animate-spin" /> Saving…</> : <><Save size={9} /> Save</>}
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => { setShowAuth(s => !s); setShowDeleteConfirm(false); }}
+            className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-colors ${
+              showAuth
+                ? 'bg-cyan-700/40 border-cyan-700/60 text-cyan-300'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-cyan-300'
+            }`}
+          >
+            <ShieldCheck size={9} /> Auth
+          </button>
+          <button
+            onClick={() => { setShowDeleteConfirm(s => !s); setShowAuth(false); }}
+            className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-colors ${
+              showDeleteConfirm
+                ? 'bg-red-700/40 border-red-700/60 text-red-300'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-red-400'
+            }`}
+          >
+            <Trash2 size={9} /> Delete Group
+          </button>
+        </div>
+      </div>
+
+      {/* Save error */}
+      {saveError && (
+        <div className="flex items-center gap-2 bg-red-950/30 border-b border-red-800/40 px-4 py-2 text-red-400 text-xs">
+          <AlertTriangle size={11} className="flex-shrink-0" /> {saveError}
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {showDeleteConfirm && (
+        <div className="px-4 py-3 bg-red-950/20 border-b border-red-800/30 space-y-2">
+          <p className="text-xs text-red-300 font-medium flex items-center gap-1.5">
+            <AlertTriangle size={11} /> Delete entire secure group <code className="bg-red-950/40 px-1 rounded">{group.key}</code>?
+          </p>
+          {isProd ? (
+            <div className="flex items-center gap-2">
+              <input
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value)}
+                placeholder={`Type "${group.key}" to confirm`}
+                className="flex-1 bg-gray-800 border border-red-700/50 rounded-lg px-2.5 py-1 text-xs text-white font-mono placeholder-gray-600 focus:outline-none"
+              />
+              <button
+                onClick={deleteGroup}
+                disabled={deleting || deleteConfirmText.trim() !== group.key}
+                className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {deleting ? <><RefreshCw size={9} className="animate-spin" /> Deleting…</> : <><Trash2 size={9} /> Confirm Delete</>}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-red-400/70 flex-1">This will remove all properties in this group permanently.</p>
+              <button
+                onClick={deleteGroup}
+                disabled={deleting}
+                className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {deleting ? <><RefreshCw size={9} className="animate-spin" /> Deleting…</> : <><Trash2 size={9} /> Delete</>}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Auth panel */}
+      {showAuth && (
+        <div className="px-4 pt-4 pb-2 border-b border-orange-900/20 bg-orange-950/10">
+          <CpsAuthPanel
+            baseUrl={baseUrl}
+            type="secure"
+            environment={environment}
+            projectKey={group.key}
+            bgOrgId={bgOrgId}
+            onResult={onResult}
+          />
+        </div>
+      )}
+
+      {/* Properties */}
+      {!collapsed && (
+        isAccessDenied ? (
+          <div className="px-4 py-5 flex flex-col items-center gap-3">
+            <AlertTriangle size={20} className="text-yellow-500" />
+            <p className="text-yellow-400/80 text-sm text-center">
+              COULD NOT ACCESS — the credential in use does not have permission for this group.
+            </p>
+            <p className="text-gray-600 text-xs text-center">
+              You can still create a new entry using the form below — existing values will be replaced.
+            </p>
+            {/* Allow write even when read fails */}
+            <div className="w-full mt-2">
+              <PropertyTable
+                props={mergedProps}
+                originalProps={originalProps}
+                pendingChanges={pendingChanges}
+                search={search}
+                setSearch={setSearch}
+                onUpdate={updateProperty}
+                onDelete={markDeleted}
+                onAdd={addProperty}
+                hasPendingChanges={hasPendingChanges}
+                pendingCount={pendingCount}
+                onSave={saveGroup}
+                onDiscard={discardChanges}
+                saving={saving}
+                isProd={isProd}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="p-4">
+            <PropertyTable
+              props={mergedProps}
+              originalProps={originalProps}
+              pendingChanges={pendingChanges}
+              search={search}
+              setSearch={setSearch}
+              onUpdate={updateProperty}
+              onDelete={markDeleted}
+              onAdd={addProperty}
+              hasPendingChanges={hasPendingChanges}
+              pendingCount={pendingCount}
+              onSave={saveGroup}
+              onDiscard={discardChanges}
+              saving={saving}
+              isProd={isProd}
+            />
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AuthTabWithSearch — Access Control tab with project-key search at the top
+// ─────────────────────────────────────────────────────────────────────────────
+function AuthTabWithSearch({ cpsBaseUrl, cpsEnv, cpsKey, secureGroups, resolvedBgId, setLastOperation }) {
+  const [keySearch, setKeySearch] = useState('');
+
+  const q = keySearch.trim().toLowerCase();
+
+  // Build list of all auth sections: non-secure + secure groups
+  const allSections = [
+    { type: 'non-secure', key: cpsKey, label: 'Non-Secure' },
+    ...secureGroups.map(g => ({ type: 'secure', key: g.key, label: 'Secure' })),
+  ];
+
+  const visibleSections = q
+    ? allSections.filter(s => s.key.toLowerCase().includes(q))
+    : allSections;
+
+  return (
+    <div className="space-y-4">
+      {/* Search bar */}
+      <div className="relative">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+        <input
+          value={keySearch}
+          onChange={e => setKeySearch(e.target.value)}
+          placeholder="Search project key…"
+          className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600/50"
+        />
+        {keySearch && (
+          <button
+            onClick={() => setKeySearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
+      {/* Count hint */}
+      {q && (
+        <p className="text-[10px] text-gray-500">
+          {visibleSections.length === 0
+            ? `No sections match "${keySearch}"`
+            : `${visibleSections.length} of ${allSections.length} section${allSections.length !== 1 ? 's' : ''} shown`}
+        </p>
+      )}
+
+      {/* Auth sections */}
+      {visibleSections.map(section => (
+        <div
+          key={`${section.type}::${section.key}`}
+          className={`bg-gray-900 rounded-xl overflow-hidden ${
+            section.type === 'secure'
+              ? 'border border-orange-800/30'
+              : 'border border-gray-800'
+          }`}
+        >
+          <div className={`px-4 py-2.5 border-b flex items-center gap-2 ${
+            section.type === 'secure'
+              ? 'bg-orange-950/20 border-orange-900/30'
+              : 'bg-gray-800/40 border-gray-700/50'
+          }`}>
+            <ShieldCheck size={12} className={section.type === 'secure' ? 'text-orange-400' : 'text-cyan-400'} />
+            <span className={`text-xs font-semibold ${section.type === 'secure' ? 'text-orange-300' : 'text-cyan-300'}`}>
+              {section.label}
+            </span>
+            <code className="text-[10px] text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded ml-1 font-mono">{section.key}</code>
+          </div>
+          <div className="p-5">
+            <CpsAuthPanel
+              baseUrl={cpsBaseUrl}
+              type={section.type}
+              environment={cpsEnv}
+              projectKey={section.key}
+              bgOrgId={resolvedBgId}
+              onResult={setLastOperation}
+            />
+          </div>
+        </div>
+      ))}
+
+      {visibleSections.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-10 gap-2 bg-gray-900 border border-gray-800 rounded-xl">
+          <Search size={24} className="text-gray-700" />
+          <p className="text-gray-500 text-sm">No project keys match "{keySearch}"</p>
+        </div>
+      )}
     </div>
   );
 }
