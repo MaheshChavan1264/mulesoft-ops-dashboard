@@ -534,6 +534,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         httpsAgent,          // tolerates internal CA certs (prevents UNABLE_TO_GET_ISSUER_CERT_LOCALLY)
         validateStatus: () => true,
       });
+      nsSearched++;
 
       // Retry on 401 or empty response — try all other session credentials
       if (nsRes.status === 401 || (nsRes.status === 200 && isEmptyNsResponse(nsRes.data))) {
@@ -595,6 +596,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         nsFlat['anypoint.config.secure.properties'] ||
         '';
       if (secureKeyStr) {
+        secureRefSearched++;
         try {
           const sUrl = `${cleanBase}/api/v2/properties/secure`;
           const sRes = await axios.get(sUrl, {
@@ -632,6 +634,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         // ── No reference key in non-secure — try secure fetch anyway ──────
         // CH2 apps may store API credentials in secure properties without
         // a cps.secure.properties reference key in non-secure.
+        secureFallbackSearched++;
         try {
           const sUrl2 = `${cleanBase}/api/v2/properties/secure`;
           const sRes2 = await axios.get(sUrl2, {
@@ -668,6 +671,11 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     };
   }
 
+  // ── Stats counters ─────────────────────────────────────────────────────────
+  let nsSearched = 0;             // apps where non-secure was fetched
+  let secureRefSearched = 0;      // apps where secure was fetched via reference key
+  let secureFallbackSearched = 0; // apps where fallback secure (no reference key) was attempted
+
   // ── Concurrency-limited fan-out ──────────────────────────────────────────
   const results = [];
   let skipped = 0;          // apps with no CPS config or no credentials
@@ -701,7 +709,8 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     console.warn(`[search-user] "${username}" — ${credentialErrors} app(s) returned HTTP 401 for all credentials; upload a CPS CSV with broader credentials to include those apps`);
   }
   console.log(`[search-user] "${username}" — total: ${apps.length}, matched: ${matched}, credentialErrors: ${credentialErrors}, skipped/no-match: ${skipped - credentialErrors}`);
-  res.json({ results, scanned: apps.length, matched, skipped, credentialErrors });
+  res.json({ results, scanned: apps.length, matched, skipped, credentialErrors,
+    searchStats: { nonSecureSearched: nsSearched, secureRefSearched, secureFallbackSearched } });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

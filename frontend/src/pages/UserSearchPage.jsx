@@ -584,6 +584,8 @@ export default function UserSearchPage() {
       const finalRows = [...rows, ...uniqueArmRows];
       setResults(finalRows);
 
+      const stats = r.data?.searchStats || {};
+      log(`📊 Backend stats: ${stats.nonSecureSearched || 0} non-secure fetched, ${stats.secureRefSearched || 0} secure (via ref key), ${stats.secureFallbackSearched || 0} secure (fallback, no ref key)`);
       if (r.data?.credentialErrors > 0) {
         log(`⚠️ ${r.data.credentialErrors} app(s) returned 401 — missing CPS credentials for those servers`, 'warn');
       }
