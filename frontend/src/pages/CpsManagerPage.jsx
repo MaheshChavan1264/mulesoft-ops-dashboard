@@ -154,44 +154,74 @@ export default function CpsManagerPage() {
       .then(r => {
         const bgs = r.data?.data || [];
         setAllBgs(bgs);
-        const root = bgs.find(g => !g.parentId) || bgs[0];
-        if (root) setSelectedBgId(root.id);
+        // Default to 'All Business Groups' (selectedBgId stays '')
       })
       .catch(() => {})
       .finally(() => setBgLoading(false));
   }, []);
 
-  // ── Load Envs when BG changes ─────────────────────────────────────────────
+  // ── Load Envs when BG selection or BG list changes ────────────────────────
   useEffect(() => {
-    if (!selectedBgId) return;
+    // Wait until BG list has loaded before fan-out
+    if (!allBgs.length) return;
     setEnvLoading(true);
     setSelectedEnvId('');
     setApps([]);
     setSelectedAppComposite('');
-    api.get(`/environments/${selectedBgId}`)
-      .then(r => {
-        const list = r.data?.data || [];
-        setEnvs(list);
-        if (list.length > 0) setSelectedEnvId(list[0].id);
-      })
-      .catch(() => {})
-      .finally(() => setEnvLoading(false));
-  }, [selectedBgId]);
 
-  // ── Load Apps when Env changes ────────────────────────────────────────────
+    const bgsToFetch = selectedBgId === ''
+      ? applyBgFilter(allBgs)                          // All BGs: fan out to every visible BG
+      : allBgs.filter(g => g.id === selectedBgId);    // Specific BG
+
+    if (bgsToFetch.length === 0) { setEnvLoading(false); return; }
+
+    Promise.all(
+      bgsToFetch.map(bg =>
+        api.get(`/environments/${bg.id}`)
+          .then(r => r.data?.data || [])
+          .catch(() => [])
+      )
+    ).then(results => {
+      // Merge + deduplicate by environment ID
+      const seen = new Set();
+      const merged = results.flat().filter(e => {
+        if (seen.has(e.id)) return false;
+        seen.add(e.id);
+        return true;
+      });
+      setEnvs(merged);
+      if (merged.length > 0) setSelectedEnvId(merged[0].id);
+    }).catch(() => {}).finally(() => setEnvLoading(false));
+  }, [selectedBgId, allBgs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Load Apps when Env or BG changes ─────────────────────────────────────
   useEffect(() => {
-    if (!selectedBgId) return;
+    if (!allBgs.length) return;
     setAppLoading(true);
     setSelectedAppComposite('');
-    api.get(`/applications/summary/${selectedBgId}`)
-      .then(r => {
-        const all = r.data?.data || [];
-        const filtered = selectedEnvId ? all.filter(a => a.environment?.id === selectedEnvId) : all;
-        setApps(filtered.map(a => ({ ...a, _bgId: selectedBgId })));
-      })
-      .catch(() => {})
-      .finally(() => setAppLoading(false));
-  }, [selectedBgId, selectedEnvId]);
+
+    const bgsToFetch = selectedBgId === ''
+      ? applyBgFilter(allBgs)
+      : allBgs.filter(g => g.id === selectedBgId);
+
+    if (bgsToFetch.length === 0) { setAppLoading(false); return; }
+
+    Promise.all(
+      bgsToFetch.map(bg =>
+        api.get(`/applications/summary/${bg.id}`)
+          .then(r => {
+            const all = r.data?.data || [];
+            const filtered = selectedEnvId
+              ? all.filter(a => a.environment?.id === selectedEnvId)
+              : all;
+            return filtered.map(a => ({ ...a, _bgId: bg.id }));
+          })
+          .catch(() => [])
+      )
+    ).then(results => {
+      setApps(results.flat());
+    }).catch(() => {}).finally(() => setAppLoading(false));
+  }, [selectedBgId, selectedEnvId, allBgs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Select App → fetch ARM detail → extract CPS config ───────────────────
   const selectApp = useCallback(async (compositeId) => {
@@ -406,10 +436,13 @@ export default function CpsManagerPage() {
   }, [mergedProps, search]);
 
   // ── Dropdown options ──────────────────────────────────────────────────────
-  const bgOptions = applyBgFilter(allBgs).map(g => ({
-    value: g.id, label: g.name, indent: !!g.parentId,
-    tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400',
-  }));
+  const bgOptions = [
+    { value: '', label: 'All Business Groups' },
+    ...applyBgFilter(allBgs).map(g => ({
+      value: g.id, label: g.name, indent: !!g.parentId,
+      tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400',
+    })),
+  ];
   const visibleEnvs = applyEnvFilter(envs);
   const envFilterActive = visibleEnvs.length < envs.length;
   const envOptions = [
@@ -514,14 +547,14 @@ export default function CpsManagerPage() {
           <div>
             <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Environment</p>
             <Select value={selectedEnvId} onChange={setSelectedEnvId} options={envOptions}
-              placeholder="All Environments" disabled={envLoading || !selectedBgId} />
+              placeholder="All Environments" disabled={envLoading || !allBgs.length} />
           </div>
           <div>
             <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1 flex items-center gap-1">
               Application {appLoading && <RefreshCw size={9} className="animate-spin text-gray-600" />}
             </p>
             <Select value={selectedAppComposite} onChange={selectApp} options={appOptions}
-              placeholder="Search application…" searchable disabled={appLoading || !selectedBgId} />
+              placeholder="Search application…" searchable disabled={appLoading || !allBgs.length} />
           </div>
         </div>
 
