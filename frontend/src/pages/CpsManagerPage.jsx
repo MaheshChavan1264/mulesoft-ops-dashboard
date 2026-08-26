@@ -558,74 +558,75 @@ export default function CpsManagerPage() {
           </div>
         </div>
 
-        {/* CPS config fields */}
-        {selectedAppComposite && (
-          <div className="pt-3 border-t border-gray-800/60 space-y-3">
-            {appDetailLoading ? (
-              <div className="flex items-center gap-2 text-gray-500 text-xs">
-                <RefreshCw size={11} className="animate-spin" /> Extracting CPS config from ARM properties…
+        {/* CPS config fields — always visible for manual entry or auto-fill from selected app */}
+        <div className="pt-3 border-t border-gray-800/60 space-y-3">
+          {appDetailLoading ? (
+            <div className="flex items-center gap-2 text-gray-500 text-xs">
+              <RefreshCw size={11} className="animate-spin" /> Extracting CPS config from ARM properties…
+            </div>
+          ) : (
+            <>
+              {!selectedAppComposite && !cpsBaseUrl && (
+                <div className="flex items-center gap-2 bg-blue-950/20 border border-blue-800/30 rounded-lg px-3 py-2 text-[10px] text-blue-400/80">
+                  <Database size={10} className="flex-shrink-0" />
+                  Select an app above to auto-fill, or enter CPS details manually to create properties for a new app before deployment.
+                </div>
+              )}
+              {!selectedAppComposite && cpsBaseUrl && (
+                <span className="inline-flex items-center gap-1 text-[9px] text-blue-400 bg-blue-500/10 border border-blue-700/40 px-2 py-0.5 rounded-full">
+                  <Database size={8} /> Manual entry
+                </span>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Base URL</label>
+                  <input value={cpsBaseUrl} onChange={e => setCpsBaseUrl(e.target.value)}
+                    placeholder="https://cps-server.internalapi.sfdcbt.net"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Env</label>
+                    <input value={cpsEnv} onChange={e => setCpsEnv(e.target.value)} placeholder="prod / uat"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Project Key</label>
+                    <input value={cpsKey} onChange={e => setCpsKey(e.target.value)} placeholder="my-api-name"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
+                  </div>
+                </div>
               </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="sm:col-span-2">
-                    <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Base URL</label>
-                    <input value={cpsBaseUrl} onChange={e => setCpsBaseUrl(e.target.value)}
-                      placeholder="https://cps-server.internalapi.sfdcbt.net"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Env</label>
-                      <input value={cpsEnv} onChange={e => setCpsEnv(e.target.value)} placeholder="prod / uat"
-                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Project Key</label>
-                      <input value={cpsKey} onChange={e => setCpsKey(e.target.value)} placeholder="my-api-name"
-                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  {credsResolved && (
-                    <span className="flex items-center gap-1 text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-2 py-0.5 rounded-full">
-                      <Key size={8} /> CPS creds auto-resolved
-                    </span>
-                  )}
-                  <CpsCredTestButton baseUrl={cpsBaseUrl} clientId={cpsClientId}
-                    clientSecret={cpsClientId ? undefined : undefined}
-                    environment={cpsEnv} projectKey={cpsKey} compact />
-                  <div className="flex items-center gap-2 ml-auto">
-                    <button onClick={loadProperties} disabled={!canLoad || propsLoading}
-                      className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 border border-cyan-800/50 px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors">
-                      <RefreshCw size={11} className={propsLoading ? 'animate-spin' : ''} />
-                      {Object.keys(originalProps).length > 0 ? 'Refresh' : 'Load Properties'}
+              <div className="flex items-center gap-3 flex-wrap">
+                {credsResolved && (
+                  <span className="flex items-center gap-1 text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-2 py-0.5 rounded-full">
+                    <Key size={8} /> CPS creds auto-resolved
+                  </span>
+                )}
+                <CpsCredTestButton baseUrl={cpsBaseUrl} clientId={cpsClientId}
+                  clientSecret={cpsClientId ? undefined : undefined}
+                  environment={cpsEnv} projectKey={cpsKey} compact />
+                <div className="flex items-center gap-2 ml-auto">
+                  <button onClick={loadProperties} disabled={!canLoad || propsLoading}
+                    className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 border border-cyan-800/50 px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors">
+                    <RefreshCw size={11} className={propsLoading ? 'animate-spin' : ''} />
+                    {Object.keys(originalProps).length > 0 ? 'Refresh' : 'Load Properties'}
+                  </button>
+                  {canLoad && (
+                    <button onClick={() => setShowCreate(true)}
+                      className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors">
+                      <Plus size={11} /> Create New
                     </button>
-                    {canLoad && (
-                      <button onClick={() => setShowCreate(true)}
-                        className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors">
-                        <Plus size={11} /> Create New
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
-              </>
-            )}
-          </div>
-        )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* No app selected state */}
-      {!selectedAppComposite && (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-gray-900 border border-gray-800 rounded-xl">
-          <Database size={40} className="text-gray-700" />
-          <p className="text-gray-500 text-sm">Select a Business Group, Environment, and Application to manage CPS properties</p>
-        </div>
-      )}
-
       {/* Properties area */}
-      {selectedAppComposite && Object.keys(originalProps).length > 0 && (
+      {Object.keys(originalProps).length > 0 && (
         <div className="space-y-4">
           {/* Tabs + action toolbar */}
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -760,8 +761,8 @@ export default function CpsManagerPage() {
         </div>
       )}
 
-      {/* Empty state: app selected but no properties loaded yet */}
-      {selectedAppComposite && !propsLoading && Object.keys(originalProps).length === 0 && !propsError && cpsBaseUrl && (
+      {/* Empty state: CPS config entered but no properties loaded yet */}
+      {!propsLoading && Object.keys(originalProps).length === 0 && !propsError && canLoad && (
         <div className="flex flex-col items-center justify-center py-16 gap-4 bg-gray-900 border border-gray-800 rounded-xl">
           <Database size={36} className="text-gray-700" />
           <p className="text-gray-500 text-sm">
