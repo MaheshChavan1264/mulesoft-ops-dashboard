@@ -271,6 +271,7 @@ export default function UserSearchPage() {
   const [credentialErrors, setCredentialErrors] = useState(0);
   const [progress, setProgress] = useState({ envsDone: 0, envsTotal: 0, appsT: 0, appsN: 0 });
   const [envStats, setEnvStats] = useState([]); // per-env: [{envName, bgName, total, withCps}]
+  const [searchLogs, setSearchLogs] = useState([]); // step-by-step visible log entries
 
   useEffect(() => {
     setBgsLoad(true);
@@ -441,6 +442,11 @@ export default function UserSearchPage() {
     if (!bgEnvSelections.length) { setError('Select at least one Environment.'); return; }
     setLoading(true); setError(''); setResults(null); setCredentialErrors(0); setEnvStats([]);
     setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0 });
+    setSearchLogs([]);
+
+    const log = (msg, type = 'info') => setSearchLogs(prev => [...prev, { msg, type, ts: new Date().toLocaleTimeString() }]);
+
+    log(`🔍 Searching for "${query.trim()}" across ${bgEnvSelections.length} environment${bgEnvSelections.length !== 1 ? 's' : ''}`);
 
     // ── Phase 1: Fetch all envs in PARALLEL ───────────────────────────────
     const searchTermLo = query.trim().toLowerCase();
@@ -459,6 +465,8 @@ export default function UserSearchPage() {
             status: a.status || a.target?.desiredStatus || a.target?.status || '',
           }))
           .filter(e => e.cpsBaseUrl && e.cpsKey);
+        log(`📦 ${sel.bgName}/${sel.envName}: ${apps.length} apps found, ${entries.length} with CPS config${apps.length - entries.length > 0 ? `, ${apps.length - entries.length} without` : ''}`, entries.length === 0 ? 'warn' : 'info');
+
         // Fire-and-forget credentials (no await)
         if (entries.length) postCreds(entries);
 
@@ -508,6 +516,10 @@ export default function UserSearchPage() {
       setError(`Warning: ${failedEnvCount} environment${failedEnvCount !== 1 ? 's' : ''} could not be loaded and were skipped. Results may be incomplete.`);
     }
 
+    const failedMsg = failedEnvCount > 0 ? ` (${failedEnvCount} env(s) failed to load)` : '';
+    const totalApps = envResults.filter(r => r.status === 'fulfilled').reduce((s, r) => s + (r.value?.length || 0), 0);
+    log(`✅ Phase 1 complete: fetched apps from ${bgEnvSelections.length} env(s)${failedMsg}`);
+
     // ── Phase 2: Flatten + deduplicate entries ─────────────────────────────
     const seen = new Set();
       const allEntries = envResults
@@ -524,9 +536,14 @@ export default function UserSearchPage() {
         });
 
     setProgress(p => ({ ...p, appsN: allEntries.length }));
+    log(`🔗 Phase 2: ${allEntries.length} unique CPS entries to search (after deduplication)`);
 
-    if (!allEntries.length) { setResults([]); setLoading(false); return; }
+    if (!allEntries.length) {
+      log('⚠️ No apps with CPS config found — check that apps have cps.configServerBaseUrl set', 'warn');
+      setResults([]); setLoading(false); return;
+    }
 
+    log(`🚀 Phase 3: Sending ${allEntries.length} apps to backend CPS search...`);
     // ── Phase 3: Backend CPS fan-out search ───────────────────────────────
     try {
       const r = await api.post('/cps/search-user', { username: query.trim(), apps: allEntries });
@@ -552,8 +569,20 @@ export default function UserSearchPage() {
       // Merge ARM direct hits (exclude apps already found via CPS)
       const cpsAppNames = new Set(rows.map(r => r.appName));
       const uniqueArmRows = armRows.filter(r => !cpsAppNames.has(r.appName));
-      setResults([...rows, ...uniqueArmRows]);
-    } catch (e) { setError(e.response?.data?.error || e.message || 'Search failed'); }
+      const finalRows = [...rows, ...uniqueArmRows];
+      setResults(finalRows);
+
+      if (r.data?.credentialErrors > 0) {
+        log(`⚠️ ${r.data.credentialErrors} app(s) returned 401 — missing CPS credentials for those servers`, 'warn');
+      }
+      if (uniqueArmRows.length > 0) {
+        log(`📋 ${uniqueArmRows.length} match(es) found in ARM deployment properties (not CPS)`);
+      }
+      log(`🎯 Done: ${finalRows.length} total match(es) found (${rows.length} CPS + ${uniqueArmRows.length} ARM)`, finalRows.length > 0 ? 'success' : 'warn');
+    } catch (e) {
+      log(`❌ Search failed: ${e.response?.data?.error || e.message}`, 'error');
+      setError(e.response?.data?.error || e.message || 'Search failed');
+    }
     setLoading(false);
   };
 
@@ -641,6 +670,38 @@ export default function UserSearchPage() {
                 style={{ width: progress.envsTotal > 0 ? `${Math.round((progress.envsDone / progress.envsTotal) * 100)}%` : '0%' }}
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step-by-step search log panel */}
+      {searchLogs.length > 0 && (
+        <div className="bg-slate-950/60 border border-slate-800/50 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 bg-slate-900/60 border-b border-slate-800/50">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Search Log</p>
+            {!loading && (
+              <button onClick={() => setSearchLogs([])} className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors">
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="p-3 space-y-1 max-h-40 overflow-y-auto font-mono">
+            {searchLogs.map((entry, i) => (
+              <div key={i} className="flex items-start gap-2 text-[11px] leading-relaxed">
+                <span className="text-slate-600 flex-shrink-0">{entry.ts}</span>
+                <span className={
+                  entry.type === 'error'   ? 'text-red-400' :
+                  entry.type === 'warn'    ? 'text-yellow-400' :
+                  entry.type === 'success' ? 'text-emerald-400' :
+                  'text-slate-300'
+                }>{entry.msg}</span>
+              </div>
+            ))}
+            {loading && (
+              <div className="flex items-center gap-2 text-[11px] text-cyan-500">
+                <RefreshCw size={9} className="animate-spin" /> Working…
+              </div>
+            )}
           </div>
         </div>
       )}
