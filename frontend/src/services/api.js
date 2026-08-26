@@ -60,6 +60,13 @@ const mockHandler = async (url, params) => {
   if (url.startsWith('/cps/fetch')) {
     return { properties: [{ key: 'demo-app', environment: 'prod', properties: { 'cps.projectName': 'demo-app', 'version': '1.0.0', 'api.base': '/api' } }] };
   }
+  // CPS write operations (demo mode — simulate success)
+  if (url === '/cps/write') return { success: true, method: 'PUT', projectKey: 'demo-app', propertyCount: 3 };
+  if (url === '/cps/project') return { success: true, deleted: 'demo-app' };
+  if (url === '/cps/auth' && params?.projectKey) return { properties: [{ key: params.projectKey, allowedClientIds: ['demo-client-id-1'], readOnlyClientIds: [] }] };
+  if (url === '/cps/auth') return { success: true, allowedClientIds: ['demo-client-id-1'] };
+  if (url === '/cps/credentials/test') return { valid: true, statusCode: 200, message: 'Demo mode — connected successfully' };
+  if (url === '/cps/binary') return { success: true, uploaded: 'demo.jks', sizeBytes: 1024 };
 
   // Exchange
   if (url.startsWith('/exchange/org') && url.includes('/summary')) {

@@ -1,7 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const https = require('https');
 const authMiddleware = require('../middleware/authMiddleware');
+
+// Agent that tolerates self-signed / internal-CA certs (same as health.js)
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 const LEGACY_KEYS = ['ch1_prod', 'ch2_prod', 'ch1_uat', 'ch2_uat'];
 
@@ -521,14 +525,13 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     let matchedProps = [];
 
     // ── Non-secure fetch with credential retry ────────────────────────────
-    // Unlike /fetch, processApp previously had no retry logic — wrong-credential
-    // apps were silently skipped. Now mirrors /fetch retry behaviour.
     let nsRes;
     try {
       nsRes = await axios.get(nsUrl, {
         headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
         params,
         timeout: 15000,
+        httpsAgent,          // tolerates internal CA certs (prevents UNABLE_TO_GET_ISSUER_CERT_LOCALLY)
         validateStatus: () => true,
       });
 
@@ -546,12 +549,20 @@ router.post('/search-user', authMiddleware, async (req, res) => {
                 headers: { client_id: altCred.clientId, client_secret: altCred.clientSecret, 'Content-Type': 'application/json' },
                 params,
                 timeout: 8000,
+                httpsAgent,
                 validateStatus: () => true,
               });
               if (retry.status !== 401 && !(retry.status === 200 && isEmptyNsResponse(retry.data))) {
                 nsRes = retry;
                 creds = altCred; // use this cred for secure fetch too
-                console.log(`[search-user] "${appName}" — alt credential resolved ✅`);
+
+                // ── KEY FIX: promote working credential to session ──────────
+                // This means subsequent apps on the SAME CPS server will use
+                // getCredentials() directly (priority 1 or 2) instead of
+                // iterating through all 71 alt entries again.
+                req.session.cpsCreds[`${cleanBase}::${bgOrgId}`] = { clientId: altCred.clientId, clientSecret: altCred.clientSecret };
+                req.session.cpsCreds[cleanBase] = { clientId: altCred.clientId, clientSecret: altCred.clientSecret };
+                console.log(`[search-user] "${appName}" — alt credential resolved ✅ (promoted to session for ${cleanBase})`);
                 break;
               }
             } catch { /* try next */ }
@@ -559,7 +570,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         }
       }
 
-      // After retry, if still 401 or error — skip
+      // After retry, if still 401 or error — skip silently
       if (nsRes.status === 401 || nsRes.status >= 500) {
         console.warn(`[search-user] "${appName}" — HTTP ${nsRes.status} after retry, skipping`);
         return null;
@@ -644,6 +655,451 @@ router.post('/search-user', authMiddleware, async (req, res) => {
 
   console.log(`[search-user] "${username}" — total: ${apps.length}, matched: ${matched}, skipped/no-match: ${skipped}`);
   res.json({ results, scanned: apps.length, matched, skipped });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CPS WRITE OPERATIONS (CRUD + Auth Management)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/* ── POST /api/cps/write ──────────────────────────────────────────────────────
+   Create (POST) or Update (PUT) a CPS project entry.
+
+   Body: {
+     baseUrl      string   CPS server base URL
+     type         string   'non-secure' | 'secure'
+     method       string   'POST' (create new) | 'PUT' (update existing)  — default: 'PUT'
+     environment  string   CPS environment prefix  e.g. 'prod' | 'uat'
+     projectKey   string   CPS project key  e.g. 'my-api-name-v1-uw2-pd'
+     properties   object   { "key1": "value1", "key2": "value2", ... }
+     bgOrgId      string   Business Group org ID (for credential lookup)
+   }
+
+   The CPS write body format (confirmed from Postman collection):
+   { "properties": [{ "environment", "key", "properties": { k: v } }] }
+*/
+router.post('/write', authMiddleware, async (req, res) => {
+  const {
+    baseUrl,
+    type = 'non-secure',
+    method = 'PUT',
+    environment,
+    projectKey,
+    properties = {},
+    bgOrgId,
+  } = req.body || {};
+
+  if (!baseUrl || !environment || !projectKey) {
+    return res.status(400).json({ error: 'baseUrl, environment, and projectKey are required' });
+  }
+
+  const validTypes = ['non-secure', 'secure'];
+  if (!validTypes.includes(type)) {
+    return res.status(400).json({ error: `Invalid type: ${type}. Must be one of: ${validTypes.join(', ')}` });
+  }
+
+  const validMethods = ['POST', 'PUT'];
+  const httpMethod = (method || 'PUT').toUpperCase();
+  if (!validMethods.includes(httpMethod)) {
+    return res.status(400).json({ error: `Invalid method: ${method}. Must be POST or PUT` });
+  }
+
+  const envType = detectEnvType(baseUrl, environment, '');
+  const chType = detectChType('');
+  const creds = getCredentials(req, baseUrl, bgOrgId, envType, chType);
+  if (!creds) {
+    return res.status(422).json({
+      error: 'CPS credentials not configured for this server',
+      cpsUrl: normaliseUrl(baseUrl),
+      bgOrgId: bgOrgId || null,
+      needsConfig: true,
+    });
+  }
+
+  const pathMap = {
+    'non-secure': '/api/v2/properties/non-secure',
+    'secure':     '/api/v2/properties/secure',
+  };
+
+  const cleanBaseUrl = normaliseUrl(baseUrl);
+  const fullUrl = `${cleanBaseUrl}${pathMap[type]}`;
+
+  const body = {
+    properties: [{ environment, key: projectKey, properties }],
+  };
+
+  console.info(`[CPS Write] user=${req.session?.username || 'unknown'} op=${httpMethod} project=${projectKey} env=${environment} type=${type} base=${cleanBaseUrl}`);
+
+  try {
+    const response = await axios({
+      method: httpMethod.toLowerCase(),
+      url: fullUrl,
+      headers: {
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
+        'Content-Type': 'application/json',
+      },
+      data: body,
+      timeout: 20000,
+      validateStatus: () => true,
+    });
+
+    if (response.status >= 400) {
+      const errMsg = response.data?.message || response.data?.description || response.data?.error
+        || (typeof response.data === 'string' ? response.data : null)
+        || `CPS ${httpMethod} failed with HTTP ${response.status}`;
+      console.error(`[CPS Write] ${httpMethod} failed (${response.status}): ${errMsg}`);
+      return res.status(response.status).json({ error: errMsg, details: response.data });
+    }
+
+    return res.json({
+      success: true,
+      method: httpMethod,
+      projectKey,
+      environment,
+      type,
+      propertyCount: Object.keys(properties).length,
+    });
+  } catch (err) {
+    const msg = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT'
+      ? `CPS request timed out after 20s`
+      : err.message || 'CPS write request failed';
+    console.error(`[CPS Write] Network error for ${fullUrl}: ${msg}`);
+    return res.status(504).json({ error: msg });
+  }
+});
+
+/* ── DELETE /api/cps/project ──────────────────────────────────────────────────
+   Delete an ENTIRE CPS project entry (all properties for that key+environment).
+
+   ⚠️  There is no CPS endpoint for deleting an individual property key.
+       DELETE removes the whole project entry.  To remove a single key,
+       use PUT /api/cps/write with the key omitted from the properties object.
+
+   Body: { baseUrl, type, environment, projectKey, bgOrgId }
+*/
+router.delete('/project', authMiddleware, async (req, res) => {
+  const {
+    baseUrl,
+    type = 'non-secure',
+    environment,
+    projectKey,
+    bgOrgId,
+  } = req.body || {};
+
+  if (!baseUrl || !environment || !projectKey) {
+    return res.status(400).json({ error: 'baseUrl, environment, and projectKey are required' });
+  }
+
+  const envType = detectEnvType(baseUrl, environment, '');
+  const chType = detectChType('');
+  const creds = getCredentials(req, baseUrl, bgOrgId, envType, chType);
+  if (!creds) {
+    return res.status(422).json({ error: 'CPS credentials not configured for this server', needsConfig: true });
+  }
+
+  const pathMap = {
+    'non-secure': '/api/v2/properties/non-secure',
+    'secure':     '/api/v2/properties/secure',
+    'binaries':   '/api/v2/binaries/secure',
+  };
+
+  const cleanBaseUrl = normaliseUrl(baseUrl);
+  const fullUrl = `${cleanBaseUrl}${pathMap[type] || pathMap['non-secure']}`;
+
+  console.info(`[CPS Write] user=${req.session?.username || 'unknown'} op=DELETE project=${projectKey} env=${environment} type=${type} base=${cleanBaseUrl}`);
+
+  try {
+    const response = await axios.delete(fullUrl, {
+      headers: { client_id: creds.clientId, client_secret: creds.clientSecret },
+      params: { environment, keys: projectKey },
+      timeout: 20000,
+      validateStatus: () => true,
+    });
+
+    if (response.status >= 400) {
+      const errMsg = response.data?.message || response.data?.error
+        || `CPS DELETE failed with HTTP ${response.status}`;
+      console.error(`[CPS Write] DELETE failed (${response.status}): ${errMsg}`);
+      return res.status(response.status).json({ error: errMsg });
+    }
+
+    return res.json({ success: true, deleted: projectKey, environment, type });
+  } catch (err) {
+    const msg = err.code === 'ECONNABORTED' ? 'CPS request timed out' : err.message;
+    return res.status(504).json({ error: msg });
+  }
+});
+
+/* ── GET /api/cps/auth ────────────────────────────────────────────────────────
+   Fetch the access control list (allowedClientIds + readOnlyClientIds) for a
+   CPS project key.
+
+   Query: baseUrl, type, environment, projectKey, bgOrgId
+*/
+router.get('/auth', authMiddleware, async (req, res) => {
+  const { baseUrl, type = 'non-secure', environment, projectKey, bgOrgId } = req.query;
+
+  if (!baseUrl || !environment || !projectKey) {
+    return res.status(400).json({ error: 'baseUrl, environment, and projectKey are required' });
+  }
+
+  const envType = detectEnvType(baseUrl, environment, '');
+  const chType = detectChType('');
+  const creds = getCredentials(req, baseUrl, bgOrgId, envType, chType);
+  if (!creds) {
+    return res.status(422).json({ error: 'CPS credentials not configured', needsConfig: true });
+  }
+
+  const authPathMap = {
+    'non-secure': '/api/v2/properties/non-secure/auth',
+    'secure':     '/api/v2/properties/secure/auth',
+    'binaries':   '/api/v2/binaries/secure/auth',
+  };
+
+  const cleanBaseUrl = normaliseUrl(baseUrl);
+  const fullUrl = `${cleanBaseUrl}${authPathMap[type] || authPathMap['non-secure']}`;
+
+  try {
+    const response = await axios.get(fullUrl, {
+      headers: { client_id: creds.clientId, client_secret: creds.clientSecret },
+      params: { environment, keys: projectKey },
+      timeout: 15000,
+      validateStatus: () => true,
+    });
+    res.status(response.status).json(response.data);
+  } catch (err) {
+    res.status(504).json({ error: err.message || 'CPS auth fetch failed' });
+  }
+});
+
+/* ── POST /api/cps/auth ───────────────────────────────────────────────────────
+   Update the access control list for a CPS project key.
+
+   Body: {
+     baseUrl          string
+     type             string   'non-secure' | 'secure' | 'binaries'
+     environment      string
+     projectKey       string
+     allowedClientIds string[]  Client IDs with full read+write access
+     readOnlyClientIds string[] Client IDs with read-only access (optional)
+     replace          boolean  true → PUT /auth (full replace)
+                               false (default) → PUT /auth/add (non-destructive append)
+     bgOrgId          string
+   }
+*/
+router.post('/auth', authMiddleware, async (req, res) => {
+  const {
+    baseUrl,
+    type = 'non-secure',
+    environment,
+    projectKey,
+    allowedClientIds = [],
+    readOnlyClientIds = [],
+    replace = false,
+    bgOrgId,
+  } = req.body || {};
+
+  if (!baseUrl || !environment || !projectKey) {
+    return res.status(400).json({ error: 'baseUrl, environment, and projectKey are required' });
+  }
+  if (!Array.isArray(allowedClientIds) || allowedClientIds.length === 0) {
+    return res.status(400).json({ error: 'allowedClientIds must be a non-empty array' });
+  }
+
+  const envType = detectEnvType(baseUrl, environment, '');
+  const chType = detectChType('');
+  const creds = getCredentials(req, baseUrl, bgOrgId, envType, chType);
+  if (!creds) {
+    return res.status(422).json({ error: 'CPS credentials not configured', needsConfig: true });
+  }
+
+  const baseAuthPathMap = {
+    'non-secure': '/api/v2/properties/non-secure/auth',
+    'secure':     '/api/v2/properties/secure/auth',
+    'binaries':   '/api/v2/binaries/secure/auth',
+  };
+  const basePath = baseAuthPathMap[type] || baseAuthPathMap['non-secure'];
+  // replace=true → full replace: PUT /auth
+  // replace=false → non-destructive append: PUT /auth/add
+  const suffix = replace ? '' : '/add';
+  const cleanBaseUrl = normaliseUrl(baseUrl);
+  const fullUrl = `${cleanBaseUrl}${basePath}${suffix}`;
+
+  const body = {
+    properties: [{
+      environment,
+      key: projectKey,
+      allowedClientIds,
+      ...(readOnlyClientIds.length > 0 && { readOnlyClientIds }),
+    }],
+  };
+
+  console.info(`[CPS Auth] user=${req.session?.username || 'unknown'} op=${replace ? 'REPLACE' : 'ADD'} project=${projectKey} env=${environment} type=${type} allowedCount=${allowedClientIds.length}`);
+
+  try {
+    const response = await axios.put(fullUrl, body, {
+      headers: {
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
+        'Content-Type': 'application/json',
+      },
+      timeout: 15000,
+      validateStatus: () => true,
+    });
+
+    if (response.status >= 400) {
+      const errMsg = response.data?.message || response.data?.error
+        || `CPS auth update failed with HTTP ${response.status}`;
+      return res.status(response.status).json({ error: errMsg });
+    }
+
+    return res.json({
+      success: true,
+      mode: replace ? 'replace' : 'add',
+      projectKey,
+      environment,
+      allowedClientIds,
+      readOnlyClientIds,
+    });
+  } catch (err) {
+    return res.status(504).json({ error: err.message || 'CPS auth update failed' });
+  }
+});
+
+/* ── POST /api/cps/credentials/test ─────────────────────────────────────────
+   Test a CPS credential pair without saving it to the session.
+   Useful for verifying credentials before writing properties.
+
+   Body: { baseUrl, clientId, clientSecret, environment, projectKey? }
+   Response: { valid, statusCode, message }
+*/
+router.post('/credentials/test', authMiddleware, async (req, res) => {
+  const { baseUrl, clientId, clientSecret, environment, projectKey } = req.body || {};
+
+  if (!baseUrl || !clientId || !clientSecret) {
+    return res.status(400).json({ error: 'baseUrl, clientId, and clientSecret are required' });
+  }
+
+  const cleanBaseUrl = normaliseUrl(baseUrl);
+  const url = `${cleanBaseUrl}/api/v2/properties/non-secure`;
+
+  try {
+    const r = await axios.get(url, {
+      headers: { client_id: clientId, client_secret: clientSecret, 'Content-Type': 'application/json' },
+      params: { environment: environment || 'prod', keys: projectKey || '' },
+      timeout: 10000,
+      validateStatus: () => true,
+    });
+
+    if (r.status === 401) {
+      return res.json({ valid: false, statusCode: 401, message: 'Invalid credentials — check your client_id and client_secret' });
+    }
+    if (r.status === 403) {
+      return res.json({ valid: false, statusCode: 403, message: 'Insufficient permissions — credentials are valid but do not have access to this CPS server' });
+    }
+    if (r.status === 200) {
+      return res.json({ valid: true, statusCode: 200, message: 'Connected successfully — credentials are valid' });
+    }
+    // Other non-401/403/200 statuses (e.g. 404, 500) — treat as connectivity success but note the status
+    return res.json({ valid: true, statusCode: r.status, message: `Connected (HTTP ${r.status}) — credentials are accepted` });
+  } catch (err) {
+    const msg = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT'
+      ? 'CPS server unreachable — request timed out after 10s'
+      : err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN'
+      ? 'CPS server unreachable — DNS resolution failed'
+      : err.message || 'CPS connectivity test failed';
+    return res.json({ valid: false, statusCode: 0, message: msg });
+  }
+});
+
+/* ── POST /api/cps/binary ────────────────────────────────────────────────────
+   Upload a binary file to CPS.
+
+   Unlike JSON property routes, binaries use:
+     Content-Type: application/octet-stream
+     Custom headers: key (filename), environment
+     Body: raw binary bytes
+
+   Body (multipart handled by Express — file bytes forwarded directly):
+   {
+     baseUrl      string   CPS server base URL
+     environment  string   CPS environment prefix
+     key          string   Binary filename  e.g. "api-httplistener.jks"
+     bgOrgId      string   Business Group org ID
+   }
+   Plus the raw binary body in req.rawBody (set via custom middleware) OR
+   the request streams the body directly.
+
+   ⚠️  Because Express parses JSON bodies globally, we need the raw buffer.
+       The frontend must send this as a FormData / Blob where the binary is
+       attached, then the backend reads req.body.fileData (base64) and
+       converts it to a Buffer before forwarding to CPS.
+
+   Frontend sends: { baseUrl, environment, key, bgOrgId, fileData: base64String }
+*/
+router.post('/binary', authMiddleware, async (req, res) => {
+  const { baseUrl, environment, key: fileName, bgOrgId, fileData } = req.body || {};
+
+  if (!baseUrl || !environment || !fileName) {
+    return res.status(400).json({ error: 'baseUrl, environment, and key (filename) are required' });
+  }
+  if (!fileData) {
+    return res.status(400).json({ error: 'fileData (base64-encoded binary content) is required' });
+  }
+
+  const envType = detectEnvType(baseUrl, environment, '');
+  const chType = detectChType('');
+  const creds = getCredentials(req, baseUrl, bgOrgId, envType, chType);
+  if (!creds) {
+    return res.status(422).json({ error: 'CPS credentials not configured', needsConfig: true });
+  }
+
+  // Decode base64 → Buffer
+  let fileBuffer;
+  try {
+    fileBuffer = Buffer.from(fileData, 'base64');
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid fileData — must be a valid base64-encoded string' });
+  }
+
+  const cleanBaseUrl = normaliseUrl(baseUrl);
+  const fullUrl = `${cleanBaseUrl}/api/v2/binaries/secure`;
+
+  console.info(`[CPS Binary] user=${req.session?.username || 'unknown'} op=UPLOAD file=${fileName} env=${environment} base=${cleanBaseUrl} size=${fileBuffer.length}`);
+
+  try {
+    const response = await axios.post(fullUrl, fileBuffer, {
+      headers: {
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
+        'Content-Type': 'application/octet-stream',
+        key: fileName,
+        environment,
+      },
+      timeout: 60000, // binaries can be large — 60s timeout
+      validateStatus: () => true,
+      maxBodyLength: 50 * 1024 * 1024, // 50MB max
+      maxContentLength: 50 * 1024 * 1024,
+    });
+
+    if (response.status >= 400) {
+      const errMsg = response.data?.message || response.data?.error
+        || `CPS binary upload failed with HTTP ${response.status}`;
+      console.error(`[CPS Binary] Upload failed (${response.status}): ${errMsg}`);
+      return res.status(response.status).json({ error: errMsg });
+    }
+
+    return res.json({
+      success: true,
+      uploaded: fileName,
+      environment,
+      sizeBytes: fileBuffer.length,
+    });
+  } catch (err) {
+    const msg = err.code === 'ECONNABORTED' ? 'CPS binary upload timed out' : err.message;
+    console.error(`[CPS Binary] Network error for ${fullUrl}: ${msg}`);
+    return res.status(504).json({ error: msg });
+  }
 });
 
 module.exports = router;

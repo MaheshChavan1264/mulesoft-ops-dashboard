@@ -7,6 +7,7 @@ import {
   Activity,
   GitCompare,
   Users,
+  Database,
   ChevronRight
 } from 'lucide-react';
 
@@ -16,6 +17,7 @@ const navItems = [
   { to: '/exchange', icon: Package, label: 'Exchange Assets' },
   { to: '/ping-test', icon: Activity, label: 'Ping Test' },
   { to: '/cps-compare', icon: GitCompare, label: 'CPS Compare' },
+  { to: '/cps-manager', icon: Database, label: 'CPS Manager' },
   { to: '/user-search', icon: Users, label: 'Global Search' },
 ];
 

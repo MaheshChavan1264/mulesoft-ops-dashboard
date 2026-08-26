@@ -1,0 +1,903 @@
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
+import {
+  Database, RefreshCw, Search, Plus, Trash2, Save,
+  X, AlertTriangle, Download, Upload, ShieldCheck, Key,
+  FileArchive, Eye, EyeOff, Copy, Check,
+} from 'lucide-react';
+import Select from '../components/Select';
+import CpsCredentialImportButton from '../components/CpsCredentialImportButton';
+import CpsCreateModal from '../components/CpsCreateModal';
+import CpsDeleteProjectModal from '../components/CpsDeleteProjectModal';
+import CpsBinaryUploadPanel from '../components/CpsBinaryUploadPanel';
+import CpsAuthPanel from '../components/CpsAuthPanel';
+import CpsImportModal from '../components/CpsImportModal';
+import CpsSettingsModal from '../components/CpsSettingsModal';
+import CpsCredTestButton from '../components/CpsCredTestButton';
+import api from '../services/api';
+import { extractCpsConfig } from '../utils/cpsHelpers';
+import { flattenCpsResponse } from '../utils/cpsHelpers';
+import { downloadCsv } from '../utils/appUtils';
+import { applyBgFilter } from '../components/BgFilterModal';
+
+// ── Inline CopyBtn ────────────────────────────────────────────────────────────
+function CopyBtn({ text }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }}
+      className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-600 hover:text-gray-300 transition-all flex-shrink-0"
+    >
+      {done ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+    </button>
+  );
+}
+
+// ── SecretValue ───────────────────────────────────────────────────────────────
+function SecretValue({ value }) {
+  const [show, setShow] = useState(false);
+  const isSecret = /^\*+$/.test(String(value));
+  return (
+    <span className="flex items-center gap-1">
+      <span className="font-mono text-xs text-gray-200 break-all">
+        {show || !isSecret ? String(value) : '••••••••'}
+      </span>
+      {isSecret && (
+        <button onClick={() => setShow(v => !v)} className="text-gray-600 hover:text-gray-300 flex-shrink-0">
+          {show ? <EyeOff size={11} /> : <Eye size={11} />}
+        </button>
+      )}
+    </span>
+  );
+}
+
+const PROP_TYPE_TABS = [
+  { id: 'non-secure', label: 'Non-Secure' },
+  { id: 'secure', label: 'Secure' },
+  { id: 'binaries', label: 'Binaries' },
+  { id: 'auth', label: '🔐 Access Control' },
+];
+
+export default function CpsManagerPage() {
+  const { orgId: authOrgId } = useAuth();
+  const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
+
+  // ── BG / Env / App state ─────────────────────────────────────────────────
+  const [allBgs, setAllBgs] = useState([]);
+  const [selectedBgId, setSelectedBgId] = useState('');
+  const [envs, setEnvs] = useState([]);
+  const [selectedEnvId, setSelectedEnvId] = useState('');
+  const [apps, setApps] = useState([]);
+  const [selectedAppComposite, setSelectedAppComposite] = useState(''); // "appId|envId|bgId"
+  const [bgLoading, setBgLoading] = useState(true);
+  const [envLoading, setEnvLoading] = useState(false);
+  const [appLoading, setAppLoading] = useState(false);
+
+  // ── CPS connection details (auto-populated from ARM) ─────────────────────
+  const [cpsBaseUrl, setCpsBaseUrl] = useState('');
+  const [cpsEnv, setCpsEnv] = useState('');
+  const [cpsKey, setCpsKey] = useState('');
+  const [cpsClientId, setCpsClientId] = useState('');
+  const [credsResolved, setCredsResolved] = useState(false);
+  const [appDetailLoading, setAppDetailLoading] = useState(false);
+
+  // ── Property data state ──────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState('non-secure');
+  const [originalProps, setOriginalProps] = useState({});
+  const [pendingChanges, setPendingChanges] = useState({ added: {}, modified: {}, deleted: new Set() });
+  const [propsLoading, setPropsLoading] = useState(false);
+  const [propsError, setPropsError] = useState('');
+  const [secureGroups, setSecureGroups] = useState([]);
+  const [binaryKeys, setBinaryKeys] = useState([]);
+  const [search, setSearch] = useState('');
+
+  // ── Save state ───────────────────────────────────────────────────────────
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState('');
+  const [toast, setToast] = useState(null);
+
+  // ── Modals ───────────────────────────────────────────────────────────────
+  const [showCreate, setShowCreate] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showCpsSettings, setShowCpsSettings] = useState(false);
+
+  // ── Derived ──────────────────────────────────────────────────────────────
+  const resolvedBgId = useMemo(() => {
+    if (!selectedAppComposite) return selectedBgId;
+    const [, , bgId] = selectedAppComposite.split('|');
+    return bgId || selectedBgId;
+  }, [selectedAppComposite, selectedBgId]);
+
+  const selectedApp = useMemo(() => {
+    if (!selectedAppComposite) return null;
+    const [appId, envId, bgId] = selectedAppComposite.split('|');
+    return apps.find(a => String(a.id) === appId && (a.environment?.id === envId || !envId) && (a._bgId === bgId || !bgId)) || null;
+  }, [selectedAppComposite, apps]);
+
+  const isProd = useMemo(() => {
+    if (!selectedApp) return false;
+    const type = selectedApp.environment?.type || '';
+    return type === 'production' || cpsEnv === 'prod' || cpsBaseUrl.includes('-pd.') || cpsBaseUrl.includes('-pd.');
+  }, [selectedApp, cpsEnv, cpsBaseUrl]);
+
+  // Compute merged properties: original + pending changes
+  const mergedProps = useMemo(() => {
+    const m = { ...originalProps, ...pendingChanges.modified, ...pendingChanges.added };
+    pendingChanges.deleted.forEach(k => delete m[k]);
+    return m;
+  }, [originalProps, pendingChanges]);
+
+  const pendingCount = Object.keys(pendingChanges.added).length
+    + Object.keys(pendingChanges.modified).length
+    + pendingChanges.deleted.size;
+
+  const hasPendingChanges = pendingCount > 0;
+
+  // ── Load BGs ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    setBgLoading(true);
+    api.get('/organizations/business-groups')
+      .then(r => {
+        const bgs = r.data?.data || [];
+        setAllBgs(bgs);
+        const root = bgs.find(g => !g.parentId) || bgs[0];
+        if (root) setSelectedBgId(root.id);
+      })
+      .catch(() => {})
+      .finally(() => setBgLoading(false));
+  }, []);
+
+  // ── Load Envs when BG changes ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedBgId) return;
+    setEnvLoading(true);
+    setSelectedEnvId('');
+    setApps([]);
+    setSelectedAppComposite('');
+    api.get(`/environments/${selectedBgId}`)
+      .then(r => {
+        const list = r.data?.data || [];
+        setEnvs(list);
+        if (list.length > 0) setSelectedEnvId(list[0].id);
+      })
+      .catch(() => {})
+      .finally(() => setEnvLoading(false));
+  }, [selectedBgId]);
+
+  // ── Load Apps when Env changes ────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedBgId) return;
+    setAppLoading(true);
+    setSelectedAppComposite('');
+    api.get(`/applications/summary/${selectedBgId}`)
+      .then(r => {
+        const all = r.data?.data || [];
+        const filtered = selectedEnvId ? all.filter(a => a.environment?.id === selectedEnvId) : all;
+        setApps(filtered.map(a => ({ ...a, _bgId: selectedBgId })));
+      })
+      .catch(() => {})
+      .finally(() => setAppLoading(false));
+  }, [selectedBgId, selectedEnvId]);
+
+  // ── Select App → fetch ARM detail → extract CPS config ───────────────────
+  const selectApp = useCallback(async (compositeId) => {
+    setSelectedAppComposite(compositeId);
+    setCpsBaseUrl(''); setCpsEnv(''); setCpsKey(''); setCpsClientId('');
+    setCredsResolved(false);
+    setOriginalProps({}); setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+    setSecureGroups([]); setBinaryKeys([]);
+    setPropsError('');
+    if (!compositeId) return;
+
+    const [appId, envId, bgId] = compositeId.split('|');
+    const app = apps.find(a => String(a.id) === appId);
+    if (!app) return;
+
+    setAppDetailLoading(true);
+    try {
+      let detail;
+      if (app.deploymentType === 'CloudHub 2.0') {
+        const r = await api.get(`/applications/cloudhub2/${bgId || selectedBgId}/${envId}/${appId}`);
+        detail = r.data;
+      } else {
+        const r = await api.get(`/applications/cloudhub1/${envId}/${appId}`, { params: { orgId: bgId || selectedBgId } });
+        detail = { name: app.name, properties: r.data?.properties || {} };
+      }
+      const extracted = extractCpsConfig(detail);
+      setCpsBaseUrl(extracted.cpsBaseUrl || '');
+      setCpsEnv(extracted.cpsEnv || '');
+      setCpsKey(extracted.cpsKey || '');
+      setCpsClientId(extracted.cpsClientId || '');
+
+      // Auto-resolve credentials from imported CSV
+      if (extracted.cpsBaseUrl && hasCpsCreds) {
+        const normBase = extracted.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+        const isMasked = v => !v || /^\*+$/.test(v.trim());
+        const bgOrgId = bgId || selectedBgId;
+
+        if (extracted.cpsClientId && !isMasked(extracted.cpsClientId)) {
+          const secret = getSecret(extracted.cpsClientId);
+          if (secret) {
+            try {
+              await api.post('/cps/credentials', { credentials: { [`${normBase}::${bgOrgId}`]: { clientId: extracted.cpsClientId, clientSecret: secret } } });
+              setCredsResolved(true);
+            } catch {}
+          }
+        }
+        if (!credsResolved) {
+          const allCreds = getAllCredentials();
+          if (allCreds.length > 0) {
+            const credMap = {};
+            for (const { clientId, clientSecret } of allCreds) {
+              credMap[`${normBase}::${clientId}`] = { clientId, clientSecret };
+            }
+            try { await api.post('/cps/credentials', { credentials: credMap }); setCredsResolved(true); } catch {}
+          }
+        }
+      }
+    } catch {}
+    setAppDetailLoading(false);
+  }, [apps, selectedBgId, hasCpsCreds, getSecret, getAllCredentials]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Load Properties ───────────────────────────────────────────────────────
+  const loadProperties = useCallback(async () => {
+    if (!cpsBaseUrl || !cpsKey || !cpsEnv) return;
+    setPropsLoading(true);
+    setPropsError('');
+    setOriginalProps({});
+    setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+    setSecureGroups([]);
+    setBinaryKeys([]);
+
+    const bgOrgId = resolvedBgId;
+    try {
+      // Load non-secure (always)
+      const nsRes = await api.get('/cps/fetch', {
+        params: { baseUrl: cpsBaseUrl, type: 'non-secure', environment: cpsEnv, keys: cpsKey, bgOrgId }
+      });
+      const flat = flattenCpsResponse(nsRes.data, cpsKey);
+      setOriginalProps(flat);
+
+      // Extract binary keys from non-secure
+      const binStr = flat['cps.secure.binaries'] || '';
+      if (binStr) setBinaryKeys(binStr.split(',').map(k => k.trim()).filter(Boolean));
+
+      // Try to load secure (optional — requires credentials)
+      const secStr = flat['cps.secure.properties'] || '';
+      if (secStr) {
+        try {
+          const secRes = await api.get('/cps/fetch', {
+            params: { baseUrl: cpsBaseUrl, type: 'secure', environment: cpsEnv, keys: secStr, bgOrgId }
+          });
+          const groups = Array.isArray(secRes.data?.responses) ? secRes.data.responses : [];
+          setSecureGroups(groups);
+        } catch {}
+      }
+    } catch (err) {
+      setPropsError(err.response?.data?.error || err.message || 'Failed to load CPS properties');
+    }
+    setPropsLoading(false);
+  }, [cpsBaseUrl, cpsKey, cpsEnv, resolvedBgId]);
+
+  // ── Property change helpers ───────────────────────────────────────────────
+  const updateProperty = (key, newValue) => {
+    setPendingChanges(prev => {
+      const next = { ...prev, added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) };
+      if (key in prev.added) {
+        next.added = { ...prev.added, [key]: newValue };
+      } else {
+        next.modified = { ...prev.modified, [key]: newValue };
+      }
+      return next;
+    });
+  };
+
+  const addProperty = (key, value) => {
+    if (!key.trim()) return;
+    setPendingChanges(prev => ({
+      ...prev,
+      added: { ...prev.added, [key.trim()]: value },
+      deleted: (() => { const s = new Set(prev.deleted); s.delete(key.trim()); return s; })(),
+    }));
+  };
+
+  const markDeleted = (key) => {
+    setPendingChanges(prev => {
+      const next = { ...prev, added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) };
+      if (key in next.added) {
+        delete next.added[key];
+      } else {
+        next.deleted.add(key);
+        delete next.modified[key];
+      }
+      return next;
+    });
+  };
+
+  const discardChanges = () => {
+    setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+  };
+
+  // ── Save (PUT) ────────────────────────────────────────────────────────────
+  const saveChanges = async () => {
+    if (!hasPendingChanges || !cpsBaseUrl || !cpsKey) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await api.post('/cps/write', {
+        baseUrl: cpsBaseUrl,
+        type: activeTab === 'secure' ? 'secure' : 'non-secure',
+        method: 'PUT',
+        environment: cpsEnv,
+        projectKey: cpsKey,
+        properties: mergedProps,
+        bgOrgId: resolvedBgId,
+      });
+      setOriginalProps(mergedProps);
+      setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+      showToast('Properties saved successfully', 'success');
+      await loadProperties();
+    } catch (err) {
+      setSaveError(err.response?.data?.error || err.message || 'Save failed');
+    }
+    setSaving(false);
+  };
+
+  // ── Toast helper ──────────────────────────────────────────────────────────
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  // ── Export CSV ────────────────────────────────────────────────────────────
+  const exportCsv = () => {
+    const rows = [['Property Key', 'Value']];
+    Object.entries(mergedProps).sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([k, v]) => rows.push([k, String(v ?? '')]));
+    downloadCsv(rows, `cps-${cpsKey}-${cpsEnv}-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
+  // ── Filtered visible properties ───────────────────────────────────────────
+  const visibleProps = useMemo(() => {
+    const entries = Object.entries(mergedProps).sort(([a], [b]) => a.localeCompare(b));
+    if (!search.trim()) return entries;
+    const q = search.toLowerCase();
+    return entries.filter(([k, v]) => k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q));
+  }, [mergedProps, search]);
+
+  // ── Dropdown options ──────────────────────────────────────────────────────
+  const bgOptions = applyBgFilter(allBgs).map(g => ({
+    value: g.id, label: g.name, indent: !!g.parentId,
+    tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400',
+  }));
+  const envOptions = [
+    { value: '', label: 'All Environments' },
+    ...envs.map(e => ({ value: e.id, label: e.name })),
+  ];
+  const appOptions = apps.map(a => ({
+    value: `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`,
+    label: a.name,
+    tag: a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1',
+    tagColor: a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400',
+  }));
+
+  const canLoad = !!(cpsBaseUrl && cpsKey && cpsEnv);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-5">
+      {/* Modals */}
+      {showCreate && (
+        <CpsCreateModal
+          baseUrl={cpsBaseUrl} environment={cpsEnv} bgOrgId={resolvedBgId} isProd={isProd}
+          onClose={() => setShowCreate(false)}
+          onCreated={k => { showToast(`Project "${k}" created`); loadProperties(); }}
+        />
+      )}
+      {showDelete && (
+        <CpsDeleteProjectModal
+          baseUrl={cpsBaseUrl} type={activeTab === 'secure' ? 'secure' : 'non-secure'}
+          environment={cpsEnv} projectKey={cpsKey} bgOrgId={resolvedBgId} isProd={isProd}
+          onClose={() => setShowDelete(false)}
+          onDeleted={k => { showToast(`Project "${k}" deleted`); setOriginalProps({}); setPendingChanges({ added: {}, modified: {}, deleted: new Set() }); }}
+        />
+      )}
+      {showImport && (
+        <CpsImportModal
+          baseUrl={cpsBaseUrl} type={activeTab} environment={cpsEnv} projectKey={cpsKey}
+          bgOrgId={resolvedBgId} isProd={isProd} existingProps={originalProps}
+          onClose={() => setShowImport(false)}
+          onImported={({ count }) => { showToast(`Imported ${count} properties`); loadProperties(); }}
+        />
+      )}
+      {showCpsSettings && (
+        <CpsSettingsModal
+          prefilledUrl={cpsBaseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}
+          prefilledBgId={resolvedBgId}
+          onClose={() => setShowCpsSettings(false)}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm ${
+          toast.type === 'success'
+            ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
+            : 'bg-red-950/40 border-red-800/50 text-red-300'
+        }`}>
+          <span>{toast.msg}</span>
+          <button onClick={() => setToast(null)} className="ml-4 opacity-60 hover:opacity-100"><X size={14} /></button>
+        </div>
+      )}
+
+      {/* Page Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+            <Database size={20} className="text-cyan-400" /> CPS Property Manager
+          </h1>
+          <p className="text-gray-400 text-sm mt-1">Create, update, delete and manage auth for CPS properties</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <CpsCredentialImportButton compact />
+          <button onClick={() => setShowCpsSettings(true)}
+            className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/50 px-3 py-1.5 rounded-lg transition-colors">
+            <Key size={11} /> CPS Credentials
+          </button>
+        </div>
+      </div>
+
+      {/* Production banner */}
+      {isProd && cpsBaseUrl && (
+        <div className="flex items-center gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3">
+          <AlertTriangle size={16} className="text-red-400 flex-shrink-0" />
+          <span className="text-red-300 text-sm font-semibold">
+            ⚠️ PRODUCTION — changes take effect immediately and cannot be undone
+          </span>
+        </div>
+      )}
+
+      {/* BG / Env / App selectors */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Business Group</p>
+            <Select value={selectedBgId} onChange={setSelectedBgId} options={bgOptions}
+              placeholder="Select BG…" searchable disabled={bgLoading} />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Environment</p>
+            <Select value={selectedEnvId} onChange={setSelectedEnvId} options={envOptions}
+              placeholder="All Environments" disabled={envLoading || !selectedBgId} />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1 flex items-center gap-1">
+              Application {appLoading && <RefreshCw size={9} className="animate-spin text-gray-600" />}
+            </p>
+            <Select value={selectedAppComposite} onChange={selectApp} options={appOptions}
+              placeholder="Search application…" searchable disabled={appLoading || !selectedBgId} />
+          </div>
+        </div>
+
+        {/* CPS config fields */}
+        {selectedAppComposite && (
+          <div className="pt-3 border-t border-gray-800/60 space-y-3">
+            {appDetailLoading ? (
+              <div className="flex items-center gap-2 text-gray-500 text-xs">
+                <RefreshCw size={11} className="animate-spin" /> Extracting CPS config from ARM properties…
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Base URL</label>
+                    <input value={cpsBaseUrl} onChange={e => setCpsBaseUrl(e.target.value)}
+                      placeholder="https://cps-server.internalapi.sfdcbt.net"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Env</label>
+                      <input value={cpsEnv} onChange={e => setCpsEnv(e.target.value)} placeholder="prod / uat"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Project Key</label>
+                      <input value={cpsKey} onChange={e => setCpsKey(e.target.value)} placeholder="my-api-name"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {credsResolved && (
+                    <span className="flex items-center gap-1 text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-2 py-0.5 rounded-full">
+                      <Key size={8} /> CPS creds auto-resolved
+                    </span>
+                  )}
+                  <CpsCredTestButton baseUrl={cpsBaseUrl} clientId={cpsClientId}
+                    clientSecret={cpsClientId ? undefined : undefined}
+                    environment={cpsEnv} projectKey={cpsKey} compact />
+                  <div className="flex items-center gap-2 ml-auto">
+                    <button onClick={loadProperties} disabled={!canLoad || propsLoading}
+                      className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 border border-cyan-800/50 px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors">
+                      <RefreshCw size={11} className={propsLoading ? 'animate-spin' : ''} />
+                      {Object.keys(originalProps).length > 0 ? 'Refresh' : 'Load Properties'}
+                    </button>
+                    {canLoad && (
+                      <button onClick={() => setShowCreate(true)}
+                        className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors">
+                        <Plus size={11} /> Create New
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* No app selected state */}
+      {!selectedAppComposite && (
+        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-gray-900 border border-gray-800 rounded-xl">
+          <Database size={40} className="text-gray-700" />
+          <p className="text-gray-500 text-sm">Select a Business Group, Environment, and Application to manage CPS properties</p>
+        </div>
+      )}
+
+      {/* Properties area */}
+      {selectedAppComposite && Object.keys(originalProps).length > 0 && (
+        <div className="space-y-4">
+          {/* Tabs + action toolbar */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="bg-gray-900 p-1 rounded-xl border border-gray-800 flex gap-0.5">
+              {PROP_TYPE_TABS.map(t => (
+                <button key={t.id} onClick={() => setActiveTab(t.id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    activeTab === t.id ? 'bg-gray-700/80 text-white shadow-md' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/60'
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {activeTab !== 'auth' && activeTab !== 'binaries' && (
+                <>
+                  <button onClick={() => setShowImport(true)}
+                    className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                    <Upload size={11} /> Import
+                  </button>
+                  <button onClick={exportCsv}
+                    className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                    <Download size={11} /> Export
+                  </button>
+                  <button onClick={() => setShowDelete(true)}
+                    className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 bg-red-950/40 border border-red-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                    <Trash2 size={11} /> Delete Project
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Save error */}
+          {saveError && (
+            <div className="flex items-center gap-2 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3 text-red-400 text-sm">
+              <AlertTriangle size={14} className="flex-shrink-0" /> {saveError}
+            </div>
+          )}
+
+          {/* Loading / Error state */}
+          {propsLoading && (
+            <div className="flex items-center justify-center py-12 gap-3 text-gray-500">
+              <RefreshCw size={18} className="animate-spin" />
+              <span className="text-sm">Loading CPS properties…</span>
+            </div>
+          )}
+          {propsError && !propsLoading && (
+            <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3">
+              <AlertTriangle size={14} className="text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-red-300 text-sm font-medium">Failed to load properties</p>
+                <p className="text-red-500/80 text-xs mt-1">{propsError}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Non-Secure Tab */}
+          {activeTab === 'non-secure' && !propsLoading && !propsError && (
+            <PropertyTable
+              props={mergedProps}
+              originalProps={originalProps}
+              pendingChanges={pendingChanges}
+              search={search}
+              setSearch={setSearch}
+              onUpdate={updateProperty}
+              onDelete={markDeleted}
+              onAdd={addProperty}
+              hasPendingChanges={hasPendingChanges}
+              pendingCount={pendingCount}
+              onSave={saveChanges}
+              onDiscard={discardChanges}
+              saving={saving}
+              isProd={isProd}
+            />
+          )}
+
+          {/* Secure Tab */}
+          {activeTab === 'secure' && !propsLoading && (
+            <div className="space-y-3">
+              {secureGroups.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-3 bg-gray-900 border border-gray-800 rounded-xl">
+                  <Key size={28} className="text-gray-700" />
+                  <p className="text-gray-500 text-sm">No secure properties configured (cps.secure.properties not set)</p>
+                </div>
+              ) : (
+                secureGroups.map(group => (
+                  <div key={group.key} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 bg-orange-950/20 border-b border-orange-900/30 flex items-center gap-2">
+                      <Key size={12} className="text-orange-400" />
+                      <span className="text-orange-300 text-xs font-semibold">{group.key}</span>
+                      <span className="text-[10px] text-orange-500/70 ml-auto">Secure group — values are write-only</span>
+                    </div>
+                    {typeof group.properties === 'string' ? (
+                      <div className="px-4 py-3 text-yellow-500/80 text-xs">COULD NOT ACCESS — credential may not have permission to this group</div>
+                    ) : (
+                      <div className="divide-y divide-gray-800/40">
+                        {Object.entries(group.properties || {}).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => (
+                          <div key={k} className="group flex items-center gap-3 px-4 py-2.5 hover:bg-gray-800/20">
+                            <span className="text-xs text-gray-400 font-mono w-56 truncate">{k}</span>
+                            <SecretValue value={v} />
+                            <CopyBtn text={String(v)} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Binaries Tab */}
+          {activeTab === 'binaries' && !propsLoading && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <CpsBinaryUploadPanel
+                baseUrl={cpsBaseUrl}
+                environment={cpsEnv}
+                bgOrgId={resolvedBgId}
+                existingKeys={binaryKeys}
+                isProd={isProd}
+                onUploaded={key => { showToast(`Binary "${key}" uploaded`); loadProperties(); }}
+              />
+            </div>
+          )}
+
+          {/* Access Control Tab */}
+          {activeTab === 'auth' && !propsLoading && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <CpsAuthPanel
+                baseUrl={cpsBaseUrl}
+                type="non-secure"
+                environment={cpsEnv}
+                projectKey={cpsKey}
+                bgOrgId={resolvedBgId}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Empty state: app selected but no properties loaded yet */}
+      {selectedAppComposite && !propsLoading && Object.keys(originalProps).length === 0 && !propsError && cpsBaseUrl && (
+        <div className="flex flex-col items-center justify-center py-16 gap-4 bg-gray-900 border border-gray-800 rounded-xl">
+          <Database size={36} className="text-gray-700" />
+          <p className="text-gray-500 text-sm">
+            CPS config detected — click <strong className="text-white">Load Properties</strong> to fetch
+          </p>
+          <p className="text-gray-600 text-xs font-mono">
+            {cpsKey} · {cpsEnv} · {cpsBaseUrl.split('/')[2]}
+          </p>
+          <button onClick={loadProperties} disabled={!canLoad}
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50">
+            <RefreshCw size={13} /> Load Properties
+          </button>
+        </div>
+      )}
+
+      {/* No CPS config state */}
+      {selectedAppComposite && !appDetailLoading && !cpsBaseUrl && (
+        <div className="flex flex-col items-center justify-center py-12 gap-3 bg-gray-900 border border-gray-800 rounded-xl">
+          <AlertTriangle size={28} className="text-yellow-600" />
+          <p className="text-gray-400 text-sm">No CPS configuration found for this application</p>
+          <p className="text-gray-600 text-xs">
+            The app must have <code className="text-gray-500">cps.configServerBaseUrl</code> in its deployment properties
+          </p>
+          <p className="text-gray-600 text-xs">You can still enter the CPS URL, env, and project key manually above</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PropertyTable — inline-editable property table with pending change tracking
+// ─────────────────────────────────────────────────────────────────────────────
+function PropertyTable({
+  props, originalProps, pendingChanges, search, setSearch,
+  onUpdate, onDelete, onAdd, hasPendingChanges, pendingCount,
+  onSave, onDiscard, saving, isProd,
+}) {
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const [editingKey, setEditingKey] = useState(null);
+  const [editValue, setEditValue] = useState('');
+
+  const allEntries = Object.entries(props).sort(([a], [b]) => a.localeCompare(b));
+  const filtered = search.trim()
+    ? allEntries.filter(([k, v]) => k.toLowerCase().includes(search.toLowerCase()) || String(v).toLowerCase().includes(search.toLowerCase()))
+    : allEntries;
+
+  const rowStatus = (key) => {
+    if (pendingChanges.deleted.has(key)) return 'deleted';
+    if (key in pendingChanges.added) return 'added';
+    if (key in pendingChanges.modified) return 'modified';
+    return 'unchanged';
+  };
+
+  const startEdit = (key, currentValue) => {
+    setEditingKey(key);
+    setEditValue(String(currentValue));
+  };
+
+  const commitEdit = (key) => {
+    if (editValue !== String(props[key])) onUpdate(key, editValue);
+    setEditingKey(null);
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Search + add row */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-48">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search properties…"
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+        </div>
+        {hasPendingChanges && (
+          <>
+            <button onClick={onDiscard} disabled={saving}
+              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white bg-gray-800 border border-gray-700 px-3 py-2 rounded-lg disabled:opacity-50 transition-colors">
+              <X size={11} /> Discard
+            </button>
+            <button onClick={onSave} disabled={saving}
+              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg disabled:opacity-50 transition-colors ${
+                isProd ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-cyan-700 hover:bg-cyan-600 text-white'
+              }`}>
+              {saving
+                ? <><RefreshCw size={11} className="animate-spin" /> Saving…</>
+                : <><Save size={11} /> Save ({pendingCount} change{pendingCount !== 1 ? 's' : ''})</>}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Property table */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="bg-gray-800/50 text-gray-400 text-[10px] uppercase tracking-wider">
+              <th className="text-left px-4 py-2.5 w-[45%]">Property Key</th>
+              <th className="text-left px-4 py-2.5">Value</th>
+              <th className="px-3 py-2.5 w-16 text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(([key, value]) => {
+              const status = rowStatus(key);
+              const isDeleted = status === 'deleted';
+              const isAdded = status === 'added';
+              const isModified = status === 'modified';
+              const isEditing = editingKey === key;
+              return (
+                <tr key={key}
+                  className={`group border-t border-gray-800/40 transition-colors ${
+                    isDeleted ? 'opacity-40 bg-red-950/10' :
+                    isAdded ? 'bg-emerald-950/10 border-l-2 border-l-emerald-600' :
+                    isModified ? 'bg-blue-950/10 border-l-2 border-l-blue-600' :
+                    'hover:bg-gray-800/20'
+                  }`}>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      {isAdded && <span className="text-[8px] text-emerald-400 bg-emerald-500/20 px-1 py-0.5 rounded font-bold">NEW</span>}
+                      {isModified && <span className="text-[8px] text-blue-400 bg-blue-500/20 px-1 py-0.5 rounded font-bold">MOD</span>}
+                      {isDeleted && <span className="text-[8px] text-red-400 bg-red-500/20 px-1 py-0.5 rounded font-bold">DEL</span>}
+                      <span className={`font-mono text-xs ${isDeleted ? 'line-through text-gray-600' : 'text-gray-300'}`}>{key}</span>
+                      <CopyBtn text={key} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {isEditing ? (
+                      <input
+                        autoFocus
+                        value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        onBlur={() => commitEdit(key)}
+                        onKeyDown={e => { if (e.key === 'Enter') commitEdit(key); if (e.key === 'Escape') setEditingKey(null); }}
+                        className="w-full bg-gray-800 border border-blue-600/50 rounded-lg px-2 py-1 text-xs text-white font-mono focus:outline-none"
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1.5 group/val cursor-text" onClick={() => !isDeleted && startEdit(key, value)}>
+                        <span className={`font-mono text-xs break-all leading-relaxed ${isDeleted ? 'line-through text-gray-600' : 'text-gray-200'}`}>
+                          {String(value) || <span className="text-gray-600 italic">empty</span>}
+                        </span>
+                        <CopyBtn text={String(value)} />
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    {!isDeleted ? (
+                      <button onClick={() => onDelete(key)}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-gray-600 hover:text-red-400 hover:bg-red-950/40 transition-all">
+                        <Trash2 size={12} />
+                      </button>
+                    ) : (
+                      <button onClick={() => onUpdate(key, originalProps[key] ?? props[key])}
+                        className="text-[9px] text-gray-500 hover:text-gray-300 px-1.5 py-0.5 border border-gray-700 rounded transition-colors">
+                        Undo
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+
+            {/* Add new property row */}
+            <tr className="border-t border-gray-800/60 bg-emerald-950/5">
+              <td className="px-4 py-2.5">
+                <input
+                  value={newKey}
+                  onChange={e => setNewKey(e.target.value)}
+                  placeholder="new.property.key"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1 text-xs text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-emerald-600/50"
+                />
+              </td>
+              <td className="px-4 py-2.5">
+                <input
+                  value={newValue}
+                  onChange={e => setNewValue(e.target.value)}
+                  placeholder="value"
+                  onKeyDown={e => { if (e.key === 'Enter' && newKey.trim()) { onAdd(newKey, newValue); setNewKey(''); setNewValue(''); } }}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1 text-xs text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-emerald-600/50"
+                />
+              </td>
+              <td className="px-3 py-2.5 text-center">
+                <button
+                  onClick={() => { if (newKey.trim()) { onAdd(newKey, newValue); setNewKey(''); setNewValue(''); } }}
+                  disabled={!newKey.trim()}
+                  className="flex items-center gap-0.5 text-[10px] px-2 py-1 bg-emerald-600/20 border border-emerald-600/40 text-emerald-300 hover:bg-emerald-600/30 rounded-lg transition-colors disabled:opacity-40 mx-auto"
+                >
+                  <Plus size={10} /> Add
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        {filtered.length === 0 && (
+          <div className="px-4 py-8 text-center text-gray-600 text-xs">
+            {search ? `No properties match "${search}"` : 'No properties loaded'}
+          </div>
+        )}
+      </div>
+      <p className="text-[10px] text-gray-600 text-right">
+        {filtered.length} of {allEntries.length} properties shown
+        {hasPendingChanges && <span className="ml-2 text-cyan-500">{pendingCount} unsaved change{pendingCount !== 1 ? 's' : ''}</span>}
+      </p>
+    </div>
+  );
+}
