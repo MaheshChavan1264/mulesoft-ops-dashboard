@@ -21,6 +21,7 @@ import { extractCpsConfig } from '../utils/cpsHelpers';
 import { flattenCpsResponse } from '../utils/cpsHelpers';
 import { downloadCsv } from '../utils/appUtils';
 import { applyBgFilter } from '../components/BgFilterModal';
+import { applyEnvFilter } from '../components/EnvFilterModal';
 
 // ── Inline CopyBtn ────────────────────────────────────────────────────────────
 function CopyBtn({ text }) {
@@ -99,6 +100,14 @@ export default function CpsManagerPage() {
   const [saveSuccess, setSaveSuccess] = useState('');
   const [toast, setToast] = useState(null);
   const [lastOperation, setLastOperation] = useState(null);
+
+  // ── Env filter version (re-renders envOptions when filter changes) ────────
+  const [envFilterVersion, setEnvFilterVersion] = useState(0); // eslint-disable-line no-unused-vars
+  useEffect(() => {
+    const handler = () => setEnvFilterVersion(v => v + 1);
+    window.addEventListener('envFilterChanged', handler);
+    return () => window.removeEventListener('envFilterChanged', handler);
+  }, []);
 
   // ── Modals ───────────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
@@ -401,9 +410,11 @@ export default function CpsManagerPage() {
     value: g.id, label: g.name, indent: !!g.parentId,
     tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400',
   }));
+  const visibleEnvs = applyEnvFilter(envs);
+  const envFilterActive = visibleEnvs.length < envs.length;
   const envOptions = [
-    { value: '', label: 'All Environments' },
-    ...envs.map(e => ({ value: e.id, label: e.name })),
+    { value: '', label: `All Environments${envFilterActive ? ` (${visibleEnvs.length} visible)` : ''}` },
+    ...visibleEnvs.map(e => ({ value: e.id, label: e.name })),
   ];
   const appOptions = apps.map(a => ({
     value: `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`,
