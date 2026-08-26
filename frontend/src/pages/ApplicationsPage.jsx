@@ -710,10 +710,16 @@ export default function ApplicationsPage() {
   // Increments whenever the EnvFilterModal saves a new selection to localStorage.
   // This triggers the `filtered` useMemo to re-run and pick up the new filter.
   const [envFilterVersion, setEnvFilterVersion] = useState(0);
+  const [bgFilterVersion, setBgFilterVersion] = useState(0); // eslint-disable-line no-unused-vars
   useEffect(() => {
     const handler = () => setEnvFilterVersion(v => v + 1);
     window.addEventListener('envFilterChanged', handler);
     return () => window.removeEventListener('envFilterChanged', handler);
+  }, []);
+  useEffect(() => {
+    const handler = () => setBgFilterVersion(v => v + 1);
+    window.addEventListener('bgFilterChanged', handler);
+    return () => window.removeEventListener('bgFilterChanged', handler);
   }, []);
 
   const [error, setError] = useState('');
