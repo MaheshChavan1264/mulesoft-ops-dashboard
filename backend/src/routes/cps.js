@@ -510,7 +510,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
 
   /** Process one app — fetch non-secure + optionally secure, return matched props */
   async function processApp(appEntry) {
-    const { appName, appId, cpsBaseUrl, cpsKey, cpsEnv, deploymentType, envName, bgOrgId } = appEntry;
+    const { appName, appId, cpsBaseUrl, cpsKey, cpsEnv, deploymentType, envName, bgOrgId, status } = appEntry;
     if (!cpsBaseUrl || !cpsKey) return null; // no CPS config
 
     const envType = detectEnvType(cpsBaseUrl, cpsEnv, envName);
@@ -628,6 +628,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
       deploymentType,
       cpsKey,
       cpsPrefix: cpsEnv,
+      status: status || '',
       matchedProps,
     };
   }
