@@ -24,14 +24,79 @@ function chLabel(dt) {
 }
 
 function extractCpsConfig(app, orgId) {
+  // Merge all possible property sources from both CH1 and CH2 detail responses
   const ds = app.target?.deploymentSettings || {};
-  const ps = (app.application?.configuration || {})['mule.agent.application.properties.service'] || {};
-  const p = { ...(ps.properties || {}), ...(ds.runtimeProperties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}), ...(app.properties || {}) };
+  const appCfg = app.application?.configuration || {};
+  const ps = appCfg['mule.agent.application.properties.service'] || {};
+  const p = {
+    ...(ps.properties || {}),
+    ...(ds.runtimeProperties || {}),
+    ...(ds.properties || {}),
+    ...(ds.environmentVariables || ds.environmentVars || {}),
+    ...(appCfg.properties || {}),
+    ...(app.application?.properties || {}),
+    ...(app.properties || {}),
+  };
+
+  // ── CPS Base URL — try all known key variants ─────────────────────────
+  let cpsBaseUrl =
+    p['cps.configServerBaseUrl'] ||
+    p['config.server.base.url']  ||
+    p['cps.baseUrl']             ||
+    p['cps.base.url']            ||
+    p['cps.server.url']          ||
+    p['cps.url']                 ||
+    p['anypoint.config.server.baseUrl'] ||
+    p['config.server.url']       ||
+    p['configserver.url']        ||
+    p['cloudconfig.url']         ||
+    '';
+
+  // ── Fallback: scan all property values for a CPS-like URL ────────────
+  // Matches any http(s) URL whose key or value suggests a CPS/config server
+  if (!cpsBaseUrl) {
+    const CPS_KEY_HINT = /cps|config[.\-_]?server|configserver|cloud[.\-_]?config/i;
+    for (const [key, val] of Object.entries(p)) {
+      if (typeof val === 'string' && /^https?:\/\//i.test(val) && CPS_KEY_HINT.test(key)) {
+        cpsBaseUrl = val;
+        break;
+      }
+    }
+  }
+
+  // ── CPS Project Key ───────────────────────────────────────────────────
+  const cpsKey =
+    p['cps.projectName']    ||
+    p['cloudhub.api.name']  ||
+    p['cps.appName']        ||
+    p['cps.app.name']       ||
+    p['api.name']           ||
+    app.name                ||
+    '';
+
+  // ── CPS Environment Prefix ────────────────────────────────────────────
+  const cpsEnv =
+    p['cps.prefix']       ||
+    p['cps.environment']  ||
+    p['cps.env']          ||
+    p['environment']      ||
+    p['deployment.env']   ||
+    '';
+
+  // ── CPS Client ID ─────────────────────────────────────────────────────
+  const cpsClientId =
+    p['cps.clientId']    ||
+    p['cps.client_id']   ||
+    p['cps.client.id']   ||
+    p['cps.apiClientId'] ||
+    p['cps.api.clientId'] ||
+    '';
+
   return {
-    cpsBaseUrl: p['cps.configServerBaseUrl'] || p['config.server.base.url'] || '',
-    cpsKey: p['cps.projectName'] || p['cloudhub.api.name'] || app.name || '',
-    cpsEnv: p['cps.prefix'] || p['cps.environment'] || '',
-    cpsClientId: p['cps.clientId'] || p['cps.client_id'] || p['cps.client.id'] || p['cps.apiClientId'] || '',
+    cpsBaseUrl,
+    cpsKey,
+    cpsEnv,
+    cpsClientId,
     deploymentType: app._type === 'ch1' ? 'ch1' : 'ch2',
     envName: app.environment?.name || '',
     bgOrgId: orgId,
