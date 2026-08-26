@@ -71,6 +71,12 @@ export default function ExchangePage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [assetType, setAssetType] = useState('');
+  const [bgFilterVersion, setBgFilterVersion] = useState(0); // eslint-disable-line no-unused-vars
+  useEffect(() => {
+    const h = () => setBgFilterVersion(v => v + 1);
+    window.addEventListener('bgFilterChanged', h);
+    return () => window.removeEventListener('bgFilterChanged', h);
+  }, []);
   const [offset, setOffset] = useState(0);
 
   // ── Asset detail state ────────────────────────────────────────────────────

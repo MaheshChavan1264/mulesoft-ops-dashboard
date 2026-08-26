@@ -453,10 +453,16 @@ export default function CpsComparisonPage() {
   // Increments when the Env Filter modal saves — causes SidePanel to re-render
   // and call applyEnvFilter(envs) with the fresh localStorage value.
   const [envFilterVer, setEnvFilterVer] = useState(0); // eslint-disable-line no-unused-vars
+  const [bgFilterVer, setBgFilterVer] = useState(0); // eslint-disable-line no-unused-vars
   useEffect(() => {
     const h = () => setEnvFilterVer(v => v + 1);
     window.addEventListener('envFilterChanged', h);
     return () => window.removeEventListener('envFilterChanged', h);
+  }, []);
+  useEffect(() => {
+    const h = () => setBgFilterVer(v => v + 1);
+    window.addEventListener('bgFilterChanged', h);
+    return () => window.removeEventListener('bgFilterChanged', h);
   }, []);
   const [compareMode, setCompareMode] = useState('single'); // 'single' | 'multi'
   // Each side has its own property type

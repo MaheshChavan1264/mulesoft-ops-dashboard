@@ -23,13 +23,16 @@ export function getVisibleBgIds() {
   }
 }
 
-/** Persist the visible BG IDs to localStorage. Empty set clears the filter. */
+/** Persist the visible BG IDs to localStorage. Empty set clears the filter.
+ *  Dispatches a 'bgFilterChanged' CustomEvent so pages can react immediately
+ *  without a storage listener (which only fires cross-tab in the same browser). */
 export function saveVisibleBgIds(idSet) {
   if (!idSet || idSet.size === 0) {
     localStorage.removeItem(BG_FILTER_KEY);
   } else {
     localStorage.setItem(BG_FILTER_KEY, JSON.stringify([...idSet]));
   }
+  window.dispatchEvent(new CustomEvent('bgFilterChanged'));
 }
 
 /**

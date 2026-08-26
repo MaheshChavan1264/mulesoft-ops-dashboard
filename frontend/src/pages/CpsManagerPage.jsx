@@ -103,10 +103,16 @@ export default function CpsManagerPage() {
 
   // ── Env filter version (re-renders envOptions when filter changes) ────────
   const [envFilterVersion, setEnvFilterVersion] = useState(0); // eslint-disable-line no-unused-vars
+  const [bgFilterVersion, setBgFilterVersion] = useState(0); // eslint-disable-line no-unused-vars
   useEffect(() => {
     const handler = () => setEnvFilterVersion(v => v + 1);
     window.addEventListener('envFilterChanged', handler);
     return () => window.removeEventListener('envFilterChanged', handler);
+  }, []);
+  useEffect(() => {
+    const handler = () => setBgFilterVersion(v => v + 1);
+    window.addEventListener('bgFilterChanged', handler);
+    return () => window.removeEventListener('bgFilterChanged', handler);
   }, []);
 
   // ── Modals ───────────────────────────────────────────────────────────────

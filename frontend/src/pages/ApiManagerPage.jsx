@@ -124,6 +124,12 @@ export default function ApiManagerPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [bgFilterVersion, setBgFilterVersion] = useState(0); // eslint-disable-line no-unused-vars
+  useEffect(() => {
+    const h = () => setBgFilterVersion(v => v + 1);
+    window.addEventListener('bgFilterChanged', h);
+    return () => window.removeEventListener('bgFilterChanged', h);
+  }, []);
 
   useEffect(() => { if (authOrgId) loadBusinessGroups(); }, [authOrgId]);
   useEffect(() => { if (selectedBg) loadEnvs(selectedBg); }, [selectedBg]);
