@@ -499,10 +499,18 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     return '';
   }
 
-  /** Check if a non-secure CPS response contains no usable data */
+  /** Check if a non-secure CPS response contains no usable data or only access-denied entries */
   function isEmptyNsResponse(data) {
     if (!data) return true;
-    if (Array.isArray(data?.responses)) return data.responses.every(r => !r?.properties || Object.keys(r.properties).length === 0);
+    if (Array.isArray(data?.responses)) {
+      if (data.responses.length === 0) return true;
+      // "COULD NOT ACCESS" stored as a string → credential lacks project-level access
+      // Treat this the same as an empty response so the retry loop kicks in
+      if (data.responses.some(r => typeof r?.properties === 'string')) return true;
+      return data.responses.every(r => !r?.properties ||
+        (typeof r.properties === 'object' && Object.keys(r.properties).length === 0)
+      );
+    }
     if (Array.isArray(data)) return data.length === 0;
     if (typeof data === 'object') return Object.keys(data).length === 0;
     return true;
