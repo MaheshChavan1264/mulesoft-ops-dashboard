@@ -609,6 +609,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         '';
       if (secureKeyStr) {
         secureRefSearched++;
+        console.log(`[search-user][SEC-REF] "${appName}" → secure query: keys=[${secureKeyStr}] env=${cpsEnv}`);
         try {
           const sUrl = `${cleanBase}/api/v2/properties/secure`;
           const sRes = await axios.get(sUrl, {
@@ -629,6 +630,9 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           if (secureStatus !== 200 || accessDeniedGroups > 0) {
             console.log(`[search-user] "${appName}" secure HTTP=${secureStatus} groups=${groups.length} accessible=${accessibleGroups} denied=${accessDeniedGroups}`);
           }
+          const secureGroupKeys = groups.map(g => g.key || '?').join(', ');
+          const securePropsCount = groups.reduce((n, g) => n + (typeof g.properties === 'object' ? Object.keys(g.properties || {}).length : 0), 0);
+          console.log(`[search-user][SEC-REF] "${appName}" → HTTP ${sRes.status} groups=[${secureGroupKeys}] props=${securePropsCount} denied=${accessDeniedGroups}`);
           for (const group of groups) {
             if (!group) continue;
             const gKey = group.key || secureKeyStr.split(',')[0].trim() || '';
@@ -644,9 +648,8 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         }
       } else {
         // ── No reference key in non-secure — try secure fetch anyway ──────
-        // CH2 apps may store API credentials in secure properties without
-        // a cps.secure.properties reference key in non-secure.
         secureFallbackSearched++;
+        console.log(`[search-user][SEC-FALLBACK] "${appName}" → secure query: keys=[${cpsKey}] env=${cpsEnv} (no ref key in ns)`);
         try {
           const sUrl2 = `${cleanBase}/api/v2/properties/secure`;
           const sRes2 = await axios.get(sUrl2, {
@@ -656,10 +659,14 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           });
           if (sRes2.status === 200) {
             const s2Flat = flattenProps(sRes2.data);
+            const s2Props = Object.keys(s2Flat).length;
+            if (s2Props > 0) console.log(`[search-user][SEC-FALLBACK] "${appName}" → found ${s2Props} secure props`);
             const s2Hits = scanProps(s2Flat, 'secure').map(h => ({ ...h, secureGroupKey: cpsKey, password: findPassword(s2Flat, h.key) }));
             if (s2Hits.length > 0) matchedProps = matchedProps.concat(s2Hits);
           } else if (sRes2.status !== 404) {
-            console.log(`[search-user] "${appName}" fallback-secure HTTP=${sRes2.status} cpsEnv="${cpsEnv}" cpsKey="${cpsKey}"`);
+            console.log(`[search-user][SEC-FALLBACK] "${appName}" → HTTP ${sRes2.status} cpsEnv="${cpsEnv}" cpsKey="${cpsKey}"`);
+          } else {
+            console.log(`[search-user][SEC-FALLBACK] "${appName}" → 404 (no secure props for this key)`);
           }
         } catch { /* skip — secure properties optional */ }
       }
