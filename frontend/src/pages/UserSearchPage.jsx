@@ -261,7 +261,6 @@ export default function UserSearchPage() {
   const [credentialErrors, setCredentialErrors] = useState(0);
   const [progress, setProgress] = useState({ envsDone: 0, envsTotal: 0, appsT: 0, appsN: 0 });
   const [envStats, setEnvStats] = useState([]); // per-env: [{envName, bgName, total, withCps}]
-  const [searchLogs, setSearchLogs] = useState([]); // step-by-step visible log entries
 
   useEffect(() => {
     setBgsLoad(true);
@@ -407,11 +406,6 @@ export default function UserSearchPage() {
     if (!bgEnvSelections.length) { setError('Select at least one Environment.'); return; }
     setLoading(true); setError(''); setResults(null); setCredentialErrors(0); setEnvStats([]);
     setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0 });
-    setSearchLogs([]);
-
-    const log = (msg, type = 'info') => setSearchLogs(prev => [...prev, { msg, type, ts: new Date().toLocaleTimeString() }]);
-
-    log(`🔍 Searching for "${query.trim()}" across ${bgEnvSelections.length} environment${bgEnvSelections.length !== 1 ? 's' : ''}`);
 
     // ── Phase 1: Fetch all envs in PARALLEL ───────────────────────────────
     const searchTermLo = query.trim().toLowerCase();
@@ -448,14 +442,6 @@ export default function UserSearchPage() {
               .map(e => ({ ...e, cpsBaseUrl: dominantCpsUrl, cpsEnv: e.cpsEnv || fallbackEnv }))
           : [];
         const allEnvEntries = [...entries, ...inferredEntries];
-
-        const withoutCpsCount = apps.length - entries.length - inferredEntries.length;
-        log(
-          `📦 ${sel.bgName}/${sel.envName}: ${apps.length} apps found, ${entries.length} with CPS config` +
-          (inferredEntries.length > 0 ? `, +${inferredEntries.length} inferred CPS URL (→ ${dominantCpsUrl.replace(/^https?:\/\//, '').split('/')[0]})` : '') +
-          (withoutCpsCount > 0 ? `, ${withoutCpsCount} without` : ''),
-          allEnvEntries.length === 0 ? 'warn' : 'info'
-        );
 
         // Fire-and-forget credentials (no await)
         if (allEnvEntries.length) postCreds(allEnvEntries);
@@ -500,15 +486,11 @@ export default function UserSearchPage() {
       })
     );
 
-    // ── Bug 7: surface env-level fetch failures to the user ───────────────
+    // ── Surface env-level fetch failures to the user ──────────────────────
     const failedEnvCount = envResults.filter(r => r.status === 'rejected').length;
     if (failedEnvCount > 0) {
       setError(`Warning: ${failedEnvCount} environment${failedEnvCount !== 1 ? 's' : ''} could not be loaded and were skipped. Results may be incomplete.`);
     }
-
-    const failedMsg = failedEnvCount > 0 ? ` (${failedEnvCount} env(s) failed to load)` : '';
-    const totalApps = envResults.filter(r => r.status === 'fulfilled').reduce((s, r) => s + (r.value?.length || 0), 0);
-    log(`✅ Phase 1 complete: fetched apps from ${bgEnvSelections.length} env(s)${failedMsg}`);
 
     // ── Phase 2: Flatten + deduplicate entries ─────────────────────────────
     const seen = new Set();
@@ -526,31 +508,17 @@ export default function UserSearchPage() {
         });
 
     setProgress(p => ({ ...p, appsN: allEntries.length }));
-    log(`🔗 Phase 2: ${allEntries.length} unique CPS entries to search (after deduplication)`);
 
     if (!allEntries.length) {
-      log('⚠️ No apps with CPS config found — check that apps have cps.configServerBaseUrl set', 'warn');
+      setError('No apps with CPS config found — check that apps have cps.configServerBaseUrl set');
       setResults([]); setLoading(false); return;
     }
 
-    // ── Log sample of entries being sent to backend ───────────────────────
-    if (allEntries.length > 0) {
-      const uniqueServers = [...new Set(allEntries.map(e => e.cpsBaseUrl.replace(/^https?:\/\//, '').split('/')[0]))];
-      const uniqueEnvs = [...new Set(allEntries.map(e => e.cpsEnv).filter(Boolean))];
-      log(`🔎 CPS Servers: [${uniqueServers.slice(0, 3).join(', ')}${uniqueServers.length > 3 ? '...' : ''}]`);
-      log(`🔎 CPS Envs: [${uniqueEnvs.slice(0, 5).join(', ') || '(empty)'}]`);
-      // Log first 3 entries as sample
-      allEntries.slice(0, 3).forEach((e, i) => {
-        log(`  #${i + 1} "${e.appName}" → key="${e.cpsKey}" env="${e.cpsEnv || '(none)'}" server="${e.cpsBaseUrl.replace(/^https?:\/\//, '').split('/')[0]}"`);
-      });
-      if (allEntries.length > 3) log(`  ... and ${allEntries.length - 3} more`);
-    }
     // ── Phase 3: Backend CPS fan-out search (client-side batching) ────────
     // Batch 100 apps per request so each HTTP call completes in ~30s max
     // instead of one monolithic request that times out for large BGs (350+ apps).
     const BACKEND_BATCH = 100;
     const totalBatches = Math.ceil(allEntries.length / BACKEND_BATCH);
-    log(`🚀 Phase 3: Searching ${allEntries.length} apps via backend CPS (${totalBatches} batch${totalBatches !== 1 ? 'es' : ''} of ≤${BACKEND_BATCH})...`);
 
     let allCpsItems = [];
     let totalCredErrors = 0;
@@ -560,7 +528,6 @@ export default function UserSearchPage() {
     for (let bi = 0; bi < allEntries.length; bi += BACKEND_BATCH) {
       const batch = allEntries.slice(bi, bi + BACKEND_BATCH);
       const batchNum = Math.floor(bi / BACKEND_BATCH) + 1;
-      if (totalBatches > 1) log(`  🔄 Batch ${batchNum}/${totalBatches}: querying ${batch.length} apps…`);
       try {
         const r = await api.post('/cps/search-user', { username: query.trim(), apps: batch }, { timeout: 120000 });
         allCpsItems = allCpsItems.concat(r.data?.results || []);
@@ -571,7 +538,7 @@ export default function UserSearchPage() {
         aggStats.secureFallbackSearched += s.secureFallbackSearched || 0;
       } catch (batchErr) {
         batchFailed++;
-        log(`⚠️ Batch ${batchNum}/${totalBatches} failed: ${batchErr.response?.data?.error || batchErr.message} — continuing`, 'warn');
+        console.warn(`[search-user] batch ${batchNum}/${totalBatches} failed: ${batchErr.response?.data?.error || batchErr.message}`);
       }
     }
 
@@ -600,17 +567,9 @@ export default function UserSearchPage() {
     const finalRows = [...rows, ...uniqueArmRows];
     setResults(finalRows);
 
-    log(`📊 Backend stats: ${aggStats.nonSecureSearched} non-secure fetched, ${aggStats.secureRefSearched} secure (via ref key), ${aggStats.secureFallbackSearched} secure (fallback, no ref key)`);
-    if (totalCredErrors > 0) {
-      log(`⚠️ ${totalCredErrors} app(s) returned 401 — missing CPS credentials for those servers`, 'warn');
+    if (batchFailed > 0 && batchFailed === totalBatches) {
+      setError(`Search failed — all ${totalBatches} batch(es) returned errors. Check backend logs.`);
     }
-    if (batchFailed > 0) {
-      log(`⚠️ ${batchFailed}/${totalBatches} batch(es) failed — results may be incomplete`, 'warn');
-    }
-    if (uniqueArmRows.length > 0) {
-      log(`📋 ${uniqueArmRows.length} match(es) found in ARM deployment properties (not CPS)`);
-    }
-    log(`🎯 Done: ${finalRows.length} total match(es) found (${rows.length} CPS + ${uniqueArmRows.length} ARM)`, finalRows.length > 0 ? 'success' : 'warn');
     setLoading(false);
   };
 
@@ -698,38 +657,6 @@ export default function UserSearchPage() {
                 style={{ width: progress.envsTotal > 0 ? `${Math.round((progress.envsDone / progress.envsTotal) * 100)}%` : '0%' }}
               />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Step-by-step search log panel */}
-      {searchLogs.length > 0 && (
-        <div className="bg-slate-950/60 border border-slate-800/50 rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 bg-slate-900/60 border-b border-slate-800/50">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Search Log</p>
-            {!loading && (
-              <button onClick={() => setSearchLogs([])} className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors">
-                Clear
-              </button>
-            )}
-          </div>
-          <div className="p-3 space-y-1 max-h-40 overflow-y-auto font-mono">
-            {searchLogs.map((entry, i) => (
-              <div key={i} className="flex items-start gap-2 text-[11px] leading-relaxed">
-                <span className="text-slate-600 flex-shrink-0">{entry.ts}</span>
-                <span className={
-                  entry.type === 'error'   ? 'text-red-400' :
-                  entry.type === 'warn'    ? 'text-yellow-400' :
-                  entry.type === 'success' ? 'text-emerald-400' :
-                  'text-slate-300'
-                }>{entry.msg}</span>
-              </div>
-            ))}
-            {loading && (
-              <div className="flex items-center gap-2 text-[11px] text-cyan-500">
-                <RefreshCw size={9} className="animate-spin" /> Working…
-              </div>
-            )}
           </div>
         </div>
       )}
