@@ -349,12 +349,13 @@ export default function UserSearchPage() {
         const items = r.data?.items || r.data?.deployments || r.data?.content || (Array.isArray(r.data) ? r.data : []);
         if (!items.length) break;
         items.forEach(a => { if (a.id && a.status) listStatusMap[a.id] = a.status; });
-        ch2List.push(...items);
-        // Use Infinity as fallback — if total is absent from the response,
-        // keep paginating until we get fewer items than requested.
-        // Previously: ?? items.length  → always stopped after 1 page (100 >= 100).
-        const total = r.data?.total ?? r.data?.totalItems ?? Infinity;
-        if (ch2List.length >= total || items.length < 100) break;
+          ch2List.push(...items);
+          // Only stop when the API returns fewer items than requested — this is the
+          // definitive "last page" signal regardless of what field name the API
+          // uses for the total count (total / totalItems / totalElements / count).
+          // Comparing against r.data.total is unreliable because some API versions
+          // return total=100 (page size) rather than the global count.
+          if (items.length < 100) break;
         offset += 100;
       }
     } catch {}
