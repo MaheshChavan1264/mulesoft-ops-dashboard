@@ -593,48 +593,72 @@ export default function UserSearchPage() {
       });
       if (allEntries.length > 3) log(`  ... and ${allEntries.length - 3} more`);
     }
-    log(`🚀 Phase 3: Sending ${allEntries.length} apps to backend CPS search...`);
-    // ── Phase 3: Backend CPS fan-out search ───────────────────────────────
-    try {
-      const r = await api.post('/cps/search-user', { username: query.trim(), apps: allEntries });
-      setCredentialErrors(r.data?.credentialErrors || 0);
-      const rows = [];
-      for (const item of r.data?.results || []) {
-        for (const prop of item.matchedProps || []) {
-          rows.push({
-            chEnv: item.envName || '—',
-            chVersion: chLabel(item.deploymentType),
-            appName: item.appName,
-            status: item.status || '',
-            nsKey: item.cpsKey || '—',
-            cpsPrefix: item.cpsPrefix || '—',
-            secureKey: prop.secureGroupKey || (prop.source === 'secure' ? '(secure)' : ''),
-            propKey: prop.key,
-            apiUser: prop.value,
-            password: prop.password || '—',
-            source: prop.source,
-          });
-        }
-      }
-      // Merge ARM direct hits (exclude apps already found via CPS)
-      const cpsAppNames = new Set(rows.map(r => r.appName));
-      const uniqueArmRows = armRows.filter(r => !cpsAppNames.has(r.appName));
-      const finalRows = [...rows, ...uniqueArmRows];
-      setResults(finalRows);
+    // ── Phase 3: Backend CPS fan-out search (client-side batching) ────────
+    // Batch 100 apps per request so each HTTP call completes in ~30s max
+    // instead of one monolithic request that times out for large BGs (350+ apps).
+    const BACKEND_BATCH = 100;
+    const totalBatches = Math.ceil(allEntries.length / BACKEND_BATCH);
+    log(`🚀 Phase 3: Searching ${allEntries.length} apps via backend CPS (${totalBatches} batch${totalBatches !== 1 ? 'es' : ''} of ≤${BACKEND_BATCH})...`);
 
-      const stats = r.data?.searchStats || {};
-      log(`📊 Backend stats: ${stats.nonSecureSearched || 0} non-secure fetched, ${stats.secureRefSearched || 0} secure (via ref key), ${stats.secureFallbackSearched || 0} secure (fallback, no ref key)`);
-      if (r.data?.credentialErrors > 0) {
-        log(`⚠️ ${r.data.credentialErrors} app(s) returned 401 — missing CPS credentials for those servers`, 'warn');
+    let allCpsItems = [];
+    let totalCredErrors = 0;
+    let batchFailed = 0;
+    const aggStats = { nonSecureSearched: 0, secureRefSearched: 0, secureFallbackSearched: 0 };
+
+    for (let bi = 0; bi < allEntries.length; bi += BACKEND_BATCH) {
+      const batch = allEntries.slice(bi, bi + BACKEND_BATCH);
+      const batchNum = Math.floor(bi / BACKEND_BATCH) + 1;
+      if (totalBatches > 1) log(`  🔄 Batch ${batchNum}/${totalBatches}: querying ${batch.length} apps…`);
+      try {
+        const r = await api.post('/cps/search-user', { username: query.trim(), apps: batch }, { timeout: 120000 });
+        allCpsItems = allCpsItems.concat(r.data?.results || []);
+        totalCredErrors += r.data?.credentialErrors || 0;
+        const s = r.data?.searchStats || {};
+        aggStats.nonSecureSearched += s.nonSecureSearched || 0;
+        aggStats.secureRefSearched += s.secureRefSearched || 0;
+        aggStats.secureFallbackSearched += s.secureFallbackSearched || 0;
+      } catch (batchErr) {
+        batchFailed++;
+        log(`⚠️ Batch ${batchNum}/${totalBatches} failed: ${batchErr.response?.data?.error || batchErr.message} — continuing`, 'warn');
       }
-      if (uniqueArmRows.length > 0) {
-        log(`📋 ${uniqueArmRows.length} match(es) found in ARM deployment properties (not CPS)`);
-      }
-      log(`🎯 Done: ${finalRows.length} total match(es) found (${rows.length} CPS + ${uniqueArmRows.length} ARM)`, finalRows.length > 0 ? 'success' : 'warn');
-    } catch (e) {
-      log(`❌ Search failed: ${e.response?.data?.error || e.message}`, 'error');
-      setError(e.response?.data?.error || e.message || 'Search failed');
     }
+
+    setCredentialErrors(totalCredErrors);
+    const rows = [];
+    for (const item of allCpsItems) {
+      for (const prop of item.matchedProps || []) {
+        rows.push({
+          chEnv: item.envName || '—',
+          chVersion: chLabel(item.deploymentType),
+          appName: item.appName,
+          status: item.status || '',
+          nsKey: item.cpsKey || '—',
+          cpsPrefix: item.cpsPrefix || '—',
+          secureKey: prop.secureGroupKey || (prop.source === 'secure' ? '(secure)' : ''),
+          propKey: prop.key,
+          apiUser: prop.value,
+          password: prop.password || '—',
+          source: prop.source,
+        });
+      }
+    }
+    // Merge ARM direct hits (exclude apps already found via CPS)
+    const cpsAppNames = new Set(rows.map(r => r.appName));
+    const uniqueArmRows = armRows.filter(r => !cpsAppNames.has(r.appName));
+    const finalRows = [...rows, ...uniqueArmRows];
+    setResults(finalRows);
+
+    log(`📊 Backend stats: ${aggStats.nonSecureSearched} non-secure fetched, ${aggStats.secureRefSearched} secure (via ref key), ${aggStats.secureFallbackSearched} secure (fallback, no ref key)`);
+    if (totalCredErrors > 0) {
+      log(`⚠️ ${totalCredErrors} app(s) returned 401 — missing CPS credentials for those servers`, 'warn');
+    }
+    if (batchFailed > 0) {
+      log(`⚠️ ${batchFailed}/${totalBatches} batch(es) failed — results may be incomplete`, 'warn');
+    }
+    if (uniqueArmRows.length > 0) {
+      log(`📋 ${uniqueArmRows.length} match(es) found in ARM deployment properties (not CPS)`);
+    }
+    log(`🎯 Done: ${finalRows.length} total match(es) found (${rows.length} CPS + ${uniqueArmRows.length} ARM)`, finalRows.length > 0 ? 'success' : 'warn');
     setLoading(false);
   };
 
