@@ -338,37 +338,26 @@ export default function UserSearchPage() {
     // Track status from the list (summary) to fall back on if detail doesn't have it
     const listStatusMap = {}; // id → status string
 
-    // ── Try app summary cache first (already loaded by ApplicationsPage) ──
-    // ApplicationsPage stores with key: apps:${bgId}:${bgIds.join(',')}
-    // For a single BG that resolves to: apps:${bgId}:${bgId}
-    const cacheKey = `apps:${bgId}:${bgId}`;
-    const cachedSummary = getCached(cacheKey);
-    // ── CH2: use summary cache for list (avoids fresh list fetch) ─────────
-    if (cachedSummary?.apps) {
-      ch2List = cachedSummary.apps.filter(
-        a => a.environment?.id === envId && a.deploymentType === 'CloudHub 2.0'
-      );
-      // Build status map from summary (which has normalised status)
-      ch2List.forEach(a => { if (a.id && a.status) listStatusMap[a.id] = a.status; });
-    } else {
-      // Fresh CH2 list fetch (paginated)
-      try {
-        let offset = 0;
-        while (true) {
-          const r = await api.get(`/applications/cloudhub2/${bgId}/${envId}`, { params: { limit: 100, offset } });
-          const items = r.data?.items || r.data?.deployments || r.data?.content || (Array.isArray(r.data) ? r.data : []);
-          if (!items.length) break;
-          items.forEach(a => { if (a.id && a.status) listStatusMap[a.id] = a.status; });
-          ch2List.push(...items);
-          // Use Infinity as fallback — if total is absent from the response,
-          // keep paginating until we get fewer items than requested.
-          // Previously: ?? items.length  → always stopped after 1 page (100 >= 100).
-          const total = r.data?.total ?? r.data?.totalItems ?? Infinity;
-          if (ch2List.length >= total || items.length < 100) break;
-          offset += 100;
-        }
-      } catch {}
-    }
+    // ── CH2: always do a fresh paginated list fetch ───────────────────────
+    // Do NOT use the ApplicationsPage summary cache (apps:${bgId}:${bgId}) —
+    // that cache is paginated to 100 apps and would miss apps 101+ in large envs.
+    // Per-app detail cache (ch2detail:${a.id}:${envId}) is still used below.
+    try {
+      let offset = 0;
+      while (true) {
+        const r = await api.get(`/applications/cloudhub2/${bgId}/${envId}`, { params: { limit: 100, offset } });
+        const items = r.data?.items || r.data?.deployments || r.data?.content || (Array.isArray(r.data) ? r.data : []);
+        if (!items.length) break;
+        items.forEach(a => { if (a.id && a.status) listStatusMap[a.id] = a.status; });
+        ch2List.push(...items);
+        // Use Infinity as fallback — if total is absent from the response,
+        // keep paginating until we get fewer items than requested.
+        // Previously: ?? items.length  → always stopped after 1 page (100 >= 100).
+        const total = r.data?.total ?? r.data?.totalItems ?? Infinity;
+        if (ch2List.length >= total || items.length < 100) break;
+        offset += 100;
+      }
+    } catch {}
 
     // ── CH2: detail fetch with per-app caching + large parallel batch ─────
     // CH2 list API does NOT return runtime properties — must fetch each app detail.
