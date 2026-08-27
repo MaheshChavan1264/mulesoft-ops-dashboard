@@ -521,6 +521,10 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     const cleanBase = normaliseUrl(cpsBaseUrl);
     const params = { environment: cpsEnv, keys: cpsKey };
     const nsUrl = `${cleanBase}/api/v2/properties/non-secure`;
+    // Log every CH2 app query for diagnosis (CH1 uses inline properties, no CPS call needed for extraction)
+    if ((deploymentType || '').includes('2') || deploymentType === 'ch2') {
+      console.log(`[search-user][CH2] "${appName}" → NS query: ${cleanBase}/ns?env=${cpsEnv}&key=${cpsKey}`);
+    }
 
     let matchedProps = [];
 
