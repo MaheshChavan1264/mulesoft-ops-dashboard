@@ -924,7 +924,13 @@ function PropertyTable({
         <div className="relative flex-1 min-w-48">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search properties…"
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-9 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+          {search && (
+            <button onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors">
+              <X size={12} />
+            </button>
+          )}
         </div>
         {/* Bulk Add toggle */}
         <button
