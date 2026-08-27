@@ -638,6 +638,11 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             const gKey = group.key || secureKeyStr.split(',')[0].trim() || '';
             const gProps = group.properties || {};
             if (typeof gProps !== 'object' || Array.isArray(gProps)) continue;
+            // ── DEBUG: log specific property value for diagnosis ────────────
+            if (gKey === 'S360-sf-org-secrets' && 'sourceOrg.username' in gProps) {
+              const val = String(gProps['sourceOrg.username'] ?? '');
+              console.log(`[search-user][DEBUG] "${appName}" S360-sf-org-secrets.sourceOrg.username = "${val.slice(0, 80)}${val.length > 80 ? '...' : ''}"`);
+            }
             const sHits = scanProps(gProps, 'secure').map(h => ({
               ...h, secureGroupKey: gKey, password: findPassword(gProps, h.key),
             }));
