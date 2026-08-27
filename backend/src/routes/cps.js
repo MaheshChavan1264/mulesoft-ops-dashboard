@@ -529,10 +529,6 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     const cleanBase = normaliseUrl(cpsBaseUrl);
     const params = { environment: cpsEnv, keys: cpsKey };
     const nsUrl = `${cleanBase}/api/v2/properties/non-secure`;
-    // Log every CH2 app query for diagnosis (CH1 uses inline properties, no CPS call needed for extraction)
-    if ((deploymentType || '').includes('2') || deploymentType === 'ch2') {
-      console.log(`[search-user][CH2] "${appName}" → NS query: ${cleanBase}/ns?env=${cpsEnv}&key=${cpsKey}`);
-    }
 
     let matchedProps = [];
 
@@ -609,7 +605,6 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         '';
       if (secureKeyStr) {
         secureRefSearched++;
-        console.log(`[search-user][SEC-REF] "${appName}" → secure query: keys=[${secureKeyStr}] env=${cpsEnv}`);
         try {
           const sUrl = `${cleanBase}/api/v2/properties/secure`;
           const sRes = await axios.get(sUrl, {
@@ -623,26 +618,17 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           const groups = Array.isArray(sData?.responses) ? sData.responses
             : Array.isArray(sData) ? sData
             : (sData && typeof sData === 'object' ? [{ key: secureKeyStr.split(',')[0].trim(), properties: sData }] : []);
-          // ── DEBUG: log secure fetch result ──
-          const secureStatus = sRes.status;
           const accessDeniedGroups = groups.filter(g => typeof g.properties === 'string').length;
-          const accessibleGroups = groups.filter(g => typeof g.properties === 'object' && g.properties).length;
-          if (secureStatus !== 200 || accessDeniedGroups > 0) {
-            console.log(`[search-user] "${appName}" secure HTTP=${secureStatus} groups=${groups.length} accessible=${accessibleGroups} denied=${accessDeniedGroups}`);
+          if (sRes.status !== 200 || accessDeniedGroups > 0) {
+            const secureGroupKeys = groups.map(g => g.key || '?').join(', ');
+            const securePropsCount = groups.reduce((n, g) => n + (typeof g.properties === 'object' ? Object.keys(g.properties || {}).length : 0), 0);
+            console.log(`[search-user][SEC-REF] "${appName}" HTTP=${sRes.status} groups=[${secureGroupKeys}] props=${securePropsCount} denied=${accessDeniedGroups}`);
           }
-          const secureGroupKeys = groups.map(g => g.key || '?').join(', ');
-          const securePropsCount = groups.reduce((n, g) => n + (typeof g.properties === 'object' ? Object.keys(g.properties || {}).length : 0), 0);
-          console.log(`[search-user][SEC-REF] "${appName}" → HTTP ${sRes.status} groups=[${secureGroupKeys}] props=${securePropsCount} denied=${accessDeniedGroups}`);
           for (const group of groups) {
             if (!group) continue;
             const gKey = group.key || secureKeyStr.split(',')[0].trim() || '';
             const gProps = group.properties || {};
             if (typeof gProps !== 'object' || Array.isArray(gProps)) continue;
-            // ── DEBUG: log specific property value for diagnosis ────────────
-            if (gKey === 'S360-sf-org-secrets' && 'sourceOrg.username' in gProps) {
-              const val = String(gProps['sourceOrg.username'] ?? '');
-              console.log(`[search-user][DEBUG] "${appName}" S360-sf-org-secrets.sourceOrg.username = "${val.slice(0, 80)}${val.length > 80 ? '...' : ''}"`);
-            }
             const sHits = scanProps(gProps, 'secure').map(h => ({
               ...h, secureGroupKey: gKey, password: findPassword(gProps, h.key),
             }));
@@ -654,7 +640,6 @@ router.post('/search-user', authMiddleware, async (req, res) => {
       } else {
         // ── No reference key in non-secure — try secure fetch anyway ──────
         secureFallbackSearched++;
-        console.log(`[search-user][SEC-FALLBACK] "${appName}" → secure query: keys=[${cpsKey}] env=${cpsEnv} (no ref key in ns)`);
         try {
           const sUrl2 = `${cleanBase}/api/v2/properties/secure`;
           const sRes2 = await axios.get(sUrl2, {
@@ -664,14 +649,8 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           });
           if (sRes2.status === 200) {
             const s2Flat = flattenProps(sRes2.data);
-            const s2Props = Object.keys(s2Flat).length;
-            if (s2Props > 0) console.log(`[search-user][SEC-FALLBACK] "${appName}" → found ${s2Props} secure props`);
             const s2Hits = scanProps(s2Flat, 'secure').map(h => ({ ...h, secureGroupKey: cpsKey, password: findPassword(s2Flat, h.key) }));
             if (s2Hits.length > 0) matchedProps = matchedProps.concat(s2Hits);
-          } else if (sRes2.status !== 404) {
-            console.log(`[search-user][SEC-FALLBACK] "${appName}" → HTTP ${sRes2.status} cpsEnv="${cpsEnv}" cpsKey="${cpsKey}"`);
-          } else {
-            console.log(`[search-user][SEC-FALLBACK] "${appName}" → 404 (no secure props for this key)`);
           }
         } catch { /* skip — secure properties optional */ }
       }

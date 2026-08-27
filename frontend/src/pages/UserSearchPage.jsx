@@ -69,16 +69,6 @@ function extractCpsConfig(app, orgId) {
     }
   }
 
-  // ── DEBUG: log apps with no CPS URL so user can see raw property keys ─
-  if (!cpsBaseUrl && app.name) {
-    const urlLike = Object.entries(p).filter(([, v]) => typeof v === 'string' && /^https?:\/\//i.test(v));
-    console.debug(
-      `[extractCpsConfig] "${app.name}" — no CPS URL found.\n` +
-      `  All property keys: [${Object.keys(p).join(', ')}]\n` +
-      `  URL-like values: [${urlLike.map(([k, v]) => `${k}=${v}`).join(', ')}]`
-    );
-  }
-
   // ── CPS Project Key ───────────────────────────────────────────────────
   const cpsKey =
     p['cps.projectName']    ||
@@ -409,44 +399,6 @@ export default function UserSearchPage() {
       })));
     } catch {}
 
-    console.debug(
-      `[fetchAppsForEnv] bgId=${bgId} envId=${envId} envName="${envName}" ` +
-      `→ CH2=${ch2List.length} details=${apps.filter(a => a._type !== 'ch1').length} CH1=${apps.filter(a => a._type === 'ch1').length} total=${apps.length}`
-    );
-    if (apps.length > 0 && apps[0]._type !== 'ch1') {
-      const a = apps[0];
-      const ds = a.target?.deploymentSettings || {};
-      const appCfg = a.application?.configuration || {};
-      const ps = appCfg['mule.agent.application.properties.service'] || {};
-      const allPsKeys = Object.keys(ps.properties || {});
-      // Log ALL ps.properties keys (not just 10) and specifically highlight CPS-related ones
-      const cpsRelatedKeys = allPsKeys.filter(k => /cps\.|cloudhub\.|config\.server|configserver/i.test(k));
-      console.debug(
-        `[fetchAppsForEnv] First CH2 app "${a.name}" property analysis:\n` +
-        `  ps.properties ALL ${allPsKeys.length} keys: [${allPsKeys.join(', ')}]\n` +
-        `  CPS-related keys: [${cpsRelatedKeys.join(', ')}]\n` +
-        `  ds.properties keys: [${Object.keys(ds.properties || {}).join(', ')}]\n` +
-        `  ds.environmentVariables keys: [${Object.keys(ds.environmentVariables || {}).join(', ')}]`
-      );
-      // Also log the extracted CPS config for this app
-      const extracted = extractCpsConfig(a, bgId);
-      console.debug(
-        `[fetchAppsForEnv] First CH2 app "${a.name}" extracted CPS config:\n` +
-        `  cpsBaseUrl: "${extracted.cpsBaseUrl}"\n` +
-        `  cpsKey: "${extracted.cpsKey}"\n` +
-        `  cpsEnv: "${extracted.cpsEnv}"\n` +
-        `  cpsClientId: "${extracted.cpsClientId ? extracted.cpsClientId.slice(0,8)+'...' : '(none)'}"`
-      );
-    }
-    // Also log a CH1 app if available, for comparison
-    const ch1App = apps.find(a => a._type === 'ch1');
-    if (ch1App) {
-      const ext1 = extractCpsConfig(ch1App, bgId);
-      console.debug(
-        `[fetchAppsForEnv] First CH1 app "${ch1App.name}" extracted CPS config:\n` +
-        `  cpsKey: "${ext1.cpsKey}" | cpsEnv: "${ext1.cpsEnv}" | cpsBaseUrl: "${ext1.cpsBaseUrl}"`
-      );
-    }
     return apps;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
