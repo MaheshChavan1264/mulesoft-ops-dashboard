@@ -93,6 +93,7 @@ export default function CpsManagerPage() {
   const [secureGroups, setSecureGroups] = useState([]);
   const [binaryKeys, setBinaryKeys] = useState([]);
   const [search, setSearch] = useState('');
+  const [secureGroupSearch, setSecureGroupSearch] = useState('');
 
   // ── Save state ───────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
@@ -433,6 +434,13 @@ export default function CpsManagerPage() {
     downloadCsv(rows, `cps-${cpsKey}-${cpsEnv}-${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
+  // ── Filtered secure groups ────────────────────────────────────────────────
+  const filteredSecureGroups = useMemo(() => {
+    if (!secureGroupSearch.trim()) return secureGroups;
+    const q = secureGroupSearch.toLowerCase();
+    return secureGroups.filter(g => (g.key || '').toLowerCase().includes(q));
+  }, [secureGroups, secureGroupSearch]);
+
   // ── Filtered visible properties ───────────────────────────────────────────
   const visibleProps = useMemo(() => {
     const entries = Object.entries(mergedProps).sort(([a], [b]) => a.localeCompare(b));
@@ -719,21 +727,50 @@ export default function CpsManagerPage() {
                   <p className="text-gray-500 text-sm">No secure properties configured (<code className="text-gray-500">cps.secure.properties</code> not set in non-secure)</p>
                 </div>
               ) : (
-                secureGroups.map(group => (
-                  <SecureGroupEditor
-                    key={group.key}
-                    group={group}
-                    baseUrl={cpsBaseUrl}
-                    environment={cpsEnv}
-                    bgOrgId={resolvedBgId}
-                    isProd={isProd}
-                    onResult={setLastOperation}
-                    onGroupDeleted={deletedKey => {
-                      setSecureGroups(prev => prev.filter(g => g.key !== deletedKey));
-                      showToast(`Secure group "${deletedKey}" deleted`);
-                    }}
-                  />
-                ))
+                <>
+                  {/* Search across secure group keys */}
+                  <div className="relative">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                    <input
+                      value={secureGroupSearch}
+                      onChange={e => setSecureGroupSearch(e.target.value)}
+                      placeholder={`Search secure group key… (${secureGroups.length} group${secureGroups.length !== 1 ? 's' : ''})`}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600/50"
+                    />
+                    {secureGroupSearch && (
+                      <button onClick={() => setSecureGroupSearch('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors">
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                  {secureGroupSearch.trim() && (
+                    <p className="text-[10px] text-gray-500 -mt-2">
+                      {filteredSecureGroups.length} of {secureGroups.length} group{secureGroups.length !== 1 ? 's' : ''} shown
+                    </p>
+                  )}
+                  {filteredSecureGroups.map(group => (
+                    <SecureGroupEditor
+                      key={group.key}
+                      group={group}
+                      baseUrl={cpsBaseUrl}
+                      environment={cpsEnv}
+                      bgOrgId={resolvedBgId}
+                      isProd={isProd}
+                      onResult={setLastOperation}
+                      onGroupDeleted={deletedKey => {
+                        setSecureGroups(prev => prev.filter(g => g.key !== deletedKey));
+                        showToast(`Secure group "${deletedKey}" deleted`);
+                      }}
+                    />
+                  ))}
+                  {filteredSecureGroups.length === 0 && secureGroupSearch.trim() && (
+                    <div className="flex flex-col items-center justify-center py-8 gap-2 bg-gray-900 border border-gray-800 rounded-xl">
+                      <Search size={20} className="text-gray-700" />
+                      <p className="text-gray-500 text-sm">No secure groups match "<span className="font-mono">{secureGroupSearch}</span>"</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
