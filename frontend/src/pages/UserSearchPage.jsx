@@ -360,7 +360,10 @@ export default function UserSearchPage() {
           if (!items.length) break;
           items.forEach(a => { if (a.id && a.status) listStatusMap[a.id] = a.status; });
           ch2List.push(...items);
-          const total = r.data?.total ?? r.data?.totalItems ?? items.length;
+          // Use Infinity as fallback — if total is absent from the response,
+          // keep paginating until we get fewer items than requested.
+          // Previously: ?? items.length  → always stopped after 1 page (100 >= 100).
+          const total = r.data?.total ?? r.data?.totalItems ?? Infinity;
           if (ch2List.length >= total || items.length < 100) break;
           offset += 100;
         }
@@ -475,20 +478,45 @@ export default function UserSearchPage() {
     const envResults = await Promise.allSettled(
       bgEnvSelections.map(async (sel) => {
         const apps = await fetchAppsForEnv(sel.bgId, sel.envId, sel.envName);
-        const entries = apps
-          .map(a => ({
-            appName: a.name,
-            appId: a.id || a.name,
-            ...extractCpsConfig(a, sel.bgId),
-            envName: a.environment?.name || sel.envName,
-            envId: sel.envId,
-            status: a.status || a.target?.desiredStatus || a.target?.status || '',
-          }))
-          .filter(e => e.cpsBaseUrl && e.cpsKey);
-        log(`📦 ${sel.bgName}/${sel.envName}: ${apps.length} apps found, ${entries.length} with CPS config${apps.length - entries.length > 0 ? `, ${apps.length - entries.length} without` : ''}`, entries.length === 0 ? 'warn' : 'info');
+        const allMapped = apps.map(a => ({
+          appName: a.name,
+          appId: a.id || a.name,
+          ...extractCpsConfig(a, sel.bgId),
+          envName: a.environment?.name || sel.envName,
+          envId: sel.envId,
+          status: a.status || a.target?.desiredStatus || a.target?.status || '',
+        }));
+        const entries = allMapped.filter(e => e.cpsBaseUrl && e.cpsKey);
+
+        // ── Infer CPS URL for apps without one ───────────────────────────────
+        // Some CH2 apps (e.g. job-s360-edh-account-v1) don't store cpsBaseUrl
+        // in their ARM deployment properties, but they use the SAME CPS server
+        // as every other app in the same BG+env.
+        // Find the dominant (most-used) CPS URL from apps that DO have it,
+        // then assign it to the apps that don't so they also get searched.
+        const urlCounts = entries.reduce((acc, e) => {
+          acc[e.cpsBaseUrl] = (acc[e.cpsBaseUrl] || 0) + 1;
+          return acc;
+        }, {});
+        const dominantCpsUrl = Object.entries(urlCounts).sort(([, a], [, b]) => b - a)[0]?.[0] || '';
+        const fallbackEnv = sel.envType === 'production' || sel.envName.toLowerCase().includes('prod') ? 'prod' : '';
+        const inferredEntries = dominantCpsUrl
+          ? allMapped
+              .filter(e => !e.cpsBaseUrl && e.cpsKey)
+              .map(e => ({ ...e, cpsBaseUrl: dominantCpsUrl, cpsEnv: e.cpsEnv || fallbackEnv }))
+          : [];
+        const allEnvEntries = [...entries, ...inferredEntries];
+
+        const withoutCpsCount = apps.length - entries.length - inferredEntries.length;
+        log(
+          `📦 ${sel.bgName}/${sel.envName}: ${apps.length} apps found, ${entries.length} with CPS config` +
+          (inferredEntries.length > 0 ? `, +${inferredEntries.length} inferred CPS URL (→ ${dominantCpsUrl.replace(/^https?:\/\//, '').split('/')[0]})` : '') +
+          (withoutCpsCount > 0 ? `, ${withoutCpsCount} without` : ''),
+          allEnvEntries.length === 0 ? 'warn' : 'info'
+        );
 
         // Fire-and-forget credentials (no await)
-        if (entries.length) postCreds(entries);
+        if (allEnvEntries.length) postCreds(allEnvEntries);
 
         // ── Also scan ARM deployment properties directly ───────────────
         // Some apps store credentials as CloudHub env vars (not in CPS).
@@ -519,14 +547,14 @@ export default function UserSearchPage() {
         // Per-env stat tracking
         setEnvStats(prev => [...prev, {
           envName: sel.envName, bgName: sel.bgName,
-          total: apps.length, withCps: entries.length,
+          total: apps.length, withCps: allEnvEntries.length,
         }]);
         setProgress(p => ({
           ...p,
           appsT: p.appsT + apps.length,
           envsDone: p.envsDone + 1,
         }));
-        return entries;
+        return allEnvEntries;
       })
     );
 
