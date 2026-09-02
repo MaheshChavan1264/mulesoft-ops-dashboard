@@ -223,6 +223,10 @@ export default function CpsManagerPage() {
   const [showCpsSettings, setShowCpsSettings] = useState(false);
   // Feature 1: save diff modal
   const [showDiffModal, setShowDiffModal] = useState(false);
+  // Feature 5: undo history
+  const [undoHistory, setUndoHistory] = useState([]);
+  // Feature 3: localStorage draft banner
+  const [pendingDraft, setPendingDraft] = useState(null);
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const resolvedBgId = useMemo(() => {
@@ -410,6 +414,18 @@ export default function CpsManagerPage() {
       });
       const flat = flattenCpsResponse(nsRes.data, cpsKey);
       setOriginalProps(flat);
+      setUndoHistory([]);
+
+      // Feature 3: check for a saved draft
+      try {
+        const dKey = `cps_draft_${cpsBaseUrl}_${cpsKey}_${cpsEnv}`;
+        const raw = localStorage.getItem(dKey);
+        if (raw) {
+          const draft = JSON.parse(raw);
+          const n = Object.keys(draft.added || {}).length + Object.keys(draft.modified || {}).length + (draft.deleted || []).length;
+          if (n > 0) setPendingDraft({ ...draft, draftKey: dKey, totalChanges: n });
+        }
+      } catch { /* ignore corrupt draft */ }
 
       // Extract binary keys from non-secure
       const binStr = flat['cps.secure.binaries'] || '';
@@ -432,43 +448,80 @@ export default function CpsManagerPage() {
     setPropsLoading(false);
   }, [cpsBaseUrl, cpsKey, cpsEnv, resolvedBgId]);
 
-  // ── Property change helpers ───────────────────────────────────────────────
+  // ── Feature 5: undo stack helpers ────────────────────────────────────────
+  const undoLastChange = useCallback(() => {
+    setUndoHistory(h => {
+      if (h.length === 0) return h;
+      const prev = h[h.length - 1];
+      setPendingChanges({ added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) });
+      return h.slice(0, -1);
+    });
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        const tag = document.activeElement?.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') { e.preventDefault(); undoLastChange(); }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undoLastChange]);
+
+  // Feature 3: auto-save draft to localStorage whenever pendingChanges changes
+  useEffect(() => {
+    if (!cpsBaseUrl || !cpsKey || !cpsEnv) return;
+    const draftKey = `cps_draft_${cpsBaseUrl}_${cpsKey}_${cpsEnv}`;
+    const hasChanges = Object.keys(pendingChanges.added).length > 0
+      || Object.keys(pendingChanges.modified).length > 0
+      || pendingChanges.deleted.size > 0;
+    if (hasChanges) {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({
+          added: pendingChanges.added, modified: pendingChanges.modified,
+          deleted: [...pendingChanges.deleted], savedAt: new Date().toISOString(),
+        }));
+      } catch { /* ignore */ }
+    } else {
+      localStorage.removeItem(draftKey);
+    }
+  }, [pendingChanges, cpsBaseUrl, cpsKey, cpsEnv]);
+
+  // ── Property change helpers (push to undo history before each mutation) ──
   const updateProperty = (key, newValue) => {
     setPendingChanges(prev => {
+      setUndoHistory(h => [...h.slice(-19), { added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) }]);
       const next = { ...prev, added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) };
-      if (key in prev.added) {
-        next.added = { ...prev.added, [key]: newValue };
-      } else {
-        next.modified = { ...prev.modified, [key]: newValue };
-      }
+      if (key in prev.added) { next.added = { ...prev.added, [key]: newValue }; }
+      else { next.modified = { ...prev.modified, [key]: newValue }; }
       return next;
     });
   };
 
   const addProperty = (key, value) => {
     if (!key.trim()) return;
-    setPendingChanges(prev => ({
-      ...prev,
-      added: { ...prev.added, [key.trim()]: value },
-      deleted: (() => { const s = new Set(prev.deleted); s.delete(key.trim()); return s; })(),
-    }));
+    setPendingChanges(prev => {
+      setUndoHistory(h => [...h.slice(-19), { added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) }]);
+      return { ...prev, added: { ...prev.added, [key.trim()]: value }, deleted: (() => { const s = new Set(prev.deleted); s.delete(key.trim()); return s; })() };
+    });
   };
 
   const markDeleted = (key) => {
     setPendingChanges(prev => {
+      setUndoHistory(h => [...h.slice(-19), { added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) }]);
       const next = { ...prev, added: { ...prev.added }, modified: { ...prev.modified }, deleted: new Set(prev.deleted) };
-      if (key in next.added) {
-        delete next.added[key];
-      } else {
-        next.deleted.add(key);
-        delete next.modified[key];
-      }
+      if (key in next.added) { delete next.added[key]; }
+      else { next.deleted.add(key); delete next.modified[key]; }
       return next;
     });
   };
 
   const discardChanges = () => {
+    setUndoHistory([]);
     setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+    if (cpsBaseUrl && cpsKey && cpsEnv) localStorage.removeItem(`cps_draft_${cpsBaseUrl}_${cpsKey}_${cpsEnv}`);
+    setPendingDraft(null);
   };
 
   // ── Save (PUT) — Feature 1: show diff modal before actual save ───────────
@@ -512,6 +565,9 @@ export default function CpsManagerPage() {
       });
       setOriginalProps(mergedProps);
       setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+      setUndoHistory([]);
+      try { localStorage.removeItem(`cps_draft_${cpsBaseUrl}_${cpsKey}_${cpsEnv}`); } catch {}
+      setPendingDraft(null);
       showToast('Properties saved successfully', 'success');
       await loadProperties();
     } catch (err) {
@@ -819,6 +875,28 @@ export default function CpsManagerPage() {
             </div>
           )}
 
+          {/* Feature 3: Draft restore banner */}
+          {pendingDraft && !hasPendingChanges && (
+            <div className="flex items-center justify-between gap-4 bg-amber-950/30 border border-amber-800/50 rounded-xl px-4 py-3">
+              <div>
+                <p className="text-amber-300 text-xs font-semibold">📝 Unsaved draft found</p>
+                <p className="text-amber-500/80 text-[10px] mt-0.5">
+                  {pendingDraft.totalChanges} unsaved change{pendingDraft.totalChanges !== 1 ? 's' : ''} from {new Date(pendingDraft.savedAt).toLocaleTimeString()}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => {
+                  setPendingChanges({ added: pendingDraft.added || {}, modified: pendingDraft.modified || {}, deleted: new Set(pendingDraft.deleted || []) });
+                  setPendingDraft(null);
+                }} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors">
+                  Restore Draft
+                </button>
+                <button onClick={() => { try { localStorage.removeItem(pendingDraft.draftKey); } catch {} setPendingDraft(null); }}
+                  className="text-amber-600 hover:text-amber-400 text-xs transition-colors">Discard</button>
+              </div>
+            </div>
+          )}
+
           {/* Non-Secure Tab */}
           {activeTab === 'non-secure' && !propsLoading && !propsError && (
             <PropertyTable
@@ -837,6 +915,8 @@ export default function CpsManagerPage() {
               saving={saving}
               isProd={isProd}
               allProps={mergedProps}
+              onUndo={undoLastChange}
+              undoCount={undoHistory.length}
             />
           )}
 
@@ -974,6 +1054,7 @@ function PropertyTable({
   onUpdate, onDelete, onAdd, hasPendingChanges, pendingCount,
   onSave, onDiscard, saving, isProd,
   allProps, // for placeholder resolution + validation (features 9/14/17)
+  onUndo, undoCount = 0, // Feature 5: undo stack
 }) {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
@@ -1189,6 +1270,12 @@ function PropertyTable({
         </button>
         {hasPendingChanges && (
           <>
+            {undoCount > 0 && onUndo && (
+              <button onClick={onUndo} disabled={saving} title={`Undo (${undoCount} steps) — Ctrl+Z`}
+                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white bg-gray-800 border border-gray-700 px-3 py-2 rounded-lg disabled:opacity-50 transition-colors">
+                ↩ Undo ({undoCount})
+              </button>
+            )}
             <button onClick={onDiscard} disabled={saving}
               className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white bg-gray-800 border border-gray-700 px-3 py-2 rounded-lg disabled:opacity-50 transition-colors">
               <X size={11} /> Discard
