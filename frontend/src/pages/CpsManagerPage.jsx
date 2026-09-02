@@ -888,6 +888,13 @@ function PropertyTable({
   const [editValue, setEditValue] = useState('');
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [bulkText, setBulkText] = useState('');
+  // Feature 6: copy as formats
+  const [showCopyMenu, setShowCopyMenu] = useState(false);
+  const [copyDone, setCopyDone] = useState('');
+  // Feature 7: find & replace
+  const [showFindReplace, setShowFindReplace] = useState(false);
+  const [findText, setFindText] = useState('');
+  const [replaceText, setReplaceText] = useState('');
 
   // Parse bulk text → array of { key, value }
   const parseBulk = (text) => {
@@ -947,8 +954,85 @@ function PropertyTable({
     setEditingKey(null);
   };
 
+  // ── Feature 6: copy all properties as various formats ─────────────────────
+  const copyAs = (format) => {
+    const entries = Object.entries(props).sort(([a], [b]) => a.localeCompare(b));
+    let text = '';
+    if (format === 'json') {
+      text = JSON.stringify(Object.fromEntries(entries), null, 2);
+    } else if (format === 'properties') {
+      text = entries.map(([k, v]) => `${k}=${v}`).join('\n');
+    } else if (format === 'yaml') {
+      text = entries.map(([k, v]) => {
+        const safe = String(v).includes(':') || String(v).includes('#') || String(v).startsWith(' ')
+          ? `"${String(v).replace(/"/g, '\\"')}"` : String(v);
+        return `${k}: ${safe}`;
+      }).join('\n');
+    } else if (format === 'env') {
+      text = entries.map(([k, v]) => `export ${k.toUpperCase().replace(/\./g, '_')}="${String(v).replace(/"/g, '\\"')}"`).join('\n');
+    }
+    navigator.clipboard.writeText(text);
+    setCopyDone(format);
+    setShowCopyMenu(false);
+    setTimeout(() => setCopyDone(''), 2000);
+  };
+
+  // ── Feature 7: find & replace ─────────────────────────────────────────────
+  const findMatches = findText.trim()
+    ? Object.keys(props).filter(k => {
+        const v = String(props[k] ?? '');
+        return v.includes(findText);
+      })
+    : [];
+
+  const applyFindReplace = () => {
+    if (!findText.trim()) return;
+    findMatches.forEach(key => {
+      const newVal = String(props[key] ?? '').split(findText).join(replaceText);
+      onUpdate(key, newVal);
+    });
+  };
+
   return (
     <div className="space-y-3">
+      {/* Feature 7: Find & Replace panel */}
+      {showFindReplace && (
+        <div className="bg-gray-900 border border-indigo-800/40 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
+              <Search size={11} /> Find & Replace in Values
+            </p>
+            <button onClick={() => { setShowFindReplace(false); setFindText(''); setReplaceText(''); }}
+              className="text-gray-600 hover:text-gray-300 transition-colors"><X size={13} /></button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[9px] text-gray-500 uppercase tracking-wider mb-1">Find (in values)</label>
+              <input value={findText} onChange={e => setFindText(e.target.value)} placeholder="search string…"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono placeholder-gray-600 focus:outline-none focus:border-indigo-600/50" />
+            </div>
+            <div>
+              <label className="block text-[9px] text-gray-500 uppercase tracking-wider mb-1">Replace with</label>
+              <input value={replaceText} onChange={e => setReplaceText(e.target.value)} placeholder="replacement…"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono placeholder-gray-600 focus:outline-none focus:border-indigo-600/50" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-medium ${findMatches.length > 0 ? 'text-indigo-300' : 'text-gray-600'}`}>
+              {findText.trim()
+                ? findMatches.length > 0
+                  ? `${findMatches.length} value${findMatches.length !== 1 ? 's' : ''} match`
+                  : 'No matches'
+                : 'Enter search text above'}
+            </span>
+            <button onClick={applyFindReplace} disabled={findMatches.length === 0 || !findText.trim()}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded-lg disabled:opacity-40 transition-colors">
+              Replace All ({findMatches.length})
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Search + toolbar row */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48">
@@ -960,6 +1044,43 @@ function PropertyTable({
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors">
               <X size={12} />
             </button>
+          )}
+        </div>
+        {/* Feature 7: Find & Replace toggle */}
+        <button onClick={() => setShowFindReplace(s => !s)}
+          className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
+            showFindReplace
+              ? 'bg-indigo-700/40 border-indigo-700/60 text-indigo-200'
+              : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-indigo-300 hover:border-indigo-700/50'
+          }`}>
+          <Search size={11} /> Find & Replace
+        </button>
+        {/* Feature 6: Copy as formats */}
+        <div className="relative">
+          <button onClick={() => setShowCopyMenu(s => !s)}
+            className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
+              copyDone ? 'bg-emerald-700/40 border-emerald-700/60 text-emerald-200'
+              : showCopyMenu ? 'bg-gray-700/40 border-gray-600 text-gray-200'
+              : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200'
+            }`}>
+            {copyDone ? <><Check size={11} className="text-emerald-400" /> Copied!</>
+              : <><Copy size={11} /> Copy as…</>}
+          </button>
+          {showCopyMenu && (
+            <div className="absolute right-0 top-full mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-30 min-w-40 overflow-hidden">
+              {[
+                { id: 'json', label: 'JSON', sub: '{ "key": "val" }' },
+                { id: 'properties', label: '.properties', sub: 'key=value' },
+                { id: 'yaml', label: 'YAML', sub: 'key: value' },
+                { id: 'env', label: 'Env Vars', sub: 'export KEY=value' },
+              ].map(fmt => (
+                <button key={fmt.id} onClick={() => copyAs(fmt.id)}
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-800/60 transition-colors group">
+                  <p className="text-xs text-gray-200 font-medium">{fmt.label}</p>
+                  <p className="text-[9px] text-gray-600 font-mono">{fmt.sub}</p>
+                </button>
+              ))}
+            </div>
           )}
         </div>
         {/* Bulk Add toggle */}
