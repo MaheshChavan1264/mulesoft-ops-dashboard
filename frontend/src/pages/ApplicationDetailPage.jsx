@@ -786,10 +786,13 @@ export default function ApplicationDetailPage() {
               type="button"
               title={
                 resolvedEnvName || app.environment?.name
-                  ? `Open in Anypoint Platform — if prompted, select "${resolvedEnvName || app.environment?.name}"`
-                  : 'Open in Anypoint Platform'
+                  ? `Open in Anypoint Platform — app name copied to clipboard. If prompted, select "${resolvedEnvName || app.environment?.name}"`
+                  : 'Open in Anypoint Platform — app name copied to clipboard'
               }
               onClick={() => {
+                // Copy the app name to clipboard so the user can paste it into
+                // CloudHub's search box if the env-selector page appears first.
+                try { navigator.clipboard.writeText(app.name); } catch { /* non-fatal */ }
                 const envName = resolvedEnvName || app.environment?.name || '';
                 const envAppUrl = envId
                   ? (isCH1

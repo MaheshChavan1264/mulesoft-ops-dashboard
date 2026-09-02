@@ -34,6 +34,9 @@ const ENV_TAG_COLOR = {
 // exactly which environment to click — one click lands on the app.
 function openInAnypoint(e, app, fallbackBgId) {
   e.stopPropagation();
+  // Copy the app name to clipboard so the user can paste it into CloudHub's
+  // search box if the "Choose Environment" page appears before the app.
+  try { navigator.clipboard.writeText(app.name); } catch { /* non-fatal */ }
   const orgId = app._bgId || fallbackBgId || '';
   const envId = app.environment?.id || '';
 
@@ -1372,7 +1375,7 @@ export default function ApplicationsPage() {
                         <CopyBtn text={app.name} />
                         <button
                           type="button"
-                          title={`Open in Anypoint Platform${app.environment?.name ? ` — ${app.environment.name}` : ''}`}
+                          title={`Open in Anypoint Platform${app.environment?.name ? ` — ${app.environment.name}` : ''} (app name copied to clipboard)`}
                           onClick={(e) => openInAnypoint(e, app, selectedBg !== '__all__' ? selectedBg : orgId)}
                           className="opacity-0 group-hover:opacity-100 ml-0.5 text-gray-500 hover:text-blue-400 transition-all flex-shrink-0"
                         >
