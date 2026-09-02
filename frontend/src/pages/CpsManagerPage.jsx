@@ -61,6 +61,78 @@ const PROP_TYPE_TABS = [
   { id: 'auth', label: '🔐 Access Control' },
 ];
 
+// ── Feature 1: Save Diff Modal ────────────────────────────────────────────────
+function SaveDiffModal({ pendingChanges, originalProps, mergedProps, isProd, onConfirm, onCancel, saving }) {
+  const added    = Object.entries(pendingChanges.added);
+  const modified = Object.entries(pendingChanges.modified);
+  const deleted  = [...pendingChanges.deleted];
+  const total    = added.length + modified.length + deleted.length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
+          <div>
+            <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+              <Save size={14} className={isProd ? 'text-red-400' : 'text-cyan-400'} />
+              Review Changes Before Saving
+            </h3>
+            <p className="text-gray-500 text-xs mt-0.5">{total} change{total !== 1 ? 's' : ''} pending · {isProd ? '⚠ PRODUCTION' : 'Non-production'}</p>
+          </div>
+          <button onClick={onCancel} className="text-gray-600 hover:text-gray-300"><X size={15} /></button>
+        </div>
+
+        {/* Diff table */}
+        <div className="overflow-y-auto flex-1 p-3 space-y-1.5">
+          {added.map(([key, val]) => (
+            <div key={`add::${key}`} className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 rounded-lg bg-emerald-950/20 border border-emerald-800/30 text-xs">
+              <span className="font-mono text-gray-300 truncate">{key}</span>
+              <span className="text-gray-700 italic">— (new)</span>
+              <span className="font-mono text-emerald-300 break-all">{String(val)}</span>
+            </div>
+          ))}
+          {modified.map(([key, newVal]) => (
+            <div key={`mod::${key}`} className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 rounded-lg bg-blue-950/20 border border-blue-800/30 text-xs">
+              <span className="font-mono text-gray-300 truncate">{key}</span>
+              <span className="font-mono text-red-400/80 break-all line-through">{String(originalProps[key] ?? '')}</span>
+              <span className="font-mono text-blue-300 break-all">{String(newVal)}</span>
+            </div>
+          ))}
+          {deleted.map(key => (
+            <div key={`del::${key}`} className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 rounded-lg bg-red-950/20 border border-red-800/30 text-xs">
+              <span className="font-mono text-gray-300 truncate">{key}</span>
+              <span className="font-mono text-red-400/80 break-all line-through">{String(originalProps[key] ?? '')}</span>
+              <span className="text-gray-700 italic">— (deleted)</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Column labels */}
+        <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-5 py-2 border-t border-gray-800 text-[9px] text-gray-600 uppercase tracking-wider flex-shrink-0">
+          <span>Key</span><span>Old Value</span><span>New Value</span>
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-800 flex-shrink-0">
+          <button onClick={onCancel} disabled={saving}
+            className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 border border-gray-700 rounded-lg disabled:opacity-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={saving}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${
+              isProd ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-cyan-700 hover:bg-cyan-600 text-white'
+            }`}>
+            {saving
+              ? <><RefreshCw size={13} className="animate-spin" /> Saving…</>
+              : <><Save size={13} /> Confirm Save ({total} change{total !== 1 ? 's' : ''})</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Feature 9: Property type detection ───────────────────────────────────────
 function getValueTypeIcon(val) {
   const v = String(val ?? '').trim();
@@ -149,6 +221,8 @@ export default function CpsManagerPage() {
   const [showDelete, setShowDelete] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showCpsSettings, setShowCpsSettings] = useState(false);
+  // Feature 1: save diff modal
+  const [showDiffModal, setShowDiffModal] = useState(false);
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const resolvedBgId = useMemo(() => {
@@ -397,8 +471,14 @@ export default function CpsManagerPage() {
     setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
   };
 
-  // ── Save (PUT) ────────────────────────────────────────────────────────────
+  // ── Save (PUT) — Feature 1: show diff modal before actual save ───────────
+  const requestSave = () => {
+    if (!hasPendingChanges || !cpsBaseUrl || !cpsKey) return;
+    setShowDiffModal(true);
+  };
+
   const saveChanges = async () => {
+    setShowDiffModal(false);
     if (!hasPendingChanges || !cpsBaseUrl || !cpsKey) return;
     setSaving(true);
     setSaveError('');
@@ -536,6 +616,19 @@ export default function CpsManagerPage() {
           prefilledUrl={cpsBaseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}
           prefilledBgId={resolvedBgId}
           onClose={() => setShowCpsSettings(false)}
+        />
+      )}
+
+      {/* Feature 1: Save Diff Modal */}
+      {showDiffModal && (
+        <SaveDiffModal
+          pendingChanges={pendingChanges}
+          originalProps={originalProps}
+          mergedProps={mergedProps}
+          isProd={isProd}
+          onConfirm={saveChanges}
+          onCancel={() => setShowDiffModal(false)}
+          saving={saving}
         />
       )}
 
@@ -739,7 +832,7 @@ export default function CpsManagerPage() {
               onAdd={addProperty}
               hasPendingChanges={hasPendingChanges}
               pendingCount={pendingCount}
-              onSave={saveChanges}
+              onSave={requestSave}
               onDiscard={discardChanges}
               saving={saving}
               isProd={isProd}
