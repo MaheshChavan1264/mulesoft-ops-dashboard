@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud, ExternalLink } from 'lucide-react';
 import CredentialImportButton from '../components/CredentialImportButton';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
@@ -21,6 +21,54 @@ const ENV_TAG_COLOR = {
   production: 'bg-green-500/20 text-green-400',
   sandbox: 'bg-yellow-500/20 text-yellow-400'
 };
+
+/* ── Open app in Anypoint Platform ────────────────────────── */
+// Opens the app in CloudHub using a 2-step approach:
+//   Step 1 — Switch to the correct Business Group via the Anypoint home URL.
+//   Step 2 — After the BG switch settles, navigate to the app using the
+//             env-in-path URL format: /console/home/{envId}/applications/...
+//             This is the canonical CloudHub URL when inside an environment.
+//
+// If the env selector still appears (Anypoint Platform limitation when no env
+// is cached for this BG in the current browser session), the tooltip shows
+// exactly which environment to click — one click lands on the app.
+function openInAnypoint(e, app, fallbackBgId) {
+  e.stopPropagation();
+  const orgId = app._bgId || fallbackBgId || '';
+  const envId = app.environment?.id || '';
+
+  // Env-in-path URL: this is the format Anypoint uses when you are already
+  // inside an environment — it encodes the env context in the hash path.
+  const envAppUrl = envId
+    ? (app.deploymentType === 'CloudHub 2.0'
+        ? `https://anypoint.mulesoft.com/cloudhub/#/console/home/${envId}/applications/runtimeFabric/${app.id}/settings`
+        : `https://anypoint.mulesoft.com/cloudhub/#/console/home/${envId}/applications/cloudhub/${app.id}/settings`)
+    : (app.deploymentType === 'CloudHub 2.0'
+        ? `https://anypoint.mulesoft.com/cloudhub/#/console/applications/runtimeFabric/${app.id}/settings`
+        : `https://anypoint.mulesoft.com/cloudhub/#/console/applications/cloudhub/${app.id}/settings`);
+
+  if (!orgId) {
+    window.open(envAppUrl, '_blank', 'noreferrer');
+    return;
+  }
+
+  // Step 1: Switch Business Group
+  const win = window.open(
+    `https://anypoint.mulesoft.com/home/organizations/${orgId}/`,
+    '_blank'
+  );
+
+  if (win) {
+    // Step 2: After BG switch completes, navigate to the app with env in path.
+    // 4s gives enough time for the BG-switch redirect chain to fully settle.
+    setTimeout(() => {
+      try { win.location.href = envAppUrl; }
+      catch { window.open(envAppUrl, '_blank', 'noreferrer'); }
+    }, 4000);
+  } else {
+    window.open(envAppUrl, '_blank', 'noreferrer');
+  }
+}
 
 /* ── Single-app Confirm Modal ──────────────────────────────── */
 function ConfirmModal({ state, onConfirm, onCancel, loading }) {
@@ -1322,6 +1370,14 @@ export default function ApplicationsPage() {
                       <div className="flex items-center gap-1 group">
                         <span className="text-white font-medium">{app.name}</span>
                         <CopyBtn text={app.name} />
+                        <button
+                          type="button"
+                          title={`Open in Anypoint Platform${app.environment?.name ? ` — ${app.environment.name}` : ''}`}
+                          onClick={(e) => openInAnypoint(e, app, selectedBg !== '__all__' ? selectedBg : orgId)}
+                          className="opacity-0 group-hover:opacity-100 ml-0.5 text-gray-500 hover:text-blue-400 transition-all flex-shrink-0"
+                        >
+                          <ExternalLink size={11} />
+                        </button>
                       </div>
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={app.status} /></td>
