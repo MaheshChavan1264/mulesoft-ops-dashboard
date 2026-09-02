@@ -283,13 +283,16 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
 
   const environment = app._envName || app.environment?.name || '—';
 
+  // Splunk AWS Firehose access key — sourced from ARM runtime properties (not CPS)
+  const splunkAccessKeyId = fetchedAllProps?.['splunk.aws.firehose.accessKeyId'] || '';
+
   if (secureGroups.length === 0) {
-    allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', properties: '' });
+    allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', properties: '', splunkAccessKeyId });
     hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', hostsSecure: '', apiUsers: '', notAccessible: '' });
   } else {
     for (const group of secureGroups) {
       const maskedSec = maskSecrets(group.properties);
-      allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: group.key, properties: propsToString(maskedSec) });
+      allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: group.key, properties: propsToString(maskedSec), splunkAccessKeyId });
       hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: group.key, hostsSecure: extractHostsSecure(group.properties), apiUsers: extractApiUsers(group.properties), notAccessible: '' });
     }
   }
@@ -311,7 +314,7 @@ function buildErrorRow(app, e, allPropsRows, hostApiRows) {
   const cloudhubVersion = app.deploymentType === 'CloudHub 2.0' ? 'CloudHub 2.0' : 'CloudHub 1.0';
   const appStatus = app.status || '—';
   const msg = `ERROR: ${e.response?.data?.error || e.message}`;
-  allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', properties: msg });
+  allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', properties: msg, splunkAccessKeyId: '' });
   hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', hostsSecure: '', apiUsers: '', notAccessible: msg });
 }
 
@@ -380,7 +383,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
   const wb = XLSX.utils.book_new();
 
   const ws1 = XLSX.utils.json_to_sheet(allPropsRows, {
-    header: ['environment', 'apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties']
+    header: ['environment', 'apiName', 'cloudhubVersion', 'splunkAccessKeyId', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties']
   });
   XLSX.utils.book_append_sheet(wb, ws1, 'AllPropertiesCatalog');
 
