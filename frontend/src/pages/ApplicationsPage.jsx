@@ -1413,8 +1413,10 @@ export default function ApplicationsPage() {
         </div>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          {/* Feature 6: overflow-y-auto on this inner div makes sticky thead work.
+              The outer div keeps overflow-hidden for border-radius clipping. */}
+          <div className="overflow-y-auto max-h-[72vh]">
           <table className="w-full text-sm">
-            {/* Feature 6: sticky header so column labels stay visible when scrolling */}
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-800/95 text-gray-400 text-xs uppercase tracking-wider backdrop-blur-sm">
                 {/* Select-all checkbox */}
@@ -1539,6 +1541,7 @@ export default function ApplicationsPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
