@@ -61,6 +61,34 @@ const PROP_TYPE_TABS = [
   { id: 'auth', label: '🔐 Access Control' },
 ];
 
+// ── Feature 9: Property type detection ───────────────────────────────────────
+function getValueTypeIcon(val) {
+  const v = String(val ?? '').trim();
+  if (!v) return null;
+  if (/^\$\{.+\}$/.test(v)) return { emoji: '⚡', label: 'Placeholder reference', color: 'text-yellow-500' };
+  if (/^https?:\/\//i.test(v)) return { emoji: '🌐', label: 'URL', color: 'text-blue-400' };
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return { emoji: '🔑', label: 'UUID', color: 'text-purple-400' };
+  if (/^(true|false)$/i.test(v)) return { emoji: v.toLowerCase() === 'true' ? '✅' : '❌', label: 'Boolean', color: 'text-emerald-400' };
+  if (/^\d+(\.\d+)?$/.test(v) && v.length < 20) return { emoji: '🔢', label: 'Number', color: 'text-cyan-400' };
+  if (/^\s*[\[{]/.test(v)) return { emoji: '📋', label: 'JSON object/array', color: 'text-orange-400' };
+  return null;
+}
+
+// ── Feature 14: Validation warnings ──────────────────────────────────────────
+function getValidationWarning(key, val, allProps) {
+  const v = String(val ?? '').trim();
+  if (!v && /(\.url|\.host|\.username|\.user|\.endpoint|\.server|\.address)$/i.test(key)) {
+    return { msg: 'Empty value for a required-looking property' };
+  }
+  if (/^\$\{.+\}$/.test(v)) {
+    const inner = v.slice(2, -1);
+    if (allProps && !(inner in allProps)) {
+      return { msg: `Placeholder key "${inner}" not found in this property set` };
+    }
+  }
+  return null;
+}
+
 export default function CpsManagerPage() {
   const { orgId: authOrgId } = useAuth();
   const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
@@ -715,6 +743,7 @@ export default function CpsManagerPage() {
               onDiscard={discardChanges}
               saving={saving}
               isProd={isProd}
+              allProps={mergedProps}
             />
           )}
 
@@ -851,6 +880,7 @@ function PropertyTable({
   props, originalProps, pendingChanges, search, setSearch,
   onUpdate, onDelete, onAdd, hasPendingChanges, pendingCount,
   onSave, onDiscard, saving, isProd,
+  allProps, // for placeholder resolution + validation (features 9/14/17)
 }) {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
@@ -1055,11 +1085,37 @@ function PropertyTable({
                         className="w-full bg-gray-800 border border-blue-600/50 rounded-lg px-2 py-1 text-xs text-white font-mono focus:outline-none"
                       />
                     ) : (
-                      <div className="flex items-center gap-1.5 group/val cursor-text" onClick={() => !isDeleted && startEdit(key, value)}>
-                        <span className={`font-mono text-xs break-all leading-relaxed ${isDeleted ? 'line-through text-gray-600' : 'text-gray-200'}`}>
-                          {String(value) || <span className="text-gray-600 italic">empty</span>}
-                        </span>
-                        <CopyBtn text={String(value)} />
+                      <div className="space-y-0.5">
+                        {/* Feature 9+14: type icon + validation warning + value + copy */}
+                        <div className="flex items-center gap-1.5 group/val cursor-text" onClick={() => !isDeleted && startEdit(key, value)}>
+                          {!isDeleted && (() => {
+                            const typeInfo = getValueTypeIcon(value);
+                            return typeInfo ? (
+                              <span title={typeInfo.label} className={`text-[10px] flex-shrink-0 leading-none ${typeInfo.color}`}>{typeInfo.emoji}</span>
+                            ) : null;
+                          })()}
+                          {!isDeleted && (() => {
+                            const warn = getValidationWarning(key, value, allProps || props);
+                            return warn ? (
+                              <span title={warn.msg} className="text-yellow-500 flex-shrink-0 cursor-help text-[10px] leading-none" aria-label={warn.msg}>⚠</span>
+                            ) : null;
+                          })()}
+                          <span className={`font-mono text-xs break-all leading-relaxed ${isDeleted ? 'line-through text-gray-600' : 'text-gray-200'}`}>
+                            {String(value) || <span className="text-gray-600 italic">empty</span>}
+                          </span>
+                          <CopyBtn text={String(value)} />
+                        </div>
+                        {/* Feature 17: placeholder resolution preview */}
+                        {!isEditing && !isDeleted && /^\$\{.+\}$/.test(String(value)) && (() => {
+                          const inner = String(value).slice(2, -1);
+                          const resolved = (allProps || props)?.[inner];
+                          return resolved ? (
+                            <p className="text-[9px] text-gray-600 font-mono pl-0.5">
+                              <span className="text-gray-700">→ </span>
+                              {String(resolved).substring(0, 80)}{String(resolved).length > 80 ? '…' : ''}
+                            </p>
+                          ) : null;
+                        })()}
                       </div>
                     )}
                   </td>
@@ -1399,6 +1455,7 @@ function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onRes
                 onDiscard={discardChanges}
                 saving={saving}
                 isProd={isProd}
+                allProps={mergedProps}
               />
             </div>
           </div>
@@ -1419,6 +1476,7 @@ function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onRes
               onDiscard={discardChanges}
               saving={saving}
               isProd={isProd}
+              allProps={mergedProps}
             />
           </div>
         )
