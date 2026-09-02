@@ -227,6 +227,15 @@ export default function CpsManagerPage() {
   const [undoHistory, setUndoHistory] = useState([]);
   // Feature 3: localStorage draft banner
   const [pendingDraft, setPendingDraft] = useState(null);
+  // Feature 13: session change log
+  const [changeLog, setChangeLog] = useState([]);
+  const [showChangeLog, setShowChangeLog] = useState(false);
+  // Feature 15: app CPS status map (compositeId → true/false)
+  const [appCpsStatus, setAppCpsStatus] = useState({});
+  // Feature 16: URL presets (persisted in localStorage, max 5)
+  const [cpsUrlPresets, setCpsUrlPresets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('cps_url_presets') || '[]'); } catch { return []; }
+  });
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const resolvedBgId = useMemo(() => {
@@ -393,6 +402,8 @@ export default function CpsManagerPage() {
         }
       }
     } catch {}
+    // Feature 15: record CPS status for this app so the selector can show an indicator
+    setAppCpsStatus(prev => ({ ...prev, [compositeId]: !!(extractCpsConfig ? true : false) }));
     setAppDetailLoading(false);
   }, [apps, selectedBgId, hasCpsCreds, getSecret, getAllCredentials]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -568,6 +579,11 @@ export default function CpsManagerPage() {
       setUndoHistory([]);
       try { localStorage.removeItem(`cps_draft_${cpsBaseUrl}_${cpsKey}_${cpsEnv}`); } catch {}
       setPendingDraft(null);
+      // Feature 13: append to session change log
+      setChangeLog(log => [...log, {
+        ts: new Date().toISOString(), label: 'Save Non-Secure',
+        key: cpsKey, env: cpsEnv, changes: pendingCount, success: true,
+      }]);
       showToast('Properties saved successfully', 'success');
       await loadProperties();
     } catch (err) {
@@ -588,6 +604,20 @@ export default function CpsManagerPage() {
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  // ── Feature 16: URL preset helpers ───────────────────────────────────────
+  const saveUrlPreset = () => {
+    const u = cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+    if (!u || cpsUrlPresets.includes(u)) return;
+    const next = [...cpsUrlPresets, u].slice(-5);
+    setCpsUrlPresets(next);
+    try { localStorage.setItem('cps_url_presets', JSON.stringify(next)); } catch {}
+  };
+  const removeUrlPreset = (url) => {
+    const next = cpsUrlPresets.filter(p => p !== url);
+    setCpsUrlPresets(next);
+    try { localStorage.setItem('cps_url_presets', JSON.stringify(next)); } catch {}
   };
 
   // ── Export CSV ────────────────────────────────────────────────────────────
@@ -627,12 +657,19 @@ export default function CpsManagerPage() {
     { value: '', label: `All Environments${envFilterActive ? ` (${visibleEnvs.length} visible)` : ''}` },
     ...visibleEnvs.map(e => ({ value: e.id, label: e.name })),
   ];
-  const appOptions = apps.map(a => ({
-    value: `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`,
-    label: a.name,
-    tag: a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1',
-    tagColor: a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400',
-  }));
+  const appOptions = apps.map(a => {
+    const cid = `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`;
+    const hasCps = appCpsStatus[cid];
+    return {
+      value: cid, label: a.name,
+      tag: a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1',
+      tagColor: a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400',
+      ...(hasCps !== undefined ? {
+        tag2: hasCps ? '✓CPS' : 'noCPS',
+        tag2Color: hasCps ? 'bg-emerald-500/15 text-emerald-500' : 'bg-gray-700/40 text-gray-600',
+      } : {}),
+    };
+  });
 
   const canLoad = !!(cpsBaseUrl && cpsKey && cpsEnv);
 
@@ -770,10 +807,31 @@ export default function CpsManagerPage() {
               )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Base URL</label>
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-2">
+                    CPS Base URL
+                    {cpsBaseUrl && !cpsUrlPresets.includes(cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')) && (
+                      <button onClick={saveUrlPreset} title="Save as preset"
+                        className="text-[8px] text-gray-600 hover:text-cyan-400 border border-gray-700 hover:border-cyan-700 px-1.5 py-0.5 rounded transition-colors">
+                        + save preset
+                      </button>
+                    )}
+                  </label>
                   <input value={cpsBaseUrl} onChange={e => setCpsBaseUrl(e.target.value)}
                     placeholder="https://cps-server.internalapi.sfdcbt.net"
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
+                  {cpsUrlPresets.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {cpsUrlPresets.map(p => (
+                        <span key={p} className="inline-flex items-center gap-1 text-[9px] font-mono bg-gray-800 border border-gray-700 rounded-md px-2 py-0.5 group/preset">
+                          <button onClick={() => setCpsBaseUrl(p)} title={p}
+                            className={`hover:text-cyan-300 transition-colors truncate max-w-40 ${cpsBaseUrl.startsWith(p) || p === cpsBaseUrl ? 'text-cyan-400' : 'text-gray-500'}`}>
+                            {p.replace(/^https?:\/\//, '')}
+                          </button>
+                          <button onClick={() => removeUrlPreset(p)} className="opacity-0 group-hover/preset:opacity-100 text-gray-700 hover:text-red-400 flex-shrink-0 transition-all">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -1029,6 +1087,33 @@ export default function CpsManagerPage() {
           operation={lastOperation}
           onDismiss={() => setLastOperation(null)}
         />
+      )}
+
+      {/* Feature 13: Session Change Log */}
+      {changeLog.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <button onClick={() => setShowChangeLog(s => !s)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/30 transition-colors">
+            <span className="text-xs font-medium text-gray-400 flex items-center gap-2">
+              📋 Session Change Log
+              <span className="text-[9px] bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded-full">{changeLog.length}</span>
+            </span>
+            <span className="text-gray-600 text-xs">{showChangeLog ? '▲ hide' : '▼ show'}</span>
+          </button>
+          {showChangeLog && (
+            <div className="border-t border-gray-800 divide-y divide-gray-800/60 max-h-48 overflow-y-auto">
+              {[...changeLog].reverse().map((entry, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-2.5 text-[10px]">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${entry.success ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                  <span className="text-gray-600 font-mono flex-shrink-0">{new Date(entry.ts).toLocaleTimeString()}</span>
+                  <span className="text-gray-400 font-medium flex-shrink-0">{entry.label}</span>
+                  <span className="text-gray-600 font-mono truncate">{entry.key} · {entry.env}</span>
+                  {entry.changes != null && <span className="text-cyan-600 ml-auto flex-shrink-0">{entry.changes} change{entry.changes !== 1 ? 's' : ''}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* No CPS config state */}
