@@ -778,6 +778,45 @@ export default function ApplicationDetailPage() {
                 </button>
               );
             })()}
+            {/* Open in Anypoint Platform:
+                Step 1 — switch BG via home/organizations/{orgId}/
+                Step 2 — navigate to env-in-path URL after 4s
+                If env selector appears, the tooltip tells the user exactly which env to click. */}
+            <button
+              type="button"
+              title={
+                resolvedEnvName || app.environment?.name
+                  ? `Open in Anypoint Platform — if prompted, select "${resolvedEnvName || app.environment?.name}"`
+                  : 'Open in Anypoint Platform'
+              }
+              onClick={() => {
+                const envName = resolvedEnvName || app.environment?.name || '';
+                const envAppUrl = envId
+                  ? (isCH1
+                      ? `https://anypoint.mulesoft.com/cloudhub/#/console/home/${envId}/applications/cloudhub/${appId}/settings`
+                      : `https://anypoint.mulesoft.com/cloudhub/#/console/home/${envId}/applications/runtimeFabric/${appId}/settings`)
+                  : (isCH1
+                      ? `https://anypoint.mulesoft.com/cloudhub/#/console/applications/cloudhub/${appId}/settings`
+                      : `https://anypoint.mulesoft.com/cloudhub/#/console/applications/runtimeFabric/${appId}/settings`);
+
+                if (!orgId) { window.open(envAppUrl, '_blank', 'noreferrer'); return; }
+
+                const win = window.open(
+                  `https://anypoint.mulesoft.com/home/organizations/${orgId}/`,
+                  '_blank'
+                );
+                if (win) {
+                  setTimeout(() => {
+                    try { win.location.href = envAppUrl; }
+                    catch { window.open(envAppUrl, '_blank', 'noreferrer'); }
+                  }, 4000);
+                } else {
+                  window.open(envAppUrl, '_blank', 'noreferrer');
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 text-slate-400 hover:text-blue-300 border-slate-700/40 hover:border-blue-700/50 hover:bg-blue-950/30 transition-all">
+              <ExternalLink size={13} /> Anypoint
+            </button>
             <button onClick={load} className="p-2.5 rounded-xl text-slate-500 hover:text-white bg-slate-800/60 border border-slate-700/40 hover:bg-slate-700/60 transition-all">
               <RefreshCw size={14}/>
             </button>
