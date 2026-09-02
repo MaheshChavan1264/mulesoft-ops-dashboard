@@ -792,6 +792,19 @@ export default function ApplicationsPage() {
   const [csvMatchedNames, setCsvMatchedNames] = useState(null); // null = not uploaded
   const [csvFileName, setCsvFileName] = useState('');
   const csvInputRef = useRef(null);
+  // Feature 1: column sort state
+  const [sortColumn, setSortColumn] = useState('');
+  const [sortDir, setSortDir]       = useState('asc');
+
+  const handleSort = (col) => {
+    if (sortColumn === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortColumn(col); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ col }) => {
+    if (sortColumn !== col) return <span className="text-gray-700 ml-0.5">⇅</span>;
+    return <span className="text-blue-400 ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  };
 
   const handleCsvUpload = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -992,15 +1005,44 @@ export default function ApplicationsPage() {
   // This allows selecting apps from multiple environments and pinging them all.
   const selectedApps = apps.filter((a) => selectedIds.has(a.id));
 
-  // Selected rows float to the top
+  // Feature 2: status summary counts from current filtered set
+  const statusSummary = useMemo(() => {
+    const c = {};
+    filtered.forEach(a => { const s = (a.status || 'UNKNOWN').toUpperCase(); c[s] = (c[s] || 0) + 1; });
+    return c;
+  }, [filtered]);
+
+  // Feature 7: status counts from ALL loaded apps (for filter dropdown badges)
+  const statusCountsAll = useMemo(() => {
+    const c = {};
+    apps.forEach(a => { const s = (a.status || 'UNKNOWN').toUpperCase(); c[s] = (c[s] || 0) + 1; });
+    return c;
+  }, [apps]);
+
+  // Selected rows float to the top, then apply column sort (Feature 1)
   const displayFiltered = useMemo(() => {
-    if (selectedIds.size === 0) return filtered;
-    return [...filtered].sort((a, b) => {
+    let result = selectedIds.size === 0 ? [...filtered] : [...filtered].sort((a, b) => {
       const aS = selectedIds.has(a.id) ? 0 : 1;
       const bS = selectedIds.has(b.id) ? 0 : 1;
       return aS - bS;
     });
-  }, [filtered, selectedIds]);
+    if (sortColumn) {
+      const getValue = (a) => {
+        if (sortColumn === 'name')         return (a.name || '').toLowerCase();
+        if (sortColumn === 'status')       return (a.status || '').toLowerCase();
+        if (sortColumn === 'environment')  return (a.environment?.name || '').toLowerCase();
+        if (sortColumn === 'type')         return (a.deploymentType || '').toLowerCase();
+        if (sortColumn === 'muleVersion')  return (a.muleVersion || '').toLowerCase();
+        if (sortColumn === 'lastModified') return a.lastModifiedDate || '';
+        return '';
+      };
+      result.sort((a, b) => {
+        const cmp = String(getValue(a)).localeCompare(String(getValue(b)));
+        return sortDir === 'asc' ? cmp : -cmp;
+      });
+    }
+    return result;
+  }, [filtered, selectedIds, sortColumn, sortDir]);
 
   const toggleRow = (e, appId) => {
     e.stopPropagation();
@@ -1109,17 +1151,26 @@ export default function ApplicationsPage() {
     }))
   ];
 
+  // Feature 7: status options with live counts from all loaded apps
   const statusOptions = [
     { value: '', label: 'All Statuses' },
-    { value: 'RUNNING',   label: 'Running',   badge: true, badgeColor: 'bg-green-400' },
-    { value: 'APPLIED',   label: 'Applied',   badge: true, badgeColor: 'bg-cyan-400' },
-    { value: 'FAILED',    label: 'Failed',    badge: true, badgeColor: 'bg-red-400' },
-    { value: 'STOPPED',   label: 'Stopped',   badge: true, badgeColor: 'bg-gray-400' },
-    { value: 'DEPLOYING', label: 'Deploying', badge: true, badgeColor: 'bg-blue-400' },
-    { value: 'UPDATING',  label: 'Updating',  badge: true, badgeColor: 'bg-purple-400' },
-    { value: 'STARTING',  label: 'Starting',  badge: true, badgeColor: 'bg-blue-300' },
-    { value: 'STOPPING',  label: 'Stopping',  badge: true, badgeColor: 'bg-orange-400' },
-    { value: 'PARTIALLY_STARTED', label: 'Partial', badge: true, badgeColor: 'bg-yellow-400' }
+    ...[
+      { value: 'RUNNING',           label: 'Running',   badgeColor: 'bg-green-400' },
+      { value: 'APPLIED',           label: 'Applied',   badgeColor: 'bg-cyan-400' },
+      { value: 'FAILED',            label: 'Failed',    badgeColor: 'bg-red-400' },
+      { value: 'STOPPED',           label: 'Stopped',   badgeColor: 'bg-gray-400' },
+      { value: 'DEPLOYING',         label: 'Deploying', badgeColor: 'bg-blue-400' },
+      { value: 'UPDATING',          label: 'Updating',  badgeColor: 'bg-purple-400' },
+      { value: 'STARTING',          label: 'Starting',  badgeColor: 'bg-blue-300' },
+      { value: 'STOPPING',          label: 'Stopping',  badgeColor: 'bg-orange-400' },
+      { value: 'PARTIALLY_STARTED', label: 'Partial',   badgeColor: 'bg-yellow-400' },
+    ].map(s => ({
+      ...s,
+      badge: true,
+      label: statusCountsAll[s.value]
+        ? `${s.label} (${statusCountsAll[s.value]})`
+        : s.label,
+    })),
   ];
 
   const typeOptions = [
@@ -1324,6 +1375,38 @@ export default function ApplicationsPage() {
         </div>
       )}
 
+      {/* Feature 2: Status Summary Bar — clickable chips filter the table */}
+      {!loading && filtered.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          {[
+            { s: 'RUNNING',   color: 'bg-green-500/20 text-green-400 border-green-700/30 hover:bg-green-500/30' },
+            { s: 'APPLIED',   color: 'bg-cyan-500/20 text-cyan-400 border-cyan-700/30 hover:bg-cyan-500/30' },
+            { s: 'FAILED',    color: 'bg-red-500/20 text-red-400 border-red-700/30 hover:bg-red-500/30' },
+            { s: 'STOPPED',   color: 'bg-gray-500/20 text-gray-400 border-gray-700/30 hover:bg-gray-500/30' },
+            { s: 'DEPLOYING', color: 'bg-blue-500/20 text-blue-400 border-blue-700/30 hover:bg-blue-500/30' },
+            { s: 'UPDATING',  color: 'bg-purple-500/20 text-purple-400 border-purple-700/30 hover:bg-purple-500/30' },
+            { s: 'STARTING',  color: 'bg-blue-400/20 text-blue-300 border-blue-600/30 hover:bg-blue-400/30' },
+            { s: 'STOPPING',  color: 'bg-orange-500/20 text-orange-400 border-orange-700/30 hover:bg-orange-500/30' },
+            { s: 'PARTIALLY_STARTED', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-700/30 hover:bg-yellow-500/30' },
+          ].filter(({ s }) => statusSummary[s] > 0).map(({ s, color }) => (
+            <button
+              key={s}
+              onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
+              className={`flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-all ${color} ${
+                filterStatus === s ? 'ring-1 ring-inset ring-current opacity-100' : 'opacity-70 hover:opacity-100'
+              }`}>
+              <span className="font-semibold">{statusSummary[s]}</span>
+              <span>{s.charAt(0) + s.slice(1).toLowerCase().replace('_started', '')}</span>
+            </button>
+          ))}
+          {filterStatus && (
+            <button onClick={() => setFilterStatus('')} className="text-[10px] text-gray-600 hover:text-gray-300 underline underline-offset-2 transition-colors">
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center h-48">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
@@ -1331,8 +1414,9 @@ export default function ApplicationsPage() {
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-800/50 text-gray-400 text-xs uppercase tracking-wider">
+            {/* Feature 6: sticky header so column labels stay visible when scrolling */}
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-gray-800/95 text-gray-400 text-xs uppercase tracking-wider backdrop-blur-sm">
                 {/* Select-all checkbox */}
                 <th className="px-4 py-3 w-10" onClick={toggleAll}>
                   <div className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-colors ${
@@ -1342,12 +1426,25 @@ export default function ApplicationsPage() {
                     {someSelected && <span className="text-blue-400 text-[10px] font-bold leading-none">–</span>}
                   </div>
                 </th>
-                <th className="text-left px-4 py-3 font-medium">Application</th>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
-                <th className="text-left px-4 py-3 font-medium">Environment</th>
-                <th className="text-left px-4 py-3 font-medium">Type</th>
-                <th className="text-left px-4 py-3 font-medium">Mule Version</th>
-                <th className="text-left px-4 py-3 font-medium">Last Modified</th>
+                {/* Feature 1: sortable column headers */}
+                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('name')}>
+                  Application <SortIcon col="name" />
+                </th>
+                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('status')}>
+                  Status <SortIcon col="status" />
+                </th>
+                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('environment')}>
+                  Environment <SortIcon col="environment" />
+                </th>
+                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('type')}>
+                  Type <SortIcon col="type" />
+                </th>
+                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('muleVersion')}>
+                  Mule Version <SortIcon col="muleVersion" />
+                </th>
+                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('lastModified')}>
+                  Last Modified <SortIcon col="lastModified" />
+                </th>
                 <th className="px-4 py-3 font-medium text-center">Actions</th>
               </tr>
             </thead>
@@ -1359,7 +1456,16 @@ export default function ApplicationsPage() {
 
                 return (
                   <tr key={`${app.id}-${idx}`}
-                    className={`border-t border-gray-800 hover:bg-gray-800/30 cursor-pointer transition-colors ${isChecked ? 'bg-blue-950/20' : ''}`}
+                    className={`border-t border-gray-800 hover:bg-gray-800/30 cursor-pointer transition-colors ${isChecked ? 'bg-blue-950/20' : (() => {
+                      const st = (app.status || '').toUpperCase();
+                      if (st === 'FAILED')    return 'border-l-2 border-l-red-600 bg-red-950/10';
+                      if (st === 'DEPLOYING') return 'border-l-2 border-l-blue-500/60 bg-blue-950/5';
+                      if (st === 'UPDATING')  return 'border-l-2 border-l-purple-500/60 bg-purple-950/5';
+                      if (st === 'STARTING')  return 'border-l-2 border-l-blue-400/50';
+                      if (st === 'STOPPING')  return 'border-l-2 border-l-orange-500/50';
+                      if (st === 'STOPPED')   return 'border-l-2 border-l-gray-600/30';
+                      return '';
+                    })()}`}
                     onClick={() => navigate(`/applications/${app._bgId || (selectedBg !== '__all__' ? selectedBg : orgId)}/${app.environment?.id}/${app.id}`)}>
                     {/* Checkbox */}
                     <td className="px-4 py-3" onClick={(e) => toggleRow(e, app.id)}>
