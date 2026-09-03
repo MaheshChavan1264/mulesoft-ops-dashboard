@@ -379,6 +379,8 @@ export default function PingTestPage() {
   const [autoResolvedMap, setAutoResolvedMap] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  // Feature 1.8: timestamp when the last batch was tested
+  const [testedAt, setTestedAt] = useState(null);
 
   // Feature 1: per-app retry state
   const { hasCredentials, resolveFromCandidates } = useCredentialStore();
@@ -396,9 +398,11 @@ export default function PingTestPage() {
   useEffect(() => {
     const state = location.state;
     if (state?.preloadedResults && state?.preloadedApps) {
+      const now = new Date().toISOString();
       setResults(state.preloadedResults);
       setApps(state.preloadedApps);
       setAutoResolvedMap(state.autoResolvedMap || {});
+      setTestedAt(now);
       window.history.replaceState({}, '');
       // Persist so they survive navigation away and back
       try {
@@ -406,6 +410,7 @@ export default function PingTestPage() {
           results: state.preloadedResults,
           apps: state.preloadedApps,
           autoResolvedMap: state.autoResolvedMap || {},
+          testedAt: now,
         }));
       } catch {}
     } else {
@@ -418,6 +423,7 @@ export default function PingTestPage() {
             setResults(parsed.results);
             setApps(parsed.apps);
             setAutoResolvedMap(parsed.autoResolvedMap || {});
+            if (parsed.testedAt) setTestedAt(parsed.testedAt);
           }
         }
       } catch {}
@@ -428,10 +434,10 @@ export default function PingTestPage() {
   useEffect(() => {
     if (apps.length > 0) {
       try {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ results, apps, autoResolvedMap }));
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ results, apps, autoResolvedMap, testedAt }));
       } catch {}
     }
-  }, [results, apps, autoResolvedMap]);
+  }, [results, apps, autoResolvedMap, testedAt]);
 
   const clearResults = useCallback(() => {
     setResults({});
@@ -918,6 +924,12 @@ export default function PingTestPage() {
               {failedCount  > 0 && <span className="text-red-400 ml-1">{failedCount} ✗</span>}
             </span>)}
             {autoResolvedCount > 0 && <span className="ml-2 text-emerald-400/70 text-xs">· 🔑 {autoResolvedCount} auto-creds</span>}
+            {/* Feature 1.8: show when the batch was tested */}
+            {testedAt && (
+              <span className="ml-2 text-gray-600 text-xs">
+                · Tested at {new Date(testedAt).toLocaleTimeString()}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
