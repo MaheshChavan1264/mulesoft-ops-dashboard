@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { applyBgFilter } from '../components/BgFilterModal';
@@ -108,13 +108,12 @@ function extractCpsConfig(app, orgId) {
   };
 }
 
-// Flat searchable BG+Env selector — loads all environments upfront, no expand/collapse
+// Grouped BG+Env selector with quick-select shortcuts
 function BgEnvSelector({ businessGroups, onSelectionsChange }) {
-  const [allEnvs, setAllEnvs] = useState([]);  // flat [{bgId, bgName, envId, envName, envType}]
-  const [loading, setLoading] = useState(true); // true by default — envs load on mount
+  const [allEnvs, setAllEnvs] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selections, setSelections] = useState(new Set()); // "bgId:envId"
   const [search, setSearch] = useState('');
-  // Re-run the env-loading effect when the Env Filter modal saves
   const [envFilterVersion, setEnvFilterVersion] = useState(0);
   const [bgFilterVersion, setBgFilterVersion] = useState(0);
   useEffect(() => {
@@ -128,13 +127,9 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
     return () => window.removeEventListener('bgFilterChanged', h);
   }, []);
 
-  // Load ALL envs from all visible BGs (parallel) whenever businessGroups or env filter changes
   useEffect(() => {
     const visible = applyBgFilter(businessGroups);
-    if (!visible.length) {
-      setLoading(false);
-      return;
-    }
+    if (!visible.length) { setLoading(false); return; }
     setLoading(true);
     Promise.allSettled(
       visible.map(bg =>
@@ -142,7 +137,7 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
           .then(r => {
             const envList = r.data?.data || r.data?.environments || (Array.isArray(r.data) ? r.data : []);
             return envList.map(e => ({
-              id: e.id,   // required by applyEnvFilter which checks e.id
+              id: e.id,
               bgId: bg.id, bgName: bg.name,
               envId: e.id, envName: e.name, envType: e.type,
             }));
@@ -151,9 +146,6 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
       )
     ).then(results => {
       const flat = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
-      // Apply global env filter (from header Env Filter button).
-      // Fallback: if the filter returns 0 results (stale IDs / not yet configured),
-      // show ALL envs so the selector is never blank.
       const envFiltered = applyEnvFilter(flat);
       setAllEnvs(envFiltered.length > 0 ? envFiltered : flat);
       setLoading(false);
@@ -166,13 +158,23 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
   }, [selections, allEnvs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const searchLo = search.toLowerCase().trim();
-  const filtered = searchLo
+  const visibleEnvs = searchLo
     ? allEnvs.filter(e =>
         e.envName.toLowerCase().includes(searchLo) ||
         e.bgName.toLowerCase().includes(searchLo) ||
         (e.envType || '').toLowerCase().includes(searchLo)
       )
     : allEnvs;
+
+  // Group visible envs by BG for display
+  const grouped = useMemo(() => {
+    const map = new Map();
+    visibleEnvs.forEach(e => {
+      if (!map.has(e.bgId)) map.set(e.bgId, { bgId: e.bgId, bgName: e.bgName, envs: [] });
+      map.get(e.bgId).envs.push(e);
+    });
+    return [...map.values()];
+  }, [visibleEnvs]);
 
   const toggle = (bgId, envId) => {
     setSelections(prev => {
@@ -183,12 +185,59 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
     });
   };
 
-  const selectAll = () => setSelections(new Set(filtered.map(e => `${e.bgId}:${e.envId}`)));
+  // Toggle all envs of a specific BG
+  const toggleBg = (bgId, envs) => {
+    const keys = envs.map(e => `${e.bgId}:${e.envId}`);
+    const allSelected = keys.every(k => selections.has(k));
+    setSelections(prev => {
+      const n = new Set(prev);
+      if (allSelected) keys.forEach(k => n.delete(k));
+      else keys.forEach(k => n.add(k));
+      return n;
+    });
+  };
+
+  const selectByType = (type) =>
+    setSelections(prev => {
+      const n = new Set(prev);
+      allEnvs.filter(e => e.envType === type).forEach(e => n.add(`${e.bgId}:${e.envId}`));
+      return n;
+    });
+
   const clearAll = () => setSelections(new Set());
+  const selectAll = () => setSelections(new Set(visibleEnvs.map(e => `${e.bgId}:${e.envId}`)));
+
+  const prodCount = allEnvs.filter(e => e.envType === 'production').length;
+  const sandboxCount = allEnvs.filter(e => e.envType !== 'production').length;
 
   return (
     <div className="border border-slate-700/50 rounded-xl overflow-hidden">
-      {/* Search + bulk actions bar */}
+      {/* Quick-select shortcuts */}
+      {!loading && allEnvs.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap px-3 py-2 border-b border-slate-700/50 bg-slate-800/20">
+          <span className="text-[9px] text-slate-600 uppercase tracking-wider font-bold flex-shrink-0">Quick select:</span>
+          {prodCount > 0 && (
+            <button onClick={() => selectByType('production')}
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border bg-green-950/40 text-green-400 border-green-800/50 hover:bg-green-950/70 transition-colors font-medium">
+              ● All Production ({prodCount})
+            </button>
+          )}
+          {sandboxCount > 0 && (
+            <button onClick={() => selectByType('sandbox')}
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border bg-yellow-950/40 text-yellow-400 border-yellow-800/50 hover:bg-yellow-950/70 transition-colors font-medium">
+              ● All Sandbox ({sandboxCount})
+            </button>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[10px] text-slate-500">{selections.size}/{allEnvs.length} selected</span>
+            {selections.size > 0 && (
+              <button onClick={clearAll} className="text-[10px] text-red-500/70 hover:text-red-400 transition-colors">Clear all</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Search bar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700/50 bg-slate-800/40">
         <Search size={11} className="text-slate-500 flex-shrink-0" />
         <input
@@ -197,48 +246,72 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
           placeholder="Search BG or environment…"
           className="flex-1 bg-transparent text-xs text-slate-200 placeholder-slate-600 focus:outline-none min-w-0"
         />
-        {search && <button onClick={() => setSearch('')} className="text-slate-500 hover:text-slate-300 text-xs flex-shrink-0">✕</button>}
-        <div className="flex items-center gap-2 flex-shrink-0 border-l border-slate-700/60 pl-2">
-          <span className="text-[10px] text-slate-500">{selections.size}/{allEnvs.length}</span>
-          <button onClick={selectAll} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium">
-            {searchLo ? 'Select visible' : 'All'}
+        {search && (
+          <button onClick={() => setSearch('')} className="text-slate-500 hover:text-slate-300 text-xs flex-shrink-0">✕</button>
+        )}
+        {search && visibleEnvs.length > 0 && (
+          <button onClick={selectAll} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium flex-shrink-0 border-l border-slate-700/60 pl-2">
+            Select {visibleEnvs.length}
           </button>
-          <button onClick={clearAll} className="text-[10px] text-slate-500 hover:text-slate-300">Clear</button>
-        </div>
+        )}
       </div>
 
-      {/* Flat environment list */}
+      {/* Grouped environment list */}
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-6 text-slate-500 text-xs">
           <RefreshCw size={12} className="animate-spin" /> Loading environments…
         </div>
-      ) : filtered.length === 0 ? (
+      ) : grouped.length === 0 ? (
         <div className="py-6 text-center text-slate-600 text-xs">
           {search ? `No environments match "${search}"` : 'No environments available'}
         </div>
       ) : (
-        <div style={{ maxHeight: '14rem', overflowY: 'auto' }}>
-          {filtered.map(env => {
-            const key = `${env.bgId}:${env.envId}`;
-            const isChecked = selections.has(key);
-            const isProd = env.envType === 'production';
+        <div style={{ maxHeight: '16rem', overflowY: 'auto' }}>
+          {grouped.map(({ bgId, bgName, envs }) => {
+            const bgKeys = envs.map(e => `${e.bgId}:${e.envId}`);
+            const allBgSelected = bgKeys.every(k => selections.has(k));
+            const someBgSelected = !allBgSelected && bgKeys.some(k => selections.has(k));
             return (
-              <div
-                key={key}
-                onClick={() => toggle(env.bgId, env.envId)}
-                className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors border-b border-slate-800/30 last:border-0 ${isChecked ? 'bg-cyan-950/20' : 'hover:bg-slate-800/30'}`}
-              >
-                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-cyan-600 border-cyan-500' : 'border-slate-600 hover:border-cyan-500'}`}>
-                  {isChecked && <Check size={9} className="text-white" />}
+              <div key={bgId}>
+                {/* BG group header — click to select/deselect all envs in this BG */}
+                <div
+                  onClick={() => toggleBg(bgId, envs)}
+                  className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer bg-slate-800/50 border-b border-slate-700/40 hover:bg-slate-800/70 transition-colors group`}
+                >
+                  <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                    allBgSelected ? 'bg-cyan-600 border-cyan-500' :
+                    someBgSelected ? 'bg-cyan-900/60 border-cyan-600' :
+                    'border-slate-600 group-hover:border-cyan-500'
+                  }`}>
+                    {allBgSelected && <Check size={8} className="text-white" />}
+                    {someBgSelected && <span className="text-cyan-400 text-[8px] font-bold leading-none">–</span>}
+                  </div>
+                  <Building2 size={10} className="text-slate-500 flex-shrink-0" />
+                  <span className="text-[10px] font-semibold text-slate-400 flex-1 truncate">{bgName}</span>
+                  <span className="text-[9px] text-slate-600">{envs.length} env{envs.length !== 1 ? 's' : ''}</span>
                 </div>
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
-                <div className="flex-1 min-w-0">
-                  <span className={`text-xs font-medium ${isChecked ? 'text-white' : 'text-slate-300'}`}>{env.envName}</span>
-                  <span className="text-slate-600 text-[10px] ml-1.5">{env.bgName}</span>
-                </div>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${isProd ? 'bg-green-900/40 text-green-500' : 'bg-yellow-900/40 text-yellow-500'}`}>
-                  {env.envType || 'sandbox'}
-                </span>
+                {/* Env rows for this BG */}
+                {envs.map(env => {
+                  const key = `${env.bgId}:${env.envId}`;
+                  const isChecked = selections.has(key);
+                  const isProd = env.envType === 'production';
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => toggle(env.bgId, env.envId)}
+                      className={`flex items-center gap-3 pl-8 pr-3 py-2 cursor-pointer transition-colors border-b border-slate-800/30 last:border-0 ${isChecked ? 'bg-cyan-950/20' : 'hover:bg-slate-800/30'}`}
+                    >
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-cyan-600 border-cyan-500' : 'border-slate-600 hover:border-cyan-500'}`}>
+                        {isChecked && <Check size={9} className="text-white" />}
+                      </div>
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
+                      <span className={`text-xs flex-1 ${isChecked ? 'text-white font-medium' : 'text-slate-300'}`}>{env.envName}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${isProd ? 'bg-green-900/40 text-green-500' : 'bg-yellow-900/40 text-yellow-500'}`}>
+                        {env.envType || 'sandbox'}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
