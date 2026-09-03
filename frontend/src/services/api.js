@@ -1,11 +1,11 @@
-import axios from 'axios';
+import axiosClient from './axiosClient.js';
 import * as mock from './mockData.js';
 
-export const DEMO_MODE_KEY = 'mulesoft_demo_mode';
-
-export const isDemoMode = () => localStorage.getItem(DEMO_MODE_KEY) === 'true';
-export const enableDemoMode = () => localStorage.setItem(DEMO_MODE_KEY, 'true');
-export const disableDemoMode = () => localStorage.removeItem(DEMO_MODE_KEY);
+// ── Demo-mode helpers (re-exported for backwards compatibility) ───────────────
+// Components that already import { isDemoMode } from '../services/api' continue
+// to work unchanged. The canonical source is now src/utils/demoMode.js.
+export { DEMO_MODE_KEY, isDemoMode, enableDemoMode, disableDemoMode } from '../utils/demoMode.js';
+import { isDemoMode } from '../utils/demoMode.js';
 
 // ── Mock response helper ─────────────────────────────────────────────────────
 const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
@@ -87,45 +87,10 @@ const mockHandler = async (url, params) => {
   return {};
 };
 
-// ── Real axios client ────────────────────────────────────────────────────────
-const axiosClient = axios.create({
-  baseURL: '/api',
-  withCredentials: true,
-  headers: { 'Content-Type': 'application/json' }
-});
-
-// Track whether a redirect is already in progress to avoid double-redirects
-// from concurrent requests all returning 401 simultaneously.
-let _redirecting = false;
-
-axiosClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && !isDemoMode() && !_redirecting) {
-      const url = error.config?.url || '';
-      // Some endpoints return 401 for per-resource access issues (not session expiry).
-      // Don't redirect to login for those — let the caller handle the rejection.
-      const skipRedirect =
-        url.includes('/applications/summary') ||  // BG access check (per-BG access)
-        url.includes('/environments/')         ||  // env fetch for __all__ or restricted BG
-        url.startsWith('/environments/')       ||  // same
-        url.includes('/cps/')                  ||  // CPS credential issues
-        url.includes('/exchange/')             ||  // Exchange asset access
-        url.includes('/apis/');                    // API Manager access
-
-      if (!skipRedirect) {
-        _redirecting = true;
-        // Reset after 5 s so that if the user navigates back (without a full
-        // page reload) and their session has expired again, the redirect fires.
-        setTimeout(() => { _redirecting = false; }, 5000);
-        window.location.href = '/login';
-      }
-    }
-    return Promise.reject(error);
-  }
-);
-
 // ── Unified API facade ────────────────────────────────────────────────────────
+// Wraps axiosClient with demo-mode short-circuiting.
+// axiosClient (src/services/axiosClient.js) owns the HTTP config and interceptors;
+// this facade owns the demo/real branching logic.
 const api = {
   get: async (url, config = {}) => {
     if (isDemoMode()) {
