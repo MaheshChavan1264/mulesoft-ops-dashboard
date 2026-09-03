@@ -111,6 +111,16 @@ app.get('/api/ping', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ── Global Error Handler ────────────────────────────────────────────────────
+// Must be registered AFTER all routes. Express identifies this as an
+// error-handling middleware by the 4-parameter signature (err, req, res, next).
+// Any route that calls next(err) or throws will land here instead of hanging.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('[GlobalError]', err);
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+});
+
 app.listen(PORT, () => {
   console.log(`MuleSoft Dashboard Backend running on port ${PORT}`);
 });
