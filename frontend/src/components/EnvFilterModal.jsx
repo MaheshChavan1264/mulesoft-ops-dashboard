@@ -13,9 +13,56 @@ const ENV_TYPE_COLOR = {
   design: 'bg-blue-400',
 };
 
+// ── Env row sub-item ──────────────────────────────────────────────────────────
+function EnvRow({ e, isChecked, toggle, indent = 'pl-10' }) {
+  const isProd = e.type === 'production';
+  return (
+    <label
+      className={`flex items-center gap-3 ${indent} pr-3 py-2 cursor-pointer transition-colors ${
+        isChecked ? (isProd ? 'bg-green-950/20' : 'bg-yellow-950/10') : 'hover:bg-gray-800/40'
+      }`}
+    >
+      <div
+        onClick={() => toggle(e.id)}
+        className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+          isChecked
+            ? (isProd ? 'bg-green-600 border-green-500' : 'bg-yellow-600 border-yellow-500')
+            : 'border-gray-600 hover:border-green-500'
+        }`}
+      >
+        {isChecked && <Check size={10} className="text-white" />}
+      </div>
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
+      <span className={`text-xs flex-1 ${isChecked ? 'text-white font-medium' : 'text-gray-400'}`}>{e.name}</span>
+    </label>
+  );
+}
+
+// ── Type sub-group header (Production / Sandbox) inside a BG ─────────────────
+function TypeGroupHeader({ label, ids, selected, toggleGroup, accent }) {
+  const allSel = ids.every(id => selected.has(id));
+  const someSel = !allSel && ids.some(id => selected.has(id));
+  const cls = accent === 'green'
+    ? { dot: 'bg-green-400', text: 'text-green-500/80', check: 'bg-green-600 border-green-500', ind: 'bg-green-900/60 border-green-600', hover: 'hover:border-green-500' }
+    : { dot: 'bg-yellow-400', text: 'text-yellow-500/80', check: 'bg-yellow-600 border-yellow-500', ind: 'bg-yellow-900/60 border-yellow-600', hover: 'hover:border-yellow-500' };
+  return (
+    <div onClick={() => toggleGroup(ids)}
+      className="flex items-center gap-2 pl-8 pr-3 py-1.5 cursor-pointer hover:bg-gray-800/30 transition-colors group">
+      <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+        allSel ? cls.check : someSel ? cls.ind : `border-gray-600 ${cls.hover}`
+      }`}>
+        {allSel  && <Check size={8} className="text-white" />}
+        {someSel && <span className="text-[8px] font-bold leading-none" style={{ color: accent === 'green' ? '#4ade80' : '#facc15' }}>–</span>}
+      </div>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cls.dot}`} />
+      <span className={`text-[10px] font-bold uppercase tracking-wider ${cls.text} flex-1`}>{label}</span>
+      <span className="text-[9px] text-gray-700">{ids.length}</span>
+    </div>
+  );
+}
+
 // ── BG-grouped collapsible list ───────────────────────────────────────────────
 function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
-  // All BGs start expanded; collapse state tracked per bgId
   const [collapsed, setCollapsed] = useState(new Set());
 
   const toggleCollapse = (bgId, e) => {
@@ -28,7 +75,7 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
   };
 
   return (
-    <div className="space-y-1 py-1">
+    <div className="space-y-1.5 py-1">
       {byBg.map(({ bgId, bgName, envs }) => {
         const bgIds = envs.map(e => e.id);
         const allSel = bgIds.every(id => selected.has(id));
@@ -36,83 +83,75 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
         const isCollapsed = collapsed.has(bgId);
         const selCount = bgIds.filter(id => selected.has(id)).length;
 
+        const prodEnvs  = envs.filter(e => e.type === 'production');
+        const otherEnvs = envs.filter(e => e.type !== 'production');
+
         return (
           <div key={bgId} className="rounded-xl border border-gray-800/60 overflow-hidden mx-1">
-            {/* BG Header — bold, prominent name */}
-            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-gray-800/40 cursor-pointer hover:bg-gray-800/70 transition-colors group select-none">
-              {/* Tri-state checkbox (select/deselect all envs in this BG) */}
-              <div
-                onClick={() => toggleGroup(bgIds)}
+            {/* BG Header — bold, prominent */}
+            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-gray-800/50 cursor-pointer hover:bg-gray-800/80 transition-colors group select-none">
+              {/* Tri-state checkbox */}
+              <div onClick={() => toggleGroup(bgIds)}
                 className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
                   allSel  ? 'bg-blue-600 border-blue-500' :
                   someSel ? 'bg-blue-900/60 border-blue-600' :
                   'border-gray-600 group-hover:border-blue-500'
-                }`}
-              >
+                }`}>
                 {allSel  && <Check size={9} className="text-white" />}
                 {someSel && <span className="text-blue-400 text-[8px] font-bold leading-none">–</span>}
               </div>
-
-              {/* BG icon + name */}
+              {/* BG name (click = toggle collapse) */}
               <div className="flex items-center gap-1.5 flex-1 min-w-0" onClick={e => toggleCollapse(bgId, e)}>
                 <Building2 size={12} className="text-blue-400/70 flex-shrink-0" />
                 <span className="text-sm font-semibold text-white truncate">{bgName}</span>
               </div>
-
-              {/* Right side: selected count + chevron */}
+              {/* count + chevron (click = toggle collapse) */}
               <div className="flex items-center gap-2 flex-shrink-0" onClick={e => toggleCollapse(bgId, e)}>
-                {selCount > 0 && (
-                  <span className="text-[10px] font-bold text-blue-300 bg-blue-600/20 border border-blue-600/40 px-1.5 py-0.5 rounded-full">
-                    {selCount}/{envs.length}
-                  </span>
-                )}
-                {selCount === 0 && (
-                  <span className="text-[10px] text-gray-600">{envs.length} env{envs.length !== 1 ? 's' : ''}</span>
-                )}
-                <ChevronDown
-                  size={13}
-                  className={`text-gray-500 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}
-                />
+                {selCount > 0
+                  ? <span className="text-[10px] font-bold text-blue-300 bg-blue-600/20 border border-blue-600/40 px-1.5 py-0.5 rounded-full">{selCount}/{envs.length}</span>
+                  : <span className="text-[10px] text-gray-600">{envs.length}</span>}
+                <ChevronDown size={13} className={`text-gray-500 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`} />
               </div>
             </div>
 
-            {/* Env rows — hidden when collapsed */}
+            {/* Env rows grouped by type — hidden when BG is collapsed */}
             {!isCollapsed && (
-              <div className="divide-y divide-gray-800/30">
-                {envs.map(e => {
-                  const isChecked = selected.has(e.id);
-                  const isProd = e.type === 'production';
-                  return (
-                    <label
-                      key={e.id}
-                      className={`flex items-center gap-3 pl-9 pr-3 py-2.5 cursor-pointer transition-colors ${
-                        isChecked ? (isProd ? 'bg-green-950/20' : 'bg-yellow-950/10') : 'hover:bg-gray-800/40'
-                      }`}
-                    >
-                      <div
-                        onClick={() => toggle(e.id)}
-                        className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                          isChecked
-                            ? (isProd ? 'bg-green-600 border-green-500' : 'bg-yellow-600 border-yellow-500')
-                            : 'border-gray-600 hover:border-green-500'
-                        }`}
-                      >
-                        {isChecked && <Check size={10} className="text-white" />}
-                      </div>
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-                      <span className={`text-xs flex-1 ${isChecked ? 'text-white font-medium' : 'text-gray-400'}`}>
-                        {e.name}
-                      </span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border flex-shrink-0 ${
-                        isProd
-                          ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                          : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                      }`}>
-                        {isProd ? 'PROD' : (e.type || 'sandbox')}
-                      </span>
-                    </label>
-                  );
-                })}
+              <div className="border-t border-gray-800/40">
+                {/* Production sub-group */}
+                {prodEnvs.length > 0 && (
+                  <>
+                    <TypeGroupHeader
+                      label="Production"
+                      ids={prodEnvs.map(e => e.id)}
+                      selected={selected}
+                      toggleGroup={toggleGroup}
+                      accent="green"
+                    />
+                    <div className="divide-y divide-gray-800/20">
+                      {prodEnvs.map(e => (
+                        <EnvRow key={e.id} e={e} isChecked={selected.has(e.id)} toggle={toggle} indent="pl-14" />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {/* Sandbox/UAT/Dev sub-group */}
+                {otherEnvs.length > 0 && (
+                  <>
+                    {prodEnvs.length > 0 && <div className="mx-4 border-t border-gray-800/40" />}
+                    <TypeGroupHeader
+                      label="Sandbox / UAT / Dev"
+                      ids={otherEnvs.map(e => e.id)}
+                      selected={selected}
+                      toggleGroup={toggleGroup}
+                      accent="yellow"
+                    />
+                    <div className="divide-y divide-gray-800/20">
+                      {otherEnvs.map(e => (
+                        <EnvRow key={e.id} e={e} isChecked={selected.has(e.id)} toggle={toggle} indent="pl-14" />
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
