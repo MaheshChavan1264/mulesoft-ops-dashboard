@@ -15,6 +15,7 @@ import PingTestPage from './pages/PingTestPage';
 import CpsComparisonPage from './pages/CpsComparisonPage';
 import UserSearchPage from './pages/UserSearchPage';
 import CpsManagerPage from './pages/CpsManagerPage';
+import ApiGraphPage from './pages/ApiGraphPage';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="cps-compare" element={<CpsComparisonPage />} />
             <Route path="user-search" element={<UserSearchPage />} />
             <Route path="cps-manager" element={<CpsManagerPage />} />
+            <Route path="api-graph" element={<ApiGraphPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
