@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CredentialStoreProvider } from './context/CredentialStoreContext';
 import { CpsCredentialStoreProvider } from './context/CpsCredentialStoreContext';
+import { ToastProvider } from './context/ToastContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import ApplicationsPage from './pages/ApplicationsPage';
@@ -28,6 +29,7 @@ const ProtectedRoute = ({ children }) => {
 
 export default function App() {
   return (
+    <ToastProvider>
     <CpsCredentialStoreProvider>
     <CredentialStoreProvider>
     <AuthProvider>
@@ -57,5 +59,6 @@ export default function App() {
     </AuthProvider>
     </CredentialStoreProvider>
     </CpsCredentialStoreProvider>
+    </ToastProvider>
   );
 }
