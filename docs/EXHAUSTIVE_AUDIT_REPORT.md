@@ -921,18 +921,4 @@ The existing `GET /api/apis/:id/contracts` endpoint already returns consumer app
 17. Add `EmptyState` component to all list pages (3.2)
 18. Add `ErrorBanner` component with retry/login actions (3.3)
 19. Improve `StatusBadge` WCAG contrast + animated pulse (3.4)
-20. Add inline quick-filter chip bar to `ApplicationsPage` (3.5)
-21. Add secure property value masking to `CpsManagerPage` (3.11)
-22. Add relative timestamps across all date fields (3.10)
-23. Add keyboard shortcut handler (`useKeyboardShortcut`) (3.9)
-
-### Phase 4 — New Features (4–6 weeks)
-24. Saved Filter Presets (Feature 4 — lowest complexity, highest daily value)
-25. CPS Property Change History (Feature 2 — client-side only, no backend changes)
-26. Scheduled Ping Automation (Feature 1 — requires `node-cron` backend job)
-27. Real-Time Status Alerts via SSE (Feature 3 — requires SSE backend endpoint)
-28. API Dependency Graph (Feature 5 — highest complexity, highest architectural value)
-
----
-
-*End of audit report. Total issues identified: 22 backend + 14 frontend code quality issues, 12 UI/UX improvements, and 5 proposed new features.*
+20. Add inline quick-filter chip bar to `ApplicationsPage` (3.
