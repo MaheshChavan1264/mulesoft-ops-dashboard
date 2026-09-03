@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { applyBgFilter } from '../components/BgFilterModal';
 import { applyEnvFilter } from '../components/EnvFilterModal';
-import { Search, Users, RefreshCw, AlertTriangle, Copy, Check, Key, Lock, ChevronRight, Building2, Download } from 'lucide-react';
+import { Search, Users, RefreshCw, AlertTriangle, Copy, Check, Key, Lock, ChevronRight, ChevronDown, Building2, Download, X, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
 import api from '../services/api';
 import { getCached, setCached } from '../services/apiCache';
 
@@ -16,6 +17,22 @@ const CopyBtn = ({ text }) => {
     </button>
   );
 };
+
+// Feature 1: Highlight matched search term inside a string
+function Highlight({ text, terms }) {
+  if (!text || !terms?.length) return <span>{text}</span>;
+  const pattern = new RegExp(`(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  const parts = String(text).split(pattern);
+  return (
+    <span>
+      {parts.map((part, i) =>
+        pattern.test(part)
+          ? <mark key={i} className="bg-yellow-400/30 text-yellow-200 rounded-sm px-0.5 not-italic">{part}</mark>
+          : part
+      )}
+    </span>
+  );
+}
 
 function chLabel(dt) {
   if (!dt) return 'CloudHub 1.0';
@@ -323,6 +340,7 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
 
 export default function UserSearchPage() {
   const { orgId: authOrgId } = useAuth();
+  const navigate = useNavigate();
   const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
   const [bgs, setBgs] = useState([]);
   const [bgsLoad, setBgsLoad] = useState(false);
@@ -332,8 +350,18 @@ export default function UserSearchPage() {
   const [results, setResults] = useState(null);
   const [error, setError] = useState('');
   const [credentialErrors, setCredentialErrors] = useState(0);
-  const [progress, setProgress] = useState({ envsDone: 0, envsTotal: 0, appsT: 0, appsN: 0 });
-  const [envStats, setEnvStats] = useState([]); // per-env: [{envName, bgName, total, withCps}]
+  const [progress, setProgress] = useState({ envsDone: 0, envsTotal: 0, appsT: 0, appsN: 0, phase: 1, batchDone: 0, batchTotal: 0 });
+  const [envStats, setEnvStats] = useState([]);
+  // Feature 3: cancel
+  const abortRef = useRef(null);
+  // Feature 8: search mode — 'value' | 'key'
+  const [searchMode, setSearchMode] = useState('value');
+  // Feature 2: group by app toggle
+  const [groupByApp, setGroupByApp] = useState(false);
+  const [expandedApps, setExpandedApps] = useState(new Set());
+  // Feature 15: sortable columns
+  const [sortCol, setSortCol] = useState('');
+  const [sortDir, setSortDir] = useState('asc');
 
   useEffect(() => {
     setBgsLoad(true);
@@ -422,6 +450,14 @@ export default function UserSearchPage() {
       }
     } catch {}
 
+    // ── Feature 17: track apps with confirmed "no CPS config" to skip detail re-fetch ──
+    // After the first search, apps with no CPS properties are marked in a module-level
+    // Set so subsequent searches skip the CH2 detail fetch for them entirely.
+    // The key is appId:envId to scope it to the specific deployment.
+    const NO_CPS_CACHE_KEY = 'noCpsAppIds';
+    let noCpsIds = (() => { try { return new Set(JSON.parse(sessionStorage.getItem(NO_CPS_CACHE_KEY) || '[]')); } catch { return new Set(); } })();
+    const saveNoCpsIds = () => { try { sessionStorage.setItem(NO_CPS_CACHE_KEY, JSON.stringify([...noCpsIds].slice(-500))); } catch {} };
+
     // ── CH2: detail fetch with per-app caching + large parallel batch ─────
     // CH2 list API does NOT return runtime properties — must fetch each app detail.
     // Per-app cache avoids re-fetching on repeat searches (5-min TTL).
@@ -429,6 +465,11 @@ export default function UserSearchPage() {
       const settled = await Promise.allSettled(
         ch2List.slice(i, i + DETAIL_BATCH).map(a => {
           const appKey = `ch2detail:${a.id}:${envId}`;
+          // Feature 17: skip detail fetch for apps previously confirmed to have no CPS config
+          const skipKey = `${a.id}:${envId}`;
+          if (noCpsIds.has(skipKey)) {
+            return Promise.resolve({ ...a, status: listStatusMap[a.id] || a.status || '', _noCps: true });
+          }
           const cached = getCached(appKey);
           // Merge summary status into cached detail if detail lacks it
           if (cached) {
@@ -443,13 +484,19 @@ export default function UserSearchPage() {
                 detail.status = detail.application?.status || detail.desiredStatus
                   || listStatusMap[a.id] || '';
               }
+              // Feature 17: check if this app has CPS config; if not, mark it for future skipping
+              const merged = mergeAppProps(detail);
+              const hasCpsUrl = !!(merged['cps.configServerBaseUrl'] || merged['config.server.base.url'] ||
+                merged['cps.baseUrl'] || merged['cps.base.url'] || merged['cps.url'] ||
+                Object.entries(merged).some(([k, v]) => typeof v === 'string' && /^https?:\/\//i.test(v) && /cps|config[.\-_]?server/i.test(k)));
+              if (!hasCpsUrl) { noCpsIds.add(`${a.id}:${envId}`); saveNoCpsIds(); }
               setCached(appKey, detail);
               return detail;
             })
             .catch(() => ({ ...a, status: listStatusMap[a.id] || a.status || '' }));
         })
       );
-      settled.forEach(s => { if (s.status === 'fulfilled' && s.value) apps.push(s.value); });
+      settled.forEach(s => { if (s.status === 'fulfilled' && s.value && !s.value._noCps) apps.push(s.value); });
     }
 
     // ── CH1: always fetch fresh list (1 call returns ALL apps with properties)
@@ -474,14 +521,35 @@ export default function UserSearchPage() {
     return apps;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const cancelSearch = () => { abortRef.current?.abort(); };
+
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
+
+  const SortBtn = ({ col }) => (
+    <button onClick={() => toggleSort(col)} className="ml-0.5 opacity-40 hover:opacity-100 transition-opacity">
+      {sortCol === col ? (sortDir === 'asc' ? '↑' : '↓') : <ArrowUpDown size={9} />}
+    </button>
+  );
+
   const runSearch = async () => {
     if (!query.trim()) { setError('Enter a search term.'); return; }
     if (!bgEnvSelections.length) { setError('Select at least one Environment.'); return; }
+    // Feature 3: cancel previous search
+    abortRef.current?.abort();
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+
     setLoading(true); setError(''); setResults(null); setCredentialErrors(0); setEnvStats([]);
-    setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0 });
+    setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0, phase: 1, batchDone: 0, batchTotal: 0 });
+
+    // Feature 9: multi-term — split by comma
+    const terms = query.trim().split(',').map(t => t.trim()).filter(Boolean);
 
     // ── Phase 1: Fetch all envs in PARALLEL ───────────────────────────────
-    const searchTermLo = query.trim().toLowerCase();
+    const searchTermLo = terms[0].toLowerCase(); // primary term for ARM scan
     const armRows = []; // direct ARM/deployment property matches (no CPS)
 
     const envResults = await Promise.allSettled(
@@ -520,19 +588,24 @@ export default function UserSearchPage() {
         if (allEnvEntries.length) postCreds(allEnvEntries);
 
         // ── Also scan ARM deployment properties directly ───────────────
-        // Some apps store credentials as CloudHub env vars (not in CPS).
-        // This catches them even when they have no cpsBaseUrl.
         for (const a of apps) {
+          if (ctl.signal.aborted) break;
           const p = mergeAppProps(a);
-          const hits = Object.entries(p).filter(
-            ([, v]) => typeof v === 'string' && v.toLowerCase().includes(searchTermLo)
+          // Feature 8: key mode searches property keys; value mode searches values
+          const hits = Object.entries(p).filter(([k, v]) =>
+            searchMode === 'key'
+              ? terms.some(t => k.toLowerCase().includes(t.toLowerCase()))
+              : typeof v === 'string' && terms.some(t => v.toLowerCase().includes(t.toLowerCase()))
           );
           if (hits.length > 0) {
-            // Avoid duplicate with CPS results — CPS search is more authoritative
             armRows.push({
+              bgName: sel.bgName,
               chEnv: a.environment?.name || sel.envName,
               chVersion: chLabel(a._type === 'ch1' ? 'ch1' : 'ch2'),
               appName: a.name,
+              appId: a.id || a.name,
+              bgOrgId: sel.bgId,
+              envId: sel.envId,
               status: a.status || '',
               nsKey: '(ARM props)',
               cpsPrefix: '—',
@@ -587,69 +660,81 @@ export default function UserSearchPage() {
       setResults([]); setLoading(false); return;
     }
 
-    // ── Phase 3: Backend CPS fan-out search (client-side batching) ────────
-    // Batch 100 apps per request so each HTTP call completes in ~30s max
-    // instead of one monolithic request that times out for large BGs (350+ apps).
+    if (ctl.signal.aborted) { setLoading(false); return; }
+
+    // ── Phase 3: Backend CPS fan-out search ───────────────────────────────
+    // Feature 4: show incremental results as each batch arrives
     const BACKEND_BATCH = 100;
     const totalBatches = Math.ceil(allEntries.length / BACKEND_BATCH);
+    setProgress(p => ({ ...p, phase: 2, batchDone: 0, batchTotal: totalBatches }));
 
-    let allCpsItems = [];
     let totalCredErrors = 0;
     let batchFailed = 0;
-    const aggStats = { nonSecureSearched: 0, secureRefSearched: 0, secureFallbackSearched: 0 };
 
     for (let bi = 0; bi < allEntries.length; bi += BACKEND_BATCH) {
+      if (ctl.signal.aborted) break;
       const batch = allEntries.slice(bi, bi + BACKEND_BATCH);
       const batchNum = Math.floor(bi / BACKEND_BATCH) + 1;
       try {
-        const r = await api.post('/cps/search-user', { username: query.trim(), apps: batch }, { timeout: 120000 });
-        allCpsItems = allCpsItems.concat(r.data?.results || []);
+        // Feature 8: pass searchMode to backend (value search = username, key search = different param)
+        const payload = searchMode === 'key'
+          ? { username: terms.join(','), searchMode: 'key', apps: batch }
+          : { username: terms.join(','), apps: batch };
+        const r = await api.post('/cps/search-user', payload, { timeout: 120000 });
         totalCredErrors += r.data?.credentialErrors || 0;
-        const s = r.data?.searchStats || {};
-        aggStats.nonSecureSearched += s.nonSecureSearched || 0;
-        aggStats.secureRefSearched += s.secureRefSearched || 0;
-        aggStats.secureFallbackSearched += s.secureFallbackSearched || 0;
+
+        // Feature 4: incrementally build and display results after each batch
+        const batchRows = [];
+        for (const item of r.data?.results || []) {
+          for (const prop of item.matchedProps || []) {
+            batchRows.push({
+              bgName: item.bgName || item.envName?.split('/')[0] || '—',
+              chEnv: item.envName || '—',
+              chVersion: chLabel(item.deploymentType),
+              appName: item.appName,
+              appId: item.appId || item.appName,
+              bgOrgId: item.bgOrgId || '',
+              envId: item.envId || '',
+              status: item.status || '',
+              nsKey: item.cpsKey || '—',
+              cpsPrefix: item.cpsPrefix || '—',
+              secureKey: prop.secureGroupKey || (prop.source === 'secure' ? '(secure)' : ''),
+              propKey: prop.key,
+              apiUser: prop.value,
+              password: prop.password || '—',
+              source: prop.source,
+            });
+          }
+        }
+        setResults(prev => (prev ? [...prev, ...batchRows] : batchRows));
       } catch (batchErr) {
         batchFailed++;
-        console.warn(`[search-user] batch ${batchNum}/${totalBatches} failed: ${batchErr.response?.data?.error || batchErr.message}`);
+        if (!ctl.signal.aborted)
+          console.warn(`[search-user] batch ${batchNum}/${totalBatches} failed:`, batchErr.message);
       }
+      setProgress(p => ({ ...p, batchDone: batchNum }));
     }
 
-    setCredentialErrors(totalCredErrors);
-    const rows = [];
-    for (const item of allCpsItems) {
-      for (const prop of item.matchedProps || []) {
-        rows.push({
-          chEnv: item.envName || '—',
-          chVersion: chLabel(item.deploymentType),
-          appName: item.appName,
-          status: item.status || '',
-          nsKey: item.cpsKey || '—',
-          cpsPrefix: item.cpsPrefix || '—',
-          secureKey: prop.secureGroupKey || (prop.source === 'secure' ? '(secure)' : ''),
-          propKey: prop.key,
-          apiUser: prop.value,
-          password: prop.password || '—',
-          source: prop.source,
-        });
+    if (!ctl.signal.aborted) {
+      setCredentialErrors(totalCredErrors);
+      // Merge ARM rows, ensuring no duplicate with CPS results
+      setResults(prev => {
+        const cpsAppNames = new Set((prev || []).map(r => r.appName));
+        const uniqueArmRows = armRows.filter(r => !cpsAppNames.has(r.appName));
+        return [...(prev || []), ...uniqueArmRows];
+      });
+      if (batchFailed > 0 && batchFailed === totalBatches) {
+        setError(`Search failed — all ${totalBatches} batch(es) returned errors. Check backend logs.`);
       }
-    }
-    // Merge ARM direct hits (exclude apps already found via CPS)
-    const cpsAppNames = new Set(rows.map(r => r.appName));
-    const uniqueArmRows = armRows.filter(r => !cpsAppNames.has(r.appName));
-    const finalRows = [...rows, ...uniqueArmRows];
-    setResults(finalRows);
-
-    if (batchFailed > 0 && batchFailed === totalBatches) {
-      setError(`Search failed — all ${totalBatches} batch(es) returned errors. Check backend logs.`);
     }
     setLoading(false);
   };
 
   const exportCsv = () => {
     if (!results || !results.length) return;
-    const H = ['Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
-    const rows = results.map(r => [r.chEnv, r.chVersion, r.appName, r.nsKey, r.cpsPrefix, r.secureKey, r.propKey, r.apiUser, r.password]);
+    // Feature 13: include Business Group as first column
+    const H = ['Business Group', 'Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
+    const rows = results.map(r => [r.bgName || '—', r.chEnv, r.chVersion, r.appName, r.nsKey, r.cpsPrefix, r.secureKey, r.propKey, r.apiUser, r.password]);
     const csv = [H, ...rows].map(row => row.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -694,17 +779,41 @@ export default function UserSearchPage() {
         )}
       </div>
 
-      <div className="flex gap-3 items-center">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-          <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && runSearch()}
-            placeholder="Enter username or email to search in CPS properties…"
-            className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-600/50 focus:bg-slate-900" />
+      <div className="space-y-2">
+        <div className="flex gap-3 items-center">
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && runSearch()}
+              placeholder={searchMode === 'key' ? 'Enter property key name to find (e.g. db.username)…' : 'Enter username / email / value to search in CPS properties…'}
+              className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-600/50 focus:bg-slate-900" />
+          </div>
+          {/* Feature 3: Cancel button during search */}
+          {loading
+            ? <button onClick={cancelSearch}
+                className="flex items-center gap-2 px-5 py-3 bg-red-800 hover:bg-red-700 text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
+                <X size={14} /> Cancel
+              </button>
+            : <button onClick={runSearch} disabled={!query.trim() || !selCount}
+                className="flex items-center gap-2 px-5 py-3 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
+                <Search size={14} /> Search
+              </button>}
         </div>
-        <button onClick={runSearch} disabled={loading || !query.trim() || !selCount}
-          className="flex items-center gap-2 px-5 py-3 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
-          {loading ? <><RefreshCw size={14} className="animate-spin" /> Searching…</> : <><Search size={14} /> Search</>}
-        </button>
+        {/* Feature 8: Search mode toggle + Feature 9: multi-term hint */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1 bg-slate-800/60 border border-slate-700/40 rounded-lg p-0.5">
+            {[['value','Search Values'], ['key','Search Keys']].map(([mode, label]) => (
+              <button key={mode} onClick={() => setSearchMode(mode)}
+                className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${searchMode === mode ? 'bg-cyan-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-600">
+            {searchMode === 'value'
+              ? 'Tip: separate multiple terms with commas — e.g. john.doe, jane.smith'
+              : 'Key mode: finds apps that have this property key configured (any value)'}
+          </p>
+        </div>
       </div>
 
       {!hasCpsCreds && (
@@ -771,20 +880,33 @@ export default function UserSearchPage() {
       )}
 
       {loading && (
-        <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl px-5 py-8 flex flex-col items-center gap-4">
-          <RefreshCw size={24} className="animate-spin text-cyan-400" />
-          <p className="text-slate-300 text-sm font-medium">Scanning CPS properties…</p>
-          <div className="flex items-center gap-4 text-xs text-slate-500">
-            <span>{progress.envsDone}/{progress.envsTotal} envs scanned</span>
-            <span>{progress.appsT} apps found</span>
-            {progress.appsN > 0 && <span>{progress.appsN} with CPS config</span>}
-          </div>
+        <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl px-5 py-6 flex flex-col items-center gap-3">
+          <RefreshCw size={22} className="animate-spin text-cyan-400" />
+          <p className="text-slate-300 text-sm font-medium">
+            {progress.phase === 1 ? 'Phase 1 — Fetching app lists…' : 'Phase 2 — Scanning CPS properties…'}
+          </p>
+          {/* Feature 11: two-phase progress */}
+          {progress.phase === 1 && (
+            <div className="flex items-center gap-4 text-xs text-slate-500">
+              <span>{progress.envsDone}/{progress.envsTotal} envs</span>
+              <span>{progress.appsT} apps found</span>
+              {progress.appsN > 0 && <span>{progress.appsN} with CPS</span>}
+            </div>
+          )}
+          {progress.phase === 2 && (
+            <div className="flex items-center gap-4 text-xs text-slate-500">
+              <span>Batch {progress.batchDone}/{progress.batchTotal}</span>
+              <span>{progress.appsN} apps</span>
+              {results?.length > 0 && <span className="text-emerald-400/80">✓ {results.length} match{results.length !== 1 ? 'es' : ''} so far</span>}
+            </div>
+          )}
           <div className="w-full max-w-xs">
             <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-cyan-600 rounded-full transition-all duration-300"
-                style={{ width: progress.envsTotal > 0 ? `${Math.round((progress.envsDone / progress.envsTotal) * 100)}%` : '0%' }}
-              />
+              <div className="h-full bg-cyan-600 rounded-full transition-all duration-300" style={{ width:
+                progress.phase === 1 && progress.envsTotal > 0 ? `${Math.round((progress.envsDone / progress.envsTotal) * 50)}%`
+                : progress.phase === 2 && progress.batchTotal > 0 ? `${50 + Math.round((progress.batchDone / progress.batchTotal) * 50)}%`
+                : '0%'
+              }} />
             </div>
           </div>
         </div>
@@ -820,12 +942,19 @@ export default function UserSearchPage() {
                 ))}
               </div>
             )}
-            {results.length > 0 && (
-              <button onClick={exportCsv}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 rounded-xl transition-colors font-medium">
-                <Download size={13} /> Export CSV
+            {/* Feature 2: group-by-app toggle */}
+            <div className="flex items-center gap-2">
+              <button onClick={() => setGroupByApp(v => !v)}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByApp ? 'bg-cyan-700/30 border-cyan-700/60 text-cyan-300' : 'bg-slate-800/60 border-slate-700/40 text-slate-400 hover:text-slate-300'}`}>
+                <Building2 size={11} /> {groupByApp ? 'Grouped by App' : 'Group by App'}
               </button>
-            )}
+              {results.length > 0 && (
+                <button onClick={exportCsv}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 rounded-xl transition-colors font-medium">
+                  <Download size={13} /> Export CSV
+                </button>
+              )}
+            </div>
           </div>
 
           {credentialErrors > 0 && (
@@ -847,84 +976,128 @@ export default function UserSearchPage() {
               <Users size={32} className="text-slate-700" />
               <p className="text-slate-500 text-sm">No apps found with <span className="font-mono text-slate-400">"{query.trim()}"</span> in CPS properties</p>
             </div>
-          ) : (
-            <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-slate-800/60 border-b border-slate-700/40">
-                      {COL_HEADERS.map(h => (
-                        <th key={h} className="px-3 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                      {results.map((row, i) => (
-                      <tr key={i} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors last:border-0">
-                        <td className="px-3 py-3 text-xs text-slate-600 font-mono tabular-nums text-right select-none w-8">{i + 1}</td>
-                        <td className="px-3 py-3 text-xs text-slate-300 whitespace-nowrap">{row.chEnv}</td>
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          <span className={'text-[10px] px-2 py-0.5 rounded font-bold border ' + (row.chVersion === 'CloudHub 2.0' ? 'bg-blue-950/40 text-blue-300 border-blue-700/40' : 'bg-purple-950/40 text-purple-300 border-purple-700/40')}>
-                            {row.chVersion}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-1 group/cell">
-                            <span className="text-xs font-mono text-white font-medium">{row.appName}</span>
-                            <CopyBtn text={row.appName} />
+          ) : (() => {
+            // Feature 9: derive active search terms for highlighting
+            const activeTerms = query.trim().split(',').map(t => t.trim()).filter(Boolean);
+            // Feature 15: sort results
+            const sortedResults = sortCol
+              ? [...results].sort((a, b) => {
+                  const v = r => String(r[sortCol] ?? '').toLowerCase();
+                  const cmp = v(a).localeCompare(v(b));
+                  return sortDir === 'asc' ? cmp : -cmp;
+                })
+              : results;
+
+            // Feature 2: grouped view
+            if (groupByApp) {
+              const appGroups = new Map();
+              sortedResults.forEach(row => {
+                const key = row.appName;
+                if (!appGroups.has(key)) appGroups.set(key, { row, rows: [] });
+                appGroups.get(key).rows.push(row);
+              });
+              return (
+                <div className="space-y-2">
+                  {[...appGroups.entries()].map(([appName, { row: first, rows }]) => {
+                    const isExp = expandedApps.has(appName);
+                    return (
+                      <div key={appName} className="bg-slate-900/50 border border-slate-800/60 rounded-xl overflow-hidden">
+                        <button onClick={() => setExpandedApps(prev => { const n = new Set(prev); n.has(appName) ? n.delete(appName) : n.add(appName); return n; })}
+                          className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-800/30 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <button onClick={e => { e.stopPropagation(); if (first.bgOrgId && first.envId && first.appId) navigate(`/applications/${first.bgOrgId}/${first.envId}/${first.appId}`); }}
+                              className="text-sm font-semibold text-cyan-300 hover:text-cyan-200 font-mono truncate transition-colors" title="Open Application Detail">
+                              {appName}
+                            </button>
+                            <span className="text-[10px] text-slate-500">{first.chEnv}</span>
+                            {first.status && <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold ${first.status.toUpperCase()==='RUNNING' ? 'bg-green-950/40 text-green-400 border-green-700/40' : 'bg-gray-800/60 text-gray-500 border-gray-600/40'}`}>{first.status}</span>}
                           </div>
-                        </td>
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          {row.status ? (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${
-                              row.status.toUpperCase() === 'RUNNING'   ? 'bg-green-950/40 text-green-400 border-green-700/40' :
-                              row.status.toUpperCase() === 'STOPPED'   ? 'bg-gray-800/60 text-gray-500 border-gray-600/40' :
-                              row.status.toUpperCase() === 'FAILED'    ? 'bg-red-950/40 text-red-400 border-red-700/40' :
-                              row.status.toUpperCase() === 'DEPLOYING' ? 'bg-blue-950/40 text-blue-400 border-blue-700/40' :
-                              'bg-yellow-950/40 text-yellow-400 border-yellow-700/40'
-                            }`}>
-                              {row.status.toUpperCase()}
-                            </span>
-                          ) : <span className="text-slate-700 text-[10px]">—</span>}
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-1 group/cell">
-                            <span className="text-xs font-mono text-slate-400">{row.nsKey}</span>
-                            <CopyBtn text={row.nsKey} />
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-[10px] text-slate-500">{rows.length} match{rows.length !== 1 ? 'es' : ''}</span>
+                            <ChevronDown size={13} className={`text-slate-600 transition-transform ${isExp ? '' : '-rotate-90'}`} />
                           </div>
-                        </td>
-                        <td className="px-3 py-3 text-xs font-mono text-slate-400">{row.cpsPrefix}</td>
-                        <td className="px-3 py-3">
-                          {row.secureKey ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-orange-950/40 text-orange-300 border-orange-700/40 font-mono">
-                              <Lock size={8} /> {row.secureKey}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-slate-800/60 text-slate-500 border-slate-700/40">
-                              <Key size={8} /> non-secure
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-1 group/cell">
-                            <span className="text-xs font-mono text-cyan-300">{row.propKey}</span>
-                            <CopyBtn text={row.propKey} />
+                        </button>
+                        {isExp && (
+                          <div className="border-t border-slate-800/40 divide-y divide-slate-800/30">
+                            {rows.map((row, ri) => (
+                              <div key={ri} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-800/20 text-xs">
+                                <div className="flex items-center gap-1 min-w-0 flex-1">
+                                  <span className="font-mono text-cyan-300/80"><Highlight text={row.propKey} terms={activeTerms} /></span>
+                                  {row.secureKey ? <span className="text-[9px] text-orange-400 bg-orange-950/30 px-1 rounded ml-1">{row.secureKey}</span> : null}
+                                </div>
+                                <span className="font-mono text-emerald-300 break-all max-w-xs"><Highlight text={row.apiUser} terms={activeTerms} /></span>
+                                <CopyBtn text={row.apiUser} />
+                                <span className="font-mono text-slate-600">{row.password}</span>
+                              </div>
+                            ))}
                           </div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-1 group/cell">
-                            <span className="text-xs font-mono text-emerald-300 break-all">{row.apiUser}</span>
-                            <CopyBtn text={row.apiUser} />
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 text-xs font-mono text-slate-500">{row.password}</td>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            // Flat table view (default)
+            return (
+              <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl overflow-hidden">
+                {/* Feature 15: sticky table + sortable headers */}
+                <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
+                  <table className="w-full text-sm border-collapse">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-slate-800/95 border-b border-slate-700/40 backdrop-blur-sm">
+                        <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase w-8">#</th>
+                        {[['chEnv','Environment'], ['chVersion','Type'], ['appName','App Name'], ['status','Status'], ['nsKey','CPS Key'], ['cpsPrefix','Prefix'], ['secureKey','Secure Group'], ['propKey','Property Key'], ['apiUser','Value'], ['password','Password']].map(([col, label]) => (
+                          <th key={col} className="px-3 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase whitespace-nowrap cursor-pointer hover:text-slate-300 select-none" onClick={() => toggleSort(col)}>
+                            {label} <SortBtn col={col} />
+                          </th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {sortedResults.map((row, i) => (
+                        <tr key={i} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors last:border-0">
+                          <td className="px-3 py-3 text-xs text-slate-600 font-mono tabular-nums text-right select-none">{i + 1}</td>
+                          <td className="px-3 py-3 text-xs text-slate-300 whitespace-nowrap">{row.chEnv}</td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <span className={'text-[10px] px-2 py-0.5 rounded font-bold border ' + (row.chVersion === 'CloudHub 2.0' ? 'bg-blue-950/40 text-blue-300 border-blue-700/40' : 'bg-purple-950/40 text-purple-300 border-purple-700/40')}>{row.chVersion}</span>
+                          </td>
+                          {/* Feature 5: clickable app name */}
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-1 group/cell">
+                              <button onClick={() => { if (row.bgOrgId && row.envId && row.appId) navigate(`/applications/${row.bgOrgId}/${row.envId}/${row.appId}`); }}
+                                className="text-xs font-mono text-cyan-300 hover:text-cyan-200 font-medium hover:underline underline-offset-2 text-left transition-colors" title="Open Application Detail">
+                                {row.appName}
+                              </button>
+                              <CopyBtn text={row.appName} />
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            {row.status ? (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${row.status.toUpperCase()==='RUNNING' ? 'bg-green-950/40 text-green-400 border-green-700/40' : row.status.toUpperCase()==='STOPPED' ? 'bg-gray-800/60 text-gray-500 border-gray-600/40' : row.status.toUpperCase()==='FAILED' ? 'bg-red-950/40 text-red-400 border-red-700/40' : 'bg-yellow-950/40 text-yellow-400 border-yellow-700/40'}`}>{row.status.toUpperCase()}</span>
+                            ) : <span className="text-slate-700 text-[10px]">—</span>}
+                          </td>
+                          <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-slate-400">{row.nsKey}</span><CopyBtn text={row.nsKey} /></div></td>
+                          <td className="px-3 py-3 text-xs font-mono text-slate-400">{row.cpsPrefix}</td>
+                          <td className="px-3 py-3">
+                            {row.secureKey
+                              ? <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-orange-950/40 text-orange-300 border-orange-700/40 font-mono"><Lock size={8} /> {row.secureKey}</span>
+                              : <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-slate-800/60 text-slate-500 border-slate-700/40"><Key size={8} /> non-secure</span>}
+                          </td>
+                          {/* Feature 1: highlight propKey */}
+                          <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-cyan-300"><Highlight text={row.propKey} terms={activeTerms} /></span><CopyBtn text={row.propKey} /></div></td>
+                          {/* Feature 1: highlight apiUser */}
+                          <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-emerald-300 break-all"><Highlight text={row.apiUser} terms={activeTerms} /></span><CopyBtn text={row.apiUser} /></div></td>
+                          <td className="px-3 py-3 text-xs font-mono text-slate-500">{row.password}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </div>
