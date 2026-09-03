@@ -24,6 +24,7 @@ if (!SESSION_SECRET || SESSION_SECRET === DEFAULT_SECRET) {
   }
 }
 
+const fs = require('fs');
 const authRoutes = require('./routes/auth');
 const organizationsRoutes = require('./routes/organizations');
 const environmentsRoutes = require('./routes/environments');
@@ -33,6 +34,14 @@ const exchangeRoutes = require('./routes/exchange');
 const metricsRoutes = require('./routes/metrics');
 const cpsRoutes = require('./routes/cps');
 const healthRoutes = require('./routes/health');
+
+// ── SQLite session store ──────────────────────────────────────────────────────
+// Replaces the default MemoryStore (which loses all sessions on restart).
+// Sessions are persisted to ./data/sessions.db — survives restarts, deploys,
+// and OOM-induced process kills without logging out all users.
+const SQLiteStore = require('connect-sqlite3')(session);
+const SESSION_DB_DIR = process.env.SESSION_DB_DIR || './data';
+try { if (!fs.existsSync(SESSION_DB_DIR)) fs.mkdirSync(SESSION_DB_DIR, { recursive: true }); } catch {}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -55,6 +64,7 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ limit: '1mb', extended: true }));
 app.use(session({
+  store: new SQLiteStore({ db: 'sessions.db', dir: SESSION_DB_DIR }),
   secret: SESSION_SECRET || DEFAULT_SECRET,
   resave: false,
   saveUninitialized: false,
