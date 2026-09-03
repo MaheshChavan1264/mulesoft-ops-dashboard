@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Check, Search, SlidersHorizontal, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Check, Search, SlidersHorizontal, RefreshCw, Building2 } from 'lucide-react';
 
 // Import for internal use within this component
 import { getVisibleEnvIds, saveVisibleEnvIds } from '../utils/filterUtils';
@@ -46,7 +46,21 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
   const selectAll = () => setSelected(new Set(environments.map((e) => e.id)));
   const deselectAll = () => setSelected(new Set());
 
-  // Group by type for display
+  // Detect if envs carry BG context (new format from Header)
+  const hasBgContext = environments.some(e => e.bgId);
+
+  // Group by BG when context is available, otherwise group by type
+  const byBg = useMemo(() => {
+    if (!hasBgContext) return null;
+    const map = new Map();
+    filteredEnvs.forEach(e => {
+      if (!map.has(e.bgId)) map.set(e.bgId, { bgId: e.bgId, bgName: e.bgName || e.bgId, envs: [] });
+      map.get(e.bgId).envs.push(e);
+    });
+    return [...map.values()];
+  }, [filteredEnvs, hasBgContext]);
+
+  // Flat type-based groups (legacy / no-BG-context path)
   const prodEnvs = filteredEnvs.filter((e) => e.type === 'production');
   const otherEnvs = filteredEnvs.filter((e) => e.type !== 'production');
 
@@ -57,7 +71,7 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
   const selectByType = (ids) =>
     setSelected(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
 
-  const toggleTypeGroup = (ids) => {
+  const toggleGroup = (ids) => {
     const allSel = ids.every(id => selected.has(id));
     setSelected(prev => {
       const n = new Set(prev);
@@ -66,6 +80,9 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
       return n;
     });
   };
+
+  // Keep old name as alias for the non-BG path
+  const toggleTypeGroup = toggleGroup;
 
   const handleSave = () => {
     // If all are selected → clear filter (show all)
@@ -142,16 +159,78 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
         <div className="flex-1 overflow-y-auto py-2 px-2">
           {filteredEnvs.length === 0 ? (
             <p className="text-center text-gray-600 text-xs py-6">No environments found</p>
-          ) : (
+          ) : hasBgContext && byBg ? (
+            /* ── BG-grouped view (when Header enriches envs with bgId/bgName) ── */
             <>
-              {/* Production environments */}
+              {byBg.map(({ bgId, bgName, envs }) => {
+                const bgIds = envs.map(e => e.id);
+                const allSel = bgIds.every(id => selected.has(id));
+                const someSel = !allSel && bgIds.some(id => selected.has(id));
+                return (
+                  <div key={bgId}>
+                    {/* BG header — click to toggle all envs in this BG */}
+                    <div
+                      onClick={() => toggleGroup(bgIds)}
+                      className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group"
+                    >
+                      <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                        allSel ? 'bg-blue-600 border-blue-500' :
+                        someSel ? 'bg-blue-900/60 border-blue-600' :
+                        'border-gray-600 group-hover:border-blue-500'
+                      }`}>
+                        {allSel && <Check size={8} className="text-white" />}
+                        {someSel && <span className="text-blue-400 text-[8px] font-bold leading-none">–</span>}
+                      </div>
+                      <Building2 size={10} className="text-gray-500 flex-shrink-0" />
+                      <span className="text-[10px] font-semibold text-gray-400 flex-1 truncate">{bgName}</span>
+                      <span className="text-[9px] text-gray-600">{envs.length}</span>
+                    </div>
+                    {/* Env rows for this BG */}
+                    {envs.map(e => {
+                      const isChecked = selected.has(e.id);
+                      const isProd = e.type === 'production';
+                      return (
+                        <label
+                          key={e.id}
+                          className={`flex items-center gap-3 pl-8 pr-3 py-2 rounded-xl cursor-pointer transition-colors ${
+                            isChecked ? (isProd ? 'bg-green-950/20' : 'bg-yellow-950/10') : 'hover:bg-gray-800/60'
+                          }`}
+                        >
+                          <div
+                            onClick={() => toggle(e.id)}
+                            className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                              isChecked
+                                ? (isProd ? 'bg-green-600 border-green-500' : 'bg-yellow-600 border-yellow-500')
+                                : 'border-gray-600 hover:border-green-500'
+                            }`}
+                          >
+                            {isChecked && <Check size={10} className="text-white" />}
+                          </div>
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
+                          <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>
+                            {e.name}
+                          </span>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${
+                            isProd
+                              ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                              : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                          } capitalize`}>
+                            {isProd ? 'PROD' : (e.type || 'sandbox')}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            /* ── Type-grouped view (fallback when no BG context) ── */
+            <>
               {prodEnvs.length > 0 && (
                 <>
-                  {/* Clickable group header — toggles all prod envs */}
-                  <div
-                    onClick={() => toggleTypeGroup(prodEnvs.map(e => e.id))}
-                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group"
-                  >
+                  <div onClick={() => toggleTypeGroup(prodEnvs.map(e => e.id))}
+                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group">
                     <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
                       prodEnvs.every(e => selected.has(e.id)) ? 'bg-green-600 border-green-500' :
                       prodEnvs.some(e => selected.has(e.id)) ? 'bg-green-900/60 border-green-600' :
@@ -160,50 +239,29 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
                       {prodEnvs.every(e => selected.has(e.id)) && <Check size={8} className="text-white" />}
                       {!prodEnvs.every(e => selected.has(e.id)) && prodEnvs.some(e => selected.has(e.id)) && <span className="text-green-400 text-[8px] font-bold leading-none">–</span>}
                     </div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-green-500/70 flex-1">
-                      Production
-                    </p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-green-500/70 flex-1">Production</p>
                     <span className="text-[9px] text-gray-600">{prodEnvs.length}</span>
                   </div>
                   {prodEnvs.map((e) => {
                     const isChecked = selected.has(e.id);
                     return (
-                      <label
-                        key={e.id}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
-                          isChecked ? 'bg-green-950/20' : 'hover:bg-gray-800/60'
-                        }`}
-                      >
-                        <div
-                          onClick={() => toggle(e.id)}
-                          className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                            isChecked ? 'bg-green-600 border-green-500' : 'border-gray-600 hover:border-green-500'
-                          }`}
-                        >
+                      <label key={e.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isChecked ? 'bg-green-950/20' : 'hover:bg-gray-800/60'}`}>
+                        <div onClick={() => toggle(e.id)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-green-600 border-green-500' : 'border-gray-600 hover:border-green-500'}`}>
                           {isChecked && <Check size={10} className="text-white" />}
                         </div>
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>
-                          {e.name}
-                        </span>
-                        <span className="text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-1.5 py-0.5 rounded-full font-semibold">
-                          PROD
-                        </span>
+                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>{e.name}</span>
+                        <span className="text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-1.5 py-0.5 rounded-full font-semibold">PROD</span>
                       </label>
                     );
                   })}
                 </>
               )}
-
-              {/* Non-production environments */}
               {otherEnvs.length > 0 && (
                 <>
                   {prodEnvs.length > 0 && <div className="mx-3 my-1 border-t border-gray-800/60" />}
-                  {/* Clickable group header — toggles all sandbox envs */}
-                  <div
-                    onClick={() => toggleTypeGroup(otherEnvs.map(e => e.id))}
-                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group"
-                  >
+                  <div onClick={() => toggleTypeGroup(otherEnvs.map(e => e.id))}
+                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group">
                     <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
                       otherEnvs.every(e => selected.has(e.id)) ? 'bg-yellow-600 border-yellow-500' :
                       otherEnvs.some(e => selected.has(e.id)) ? 'bg-yellow-900/60 border-yellow-600' :
@@ -212,35 +270,19 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
                       {otherEnvs.every(e => selected.has(e.id)) && <Check size={8} className="text-white" />}
                       {!otherEnvs.every(e => selected.has(e.id)) && otherEnvs.some(e => selected.has(e.id)) && <span className="text-yellow-400 text-[8px] font-bold leading-none">–</span>}
                     </div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-yellow-500/70 flex-1">
-                      Sandbox / Other
-                    </p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-yellow-500/70 flex-1">Sandbox / Other</p>
                     <span className="text-[9px] text-gray-600">{otherEnvs.length}</span>
                   </div>
                   {otherEnvs.map((e) => {
                     const isChecked = selected.has(e.id);
                     return (
-                      <label
-                        key={e.id}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
-                          isChecked ? 'bg-yellow-950/10' : 'hover:bg-gray-800/60'
-                        }`}
-                      >
-                        <div
-                          onClick={() => toggle(e.id)}
-                          className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                            isChecked ? 'bg-yellow-600 border-yellow-500' : 'border-gray-600 hover:border-yellow-500'
-                          }`}
-                        >
+                      <label key={e.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isChecked ? 'bg-yellow-950/10' : 'hover:bg-gray-800/60'}`}>
+                        <div onClick={() => toggle(e.id)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-yellow-600 border-yellow-500' : 'border-gray-600 hover:border-yellow-500'}`}>
                           {isChecked && <Check size={10} className="text-white" />}
                         </div>
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>
-                          {e.name}
-                        </span>
-                        <span className="text-[9px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.5 rounded-full font-semibold capitalize">
-                          {e.type || 'sandbox'}
-                        </span>
+                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>{e.name}</span>
+                        <span className="text-[9px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.5 rounded-full font-semibold capitalize">{e.type || 'sandbox'}</span>
                       </label>
                     );
                   })}

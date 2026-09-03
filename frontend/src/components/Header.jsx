@@ -36,15 +36,17 @@ export default function Header({ onToggleSidebar }) {
     if (allBgs.length === 0) return;
     setEnvsLoading(true);
     const visible = applyBgFilter(allBgs);
-    const bgIds = visible.length > 0 ? visible.map(g => g.id) : allBgs.slice(0, 3).map(g => g.id);
+    const bgsToFetch = visible.length > 0 ? visible : allBgs.slice(0, 3);
     try {
-      const results = await Promise.allSettled(bgIds.map(id => api.get(`/environments/${id}`)));
+      const results = await Promise.allSettled(bgsToFetch.map(bg => api.get(`/environments/${bg.id}`)));
       const merged = [];
       const seen = new Set();
-      results.forEach(r => {
+      results.forEach((r, i) => {
+        const bg = bgsToFetch[i];
         if (r.status === 'fulfilled') {
           (r.value.data?.data || []).forEach(e => {
-            if (!seen.has(e.id)) { seen.add(e.id); merged.push(e); }
+            // Attach bgId + bgName so EnvFilterModal can group by Business Group
+            if (!seen.has(e.id)) { seen.add(e.id); merged.push({ ...e, bgId: bg.id, bgName: bg.name }); }
           });
         }
       });
