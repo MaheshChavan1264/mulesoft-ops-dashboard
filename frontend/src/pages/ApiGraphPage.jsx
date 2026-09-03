@@ -174,7 +174,7 @@ export default function ApiGraphPage() {
     if (!selectedOrg) return;
     setSelectedEnv('');
     setEnvs([]);
-    api.get('/environments', { params: { orgId: selectedOrg } }).then(res => {
+    api.get(`/environments/${selectedOrg}`).then(res => {
       const list = res.data?.data || res.data || [];
       const all = Array.isArray(list) ? list : [];
       setAllEnvs(all);
