@@ -1541,8 +1541,16 @@ export default function ApplicationsPage() {
                       }`}>{app.deploymentType}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-400 font-mono text-xs">{app.muleVersion || '—'}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
-                      {app.lastModifiedDate ? new Date(app.lastModifiedDate).toLocaleDateString() : '—'}
+                    <td className="px-4 py-3 text-xs" title={app.lastModifiedDate ? new Date(app.lastModifiedDate).toLocaleString() : ''}>
+                      {/* Feature 10: relative time with absolute date as tooltip */}
+                      {app.lastModifiedDate ? (() => {
+                        const diff = Date.now() - new Date(app.lastModifiedDate).getTime();
+                        const days = Math.floor(diff / 86400000);
+                        const hours = Math.floor(diff / 3600000);
+                        const mins = Math.floor(diff / 60000);
+                        const rel = days > 0 ? `${days}d ago` : hours > 0 ? `${hours}h ago` : mins > 0 ? `${mins}m ago` : 'just now';
+                        return <span className="text-gray-500 tabular-nums">{rel}</span>;
+                      })() : <span className="text-gray-700">—</span>}
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1">

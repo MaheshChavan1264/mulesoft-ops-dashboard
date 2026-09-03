@@ -659,12 +659,13 @@ export default function ApplicationDetailPage() {
     DEPLOYING:'text-blue-300 bg-blue-950/50 border-blue-700/50 shadow-blue-900/30',
     APPLIED:'text-cyan-300 bg-cyan-950/50 border-cyan-700/50' }[rStatus] || 'text-slate-400 bg-slate-800/50 border-slate-700/50';
 
+  // Feature 14: tab badges with live counts
   const tabs = [
     { id:'overview', label:'Overview' },
-    { id:'properties', label:'Properties', badge:Object.keys(allProps).length },
-    { id:'infrastructure', label:'Schedulers & Object Store' },
-    ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config' }] : []),
-    { id:'contracts', label:'Contracts' },
+    { id:'properties', label:'Properties', badge: Object.keys(allProps).length },
+    { id:'infrastructure', label:'Schedulers', badge: allSchedulers.length > 0 ? allSchedulers.length : undefined },
+    ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config', badge: cpsData ? (cpsError ? '⚠' : '✓') : undefined, badgeErr: !!cpsError }] : []),
+    { id:'contracts', label:'Contracts', badge: contracts !== null && !contractsError ? contracts.length : undefined },
     { id:'apispec', label:'API Spec', badge: pingSpec?.allEndpoints?.length > 0 ? pingSpec.allEndpoints.length : undefined },
     { id:'ping', label:'Ping Test', badge: pingSpec?.pingEndpoints?.length > 0 ? pingSpec.pingEndpoints.length : undefined },
     { id:'raw', label:'Raw JSON' },
@@ -672,6 +673,28 @@ export default function ApplicationDetailPage() {
 
   return (
     <div className="space-y-6 min-h-screen">
+      {/* Feature 3: Breadcrumb navigation */}
+      <nav className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
+        <button onClick={() => navigate('/applications')}
+          className="hover:text-slate-300 transition-colors">Applications</button>
+        {bgName && (
+          <>
+            <span>/</span>
+            <span className="text-slate-600">{bgName}</span>
+          </>
+        )}
+        {(resolvedEnvName || app.environment?.name) && (
+          <>
+            <span>/</span>
+            <span className={`font-medium ${app.environment?.type === 'production' ? 'text-green-500/70' : 'text-yellow-500/70'}`}>
+              {resolvedEnvName || app.environment?.name}
+            </span>
+          </>
+        )}
+        <span>/</span>
+        <span className="text-slate-300 font-medium truncate max-w-xs">{app.name}</span>
+      </nav>
+
       {showCpsSettings && <CpsSettingsModal
         prefilledUrl={cpsBaseUrl ? cpsBaseUrl.replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '') : ''}
         prefilledBgId={orgId}
@@ -842,7 +865,13 @@ export default function ApplicationDetailPage() {
             {t.id === 'cps' && <Key size={11} />}
             {t.id === 'ping' && <Activity size={11} />}
             {t.label}
-            {t.badge>0 && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${tab===t.id?'bg-blue-500/30 text-blue-300':'bg-slate-800 text-slate-500'}`}>{t.badge}</span>}
+            {t.badge && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
+                t.badgeErr ? 'bg-red-500/20 text-red-400' :
+                t.badge === '✓' ? 'bg-emerald-500/20 text-emerald-400' :
+                tab===t.id ? 'bg-blue-500/30 text-blue-300' : 'bg-slate-800 text-slate-500'
+              }`}>{t.badge}</span>
+            )}
           </button>
         ))}
       </div>

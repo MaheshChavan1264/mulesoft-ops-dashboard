@@ -1073,12 +1073,13 @@ export default function PingTestPage() {
       {displayApps.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
+            {/* Feature 23: sticky App Name + Status columns */}
             <thead>
-              <tr className="bg-gray-800/50 text-gray-400 text-xs uppercase tracking-wider">
-                <th className="px-3 py-3 font-medium text-center w-8">#</th>
-                <th className="text-left px-4 py-3 font-medium">Application</th>
+              <tr className="bg-gray-800/95 text-gray-400 text-xs uppercase tracking-wider backdrop-blur-sm">
+                <th className="px-3 py-3 font-medium text-center w-8 sticky left-0 z-20 bg-gray-800/95">#</th>
+                <th className="text-left px-4 py-3 font-medium sticky left-8 z-20 bg-gray-800/95 shadow-[2px_0_8px_rgba(0,0,0,0.3)]">Application</th>
                 <th className="text-left px-3 py-3 font-medium">Type</th>
-                <th className="text-left px-3 py-3 font-medium">Status</th>
+                <th className="text-left px-3 py-3 font-medium sticky left-64 z-20 bg-gray-800/95 shadow-[2px_0_8px_rgba(0,0,0,0.2)]">Status</th>
                 <th className="text-left px-3 py-3 font-medium">Active Endpoint</th>
                 <th className="text-center px-3 py-3 font-medium">HTTP</th>
                 <th className="text-right px-3 py-3 font-medium">Latency</th>
