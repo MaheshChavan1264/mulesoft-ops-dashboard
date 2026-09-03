@@ -641,6 +641,62 @@ export default function UserSearchPage() {
         </div>
       )}
 
+      {/* Feature 1.9: informative empty state when no search has been run yet */}
+      {results === null && !loading && (
+        <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl px-6 py-8 space-y-5">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-800/30 flex-shrink-0">
+              <Users size={20} className="text-cyan-400" />
+            </div>
+            <div>
+              <h3 className="text-white text-sm font-semibold">How Global Search works</h3>
+              <p className="text-slate-400 text-xs mt-1 leading-relaxed">
+                Searches for a username or email substring across <strong className="text-slate-300">CPS non-secure and secure properties</strong> for every app in the selected environments.
+                Also scans ARM deployment properties (CloudHub environment variables) as a fallback.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              {
+                icon: '🔍',
+                title: 'Property keys scanned',
+                items: ['.username', '.user', '.login', '.email', '.apiUser', '(any key whose value contains your search)'],
+              },
+              {
+                icon: '🗝️',
+                title: 'What you need',
+                items: ['Select 1+ environments above', 'Import a CPS CSV (header: CPS Credentials)', 'Enter a username or partial email'],
+              },
+              {
+                icon: '📋',
+                title: 'What you get back',
+                items: ['App name + environment + status', 'The exact property key containing the match', 'CPS secure group name (if secure)', 'Associated password key (masked)'],
+              },
+            ].map(({ icon, title, items }) => (
+              <div key={title} className="bg-slate-800/30 border border-slate-700/40 rounded-xl p-4 space-y-2">
+                <p className="text-slate-300 text-xs font-semibold flex items-center gap-2">
+                  <span>{icon}</span> {title}
+                </p>
+                <ul className="space-y-1">
+                  {items.map(item => (
+                    <li key={item} className="text-slate-500 text-[10px] flex items-start gap-1.5">
+                      <span className="text-cyan-700 flex-shrink-0 mt-0.5">›</span>
+                      <code className="font-mono">{item}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-slate-600 text-[10px] text-center">
+            💡 Tip: search for a partial email (e.g. <code className="text-slate-500">@company.com</code>) to find all service accounts, or an ldap username to locate where it's used across integrations.
+          </p>
+        </div>
+      )}
+
       {loading && (
         <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl px-5 py-8 flex flex-col items-center gap-4">
           <RefreshCw size={24} className="animate-spin text-cyan-400" />
