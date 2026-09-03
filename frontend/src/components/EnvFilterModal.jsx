@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Check, Search, SlidersHorizontal, RefreshCw, Building2 } from 'lucide-react';
+import { X, Check, Search, SlidersHorizontal, RefreshCw, Building2, ChevronDown } from 'lucide-react';
 
 // Import for internal use within this component
 import { getVisibleEnvIds, saveVisibleEnvIds } from '../utils/filterUtils';
@@ -12,6 +12,115 @@ const ENV_TYPE_COLOR = {
   sandbox: 'bg-yellow-400',
   design: 'bg-blue-400',
 };
+
+// ── BG-grouped collapsible list ───────────────────────────────────────────────
+function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
+  // All BGs start expanded; collapse state tracked per bgId
+  const [collapsed, setCollapsed] = useState(new Set());
+
+  const toggleCollapse = (bgId, e) => {
+    e.stopPropagation();
+    setCollapsed(prev => {
+      const n = new Set(prev);
+      n.has(bgId) ? n.delete(bgId) : n.add(bgId);
+      return n;
+    });
+  };
+
+  return (
+    <div className="space-y-1 py-1">
+      {byBg.map(({ bgId, bgName, envs }) => {
+        const bgIds = envs.map(e => e.id);
+        const allSel = bgIds.every(id => selected.has(id));
+        const someSel = !allSel && bgIds.some(id => selected.has(id));
+        const isCollapsed = collapsed.has(bgId);
+        const selCount = bgIds.filter(id => selected.has(id)).length;
+
+        return (
+          <div key={bgId} className="rounded-xl border border-gray-800/60 overflow-hidden mx-1">
+            {/* BG Header — bold, prominent name */}
+            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-gray-800/40 cursor-pointer hover:bg-gray-800/70 transition-colors group select-none">
+              {/* Tri-state checkbox (select/deselect all envs in this BG) */}
+              <div
+                onClick={() => toggleGroup(bgIds)}
+                className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                  allSel  ? 'bg-blue-600 border-blue-500' :
+                  someSel ? 'bg-blue-900/60 border-blue-600' :
+                  'border-gray-600 group-hover:border-blue-500'
+                }`}
+              >
+                {allSel  && <Check size={9} className="text-white" />}
+                {someSel && <span className="text-blue-400 text-[8px] font-bold leading-none">–</span>}
+              </div>
+
+              {/* BG icon + name */}
+              <div className="flex items-center gap-1.5 flex-1 min-w-0" onClick={e => toggleCollapse(bgId, e)}>
+                <Building2 size={12} className="text-blue-400/70 flex-shrink-0" />
+                <span className="text-sm font-semibold text-white truncate">{bgName}</span>
+              </div>
+
+              {/* Right side: selected count + chevron */}
+              <div className="flex items-center gap-2 flex-shrink-0" onClick={e => toggleCollapse(bgId, e)}>
+                {selCount > 0 && (
+                  <span className="text-[10px] font-bold text-blue-300 bg-blue-600/20 border border-blue-600/40 px-1.5 py-0.5 rounded-full">
+                    {selCount}/{envs.length}
+                  </span>
+                )}
+                {selCount === 0 && (
+                  <span className="text-[10px] text-gray-600">{envs.length} env{envs.length !== 1 ? 's' : ''}</span>
+                )}
+                <ChevronDown
+                  size={13}
+                  className={`text-gray-500 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}
+                />
+              </div>
+            </div>
+
+            {/* Env rows — hidden when collapsed */}
+            {!isCollapsed && (
+              <div className="divide-y divide-gray-800/30">
+                {envs.map(e => {
+                  const isChecked = selected.has(e.id);
+                  const isProd = e.type === 'production';
+                  return (
+                    <label
+                      key={e.id}
+                      className={`flex items-center gap-3 pl-9 pr-3 py-2.5 cursor-pointer transition-colors ${
+                        isChecked ? (isProd ? 'bg-green-950/20' : 'bg-yellow-950/10') : 'hover:bg-gray-800/40'
+                      }`}
+                    >
+                      <div
+                        onClick={() => toggle(e.id)}
+                        className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                          isChecked
+                            ? (isProd ? 'bg-green-600 border-green-500' : 'bg-yellow-600 border-yellow-500')
+                            : 'border-gray-600 hover:border-green-500'
+                        }`}
+                      >
+                        {isChecked && <Check size={10} className="text-white" />}
+                      </div>
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
+                      <span className={`text-xs flex-1 ${isChecked ? 'text-white font-medium' : 'text-gray-400'}`}>
+                        {e.name}
+                      </span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border flex-shrink-0 ${
+                        isProd
+                          ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                          : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                      }`}>
+                        {isProd ? 'PROD' : (e.type || 'sandbox')}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function EnvFilterModal({ environments = [], onClose, onSaved }) {
   const [search, setSearch] = useState('');
@@ -160,70 +269,13 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
           {filteredEnvs.length === 0 ? (
             <p className="text-center text-gray-600 text-xs py-6">No environments found</p>
           ) : hasBgContext && byBg ? (
-            /* ── BG-grouped view (when Header enriches envs with bgId/bgName) ── */
-            <>
-              {byBg.map(({ bgId, bgName, envs }) => {
-                const bgIds = envs.map(e => e.id);
-                const allSel = bgIds.every(id => selected.has(id));
-                const someSel = !allSel && bgIds.some(id => selected.has(id));
-                return (
-                  <div key={bgId}>
-                    {/* BG header — click to toggle all envs in this BG */}
-                    <div
-                      onClick={() => toggleGroup(bgIds)}
-                      className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group"
-                    >
-                      <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                        allSel ? 'bg-blue-600 border-blue-500' :
-                        someSel ? 'bg-blue-900/60 border-blue-600' :
-                        'border-gray-600 group-hover:border-blue-500'
-                      }`}>
-                        {allSel && <Check size={8} className="text-white" />}
-                        {someSel && <span className="text-blue-400 text-[8px] font-bold leading-none">–</span>}
-                      </div>
-                      <Building2 size={10} className="text-gray-500 flex-shrink-0" />
-                      <span className="text-[10px] font-semibold text-gray-400 flex-1 truncate">{bgName}</span>
-                      <span className="text-[9px] text-gray-600">{envs.length}</span>
-                    </div>
-                    {/* Env rows for this BG */}
-                    {envs.map(e => {
-                      const isChecked = selected.has(e.id);
-                      const isProd = e.type === 'production';
-                      return (
-                        <label
-                          key={e.id}
-                          className={`flex items-center gap-3 pl-8 pr-3 py-2 rounded-xl cursor-pointer transition-colors ${
-                            isChecked ? (isProd ? 'bg-green-950/20' : 'bg-yellow-950/10') : 'hover:bg-gray-800/60'
-                          }`}
-                        >
-                          <div
-                            onClick={() => toggle(e.id)}
-                            className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                              isChecked
-                                ? (isProd ? 'bg-green-600 border-green-500' : 'bg-yellow-600 border-yellow-500')
-                                : 'border-gray-600 hover:border-green-500'
-                            }`}
-                          >
-                            {isChecked && <Check size={10} className="text-white" />}
-                          </div>
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-                          <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>
-                            {e.name}
-                          </span>
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${
-                            isProd
-                              ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                              : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                          } capitalize`}>
-                            {isProd ? 'PROD' : (e.type || 'sandbox')}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </>
+            /* ── BG-grouped collapsible view ── */
+            <BgGroupedList
+              byBg={byBg}
+              selected={selected}
+              toggle={toggle}
+              toggleGroup={toggleGroup}
+            />
           ) : (
             /* ── Type-grouped view (fallback when no BG context) ── */
             <>
