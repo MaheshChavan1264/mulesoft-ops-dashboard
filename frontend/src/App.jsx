@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { CredentialStoreProvider } from './context/CredentialStoreContext';
 import { CpsCredentialStoreProvider } from './context/CpsCredentialStoreContext';
 import { ToastProvider } from './context/ToastContext';
+import { NotificationProvider } from './context/NotificationContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import ApplicationsPage from './pages/ApplicationsPage';
@@ -30,6 +31,7 @@ const ProtectedRoute = ({ children }) => {
 export default function App() {
   return (
     <ToastProvider>
+    <NotificationProvider>
     <CpsCredentialStoreProvider>
     <CredentialStoreProvider>
     <AuthProvider>
@@ -59,6 +61,7 @@ export default function App() {
     </AuthProvider>
     </CredentialStoreProvider>
     </CpsCredentialStoreProvider>
+    </NotificationProvider>
     </ToastProvider>
   );
 }
