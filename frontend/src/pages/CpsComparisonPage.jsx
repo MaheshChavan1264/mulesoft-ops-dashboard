@@ -1043,10 +1043,18 @@ export default function CpsComparisonPage() {
     matching: diff.filter(d => d.status === 'matching').length,
   }), [diff]);
 
+  // Feature 5: search across keys AND values (A and B)
   const displayRows = useMemo(() => {
     let rows = filter === 'all' ? diff : diff.filter(d => d.status === filter);
     if (showDiffsOnly) rows = rows.filter(d => d.status !== 'matching');
-    if (search.trim()) rows = rows.filter(d => d.key.toLowerCase().includes(search.toLowerCase()));
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      rows = rows.filter(d =>
+        d.key.toLowerCase().includes(q) ||
+        (d.valA || '').toLowerCase().includes(q) ||
+        (d.valB || '').toLowerCase().includes(q)
+      );
+    }
     return rows;
   }, [diff, filter, search, showDiffsOnly]);
 
@@ -1256,24 +1264,25 @@ export default function CpsComparisonPage() {
               {/* Search */}
               <div className="relative">
                 <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter by key…"
-                  className="bg-gray-800 border border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600/50 w-40" />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter by key or value…"
+                  className="bg-gray-800 border border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600/50 w-48" />
               </div>
             </div>
           </div>
 
           {/* Diff table */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            {/* Column headers */}
-            <div className="grid grid-cols-[36px_1fr_1fr_1fr_80px] bg-gray-800/60 text-gray-400 text-[10px] uppercase tracking-wider px-4 py-2.5 gap-3">
-              <span className="text-center">#</span>
-              <span>Property Key</span>
-              <span>Side A ({sideA.cpsKey || '—'})</span>
-              <span>Side B ({sideB.cpsKey || '—'})</span>
-              <span className="text-center">Status</span>
-            </div>
-
+            {/* Feature 3: scroll container wraps both headers and rows so sticky top-0 works */}
             <div className="divide-y divide-gray-800/40 max-h-[60vh] overflow-y-auto">
+              {/* Sticky column headers */}
+              <div className="grid grid-cols-[36px_1fr_1fr_1fr_80px] bg-gray-800/95 text-gray-400 text-[10px] uppercase tracking-wider px-4 py-2.5 gap-3 sticky top-0 z-10 backdrop-blur-sm border-b border-gray-700/60">
+                <span className="text-center">#</span>
+                <span>Property Key</span>
+                <span>Side A ({sideA.cpsKey || '—'})</span>
+                <span>Side B ({sideB.cpsKey || '—'})</span>
+                <span className="text-center">Status</span>
+              </div>
+
               {displayRows.length === 0 ? (
                 <div className="px-4 py-10 text-center text-gray-500 text-sm">No properties match the current filter.</div>
               ) : (() => {
@@ -1362,7 +1371,7 @@ export default function CpsComparisonPage() {
             {/* Footer */}
             {displayRows.length > 0 && (
               <div className="px-4 py-2 bg-gray-800/30 border-t border-gray-800 text-[10px] text-gray-600 flex items-center justify-between">
-                <span>Showing {displayRows.length} of {diff.length} properties{search && ` · filtered by "${search}"`}</span>
+                <span>Showing {displayRows.length} of {diff.length} properties{search && ` · search "${search}" matches keys and values`}</span>
                 {stats.different + stats['only-a'] + stats['only-b'] > 0 && (
                   <span className="text-gray-700">Click any 🔴🔵🟠 row to see the diff detail</span>
                 )}
