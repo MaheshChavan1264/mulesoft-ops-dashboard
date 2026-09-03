@@ -1408,8 +1408,45 @@ export default function ApplicationsPage() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+        /* Feature 1.1: skeleton table rows matching the real table structure */
+        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-800/50 text-gray-400 text-xs uppercase tracking-wider">
+                <th className="px-4 py-3 w-10" />
+                <th className="text-left px-4 py-3">Application</th>
+                <th className="text-left px-4 py-3">Status</th>
+                <th className="text-left px-4 py-3">Environment</th>
+                <th className="text-left px-4 py-3">Type</th>
+                <th className="text-left px-4 py-3">Mule Version</th>
+                <th className="text-left px-4 py-3">Last Modified</th>
+                <th className="px-4 py-3 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...Array(8)].map((_, i) => (
+                <tr key={i} className="border-t border-gray-800 animate-pulse">
+                  <td className="px-4 py-3.5"><div className="w-4 h-4 rounded bg-gray-800" /></td>
+                  <td className="px-4 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 rounded bg-gray-800" style={{ width: `${100 + (i % 5) * 30}px` }} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3.5"><div className="h-5 w-20 rounded-full bg-gray-800" /></td>
+                  <td className="px-4 py-3.5">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-gray-700" />
+                      <div className="h-3 w-24 rounded bg-gray-800" />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3.5"><div className="h-5 w-24 rounded bg-gray-800" /></td>
+                  <td className="px-4 py-3.5"><div className="h-3 w-16 rounded bg-gray-800" /></td>
+                  <td className="px-4 py-3.5"><div className="h-3 w-20 rounded bg-gray-800" /></td>
+                  <td className="px-4 py-3.5"><div className="h-6 w-14 rounded-lg bg-gray-800 mx-auto" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
