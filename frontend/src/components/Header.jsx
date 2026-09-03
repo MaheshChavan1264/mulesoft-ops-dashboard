@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Menu, LogOut, User, RefreshCw, Zap, SlidersHorizontal, Building2, Globe } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -16,6 +16,10 @@ export default function Header({ onToggleSidebar }) {
 
   const [showBgFilter, setShowBgFilter] = useState(false);
   const [showEnvFilter, setShowEnvFilter] = useState(false);
+  // Feature 7: last refresh timestamp
+  const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [relativeTime, setRelativeTime] = useState('');
+  const timerRef = useRef(null);
   const [allBgs, setAllBgs] = useState([]);
   const [allEnvs, setAllEnvs] = useState([]);
   const [envsLoading, setEnvsLoading] = useState(false);
@@ -58,6 +62,28 @@ export default function Header({ onToggleSidebar }) {
   const handleOpenEnvFilter = () => {
     loadEnvsForFilter();
     setShowEnvFilter(true);
+  };
+
+  // Feature 7: update relative time every 30s
+  const updateRelative = useCallback((ts) => {
+    if (!ts) return;
+    const diff = Math.round((Date.now() - ts) / 1000);
+    if (diff < 10) setRelativeTime('just now');
+    else if (diff < 60) setRelativeTime(`${diff}s ago`);
+    else if (diff < 3600) setRelativeTime(`${Math.round(diff / 60)}m ago`);
+    else setRelativeTime(`${Math.round(diff / 3600)}h ago`);
+  }, []);
+
+  useEffect(() => {
+    if (!lastRefreshed) return;
+    updateRelative(lastRefreshed);
+    timerRef.current = setInterval(() => updateRelative(lastRefreshed), 30000);
+    return () => clearInterval(timerRef.current);
+  }, [lastRefreshed, updateRelative]);
+
+  const handleRefresh = () => {
+    setLastRefreshed(Date.now());
+    window.location.reload();
   };
 
   const handleLogout = async () => {
@@ -147,13 +173,19 @@ export default function Header({ onToggleSidebar }) {
           <CpsCredentialImportButton compact />
         </div>
 
-        <button
-          onClick={() => window.location.reload()}
-          className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
-          title="Refresh"
-        >
-          <RefreshCw size={16} />
-        </button>
+        {/* Feature 7: Refresh button with timestamp */}
+        <div className="flex items-center gap-1">
+          <button onClick={handleRefresh}
+            className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
+            title={lastRefreshed ? `Last refreshed ${relativeTime}` : 'Refresh page'}>
+            <RefreshCw size={16} />
+          </button>
+          {relativeTime && (
+            <span className="text-[10px] text-gray-600 whitespace-nowrap hidden sm:inline" title="Last refreshed">
+              {relativeTime}
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-800">
           <User size={14} className="text-gray-400" />
