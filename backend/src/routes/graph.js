@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { makeRequest } = require('../utils/anypointClient');
-const { requireAuth } = require('../middleware/authMiddleware');
+const { createClient } = require('../utils/anypointClient');
+const authMiddleware = require('../middleware/authMiddleware');
 
-router.use(requireAuth);
+router.use(authMiddleware);
 
 // ── GET /api/graph/dependencies ───────────────────────────────────────────────
 // Builds a dependency graph of Mule apps → API Manager instances for a given
@@ -22,7 +22,7 @@ router.use(requireAuth);
 //   envId  (required)
 router.get('/dependencies', async (req, res) => {
   const { orgId, envId } = req.query;
-  const token = req.session?.token;
+  const client = createClient(req.session.token);
 
   if (!orgId || !envId) {
     return res.status(400).json({ error: 'orgId and envId are required query parameters' });
@@ -30,27 +30,27 @@ router.get('/dependencies', async (req, res) => {
 
   try {
     // ── 1. API instances ──────────────────────────────────────────────────────
-    const apiRes = await makeRequest(
-      token, 'GET',
+    const apiRes = await client.get(
       `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis`,
-      null,
-      { limit: 100, offset: 0 }
+      { params: { limit: 100, offset: 0 } }
     );
-    const apis = apiRes?.assets || [];
+    const apis = apiRes.data?.assets || [];
 
     // ── 2. Applications (CH2 + CH1) ───────────────────────────────────────────
     const [ch2Res, ch1Res] = await Promise.allSettled([
-      makeRequest(token, 'GET',
+      client.get(
         `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments`,
-        null, { pageSize: 200 }),
-      makeRequest(token, 'GET',
+        { params: { pageSize: 200 } }
+      ),
+      client.get(
         `/cloudhub/api/v2/applications`,
-        null, { orgId, environmentId: envId }),
+        { params: { orgId, environmentId: envId } }
+      ),
     ]);
 
-    const ch2Apps = (ch2Res.status === 'fulfilled' ? ch2Res.value?.items || [] : [])
+    const ch2Apps = (ch2Res.status === 'fulfilled' ? ch2Res.value.data?.items || [] : [])
       .map(a => ({ ...a, _type: 'CH2' }));
-    const ch1Apps = (ch1Res.status === 'fulfilled' ? ch1Res.value || [] : [])
+    const ch1Apps = (ch1Res.status === 'fulfilled' ? ch1Res.value.data || [] : [])
       .map(a => ({ ...a, _type: 'CH1' }));
     const apps = [...ch2Apps, ...ch1Apps];
 
@@ -74,14 +74,11 @@ router.get('/dependencies', async (req, res) => {
       await Promise.allSettled(
         apis.slice(i, i + BATCH).map(async (api) => {
           try {
-            const cRes = await makeRequest(
-              token, 'GET',
-              `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${api.id}/contracts`,
-              null, {}
+            const cRes = await client.get(
+              `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${api.id}/contracts`
             );
-            const contracts = cRes?.contracts || [];
+            const contracts = cRes.data?.contracts || [];
             contracts.forEach(contract => {
-              // Anypoint returns clientId at multiple depths depending on API Manager version
               const cid =
                 contract.application?.clientId ||
                 contract.application?.client_id ||
@@ -103,13 +100,13 @@ router.get('/dependencies', async (req, res) => {
               });
             });
           } catch (_) {
-            // Contract fetch failure for a single API is non-fatal — skip it
+            // Contract fetch failure for a single API is non-fatal
           }
         })
       );
     }
 
-    // Deduplicate edges (same app→api pair may appear from multiple contracts)
+    // Deduplicate edges
     const seenEdges = new Set();
     const uniqueEdges = edges.filter(e => {
       if (seenEdges.has(e.id)) return false;
@@ -118,8 +115,8 @@ router.get('/dependencies', async (req, res) => {
     });
 
     // ── 5. Build node sets ────────────────────────────────────────────────────
-    const apiNodeIds  = new Set(uniqueEdges.map(e => e.target));
-    const appNodeIds  = new Set(uniqueEdges.map(e => e.source));
+    const apiNodeIds = new Set(uniqueEdges.map(e => e.target));
+    const appNodeIds = new Set(uniqueEdges.map(e => e.source));
 
     const apiNodes = apis
       .filter(api => apiNodeIds.has(`api-${api.id}`))
@@ -154,10 +151,8 @@ router.get('/dependencies', async (req, res) => {
         },
       }));
 
-    const nodes = [...appNodes, ...apiNodes];
-
     res.json({
-      nodes,
+      nodes: [...appNodes, ...apiNodes],
       edges: uniqueEdges,
       summary: {
         apis: apiNodes.length,
