@@ -440,7 +440,10 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'apps array is required' });
   }
 
-  const searchTerm = username.trim().toLowerCase();
+  // Support comma-separated terms — any term matching a property value counts as a hit.
+  // e.g. "john.doe, jane.smith" → search for either "john.doe" OR "jane.smith"
+  const searchTerms = username.trim().toLowerCase()
+    .split(',').map(t => t.trim()).filter(Boolean);
   const CONCURRENCY = 30; // increased from 15 for faster fan-out
 
   /** Flatten CPS response (all formats) into a flat {key:value} map */
@@ -476,11 +479,11 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     return flat;
   }
 
-  /** Scan a flat props map for the search term in values */
+  /** Scan a flat props map for any of the search terms in values */
   function scanProps(flat, source) {
     const hits = [];
     for (const [k, v] of Object.entries(flat)) {
-      if (v != null && String(v).toLowerCase().includes(searchTerm)) {
+      if (v != null && searchTerms.some(term => String(v).toLowerCase().includes(term))) {
         hits.push({ key: k, value: String(v), source });
       }
     }
@@ -622,7 +625,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           if (sRes.status !== 200 || accessDeniedGroups > 0) {
             const secureGroupKeys = groups.map(g => g.key || '?').join(', ');
             const securePropsCount = groups.reduce((n, g) => n + (typeof g.properties === 'object' ? Object.keys(g.properties || {}).length : 0), 0);
-            console.log(`[search-user][SEC-REF] "${appName}" HTTP=${sRes.status} groups=[${secureGroupKeys}] props=${securePropsCount} denied=${accessDeniedGroups}`);
+            //console.log(`[search-user][SEC-REF] "${appName}" HTTP=${sRes.status} groups=[${secureGroupKeys}] props=${securePropsCount} denied=${accessDeniedGroups}`);
           }
           for (const group of groups) {
             if (!group) continue;
@@ -635,7 +638,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             matchedProps = matchedProps.concat(sHits);
           }
         } catch (sErr) {
-          console.log(`[search-user] "${appName}" secure fetch FAILED: ${sErr.code || sErr.message}`);
+          //console.log(`[search-user] "${appName}" secure fetch FAILED: ${sErr.code || sErr.message}`);
         }
       } else {
         // ── No reference key in non-secure — try secure fetch anyway ──────
@@ -711,7 +714,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
   if (credentialErrors > 0) {
     console.warn(`[search-user] "${username}" — ${credentialErrors} app(s) returned HTTP 401 for all credentials; upload a CPS CSV with broader credentials to include those apps`);
   }
-  console.log(`[search-user] "${username}" — total: ${apps.length}, matched: ${matched}, credentialErrors: ${credentialErrors}, skipped/no-match: ${skipped - credentialErrors}`);
+  console.log(`[search-user] terms=[${searchTerms.join(' | ')}] — total: ${apps.length}, matched: ${matched}, credentialErrors: ${credentialErrors}, skipped/no-match: ${skipped - credentialErrors}`);
   res.json({ results, scanned: apps.length, matched, skipped, credentialErrors,
     searchStats: { nonSecureSearched: nsSearched, secureRefSearched, secureFallbackSearched } });
 });

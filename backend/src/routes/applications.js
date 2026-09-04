@@ -287,7 +287,111 @@ router.get('/private-spaces/:orgId/:privateSpaceId', authMiddleware, async (req,
   }
 });
 
-const SUMMARY_CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
+const SUMMARY_CACHE_TTL_MS   = 20 * 60 * 1000; // hard eviction window  (20 min)
+const SUMMARY_CACHE_FRESH_MS  = 15 * 60 * 1000; // SWR freshness threshold (15 min)
+
+/**
+ * Core fetch-and-cache logic for the application summary.
+ * Extracted so it can be called both synchronously (cache miss) and
+ * fire-and-forget (SWR background refresh).
+ *
+ * @param {object} client     Anypoint HTTP client
+ * @param {string} targetOrgId
+ * @param {object} session    req.session (mutated to store result)
+ * @returns {Promise<object>} responseData
+ */
+async function _fetchSummary(client, targetOrgId, session) {
+  const envResponse = await client.get(
+    `/accounts/api/organizations/${targetOrgId}/environments`
+  );
+  const allEnvironments = envResponse.data.data || [];
+  const environments = allEnvironments.filter(isProductionEnv);
+
+  const results = [];
+  const errors = [];
+  const accessibleEnvIds = new Set();
+
+  await Promise.all(environments.map(async (env) => {
+    let ch2Accessible = false;
+    let ch1Accessible = false;
+
+    try {
+      const ch2Response = await client.get(
+        `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${env.id}/deployments`,
+        { params: { limit: 500 } }
+      );
+      ch2Accessible = true;
+      const apps = parseCH2Apps(ch2Response.data);
+      apps.forEach((app) => {
+        const runtimeStatus = app.application?.status || app.application?.state;
+        const deploymentStatus = app.status || app.desiredStatus;
+        const effectiveStatus = runtimeStatus || deploymentStatus;
+        results.push({
+          id: app.id,
+          name: app.name,
+          status: normalizeStatus(effectiveStatus),
+          deploymentStatus: normalizeStatus(deploymentStatus),
+          environment: { id: env.id, name: env.name, type: env.type },
+          deploymentType: 'CloudHub 2.0',
+          lastModifiedDate: app.lastModifiedDate || app.updatedAt,
+          muleVersion: app.currentRuntimeVersion || app.lastSuccessfulRuntimeVersion,
+          replicas: app.target?.replicas,
+        });
+      });
+    } catch (e) {
+      const status = e.response?.status;
+      if (status !== 403 && status !== 401) ch2Accessible = true;
+      if (status !== 403 && status !== 401) errors.push(`CH2 ${env.name}: ${e.message}`);
+    }
+
+    try {
+      const ch1Response = await client.get('/cloudhub/api/applications', {
+        headers: makeCh1Headers(env.id, targetOrgId),
+      });
+      ch1Accessible = true;
+      const raw = ch1Response.data;
+      const ch1Apps = Array.isArray(raw) ? raw : (raw.applications || raw.data || []);
+      ch1Apps.forEach((app) => {
+        if (!results.find((r) => r.name === (app.domain || app.name))) {
+          results.push({
+            id: app.domain || app.name,
+            name: app.domain || app.name,
+            status: normalizeStatus(app.status),
+            environment: { id: env.id, name: env.name, type: env.type },
+            deploymentType: 'CloudHub 1.0',
+            lastModifiedDate: app.lastUpdateTime ? new Date(app.lastUpdateTime).toISOString() : null,
+            muleVersion: typeof app.muleVersion === 'string'
+              ? app.muleVersion
+              : app.muleVersion?.version,
+            workers: app.workers,
+            staticIPsEnabled: app.staticIPsEnabled ?? null,
+          });
+        }
+      });
+    } catch (e) {
+      const status = e.response?.status;
+      if (status !== 403 && status !== 401) ch1Accessible = true;
+      if (status !== 403 && status !== 401) errors.push(`CH1 ${env.name} (${status || 'ERR'}): ${e.response?.data?.message || e.message}`);
+    }
+
+    if (ch1Accessible || ch2Accessible) accessibleEnvIds.add(env.id);
+  }));
+
+  const accessibleEnvironments = environments.filter(e => accessibleEnvIds.has(e.id));
+  const responseData = {
+    total: results.length,
+    data: results,
+    environments: accessibleEnvironments,
+    orgId: targetOrgId,
+    _errors: errors.length > 0 ? errors : undefined,
+    _cachedAt: new Date().toISOString(),
+  };
+
+  if (!session.summaryCache) session.summaryCache = {};
+  session.summaryCache[targetOrgId] = { data: responseData, ts: Date.now() };
+  console.log(`[Summary] Cache SET for org ${targetOrgId} (${results.length} apps)`);
+  return responseData;
+}
 
 // Summary: get apps across all environments for an org (accepts orgId param or query)
 router.get('/summary/:orgId', authMiddleware, async (req, res) => {
@@ -296,120 +400,40 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     const targetOrgId = req.params.orgId;
     const forceRefresh = req.query.refresh === 'true';
 
-    // ── Session cache (per-user, 20-min TTL) ─────────────────────────────────
+    // ── Session cache with Stale-While-Revalidate ─────────────────────────────
     // Cache is keyed by orgId inside the user's session so different users
     // never share cached data.
+    //
+    //  age < FRESH_MS  (15 min) → serve cached data, no network call
+    //  age < TTL_MS   (20 min) → serve cached data immediately +
+    //                            kick off background refresh so the
+    //                            NEXT request also hits a warm cache
+    //  age ≥ TTL_MS            → synchronous fetch (cold cache)
     if (!req.session.summaryCache) req.session.summaryCache = {};
-    const cached = req.session.summaryCache[targetOrgId];
-    if (!forceRefresh && cached && (Date.now() - cached.ts) < SUMMARY_CACHE_TTL_MS) {
-      //console.log(`[Summary] Cache HIT for org ${targetOrgId} (${Math.round((Date.now() - cached.ts) / 1000)}s old)`);
+    const cached  = req.session.summaryCache[targetOrgId];
+    const ageMs   = cached ? Date.now() - cached.ts : Infinity;
+    const isFresh = ageMs < SUMMARY_CACHE_FRESH_MS;
+    const isUsable = ageMs < SUMMARY_CACHE_TTL_MS;
+
+    if (!forceRefresh && cached && isFresh) {
+      // ── Fresh hit — instant response, no network ─────────────────────────
       return res.json(cached.data);
+    }
+
+    if (!forceRefresh && cached && isUsable) {
+      // ── Stale-but-usable — respond immediately, refresh silently ─────────
+      res.json(cached.data);
+      // Fire-and-forget: refresh in background so the next call is instant
+      _fetchSummary(client, targetOrgId, req.session)
+        .then(() => console.log(`[Summary] BG refresh done for org ${targetOrgId}`))
+        .catch((err) => console.warn(`[Summary] BG refresh failed for org ${targetOrgId}:`, err.message));
+      return;
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Get environments for the target org
-    const envResponse = await client.get(
-      `/accounts/api/organizations/${targetOrgId}/environments`
-    );
-    const allEnvironments = envResponse.data.data || [];
-    // Skip dev/qa environments entirely — no API calls made to them
-    const environments = allEnvironments.filter(isProductionEnv);
-
-    const results = [];
-    const errors = [];
-    // Track which environments are accessible (at least one platform returned non-403)
-    const accessibleEnvIds = new Set();
-
-    await Promise.all(environments.map(async (env) => {
-      let ch2Accessible = false;
-      let ch1Accessible = false;
-
-      // Try CloudHub 2.0
-      try {
-        const ch2Response = await client.get(
-          `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${env.id}/deployments`,
-          { params: { limit: 500 } }
-        );
-        ch2Accessible = true;
-        const apps = parseCH2Apps(ch2Response.data);
-        apps.forEach((app) => {
-          const runtimeStatus = app.application?.status || app.application?.state;
-          const deploymentStatus = app.status || app.desiredStatus;
-          const effectiveStatus = runtimeStatus || deploymentStatus;
-          results.push({
-            id: app.id,
-            name: app.name,
-            status: normalizeStatus(effectiveStatus),
-            deploymentStatus: normalizeStatus(deploymentStatus),
-            environment: { id: env.id, name: env.name, type: env.type },
-            deploymentType: 'CloudHub 2.0',
-            lastModifiedDate: app.lastModifiedDate || app.updatedAt,
-            // CH2 list API only returns application.status — ref/version not available
-            muleVersion: app.currentRuntimeVersion || app.lastSuccessfulRuntimeVersion,
-            replicas: app.target?.replicas,
-          });
-        });
-      } catch (e) {
-        const status = e.response?.status;
-        if (status !== 403 && status !== 401) ch2Accessible = true; // accessible but empty/errored
-        if (status !== 403 && status !== 401) errors.push(`CH2 ${env.name}: ${e.message}`);
-      }
-
-      // Try CloudHub 1.0
-      try {
-        const ch1Response = await client.get('/cloudhub/api/applications', {
-          headers: makeCh1Headers(env.id, targetOrgId),
-        });
-        ch1Accessible = true;
-        const raw = ch1Response.data;
-        const ch1Apps = Array.isArray(raw) ? raw : (raw.applications || raw.data || []);
-        ch1Apps.forEach((app) => {
-          if (!results.find((r) => r.name === (app.domain || app.name))) {
-            results.push({
-              id: app.domain || app.name,
-              name: app.domain || app.name,
-              status: normalizeStatus(app.status),
-              environment: { id: env.id, name: env.name, type: env.type },
-              deploymentType: 'CloudHub 1.0',
-              lastModifiedDate: app.lastUpdateTime ? new Date(app.lastUpdateTime).toISOString() : null,
-              muleVersion: typeof app.muleVersion === 'string'
-                ? app.muleVersion
-                : app.muleVersion?.version,
-              workers: app.workers,
-              // Static IPs info for CH1
-              staticIPsEnabled: app.staticIPsEnabled ?? null,
-            });
-          }
-        });
-      } catch (e) {
-        const status = e.response?.status;
-        if (status !== 403 && status !== 401) ch1Accessible = true; // accessible but empty/errored
-        if (status !== 403 && status !== 401) errors.push(`CH1 ${env.name} (${status || 'ERR'}): ${e.response?.data?.message || e.message}`);
-      }
-
-      // Only include this environment in results if the user has access to it
-      if (ch1Accessible || ch2Accessible) {
-        accessibleEnvIds.add(env.id);
-      }
-    }));
-
-    // Only return environments the user can actually access
-    const accessibleEnvironments = environments.filter(e => accessibleEnvIds.has(e.id));
-
-    const responseData = {
-      total: results.length,
-      data: results,
-      environments: accessibleEnvironments,
-      orgId: targetOrgId,
-      _errors: errors.length > 0 ? errors : undefined,
-      _cachedAt: new Date().toISOString(),
-    };
-
-    // Store in session cache
-    req.session.summaryCache[targetOrgId] = { data: responseData, ts: Date.now() };
-    console.log(`[Summary] Cache SET for org ${targetOrgId} (${results.length} apps)`);
-
-    res.json(responseData);
+    // Cache miss or force-refresh — fetch synchronously
+    const data = await _fetchSummary(client, targetOrgId, req.session);
+    res.json(data);
   } catch (error) {
     sendProxyError(res, error, 'Failed to fetch application summary');
   }

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { applyBgFilter } from '../components/BgFilterModal';
 import { applyEnvFilter } from '../components/EnvFilterModal';
-import { Search, Users, RefreshCw, AlertTriangle, Copy, Check, Key, Lock, ChevronRight, ChevronDown, Building2, Download, X, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
+import { Search, Users, RefreshCw, AlertTriangle, Copy, Check, Key, Lock, ChevronRight, ChevronDown, Building2, Download, X, SlidersHorizontal, ArrowUpDown, Hash } from 'lucide-react';
 import api from '../services/api';
 import { getCached, getCachedSWR, setCached } from '../services/apiCache';
 import { CK } from '../services/cacheKeys';
@@ -15,6 +16,26 @@ const CopyBtn = ({ text }) => {
     <button onClick={() => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }}
       className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-500 hover:text-slate-300 transition-all flex-shrink-0">
       {done ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+    </button>
+  );
+};
+
+/** Copy all unique matched values for a term — shown in the term group header. */
+const CopyAllBtn = ({ values = [] }) => {
+  const [done, setDone] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(values.join('\n'));
+    setDone(true);
+    setTimeout(() => setDone(false), 2000);
+  };
+  return (
+    <button
+      onClick={copy}
+      title={`Copy all ${values.length} unique value${values.length !== 1 ? 's' : ''} for this term`}
+      className="flex items-center gap-1 px-3 py-3 text-[10px] text-slate-500 hover:text-purple-300 border-l border-slate-800/40 transition-colors flex-shrink-0 font-medium">
+      {done
+        ? <><Check size={10} className="text-emerald-400" /> Copied</>
+        : <><Copy size={10} /> {values.length}</>}
     </button>
   );
 };
@@ -360,9 +381,14 @@ export default function UserSearchPage() {
   // Feature 2: group by app toggle
   const [groupByApp, setGroupByApp] = useState(false);
   const [expandedApps, setExpandedApps] = useState(new Set());
+  // Group by term (search value) toggle — mutually exclusive with groupByApp
+  const [groupByTerm, setGroupByTerm] = useState(false);
+  const [expandedTerms, setExpandedTerms] = useState(new Set());
   // Feature 15: sortable columns
   const [sortCol, setSortCol] = useState('');
   const [sortDir, setSortDir] = useState('asc');
+  // BG/Env selector collapse state
+  const [selectorCollapsed, setSelectorCollapsed] = useState(false);
 
   useEffect(() => {
     setBgsLoad(true);
@@ -553,7 +579,9 @@ export default function UserSearchPage() {
     const ctl = new AbortController();
     abortRef.current = ctl;
 
-    setLoading(true); setError(''); setResults(null); setCredentialErrors(0); setEnvStats([]);
+      // Auto-collapse the selector panel when search starts to give results more space
+      setSelectorCollapsed(true);
+      setLoading(true); setError(''); setResults(null); setCredentialErrors(0); setEnvStats([]);
     setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0, phase: 1, batchDone: 0, batchTotal: 0 });
 
     // Feature 9: multi-term — split by comma
@@ -755,6 +783,185 @@ export default function UserSearchPage() {
     URL.revokeObjectURL(url);
   };
 
+  /**
+   * Export grouped results to XLSX — single sheet with section markers.
+   *
+   * Layout (one sheet named "Search Results"):
+   *   Row 1  : Column headers
+   *   Per term:
+   *     ── # <term>  (<N> matches) ──   ← term separator row
+   *     Per Business Group:
+   *       ▶  <BG Name>                  ← BG section header
+   *       Per Secure Key (NS first):
+   *         🔑/🔒 <SK Name>             ← SK sub-section header
+   *         data row …                  ← full data rows
+   *       (blank row between BGs)
+   *
+   * Column order:
+   *   Business Group | CH Environment | CH Version | Integration Name |
+   *   Status | NS Key | CPS Prefix | Secure Key | Property Key | API User | Password
+   */
+  /**
+   * Export a pivot/summary XLSX — one row per unique matched value (username/apiUser).
+   *
+   * Columns:
+   *   Username                 → the matched value (apiUser)
+   *   Secure Keys              → BG Name \n   secure-group-key  (for secure-prop matches)
+   *   Directly connected APIs  → BG Name \n   app-name  (all apps where this value was found)
+   *
+   * Format mirrors the user-requested layout: BG name as section label,
+   * integration/key names indented on following lines within the cell.
+   */
+  const exportSummaryXlsx = () => {
+    if (!results || !results.length) return;
+
+    // Group by unique apiUser value
+    // userMap: apiUser → { secureKeys: Map<bgName, Set<skName>>, apps: Map<bgName, Set<appName>> }
+    const userMap = new Map();
+    results.forEach(row => {
+      const user = row.apiUser || '—';
+      if (!userMap.has(user)) userMap.set(user, { secureKeys: new Map(), apps: new Map() });
+      const entry = userMap.get(user);
+      const bg = row.bgName || '—';
+
+      // Secure keys — only when row has an actual secure group key
+      if (row.secureKey) {
+        if (!entry.secureKeys.has(bg)) entry.secureKeys.set(bg, new Set());
+        entry.secureKeys.get(bg).add(row.secureKey);
+      }
+
+      // Connected apps — every row contributes its app name
+      if (!entry.apps.has(bg)) entry.apps.set(bg, new Set());
+      entry.apps.get(bg).add(row.appName || '—');
+    });
+
+    const headers = ['Username', 'Secure Keys', 'Directly connected APIs'];
+    const aoa = [headers];
+
+    for (const [username, { secureKeys, apps }] of userMap.entries()) {
+      // Secure Keys cell: "BG\nkey1\nkey2\n\nBG2\nkey3\n"
+      // — no indent before keys, blank line after each BG's items
+      const skLines = [];
+      const skEntries = [...secureKeys.entries()];
+      skEntries.forEach(([bg, keys], idx) => {
+        skLines.push(bg);
+        [...keys].forEach(k => skLines.push(k));          // no leading spaces
+        skLines.push('');                                  // blank line after each BG
+      });
+
+      // Directly connected APIs cell: "BG\napp1\napp2\n\nBG2\napp3\n"
+      const appLines = [];
+      const appEntries = [...apps.entries()];
+      appEntries.forEach(([bg, appNames]) => {
+        appLines.push(bg);
+        [...appNames].forEach(a => appLines.push(a));     // no leading spaces
+        appLines.push('');                                 // blank line after each BG
+      });
+
+      aoa.push([username, skLines.join('\n'), appLines.join('\n')]);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 42 }, { wch: 45 }, { wch: 55 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'User Summary');
+    XLSX.writeFile(wb, `user-summary-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const exportGroupedXlsx = (termGroupsMap, getMatchedTermFn, activeTermsList, searchModeCurrent) => {
+    const COL_HDR = [
+      'Business Group', 'CH Environment', 'CH Version',
+      'Integration Name', 'Status', 'NS Key', 'CPS Prefix',
+      'Secure Key', 'Property Key', 'API User', 'Password',
+    ];
+
+    const aoa = [COL_HDR]; // single array-of-arrays for the whole sheet
+
+    for (const term of activeTermsList) {
+      const termRows = termGroupsMap.get(term) || [];
+
+      // ── Term separator row ──────────────────────────────────────────────
+      const termLabel = `${term}  (${termRows.length} match${termRows.length !== 1 ? 'es' : ''})`;
+      aoa.push([termLabel, ...Array(COL_HDR.length - 1).fill('')]);
+
+      if (!termRows.length) {
+        aoa.push(['(no results)', ...Array(COL_HDR.length - 1).fill('')]);
+        aoa.push(Array(COL_HDR.length).fill(''));
+        continue;
+      }
+
+      // Build BG → SecureKey → rows structure
+      const bgMap = new Map();
+      termRows.forEach(row => {
+        const bg = row.bgName || '—';
+        if (!bgMap.has(bg)) bgMap.set(bg, new Map());
+        const skMap = bgMap.get(bg);
+        const sk = row.secureKey || 'Non-Secure';
+        if (!skMap.has(sk)) skMap.set(sk, []);
+        skMap.get(sk).push(row);
+      });
+
+      for (const [bgName, skMap] of bgMap.entries()) {
+        // BG section header
+        aoa.push([`${bgName}`, ...Array(COL_HDR.length - 1).fill('')]);
+
+        // Sort: Non-Secure first, then secure groups alphabetically
+        const sortedSk = [...skMap.entries()].sort(([a], [b]) => {
+          if (a === 'Non-Secure') return -1;
+          if (b === 'Non-Secure') return 1;
+          return a.localeCompare(b);
+        });
+
+        for (const [skName, skRows] of sortedSk) {
+          // Secure-key sub-section header
+          aoa.push(['', `  ${skName === 'Non-Secure' ? '🔑 Non-Secure' : `🔒 ${skName}`}`, ...Array(COL_HDR.length - 2).fill('')]);
+
+          // Group by Integration Name (appName) within each SK section
+          const appNameMap = new Map();
+          skRows.forEach(row => {
+            const app = row.appName || '—';
+            if (!appNameMap.has(app)) appNameMap.set(app, []);
+            appNameMap.get(app).push(row);
+          });
+
+          for (const [appName, appRows] of appNameMap.entries()) {
+            // Integration name sub-header (indented in column 4)
+            const appHdr = Array(COL_HDR.length).fill('');
+            appHdr[3] = `    ⊕  ${appName}${appRows[0]?.status ? `  [${appRows[0].status}]` : ''}`;
+            aoa.push(appHdr);
+
+            // Data rows for this integration
+            for (const row of appRows) {
+              aoa.push([
+                row.bgName    || '—',
+                row.chEnv     || '—',
+                row.chVersion || '—',
+                row.appName   || '—',
+                row.status    || '',
+                row.nsKey     || '—',
+                row.cpsPrefix || '—',
+                row.secureKey || '',
+                row.propKey   || '—',
+                row.apiUser   || '',
+                row.password  || '—',
+              ]);
+            }
+          }
+        }
+        aoa.push(Array(COL_HDR.length).fill('')); // blank row between BGs
+      }
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    // Set sensible column widths
+    ws['!cols'] = [20, 18, 8, 28, 10, 20, 10, 22, 28, 30, 10].map(w => ({ wch: w }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Search Results');
+    XLSX.writeFile(wb, `grouped-search-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   const selCount = bgEnvSelections.length;
   const COL_HEADERS = ['#', 'Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Status', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
 
@@ -765,21 +972,55 @@ export default function UserSearchPage() {
         <p className="text-slate-500 text-sm mt-1">Search for a username across all app CPS non-secure & secure properties</p>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl px-5 py-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Business Groups & Environments</p>
+      <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl overflow-hidden">
+        {/* Header — always visible, click anywhere to toggle */}
+        <button
+          onClick={() => setSelectorCollapsed(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-800/30 transition-colors">
+          <div className="flex items-center gap-2">
+            <ChevronDown
+              size={14}
+              className={`text-slate-500 transition-transform flex-shrink-0 ${selectorCollapsed ? '-rotate-90' : ''}`}
+            />
+            <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Business Groups & Environments</p>
+          </div>
           {selCount > 0 && (
-            <span className="text-[10px] text-cyan-400 font-medium">
+            <span className="text-[10px] text-cyan-400 font-medium flex-shrink-0">
               {selCount} env{selCount !== 1 ? 's' : ''} across {new Set(bgEnvSelections.map(s => s.bgId)).size} BG{new Set(bgEnvSelections.map(s => s.bgId)).size !== 1 ? 's' : ''} selected
             </span>
           )}
-        </div>
-        {bgsLoad
-          ? <div className="flex items-center gap-2 text-slate-500 text-xs py-2"><RefreshCw size={13} className="animate-spin" /> Loading…</div>
-          : <BgEnvSelector businessGroups={bgs} onSelectionsChange={setBgEnvSelections} />
-        }
-        {selCount > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
+          {selCount === 0 && (
+            <span className="text-[10px] text-slate-600 flex-shrink-0">
+              {selectorCollapsed ? 'Click to expand' : 'Select environments…'}
+            </span>
+          )}
+        </button>
+
+        {/* Collapsible body */}
+        {!selectorCollapsed && (
+          <div className="px-5 pb-4 space-y-3 border-t border-slate-800/40">
+            <div className="pt-3">
+              {bgsLoad
+                ? <div className="flex items-center gap-2 text-slate-500 text-xs py-2"><RefreshCw size={13} className="animate-spin" /> Loading…</div>
+                : <BgEnvSelector businessGroups={bgs} onSelectionsChange={setBgEnvSelections} />
+              }
+            </div>
+            {selCount > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {bgEnvSelections.map(s => (
+                  <span key={s.bgId + ':' + s.envId}
+                    className={'text-[10px] px-2 py-0.5 rounded-full border font-medium ' + (s.envType === 'production' ? 'bg-green-950/40 text-green-400 border-green-800/50' : 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50')}>
+                    {s.bgName} / {s.envName}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Collapsed summary — show selected env pills in a compact single line */}
+        {selectorCollapsed && selCount > 0 && (
+          <div className="px-5 pb-3 flex flex-wrap gap-1.5 border-t border-slate-800/30 pt-2">
             {bgEnvSelections.map(s => (
               <span key={s.bgId + ':' + s.envId}
                 className={'text-[10px] px-2 py-0.5 rounded-full border font-medium ' + (s.envType === 'production' ? 'bg-green-950/40 text-green-400 border-green-800/50' : 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50')}>
@@ -933,10 +1174,6 @@ export default function UserSearchPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-white text-sm font-semibold flex items-center gap-2">
-                <Users size={14} className="text-cyan-400" />
-                Results for <span className="text-cyan-300 font-mono bg-cyan-950/30 px-1.5 py-0.5 rounded text-xs">{query.trim()}</span>
-              </span>
               <span className={'text-xs px-2.5 py-1 rounded-full font-bold border ' + (results.length > 0 ? 'bg-emerald-950/50 text-emerald-300 border-emerald-700/50' : 'bg-slate-800/60 text-slate-500 border-slate-700/40')}>
                 {results.length} match{results.length !== 1 ? 'es' : ''}
               </span>
@@ -953,11 +1190,15 @@ export default function UserSearchPage() {
                 ))}
               </div>
             )}
-            {/* Feature 2: group-by-app toggle */}
+            {/* Feature 2: group-by-app / group-by-term toggles (mutually exclusive) */}
             <div className="flex items-center gap-2">
-              <button onClick={() => setGroupByApp(v => !v)}
+              <button onClick={() => { setGroupByApp(v => !v); setGroupByTerm(false); }}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByApp ? 'bg-cyan-700/30 border-cyan-700/60 text-cyan-300' : 'bg-slate-800/60 border-slate-700/40 text-slate-400 hover:text-slate-300'}`}>
                 <Building2 size={11} /> {groupByApp ? 'Grouped by App' : 'Group by App'}
+              </button>
+              <button onClick={() => { setGroupByTerm(v => !v); setGroupByApp(false); }}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByTerm ? 'bg-purple-700/30 border-purple-700/60 text-purple-300' : 'bg-slate-800/60 border-slate-700/40 text-slate-400 hover:text-slate-300'}`}>
+                <Hash size={11} /> {groupByTerm ? 'Grouped by Term' : 'Group by Term'}
               </button>
               {results.length > 0 && (
                 <button onClick={exportCsv}
@@ -965,6 +1206,32 @@ export default function UserSearchPage() {
                   <Download size={13} /> Export CSV
                 </button>
               )}
+              {results.length > 0 && (
+                <button onClick={exportSummaryXlsx}
+                  title="Export summary: Username | Secure Keys | Directly Connected APIs"
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 border border-cyan-800/40 rounded-xl transition-colors font-medium">
+                  <Download size={13} /> Export Summary
+                </button>
+              )}
+              {/* XLSX export — only shown in Group by Term mode (multi-sheet, one per term) */}
+              {results.length > 0 && groupByTerm && (() => {
+                const at = query.trim().split(',').map(t => t.trim()).filter(Boolean);
+                if (at.length <= 1) return null;
+                const tg = new Map();
+                at.forEach(t => tg.set(t, []));
+                results.forEach(row => {
+                  const field = searchMode === 'key' ? row.propKey : row.apiUser;
+                  const term = at.find(t => String(field || '').toLowerCase().includes(t.toLowerCase())) || at[0];
+                  tg.get(term)?.push(row);
+                });
+                return (
+                  <button
+                    onClick={() => exportGroupedXlsx(tg, null, at, searchMode)}
+                    className="flex items-center gap-2 px-4 py-2 text-sm text-purple-400 hover:text-purple-300 bg-purple-950/40 border border-purple-800/40 rounded-xl transition-colors font-medium">
+                    <Download size={13} /> Export XLSX
+                  </button>
+                );
+              })()}
             </div>
           </div>
 
@@ -999,7 +1266,252 @@ export default function UserSearchPage() {
                 })
               : results;
 
-            // Feature 2: grouped view
+            // Group by matched search term
+            if (groupByTerm && activeTerms.length > 1) {
+              const getMatchedTerm = (row) => {
+                const field = searchMode === 'key' ? row.propKey : row.apiUser;
+                return activeTerms.find(t => String(field || '').toLowerCase().includes(t.toLowerCase()))
+                  || activeTerms[0];
+              };
+
+              // Build ALL term groups (including empty ones for 0-match display)
+              const termGroups = new Map();
+              activeTerms.forEach(t => termGroups.set(t, []));
+              sortedResults.forEach(row => {
+                const term = getMatchedTerm(row);
+                if (!termGroups.has(term)) termGroups.set(term, []);
+                termGroups.get(term).push(row);
+              });
+
+              const nonEmptyTerms = activeTerms.filter(t => (termGroups.get(t)?.length || 0) > 0);
+              // Auto-expand if only 1 non-empty group and nothing manually expanded yet
+              const autoExpanded = nonEmptyTerms.length === 1 && expandedTerms.size === 0
+                ? new Set(nonEmptyTerms) : expandedTerms;
+
+              return (
+                <div className="space-y-3">
+                  {/* ── Expand / Collapse All ────────────────────────────── */}
+                  <div className="flex items-center justify-end gap-2 text-[10px]">
+                    <button onClick={() => setExpandedTerms(new Set(nonEmptyTerms))}
+                      className="text-slate-500 hover:text-slate-300 transition-colors">
+                      Expand all
+                    </button>
+                    <span className="text-slate-700">·</span>
+                    <button onClick={() => setExpandedTerms(new Set())}
+                      className="text-slate-500 hover:text-slate-300 transition-colors">
+                      Collapse all
+                    </button>
+                  </div>
+
+                  {/* ── Per-term accordion (all terms, empty ones dimmed) ─── */}
+                  {activeTerms.map(term => {
+                    const termRows = termGroups.get(term) || [];
+                    const hasMatches = termRows.length > 0;
+                    const isExp = autoExpanded.has(term);
+
+                    // 0-match term — shown as a dimmed "not found" row
+                    if (!hasMatches) {
+                      return (
+                        <div key={term} className="flex items-center gap-3 px-4 py-2.5 bg-slate-900/30 border border-slate-800/40 rounded-xl opacity-50">
+                          <Hash size={11} className="text-slate-600 flex-shrink-0" />
+                          <span className="font-mono text-sm text-slate-500 font-semibold">{term}</span>
+                          <span className="text-[10px] text-slate-600 ml-1">— not found in any app</span>
+                        </div>
+                      );
+                    }
+
+                    // Sub-group by app within this term
+                    const appMap = new Map();
+                    termRows.forEach(row => {
+                      if (!appMap.has(row.appName)) appMap.set(row.appName, []);
+                      appMap.get(row.appName).push(row);
+                    });
+
+                    // Collect all matched values for this term (for "Copy all" button)
+                    const allValues = [...new Set(termRows.map(r => r.apiUser))];
+
+                    return (
+                      <div key={term} className="bg-slate-900/50 border border-purple-900/30 rounded-xl overflow-hidden">
+                        {/* Term group header */}
+                        <div className="flex items-center gap-0 border-b border-slate-800/40">
+                          <button
+                            onClick={() => setExpandedTerms(prev => { const n = new Set(prev); n.has(term) ? n.delete(term) : n.add(term); return n; })}
+                            className="flex-1 flex items-center justify-between px-4 py-3 hover:bg-slate-800/30 transition-colors">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <Hash size={12} className="text-purple-400 flex-shrink-0" />
+                              <span className="font-mono text-sm text-white font-semibold truncate">{term}</span>
+                              <span className="text-[10px] text-slate-500 flex-shrink-0 hidden sm:inline">
+                                {appMap.size} app{appMap.size !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-xs text-purple-400 font-semibold">
+                                {termRows.length} match{termRows.length !== 1 ? 'es' : ''}
+                              </span>
+                              <ChevronDown size={13} className={`text-slate-600 transition-transform ${isExp ? '' : '-rotate-90'}`} />
+                            </div>
+                          </button>
+                          {/* Copy all values for this term */}
+                          <CopyAllBtn values={allValues} />
+                        </div>
+
+                        {/* Expanded: Business Group (bgName) → Apps → Properties */}
+                        {isExp && (() => {
+                          // Group by bgName (e.g. "EI-FI-PROD"), then by appName within each BG
+                          const bgMap = new Map();
+                          termRows.forEach(row => {
+                            const key = row.bgName || '—';
+                            if (!bgMap.has(key)) bgMap.set(key, new Map());
+                            const ba = bgMap.get(key);
+                            if (!ba.has(row.appName)) ba.set(row.appName, []);
+                            ba.get(row.appName).push(row);
+                          });
+                          return (
+                            <div>
+                              {[...bgMap.entries()].map(([bgName, bgAppMap]) => {
+                                const bgMatchCount = [...bgAppMap.values()].reduce((n, r) => n + r.length, 0);
+                                // Colour dot — green if BG name contains "PROD", yellow otherwise
+                                const isProd = /prod/i.test(bgName);
+                                const dotCls = isProd ? 'bg-green-500' : 'bg-yellow-500';
+                                return (
+                                  <div key={bgName} className="border-t border-slate-800/40">
+                                    {/* BG sub-header */}
+                                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-800/40">
+                                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotCls}`} />
+                                      <span className="text-[10px] font-semibold text-slate-200 flex-1 font-mono">{bgName}</span>
+                                      <span className="text-[9px] text-slate-600">
+                                        {bgAppMap.size} app{bgAppMap.size !== 1 ? 's' : ''} · {bgMatchCount} match{bgMatchCount !== 1 ? 'es' : ''}
+                                      </span>
+                                    </div>
+                                    {/* Secure key sub-groups → full-field mini table */}
+                                    {(() => {
+                                      const allBgRows = [...bgAppMap.values()].flat();
+                                      const skMap = new Map();
+                                      allBgRows.forEach(row => {
+                                        const sk = row.secureKey || 'Non-Secure';
+                                        if (!skMap.has(sk)) skMap.set(sk, []);
+                                        skMap.get(sk).push(row);
+                                      });
+                                      // Non-Secure first, then secure groups alphabetically
+                                      const sortedSk = [...skMap.entries()].sort(([a], [b]) => {
+                                        if (a === 'Non-Secure') return -1;
+                                        if (b === 'Non-Secure') return 1;
+                                        return a.localeCompare(b);
+                                      });
+                                      return (
+                                        <div>
+                                          {sortedSk.map(([skName, skRows]) => (
+                                            <div key={skName} className="border-t border-slate-800/30">
+                                              {/* Secure key sub-header */}
+                                              <div className="flex items-center gap-2 px-6 py-1.5 bg-slate-800/20">
+                                                {skName === 'Non-Secure'
+                                                  ? <span className="flex items-center gap-1 text-[9px] font-semibold text-slate-500 bg-slate-800/50 border border-slate-700/30 px-1.5 py-0.5 rounded"><Key size={8} /> Non-Secure</span>
+                                                  : <span className="flex items-center gap-1 text-[9px] font-semibold text-orange-400/80 bg-orange-950/20 border border-orange-800/30 px-1.5 py-0.5 rounded"><Lock size={8} /> {skName}</span>
+                                                }
+                                                <span className="text-[9px] text-slate-600">{skRows.length} result{skRows.length !== 1 ? 's' : ''}</span>
+                                              </div>
+                                              {/* Grouped by Integration Name within each SK section */}
+                                              {(() => {
+                                                const skAppMap = new Map();
+                                                skRows.forEach(row => {
+                                                  if (!skAppMap.has(row.appName)) skAppMap.set(row.appName, []);
+                                                  skAppMap.get(row.appName).push(row);
+                                                });
+                                                return (
+                                                  <div className="divide-y divide-slate-800/20">
+                                                    {[...skAppMap.entries()].map(([appName, appRows]) => (
+                                                      <div key={appName} className="px-6 py-2.5 hover:bg-slate-800/10">
+                                                        {/* Integration name header */}
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border flex-shrink-0 ${
+                                                            appRows[0].chVersion === 'CloudHub 2.0'
+                                                              ? 'bg-blue-950/40 text-blue-400 border-blue-700/40'
+                                                              : 'bg-purple-950/40 text-purple-400 border-purple-700/40'
+                                                          }`}>
+                                                            {appRows[0].chVersion === 'CloudHub 2.0' ? 'CH2' : 'CH1'}
+                                                          </span>
+                                                          <button
+                                                            onClick={() => { const r = appRows[0]; if (r.bgOrgId && r.envId && r.appId) navigate(`/applications/${r.bgOrgId}/${r.envId}/${r.appId}`); }}
+                                                            className="text-[10px] font-mono text-cyan-300 hover:text-cyan-200 font-medium hover:underline underline-offset-2 truncate">
+                                                            {appName}
+                                                          </button>
+                                                          <span className="text-[9px] text-slate-600 flex-shrink-0">{appRows[0].chEnv}</span>
+                                                          {appRows[0].status && (
+                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold flex-shrink-0 ${
+                                                              appRows[0].status.toUpperCase() === 'RUNNING'
+                                                                ? 'bg-green-950/40 text-green-400 border-green-700/40'
+                                                                : appRows[0].status.toUpperCase() === 'FAILED'
+                                                                ? 'bg-red-950/40 text-red-400 border-red-700/40'
+                                                                : 'bg-gray-800/60 text-gray-500 border-gray-600/40'
+                                                            }`}>
+                                                              {appRows[0].status}
+                                                            </span>
+                                                          )}
+                                                          <span className="text-[9px] text-slate-600 ml-auto flex-shrink-0">
+                                                            {appRows.length} prop{appRows.length !== 1 ? 's' : ''}
+                                                          </span>
+                                                        </div>
+                                                        {/* Property rows — compact table without Env/Type/App (already in header) */}
+                                                        <div className="overflow-x-auto pl-2">
+                                                          <table className="w-full border-collapse">
+                                                            <thead>
+                                                              <tr className="bg-slate-800/10 text-slate-600 text-[9px] uppercase tracking-wider border-b border-slate-800/30">
+                                                                <th className="px-2 py-1 text-left font-bold whitespace-nowrap">NS Key</th>
+                                                                <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Prefix</th>
+                                                                <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Property Key</th>
+                                                                <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Value</th>
+                                                                <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Password</th>
+                                                              </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                              {appRows.map((row, ri) => (
+                                                                <tr key={ri} className="group border-b border-slate-800/20 hover:bg-slate-800/20 last:border-0">
+                                                                  <td className="px-2 py-1.5 text-[10px] font-mono text-slate-400 whitespace-nowrap">{row.nsKey}</td>
+                                                                  <td className="px-2 py-1.5 text-[10px] font-mono text-slate-500 whitespace-nowrap">{row.cpsPrefix}</td>
+                                                                  <td className="px-2 py-1.5">
+                                                                    <div className="flex items-center gap-1 group/cell">
+                                                                      <span className="text-[10px] font-mono text-cyan-300/80 whitespace-nowrap">{row.propKey}</span>
+                                                                      <CopyBtn text={row.propKey} />
+                                                                    </div>
+                                                                  </td>
+                                                                  <td className="px-2 py-1.5">
+                                                                    <div className="flex items-center gap-1 group/cell">
+                                                                      <span className="text-[10px] font-mono text-emerald-300/90 break-all max-w-[200px]">
+                                                                        <Highlight text={row.apiUser} terms={[term]} />
+                                                                      </span>
+                                                                      <CopyBtn text={row.apiUser} />
+                                                                    </div>
+                                                                  </td>
+                                                                  <td className="px-2 py-1.5 text-[10px] font-mono text-slate-600 whitespace-nowrap">{row.password}</td>
+                                                                </tr>
+                                                              ))}
+                                                            </tbody>
+                                                          </table>
+                                                        </div>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                );
+                                              })()}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            // Feature 2: grouped view by app
             if (groupByApp) {
               const appGroups = new Map();
               sortedResults.forEach(row => {
