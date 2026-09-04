@@ -1389,46 +1389,59 @@ export default function ApplicationsPage() {
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">{error}</div>
       )}
 
-      {/* Business Group selector */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">Business Group</p>
+      {/* Filters row — Search first, then BG, Env, Status, Type */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        {/* Search */}
+        <div className="sm:col-span-2 lg:col-span-1">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Search</p>
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Application name…"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+          </div>
+        </div>
+        {/* BG selector */}
+        <div className="lg:col-span-1">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1 flex items-center gap-1">
+            Business Group
+            {bgLoading && <span className="animate-spin inline-block w-2.5 h-2.5 border border-gray-600 border-t-gray-400 rounded-full" />}
+          </p>
+          <Select
+            value={selectedBg}
+            onChange={(v) => {
+              setSelectedBg(v);
+              setSearch('');
+              setFilterEnv('');
+              setFilterStatus('');
+              setFilterType('');
+              localStorage.removeItem('mule_dashboard_filter_status');
+              localStorage.removeItem('mule_dashboard_filter_type');
+              localStorage.removeItem('mule_dashboard_filter_env');
+            }}
+            options={bgOptions}
+            placeholder="All Organizations…"
+            searchable={visibleGroups.length > 5}
+            disabled={bgLoading}
+          />
           {filterActive && (
-            <span className="text-[10px] text-blue-400 font-medium">
-              {visibleGroups.length}/{allBusinessGroups.length} shown (filtered)
-            </span>
+            <p className="text-[9px] text-blue-400 mt-0.5 pl-1">
+              {visibleGroups.length}/{allBusinessGroups.length} shown
+            </p>
           )}
         </div>
-        <Select
-          value={selectedBg}
-          onChange={(v) => {
-            setSelectedBg(v);
-            setSearch('');
-            setFilterEnv('');
-            setFilterStatus('');
-            setFilterType('');
-            localStorage.removeItem('mule_dashboard_filter_status');
-            localStorage.removeItem('mule_dashboard_filter_type');
-            localStorage.removeItem('mule_dashboard_filter_env');
-          }}
-          options={bgOptions}
-          placeholder="Select business group..."
-          searchable={visibleGroups.length > 5}
-          disabled={bgLoading}
-        />
-      </div>
-
-      {/* Filters */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="relative sm:col-span-2 lg:col-span-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search applications..."
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+        <div>
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Environment</p>
+          <Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="All Environments" searchable />
         </div>
-        <div><Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="Environment" searchable /></div>
-        <div><Select value={filterStatus} onChange={setFilterStatus} options={statusOptions} placeholder="Status" /></div>
-        <div><Select value={filterType} onChange={setFilterType} options={typeOptions} placeholder="Type" /></div>
+        <div>
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Status</p>
+          <Select value={filterStatus} onChange={setFilterStatus} options={statusOptions} placeholder="All Statuses" />
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Type</p>
+          <Select value={filterType} onChange={setFilterType} options={typeOptions} placeholder="All Types" />
+        </div>
       </div>
 
       {/* Bulk action toolbar — appears when rows are selected */}
@@ -1459,37 +1472,6 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* Feature 2: Status Summary Bar — clickable chips filter the table */}
-      {!loading && filtered.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 px-1">
-          {[
-            { s: 'RUNNING',   color: 'bg-green-500/20 text-green-400 border-green-700/30 hover:bg-green-500/30' },
-            { s: 'APPLIED',   color: 'bg-cyan-500/20 text-cyan-400 border-cyan-700/30 hover:bg-cyan-500/30' },
-            { s: 'FAILED',    color: 'bg-red-500/20 text-red-400 border-red-700/30 hover:bg-red-500/30' },
-            { s: 'STOPPED',   color: 'bg-gray-500/20 text-gray-400 border-gray-700/30 hover:bg-gray-500/30' },
-            { s: 'DEPLOYING', color: 'bg-blue-500/20 text-blue-400 border-blue-700/30 hover:bg-blue-500/30' },
-            { s: 'UPDATING',  color: 'bg-purple-500/20 text-purple-400 border-purple-700/30 hover:bg-purple-500/30' },
-            { s: 'STARTING',  color: 'bg-blue-400/20 text-blue-300 border-blue-600/30 hover:bg-blue-400/30' },
-            { s: 'STOPPING',  color: 'bg-orange-500/20 text-orange-400 border-orange-700/30 hover:bg-orange-500/30' },
-            { s: 'PARTIALLY_STARTED', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-700/30 hover:bg-yellow-500/30' },
-          ].filter(({ s }) => statusSummary[s] > 0).map(({ s, color }) => (
-            <button
-              key={s}
-              onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
-              className={`flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-all ${color} ${
-                filterStatus === s ? 'ring-1 ring-inset ring-current opacity-100' : 'opacity-70 hover:opacity-100'
-              }`}>
-              <span className="font-semibold">{statusSummary[s]}</span>
-              <span>{s.charAt(0) + s.slice(1).toLowerCase().replace('_started', '')}</span>
-            </button>
-          ))}
-          {filterStatus && (
-            <button onClick={() => setFilterStatus('')} className="text-[10px] text-gray-600 hover:text-gray-300 underline underline-offset-2 transition-colors">
-              Clear
-            </button>
-          )}
-        </div>
-      )}
 
       {loading ? (
         /* Feature 1.1: skeleton table rows matching the real table structure */

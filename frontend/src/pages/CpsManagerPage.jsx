@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import {
   Database, RefreshCw, Search, Plus, Trash2, Save,
   X, AlertTriangle, Download, Upload, ShieldCheck, Key,
-  FileArchive, Eye, EyeOff, Copy, Check,
+  FileArchive, Eye, EyeOff, Copy, Check, ExternalLink,
 } from 'lucide-react';
 import Select from '../components/Select';
 import CpsCredentialImportButton from '../components/CpsCredentialImportButton';
@@ -163,6 +164,7 @@ function getValidationWarning(key, val, allProps) {
 
 export default function CpsManagerPage() {
   const { orgId: authOrgId } = useAuth();
+  const navigate = useNavigate();
   const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
 
   // ── BG / Env / App state ─────────────────────────────────────────────────
@@ -783,6 +785,22 @@ export default function CpsManagerPage() {
             </p>
             <Select value={selectedAppComposite} onChange={selectApp} options={appOptions}
               placeholder="Search application…" searchable disabled={appLoading || !allBgs.length} />
+            {/* View Application link — appears immediately after selecting an app */}
+            {selectedAppComposite && (() => {
+              const [appId, envId, bgId] = selectedAppComposite.split('|');
+              if (!appId || !envId || !bgId) return null;
+              const appName = apps.find(a => String(a.id) === appId)?.name || '';
+              return (
+                <button
+                  onClick={() => navigate(`/applications/${bgId}/${envId}/${appId}`)}
+                  className="mt-1.5 flex items-center gap-1.5 text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors group/applink">
+                  <ExternalLink size={10} className="flex-shrink-0" />
+                  <span className="group-hover/applink:underline underline-offset-2 truncate">
+                    {appName ? `Open ${appName} in Application Details` : 'View Application Details'}
+                  </span>
+                </button>
+              );
+            })()}
           </div>
         </div>
 
