@@ -5,15 +5,39 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 router.use(authMiddleware);
 
+// ── Simple in-memory graph cache ──────────────────────────────────────────────
+// Avoids re-running 100+ Anypoint HTTP calls on every "Build Graph" click.
+// TTL: 2 minutes. Pass ?noCache=true to bypass.
+const CACHE_TTL_MS = 2 * 60 * 1000;
+const graphCache = new Map();
+
+function getCached(orgId, envId) {
+  const key = `${orgId}:${envId}`;
+  const entry = graphCache.get(key);
+  if (entry && Date.now() < entry.expiresAt) return entry.data;
+  graphCache.delete(key);
+  return null;
+}
+
+function setCache(orgId, envId, data) {
+  graphCache.set(`${orgId}:${envId}`, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
 // ── Normalise an app name for fuzzy matching ──────────────────────────────────
-// Strips common suffixes (-v1, -v2, -dev, etc.) and lowercases so that
-// "orders-sapi-v1" matches "orders-sapi".
+// Strips common version AND environment suffixes so that:
+//   "orders-sapi-v1"   matches "orders-sapi"
+//   "orders-sapi-dev"  matches "orders-sapi-prod"
+//   "orders-sapi-uat"  matches "orders-sapi"
 function normaliseName(name) {
   return (name || '')
     .toLowerCase()
     .trim()
-    .replace(/-v\d+(\.\d+)*$/, '')   // strip trailing version (-v1, -v2.1)
-    .replace(/[-_\s]+$/, '');         // strip trailing separators
+    // Strip environment suffixes: -dev, -sit, -uat, -prod, -sandbox, -staging, -qa, -test, -local
+    .replace(/[-_](dev|sit|uat|prod|sandbox|staging|qa|test|local|hotfix|release)$/i, '')
+    // Strip version tags: -v1, -v2, -v2.1, -1.0.0
+    .replace(/-v?\d+(\.\d+)*$/, '')
+    // Strip trailing separators
+    .replace(/[-_\s]+$/, '');
 }
 
 // ── GET /api/graph/dependencies ───────────────────────────────────────────────
@@ -22,35 +46,98 @@ function normaliseName(name) {
 //
 // Matching strategy (contract application → deployed app):
 //   1. Exact name match  (case-insensitive)
-//   2. Normalised name match  (strips -v1/-v2 suffixes)
-//   3. Substring match  (one name contains the other)
-//   If none match, the contract app is still included as a 'client' node so the
-//   graph is never empty when contracts exist.
+//   2. Normalised name match  (strips version/env suffixes)
+//   3. Substring match  (only when normalised name is ≥ 5 chars to prevent
+//      false positives from short tokens like "api", "app", "service")
+//   If none match, the contract app is included as a 'client' node.
 //
 // Query params:
-//   orgId  (required)
-//   envId  (required)
+//   orgId    (required)
+//   envId    (required)
+//   noCache  (optional) — pass 'true' to force a fresh fetch
 router.get('/dependencies', async (req, res) => {
-  const { orgId, envId } = req.query;
+  const { orgId, envId, noCache } = req.query;
   const client = createClient(req.session.token);
 
   if (!orgId || !envId) {
     return res.status(400).json({ error: 'orgId and envId are required query parameters' });
   }
 
-  const debug = { apis: 0, ch2Apps: 0, ch1Apps: 0, contractsChecked: 0, contractsFetched: 0, contractErrors: [], edges: 0 };
+  // ── Serve from cache if available ─────────────────────────────────────────
+  if (noCache !== 'true') {
+    const cached = getCached(orgId, envId);
+    if (cached) {
+      return res.json({ ...cached, cached: true });
+    }
+  }
+
+  const debug = {
+    apis: 0,
+    ch2Apps: 0,          // FIX: now properly updated below
+    ch1Apps: 0,          // FIX: now properly updated below
+    contractsChecked: 0, // FIX: now properly updated below
+    contractsFetched: 0, // FIX: now properly updated below
+    contractErrors: [],  // FIX: now populated on contract fetch failure
+    edges: 0,
+  };
 
   try {
-    // ── 1. API instances ──────────────────────────────────────────────────────
-    const apiRes = await client.get(
-      `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis`,
-      { params: { limit: 100, offset: 0 } }
-    );
-    const apis = apiRes.data?.assets || [];
-    debug.apis = apis.length;
-    console.log(`[Graph] orgId=${orgId} envId=${envId} → ${apis.length} API instances`);
+    // ── 1. API instances (paginated) ──────────────────────────────────────────
+    // FIX: replaced single-page fetch (limit=100) with a pagination loop so
+    // orgs with >100 API instances are fully captured.
+    //
+    // IMPORTANT — response structure:
+    //   { assets: [ { id: <assetGroupId>, assetId: "...", apis: [ { id: <instanceId>, ... } ] } ] }
+    //
+    // The contracts endpoint uses the INSTANCE id (nested inside asset.apis[]),
+    // NOT the asset-group id at the top level. We flatten all nested instances
+    // and carry the parent assetId/assetVersion down so the rest of the code
+    // can use apiInst.id as the correct API Manager instance ID.
+    const apis = [];
+    const PAGE_SIZE = 100;
+    let offset = 0;
+    let totalApis = Infinity;
 
-    // ── 2. Deployed applications (CH2 + CH1) ──────────────────────────────────
+    while (apis.length < totalApis) {
+      const apiRes = await client.get(
+        `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis`,
+        { params: { limit: PAGE_SIZE, offset } }
+      );
+      const assets = apiRes.data?.assets || [];
+      totalApis = typeof apiRes.data?.total === 'number' ? apiRes.data.total : assets.length;
+      if (assets.length === 0) break;
+
+      // Flatten nested api instances. Each asset may have asset.apis[] containing
+      // the actual API Manager instances with their own numeric ids. Fall back to
+      // treating the asset itself as the instance if no nested apis[] found.
+      for (const asset of assets) {
+        if (Array.isArray(asset.apis) && asset.apis.length > 0) {
+          for (const inst of asset.apis) {
+            apis.push({
+              ...inst,
+              // Ensure assetId and version are available even if omitted on child
+              assetId: inst.assetId || asset.assetId,
+              assetVersion: inst.assetVersion || asset.assetVersion,
+              productVersion: inst.productVersion || asset.productVersion,
+            });
+          }
+        } else {
+          // Older API / single-instance format — asset IS the instance
+          apis.push(asset);
+        }
+      }
+
+      offset += assets.length;
+      if (assets.length < PAGE_SIZE) break; // last page
+    }
+
+    debug.apis = apis.length;
+    console.log(`[Graph] orgId=${orgId} envId=${envId} → ${apis.length} API instances (after flattening nested apis[])`);
+
+    // ── 2. Deployed applications (CH2 + CH1) ─────────────────────────────────
+    // FIX: CH1 API requires org/env as request HEADERS (X-ANYPNT-ORG-ID /
+    // X-ANYPNT-ENV-ID), not as query parameters. Using query params caused the
+    // filter to be silently ignored, returning all orgs or nothing.
     const [ch2Res, ch1Res] = await Promise.allSettled([
       client.get(
         `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments`,
@@ -58,7 +145,12 @@ router.get('/dependencies', async (req, res) => {
       ),
       client.get(
         `/cloudhub/api/v2/applications`,
-        { params: { orgId, environmentId: envId } }
+        {
+          headers: {
+            'X-ANYPNT-ORG-ID': orgId,
+            'X-ANYPNT-ENV-ID': envId,
+          },
+        }
       ),
     ]);
 
@@ -67,45 +159,54 @@ router.get('/dependencies', async (req, res) => {
     const ch1Apps = (ch1Res.status === 'fulfilled'
       ? Array.isArray(ch1Res.value.data) ? ch1Res.value.data : (ch1Res.value.data?.data || [])
       : []).map(a => ({ ...a, _type: 'CH1' }));
+
+    // FIX: debug counters for CH2/CH1 are now properly set
+    debug.ch2Apps = ch2Apps.length;
+    debug.ch1Apps = ch1Apps.length;
+
     const deployedApps = [...ch2Apps, ...ch1Apps];
 
     // ── 3. Build name → deployed app lookup (for fuzzy matching) ─────────────
-    // Key: exact lowercase name
     const nameToApp = {};
     deployedApps.forEach(app => {
       const name = (app.name || app.domain || '').toLowerCase().trim();
       if (name) nameToApp[name] = app;
     });
 
-    // Lookup helper: tries exact → normalised → substring match
+    // Lookup helper: exact → normalised → careful substring
     function findDeployedApp(contractAppName) {
       if (!contractAppName) return null;
       const raw = contractAppName.toLowerCase().trim();
 
-      // 1. Exact match
+      // 1. Exact match (case-insensitive)
       if (nameToApp[raw]) return nameToApp[raw];
 
-      // 2. Normalised match (strips -v1, -v2)
+      // 2. Normalised match (strips version/env suffixes)
       const norm = normaliseName(raw);
       for (const [key, app] of Object.entries(nameToApp)) {
         if (normaliseName(key) === norm) return app;
       }
 
-      // 3. Substring match
-      for (const [key, app] of Object.entries(nameToApp)) {
-        const keyNorm = normaliseName(key);
-        if (keyNorm.includes(norm) || norm.includes(keyNorm)) return app;
+      // 3. Substring match — FIX: guard with minimum length (≥5 chars) to
+      //    prevent short tokens like "api", "app", "svc" from matching
+      //    any app that happens to contain those characters.
+      if (norm.length >= 5) {
+        for (const [key, app] of Object.entries(nameToApp)) {
+          const keyNorm = normaliseName(key);
+          if (keyNorm.includes(norm) || norm.includes(keyNorm)) return app;
+        }
       }
 
       return null;
     }
 
     // ── 4. Fetch contracts per API (batches of 10) ────────────────────────────
-    // For every contract we emit an edge using the contract application name as
-    // the source node, whether or not it matched a deployed app.
     const edges = [];
-    const clientNodeMap = {};   // contractAppName → client node (unmatched apps)
+    const clientNodeMap = {}; // contractAppName → synthetic 'client' node
     const BATCH = 10;
+
+    // FIX: contractsChecked is now set to the actual count before fetching
+    debug.contractsChecked = apis.length;
 
     for (let i = 0; i < apis.length; i += BATCH) {
       await Promise.allSettled(
@@ -115,26 +216,25 @@ router.get('/dependencies', async (req, res) => {
               `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiInst.id}/contracts`
             );
             const contracts = cRes.data?.contracts || [];
+
+            // FIX: contractsFetched is now incremented for each contract found
+            debug.contractsFetched += contracts.length;
+
             contracts.forEach(contract => {
               const contractAppName = contract.application?.name || '';
               if (!contractAppName) return;
 
-              // Try to find a matching deployed app
               const deployedApp = findDeployedApp(contractAppName);
 
-              let sourceId, sourceLabel, sourceStatus, sourceType;
+              let sourceId, sourceLabel;
               if (deployedApp) {
                 sourceId    = `app-${deployedApp.id || deployedApp.domain || deployedApp.name}`;
                 sourceLabel = deployedApp.name || deployedApp.domain || contractAppName;
-                sourceStatus= deployedApp.status || deployedApp.desiredStatus || 'UNKNOWN';
-                sourceType  = deployedApp._type;
               } else {
                 // Unknown client — create a synthetic node keyed by app name
                 const key = contractAppName.toLowerCase().trim();
                 sourceId    = `client-${key}`;
                 sourceLabel = contractAppName;
-                sourceStatus= null;
-                sourceType  = null;
                 if (!clientNodeMap[sourceId]) {
                   clientNodeMap[sourceId] = {
                     id: sourceId,
@@ -160,14 +260,18 @@ router.get('/dependencies', async (req, res) => {
                 slaTier: contract.tier?.name || '',
               });
             });
-          } catch (_) {
-            // Contract fetch failure for one API is non-fatal
+          } catch (err) {
+            // FIX: contract fetch failures are now recorded in debug.contractErrors
+            // instead of being silently swallowed.
+            const msg = `API ${apiInst.id} (${apiInst.assetId || 'unknown'}): ${err.message}`;
+            debug.contractErrors.push(msg);
+            console.warn(`[Graph] contract fetch failed — ${msg}`);
           }
         })
       );
     }
 
-    // Deduplicate edges
+    // Deduplicate edges (same app → same API)
     const seenEdges = new Set();
     const uniqueEdges = edges.filter(e => {
       if (seenEdges.has(e.id)) return false;
@@ -179,7 +283,7 @@ router.get('/dependencies', async (req, res) => {
     const apiNodeIds = new Set(uniqueEdges.map(e => e.target));
     const appNodeIds = new Set(uniqueEdges.map(e => e.source));
 
-    // API nodes (only those referenced by at least one edge)
+    // API nodes (only those with at least one contract edge)
     const apiNodes = apis
       .filter(apiInst => apiNodeIds.has(`api-${apiInst.id}`))
       .map(apiInst => ({
@@ -196,7 +300,7 @@ router.get('/dependencies', async (req, res) => {
         },
       }));
 
-    // Deployed app nodes (matched)
+    // Matched deployed app nodes
     const deployedAppNodes = deployedApps
       .filter(app => appNodeIds.has(`app-${app.id || app.domain || app.name}`))
       .map(app => ({
@@ -221,9 +325,9 @@ router.get('/dependencies', async (req, res) => {
     const allAppNodes = [...deployedAppNodes, ...clientNodes];
 
     debug.edges = uniqueEdges.length;
-    console.log(`[Graph] result: ${apiNodes.length} apis, ${allAppNodes.length} apps, ${uniqueEdges.length} edges`);
+    console.log(`[Graph] result: ${apiNodes.length} apis, ${allAppNodes.length} apps (${deployedAppNodes.length} matched, ${clientNodes.length} unmatched), ${uniqueEdges.length} edges`);
 
-    res.json({
+    const result = {
       nodes: [...allAppNodes, ...apiNodes],
       edges: uniqueEdges,
       summary: {
@@ -234,7 +338,12 @@ router.get('/dependencies', async (req, res) => {
         unmatched: clientNodes.length,
       },
       debug,
-    });
+    };
+
+    // Store in cache for subsequent requests
+    setCache(orgId, envId, result);
+
+    res.json(result);
   } catch (err) {
     console.error('[Graph] dependencies error:', err.message);
     res.status(500).json({ error: err.message });

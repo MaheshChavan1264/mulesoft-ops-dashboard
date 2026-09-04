@@ -13,7 +13,8 @@ import CpsExportModal from '../components/CpsExportModal';
 import PingResultCard from '../components/PingResultCard';
 import CopyBtn from '../components/CopyBtn';
 import api from '../services/api';
-import { getCached, setCached, bustCache } from '../services/apiCache';
+import { getCachedSWR, setCached, bustCache } from '../services/apiCache';
+import { CK } from '../services/cacheKeys';
 import { availableActions, ACTION_CONFIG, ENV_BADGE, generateTxId } from '../utils/appUtils';
 import { findOAuth2Url, flattenCpsResponse } from '../utils/cpsHelpers';
 
@@ -712,6 +713,44 @@ function BulkPingModal({ apps, onClose }) {
   );
 }
 
+/**
+ * Standalone fetch helper used by the SWR background-refresh path in loadApps.
+ * Fetches apps + envs for the given BG IDs, merges them, stores in cache,
+ * and returns { mergedApps, mergedEnvs }.
+ * Does NOT touch any React state — callers apply the result themselves.
+ */
+async function _fetchAndCacheApps(bgId, bgIds, cacheKey) {
+  const [appsResults, envsResults] = await Promise.all([
+    Promise.allSettled(bgIds.map((id) => api.get(`/applications/summary/${id}`))),
+    Promise.allSettled(bgIds.map((id) => api.get(`/environments/${id}`))),
+  ]);
+
+  const mergedApps = [];
+  const mergedEnvs = [];
+  const seenApps = new Set();
+  const seenEnvs = new Set();
+
+  appsResults.forEach((r, i) => {
+    if (r.status === 'fulfilled') {
+      (r.value.data.data || []).forEach((a) => {
+        const key = `${a.id}|${a.environment?.id || ''}`;
+        if (!seenApps.has(key)) { seenApps.add(key); mergedApps.push({ ...a, _bgId: bgIds[i] }); }
+      });
+    }
+  });
+  envsResults.forEach((r) => {
+    if (r.status === 'fulfilled') {
+      (r.value.data.data || []).forEach((e) => {
+        if (!seenEnvs.has(e.id)) { seenEnvs.add(e.id); mergedEnvs.push(e); }
+      });
+    }
+  });
+
+  // Refresh the cache entry with a 3-min freshness window
+  setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs }, 3 * 60 * 1000);
+  return { mergedApps, mergedEnvs };
+}
+
 export default function ApplicationsPage() {
   const { orgId } = useAuth();
   const navigate = useNavigate();
@@ -851,24 +890,33 @@ export default function ApplicationsPage() {
   const loadBusinessGroups = async () => {
     setBgLoading(true);
     try {
-      // BG list rarely changes — cache for 5 minutes
-      const cacheKey = `bgs:${orgId}`;
-      const cached = getCached(cacheKey);
-      if (cached) {
-        setAllBusinessGroups(cached);
-        // Restore saved BG (validate it's in the cached group list)
+      const cacheKey = CK.bgs(orgId);
+      const swr = getCachedSWR(cacheKey);
+      if (swr) {
+        // Render instantly from cache (stale or fresh) — no spinner shown
+        setAllBusinessGroups(swr.data);
         const savedBg = localStorage.getItem('mule_dashboard_selected_bg');
-        const isValidSaved = savedBg && (savedBg === '__all__' || cached.some(g => g.id === savedBg));
+        const isValidSaved = savedBg && (savedBg === '__all__' || swr.data.some(g => g.id === savedBg));
         const newBg = isValidSaved ? savedBg : '__all__';
         setSelectedBg(newBg);
         setBgLoading(false);
-        // Call loadApps with fresh BGs directly — avoids stale allBusinessGroups closure
-        await loadApps(newBg, false, cached);
+        await loadApps(newBg, false, swr.data);
+        // If stale, silently refresh in background without blocking the UI
+        if (swr.stale) {
+          api.get('/organizations/business-groups')
+            .then(r => {
+              const fresh = r.data.data || [];
+              setCached(cacheKey, fresh, 30 * 60 * 1000);
+              setAllBusinessGroups(fresh);
+            })
+            .catch(() => {});
+        }
         return;
       }
       const res = await api.get('/organizations/business-groups');
       const groups = res.data.data || [];
-      setCached(cacheKey, groups);
+      // BGs rarely change — store with a 30-min eviction window
+      setCached(cacheKey, groups, 30 * 60 * 1000);
       setAllBusinessGroups(groups);
       const savedBg = localStorage.getItem('mule_dashboard_selected_bg');
       const isValidSaved = savedBg && (savedBg === '__all__' || groups.some(g => g.id === savedBg));
@@ -888,16 +936,26 @@ export default function ApplicationsPage() {
       ? (visible.length > 0 ? visible.map(g => g.id) : [orgId])
       : [bgId];
 
-    // ── Frontend cache (module-level, survives route changes) ─────────────────
+    // ── Frontend cache — SWR (stale-while-revalidate) ────────────────────────
+    // Render instantly from any usable cached value, then silently re-fetch
+    // in the background when the entry is older than FRESH_MS (3 min).
     if (!forceRefresh) {
-      const cacheKey = `apps:${bgId}:${bgIds.join(',')}`;
-      const cached = getCached(cacheKey);
-      if (cached) {
-        setApps(cached.apps);
-        setEnvironments(cached.envs);
-        setError(cached.apps.length === 0 ? 'No applications found.' : '');
+      const cacheKey = CK.apps(bgId, bgIds);
+      const swr = getCachedSWR(cacheKey);
+      if (swr) {
+        setApps(swr.data.apps);
+        setEnvironments(swr.data.envs);
+        setError(swr.data.apps.length === 0 ? 'No applications found.' : '');
         setSelectedIds(new Set());
-        return; // instant — no network call
+        if (swr.stale) {
+          // Background refresh — no loading spinner, UI stays responsive
+          _fetchAndCacheApps(bgId, bgIds, cacheKey).then(({ mergedApps, mergedEnvs }) => {
+            setApps(mergedApps);
+            setEnvironments(mergedEnvs);
+            if (mergedApps.length === 0) setError('No applications found.');
+          }).catch(() => {});
+        }
+        return; // instant — no network call blocks the UI
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -937,9 +995,9 @@ export default function ApplicationsPage() {
       setEnvironments(mergedEnvs);
       if (mergedApps.length === 0) setError('No applications found.');
 
-      // Store in frontend cache
-      const cacheKey = `apps:${bgId}:${bgIds.join(',')}`;
-      setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs });
+      // Store in frontend cache — 3-min freshness window (app status changes often)
+      const cacheKey = CK.apps(bgId, bgIds);
+      setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs }, 3 * 60 * 1000);
     } catch (e) {
       setError(e.response?.data?.error || 'Failed to load applications.');
       setApps([]);
@@ -969,6 +1027,7 @@ export default function ApplicationsPage() {
       }
       const nextStatus = action === 'start' ? 'RUNNING' : action === 'stop' ? 'STOPPED' : 'DEPLOYING';
       setApps((prev) => prev.map((a) => a.id === app.id ? { ...a, status: nextStatus } : a));
+      bustCache(CK.PREFIX.apps); // invalidate cached lists so Refresh picks up real status
       setActionResult({ success: true, message: `✓ ${app.name}: ${action} initiated` });
     } catch (e) {
       setActionResult({ success: false, message: `✗ Failed to ${action} ${app.name}: ${e.response?.data?.error || e.message}` });
@@ -1103,6 +1162,7 @@ export default function ApplicationsPage() {
 
     // Optimistic update for successful ones
     setApps((prev) => prev.map((a) => resultMap[a.id]?.success ? { ...a, status: nextStatus } : a));
+    bustCache(CK.PREFIX.apps); // invalidate cached lists after bulk status change
     setBulkResults(resultMap);
     setBulkLoading(false);
     // Keep only failed ones selected
