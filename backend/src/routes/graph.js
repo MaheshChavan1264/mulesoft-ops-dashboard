@@ -38,6 +38,8 @@ router.get('/dependencies', async (req, res) => {
     return res.status(400).json({ error: 'orgId and envId are required query parameters' });
   }
 
+  const debug = { apis: 0, ch2Apps: 0, ch1Apps: 0, contractsChecked: 0, contractsFetched: 0, contractErrors: [], edges: 0 };
+
   try {
     // ── 1. API instances ──────────────────────────────────────────────────────
     const apiRes = await client.get(
@@ -45,6 +47,8 @@ router.get('/dependencies', async (req, res) => {
       { params: { limit: 100, offset: 0 } }
     );
     const apis = apiRes.data?.assets || [];
+    debug.apis = apis.length;
+    console.log(`[Graph] orgId=${orgId} envId=${envId} → ${apis.length} API instances`);
 
     // ── 2. Deployed applications (CH2 + CH1) ──────────────────────────────────
     const [ch2Res, ch1Res] = await Promise.allSettled([
@@ -216,6 +220,9 @@ router.get('/dependencies', async (req, res) => {
 
     const allAppNodes = [...deployedAppNodes, ...clientNodes];
 
+    debug.edges = uniqueEdges.length;
+    console.log(`[Graph] result: ${apiNodes.length} apis, ${allAppNodes.length} apps, ${uniqueEdges.length} edges`);
+
     res.json({
       nodes: [...allAppNodes, ...apiNodes],
       edges: uniqueEdges,
@@ -226,6 +233,7 @@ router.get('/dependencies', async (req, res) => {
         matched: deployedAppNodes.length,
         unmatched: clientNodes.length,
       },
+      debug,
     });
   } catch (err) {
     console.error('[Graph] dependencies error:', err.message);
