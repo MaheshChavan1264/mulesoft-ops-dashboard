@@ -13,7 +13,7 @@ import CpsExportModal from '../components/CpsExportModal';
 import PingResultCard from '../components/PingResultCard';
 import CopyBtn from '../components/CopyBtn';
 import api from '../services/api';
-import { getCachedSWR, setCached, bustCache } from '../services/apiCache';
+import { getCachedSWR, setCached, bustCache, keepFresh, stopKeepingFresh } from '../services/apiCache';
 import { CK } from '../services/cacheKeys';
 import { availableActions, ACTION_CONFIG, ENV_BADGE, generateTxId } from '../utils/appUtils';
 import { findOAuth2Url, flattenCpsResponse } from '../utils/cpsHelpers';
@@ -831,6 +831,9 @@ export default function ApplicationsPage() {
   const [csvMatchedNames, setCsvMatchedNames] = useState(null); // null = not uploaded
   const [csvFileName, setCsvFileName] = useState('');
   const csvInputRef = useRef(null);
+  // Tracks the cache key currently registered for proactive background refresh
+  // so we can unregister it when the BG selection changes or the page unmounts.
+  const keepFreshKeyRef = useRef(null);
   // Feature 1: column sort state
   const [sortColumn, setSortColumn] = useState('');
   const [sortDir, setSortDir]       = useState('asc');
@@ -885,6 +888,12 @@ export default function ApplicationsPage() {
   useEffect(() => {
     if (selectedBg && allBusinessGroups.length > 0) loadApps(selectedBg);
   }, [selectedBg]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Cleanup keep-fresh registration on unmount — prevents orphaned refreshes
+  // after the user navigates away from this page.
+  useEffect(() => {
+    return () => { if (keepFreshKeyRef.current) stopKeepingFresh(keepFreshKeyRef.current); };
+  }, []);
+
   useEffect(() => { setSelectedIds(new Set()); }, [selectedBg]);
 
   const loadBusinessGroups = async () => {
@@ -998,6 +1007,21 @@ export default function ApplicationsPage() {
       // Store in frontend cache — 3-min freshness window (app status changes often)
       const cacheKey = CK.apps(bgId, bgIds);
       setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs }, 3 * 60 * 1000);
+
+      // Proactive background refresh — the idle sweep will re-fetch this entry
+      // when it goes stale (after 3 min), so the cache is NEVER cold while the
+      // page is open. Navigation to this page will always be instant.
+      if (keepFreshKeyRef.current && keepFreshKeyRef.current !== cacheKey) {
+        stopKeepingFresh(keepFreshKeyRef.current); // unregister previous BG key
+      }
+      keepFreshKeyRef.current = cacheKey;
+      keepFresh(cacheKey, () =>
+        _fetchAndCacheApps(bgId, bgIds, cacheKey).then(({ mergedApps: ma, mergedEnvs: me }) => {
+          setApps(ma);
+          setEnvironments(me);
+          return { apps: ma, envs: me }; // returned value is stored by the sweep
+        })
+      );
     } catch (e) {
       setError(e.response?.data?.error || 'Failed to load applications.');
       setApps([]);
