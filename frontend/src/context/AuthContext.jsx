@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api, { isDemoMode, enableDemoMode, disableDemoMode } from '../services/api';
 import { MOCK_USER } from '../services/mockData.js';
+import { clearCache } from '../services/apiCache';
+import { warmCache } from '../services/prefetch';
 
 const AuthContext = createContext(null);
 
@@ -45,18 +47,21 @@ export const AuthProvider = ({ children }) => {
   const login = async (username, password) => {
     const res = await api.post('/auth/login', { username, password });
     applyResult(res.data);
+    warmCache(res.data.orgId); // fire-and-forget background prefetch
     return res.data;
   };
 
   const tokenLogin = async (token) => {
     const res = await api.post('/auth/token-login', { token });
     applyResult(res.data);
+    warmCache(res.data.orgId); // fire-and-forget background prefetch
     return res.data;
   };
 
   const connectedAppLogin = async (clientId, clientSecret) => {
     const res = await api.post('/auth/connected-app-login', { clientId, clientSecret });
     applyResult(res.data);
+    warmCache(res.data.orgId); // fire-and-forget background prefetch
     return res.data;
   };
 
@@ -70,6 +75,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     disableDemoMode();
     await api.post('/auth/logout');
+    clearCache(); // flush stale data so next user never sees previous session
     setUser(null);
     setOrgId(null);
     setOrgName(null);

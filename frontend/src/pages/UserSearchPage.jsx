@@ -6,7 +6,8 @@ import { applyBgFilter } from '../components/BgFilterModal';
 import { applyEnvFilter } from '../components/EnvFilterModal';
 import { Search, Users, RefreshCw, AlertTriangle, Copy, Check, Key, Lock, ChevronRight, ChevronDown, Building2, Download, X, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
 import api from '../services/api';
-import { getCached, setCached } from '../services/apiCache';
+import { getCached, getCachedSWR, setCached } from '../services/apiCache';
+import { CK } from '../services/cacheKeys';
 
 const CopyBtn = ({ text }) => {
   const [done, setDone] = useState(false);
@@ -502,13 +503,23 @@ export default function UserSearchPage() {
     // ── CH1: always fetch fresh list (1 call returns ALL apps with properties)
     // CH1 list API returns the full properties map directly — no per-app detail needed.
     // Cache the list per env (5-min TTL) to speed up repeat searches.
+    // SWR: serve stale data immediately and re-fetch silently in background.
     try {
-      const ch1Key = `ch1list:${bgId}:${envId}`;
-      let ch1Data = getCached(ch1Key);
+      const ch1Key = CK.ch1list(bgId, envId);
+      const ch1Swr = getCachedSWR(ch1Key);
+      let ch1Data = ch1Swr?.data || null;
       if (!ch1Data) {
         const r = await api.get(`/applications/cloudhub1/${envId}`, { params: { orgId: bgId } });
         ch1Data = Array.isArray(r.data) ? r.data : (r.data?.applications || r.data?.data || []);
-        setCached(ch1Key, ch1Data);
+        setCached(ch1Key, ch1Data, 5 * 60 * 1000);
+      } else if (ch1Swr?.stale) {
+        // Serve stale data now; refresh cache in background for the next search
+        api.get(`/applications/cloudhub1/${envId}`, { params: { orgId: bgId } })
+          .then(r => {
+            const fresh = Array.isArray(r.data) ? r.data : (r.data?.applications || r.data?.data || []);
+            setCached(ch1Key, fresh, 5 * 60 * 1000);
+          })
+          .catch(() => {});
       }
       apps.push(...ch1Data.map(c => ({
         _type: 'ch1', id: c.domain, name: c.domain,

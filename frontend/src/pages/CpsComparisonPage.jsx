@@ -6,7 +6,8 @@ import { applyEnvFilter } from '../components/EnvFilterModal';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import CpsCredentialImportButton from '../components/CpsCredentialImportButton';
 import api from '../services/api';
-import { getCached, setCached } from '../services/apiCache';
+import { getCachedSWR, setCached } from '../services/apiCache';
+import { CK } from '../services/cacheKeys';
 import { flattenCpsResponse } from '../utils/cpsHelpers';
 import { ENV_BADGE } from '../utils/appUtils';
 
@@ -536,14 +537,36 @@ export default function CpsComparisonPage() {
 
       if (bgIds.length === 0) { updateSide(side, { loadingApps: false }); return; }
 
-      // ── Frontend cache (same strategy as ApplicationsPage) ─────────────────
-      const cacheKey = `apps:__all__:${bgIds.join(',')}`;
-      const cached = getCached(cacheKey);
-      if (cached) {
+      // ── Frontend cache — SWR (reuse warm data, bg refresh when stale) ────────
+      const cacheKey = CK.appsAll(bgIds);
+      const swr = getCachedSWR(cacheKey);
+      if (swr) {
         const envFiltered = (envId && envId !== '__all__')
-          ? (cached.apps || []).filter(a => a.environment?.id === envId)
-          : (cached.apps || []);
+          ? (swr.data.apps || []).filter(a => a.environment?.id === envId)
+          : (swr.data.apps || []);
         updateSide(side, { apps: envFiltered, loadingApps: false });
+        // If stale, silently re-fetch in background and update the side
+        if (swr.stale) {
+          Promise.allSettled(bgIds.map(id => api.get(`/applications/summary/${id}`)))
+            .then(results => {
+              const fresh = [];
+              const seen = new Set();
+              results.forEach((r, i) => {
+                if (r.status === 'fulfilled') {
+                  (r.value.data.data || []).forEach(a => {
+                    const k = `${a.id}|${a.environment?.id || ''}`;
+                    if (!seen.has(k)) { seen.add(k); fresh.push({ ...a, _bgId: bgIds[i] }); }
+                  });
+                }
+              });
+              setCached(cacheKey, { apps: fresh, envs: [] }, 3 * 60 * 1000);
+              const freshFiltered = (envId && envId !== '__all__')
+                ? fresh.filter(a => a.environment?.id === envId)
+                : fresh;
+              updateSide(side, { apps: freshFiltered });
+            })
+            .catch(() => {});
+        }
         return;
       }
       // ─────────────────────────────────────────────────────────────────────────
@@ -559,8 +582,8 @@ export default function CpsComparisonPage() {
           });
         }
       });
-      // Store all (unfiltered) in cache; serve filtered subset to the side
-      setCached(cacheKey, { apps: mergedAll, envs: [] });
+      // Store all (unfiltered) in cache with 3-min freshness window
+      setCached(cacheKey, { apps: mergedAll, envs: [] }, 3 * 60 * 1000);
       const merged = (envId && envId !== '__all__')
         ? mergedAll.filter(a => a.environment?.id === envId)
         : mergedAll;
