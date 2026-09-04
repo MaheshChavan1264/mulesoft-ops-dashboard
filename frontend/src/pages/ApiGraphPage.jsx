@@ -191,6 +191,7 @@ export default function ApiGraphPage() {
     setSelectedNode(null);
     try {
       const res = await api.get('/graph/dependencies', { params: { orgId: selectedOrg, envId: selectedEnv } });
+      console.log('[ApiGraph] debug:', res.data?.debug);
       setGraph(res.data);
     } catch (err) {
       setError(err);
@@ -309,8 +310,29 @@ export default function ApiGraphPage() {
           )}
 
           {!loading && graph && visibleNodes.length === 0 && (
-            <EmptyState icon="🔍" title="No dependency data found"
-              description="No API consumer contracts were found, or no client IDs matched deployed applications." />
+            <div>
+              <EmptyState icon="🔍" title="No dependency data found"
+                description="No API consumer contracts were found, or no contract application names matched deployed applications." />
+              {graph.debug && (
+                <div className="mt-4 mx-auto max-w-lg bg-gray-900 border border-gray-700 rounded-lg p-4 text-xs font-mono text-gray-400 space-y-1">
+                  <p className="text-gray-300 font-semibold mb-2">Debug info (open browser console for full logs)</p>
+                  <p>API instances found: <span className="text-blue-400">{graph.debug.apis}</span></p>
+                  <p>Deployed CH2 apps: <span className="text-blue-400">{graph.debug.ch2Apps}</span></p>
+                  <p>Deployed CH1 apps: <span className="text-blue-400">{graph.debug.ch1Apps}</span></p>
+                  <p>APIs checked for contracts: <span className="text-blue-400">{graph.debug.contractsChecked}</span></p>
+                  <p>Total contracts found: <span className="text-blue-400">{graph.debug.contractsFetched}</span></p>
+                  <p>Edges built: <span className="text-blue-400">{graph.debug.edges}</span></p>
+                  {graph.debug.contractErrors?.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-yellow-400">Errors ({graph.debug.contractErrors.length}):</p>
+                      {graph.debug.contractErrors.slice(0, 5).map((e, i) => (
+                        <p key={i} className="text-red-400 pl-2">{e}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {!loading && graph && visibleNodes.length > 0 && (
