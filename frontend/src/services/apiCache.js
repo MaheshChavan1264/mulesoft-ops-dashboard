@@ -127,29 +127,86 @@ export function bustCache(keyPrefix) {
   }
 }
 
-/** Clear the entire cache and any in-flight requests (e.g., on logout). */
+/** Clear the entire cache, in-flight requests, and keep-fresh registry (e.g., on logout). */
 export function clearCache() {
   cache.clear();
   inflight.clear();
+  keepFreshRegistry.clear();
 }
 
-// ── Background TTL sweep (requestIdleCallback) ───────────────────────────────
-// Proactively evicts expired entries during browser idle time so they never
-// accumulate in long-running sessions. Never competes with rendering or input.
+// ── Proactive keep-fresh registry ────────────────────────────────────────────
+// Pages can register a fetchFn for a cache key so the background sweep
+// automatically re-fetches stale entries — even when nobody navigates to the
+// page. This ensures cache is NEVER cold for actively-monitored data.
+//
+// Usage:
+//   keepFresh(key, async () => { const d = await fetchData(); setApps(d); return d; });
+//   stopKeepingFresh(key);  // call in useEffect cleanup
+
+const keepFreshRegistry = new Map(); // key → fetchFn
+
+/**
+ * Register a function that keeps a cache entry fresh in the background.
+ * The fetchFn is called whenever the sweep finds the entry is stale.
+ * If the entry no longer exists (expired), keepFresh is a no-op until the
+ * entry is re-populated (e.g., on next navigation).
+ *
+ * @param {string}   key      Cache key to watch
+ * @param {Function} fetchFn  async () => data  (called when entry goes stale)
+ */
+export function keepFresh(key, fetchFn) {
+  keepFreshRegistry.set(key, fetchFn);
+}
+
+/**
+ * Stop proactive background refresh for a key (call in useEffect cleanup).
+ * @param {string} key
+ */
+export function stopKeepingFresh(key) {
+  keepFreshRegistry.delete(key);
+}
+
+// ── Background TTL sweep + proactive refresh (requestIdleCallback) ────────────
+// Two jobs per tick:
+//   1. Evict expired entries so memory is bounded.
+//   2. Proactively refresh any registered stale entries before they expire —
+//      so the next navigation always gets an instant cache hit.
+// Uses requestIdleCallback so it never competes with rendering or input.
 
 function _scheduleSweep() {
   const sweep = () => {
     const now = Date.now();
+
+    // Job 1 — evict expired entries
     for (const [k, v] of cache.entries()) {
       if (now - v.ts > (v.staleMs ?? STALE_MS)) cache.delete(k);
     }
+
+    // Job 2 — proactively refresh stale registered entries
+    for (const [key, fetchFn] of keepFreshRegistry.entries()) {
+      const entry = cache.get(key);
+      // Only refresh if the entry exists and is stale but NOT yet expired,
+      // and there is no in-flight request for this key already running.
+      if (entry && _isStale(entry) && !_isExpired(entry) && !inflight.has(key)) {
+        const p = fetchFn()
+          .then(data => {
+            // fetchFn may return undefined if it only updates React state;
+            // only store in cache when a value is returned.
+            if (data !== undefined) setCached(key, data, entry.staleMs);
+            inflight.delete(key);
+          })
+          .catch(() => { inflight.delete(key); });
+        inflight.set(key, p);
+      }
+    }
+
     _scheduleSweep();
   };
 
   if (typeof requestIdleCallback !== 'undefined') {
-    requestIdleCallback(sweep, { timeout: 5 * 60 * 1000 });
+    requestIdleCallback(sweep, { timeout: 3 * 60 * 1000 }); // fire within 3 min
   } else {
-    setTimeout(sweep, 5 * 60 * 1000);   // fallback for Safari < 16
+    setTimeout(sweep, 3 * 60 * 1000);   // fallback for Safari < 16
   }
 }
 

@@ -302,7 +302,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     if (!req.session.summaryCache) req.session.summaryCache = {};
     const cached = req.session.summaryCache[targetOrgId];
     if (!forceRefresh && cached && (Date.now() - cached.ts) < SUMMARY_CACHE_TTL_MS) {
-      console.log(`[Summary] Cache HIT for org ${targetOrgId} (${Math.round((Date.now() - cached.ts) / 1000)}s old)`);
+      //console.log(`[Summary] Cache HIT for org ${targetOrgId} (${Math.round((Date.now() - cached.ts) / 1000)}s old)`);
       return res.json(cached.data);
     }
     // ─────────────────────────────────────────────────────────────────────────
