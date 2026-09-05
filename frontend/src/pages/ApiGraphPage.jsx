@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import api from '../services/api.js';
 import { applyBgFilter } from '../components/BgFilterModal.jsx';
 import { applyEnvFilter } from '../components/EnvFilterModal.jsx';
+import CpsCredentialImportButton from '../components/CpsCredentialImportButton.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
+import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext.jsx';
 
 const NODE_W = 170, NODE_H = 38, ROW_GAP = 54, COL_APP = 40, COL_API = 700, CANVAS_PADDING = 60;
 
@@ -184,6 +186,7 @@ function DetailPanel({ node, edges, nodes, onClose }) {
 }
 
 export default function ApiGraphPage() {
+  const { getAllCredentials, hasCredentials } = useCpsCredentialStore();
   const [orgs, setOrgs]               = useState([]);
   const [envs, setEnvs]               = useState([]);
   const [selectedOrg, setSelectedOrg] = useState('');
@@ -223,6 +226,20 @@ export default function ApiGraphPage() {
     if (!selectedOrg || !selectedEnv) return;
     setLoading(true); setError(null); setGraph(null); setSelectedNode(null); setXf({ scale: 1, x: 0, y: 0 });
     try {
+      // Post all loaded CSV credentials to the backend session before scanning.
+      // Stored as "graph-scan::{clientId}" so getSessionCpsCred can find them
+      // as a last-resort fallback — this covers the case where the user imported
+      // a CPS CSV but hasn't visited CPS Manager/Comparison yet (which normally
+      // triggers the credential-to-session posting).
+      const allCreds = getAllCredentials();
+      if (allCreds.length > 0) {
+        const credMap = {};
+        allCreds.forEach(({ clientId, clientSecret }) => {
+          credMap[`graph-scan::${clientId}`] = { clientId, clientSecret };
+        });
+        await api.post('/cps/credentials', { credentials: credMap }).catch(() => {});
+      }
+
       const params = { orgId: selectedOrg, envId: selectedEnv };
       if (forceRefresh) params.noCache = 'true';
       const res = await api.get('/graph/dependencies', { params });
@@ -230,7 +247,7 @@ export default function ApiGraphPage() {
       setGraph(res.data);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
-  }, [selectedOrg, selectedEnv]);
+  }, [selectedOrg, selectedEnv, getAllCredentials]);
 
   const onWheel = useCallback((e) => {
     e.preventDefault();
@@ -284,6 +301,9 @@ export default function ApiGraphPage() {
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-800 bg-gray-900 shrink-0 flex-wrap">
         <span className="text-sm font-semibold">🕸️ API Dependency Graph</span>
+        <CpsCredentialImportButton compact />
+        {hasCredentials && <span className="text-[10px] text-emerald-400 bg-emerald-900/30 border border-emerald-700/40 px-2 py-0.5 rounded-full">🔑 CPS creds loaded</span>}
+        {!hasCredentials && <span className="text-[10px] text-yellow-500/80">⚠ Import CPS CSV first</span>}
         <select value={selectedOrg} onChange={e => setSelectedOrg(e.target.value)} className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
           <option value="">Business Group…</option>
           {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
@@ -349,21 +369,6 @@ export default function ApiGraphPage() {
             </div>
           )}
 
-          {/* No CPS credentials configured */}
-          {!loading && graph?.noCpsCredentials && (
-            <div className="p-8 flex flex-col items-center gap-4">
-              <div className="text-5xl">🔑</div>
-              <div className="text-center">
-                <p className="text-white font-semibold text-sm mb-1">CPS Credentials Required</p>
-                <p className="text-gray-400 text-xs max-w-md">
-                  Import a CPS credentials CSV using the <strong className="text-white">CPS Credentials</strong> button in the CPS Manager or CPS Comparison page, then build the graph again.
-                </p>
-                <p className="text-gray-600 text-xs mt-2">
-                  The graph scans each app's CPS non-secure properties to discover which APIs and services it calls.
-                </p>
-              </div>
-            </div>
-          )}
 
           {!loading && !graph && !error && (
             <EmptyState icon="🕸️" title="No graph loaded"
@@ -405,10 +410,14 @@ export default function ApiGraphPage() {
                       {graph.debug.cpsConfigFound || 0}
                       {graph.debug.cpsConfigFound === 0 && ' ← no cps.configServerBaseUrl found'}
                     </span>
-                    <span className="text-gray-500">URL/host values scanned</span>
+                    <span className="text-gray-500">Secure groups scanned</span>
+                    <span className={graph.debug.secureGroupsScanned > 0 ? 'text-green-400' : 'text-yellow-400'}>
+                      {graph.debug.secureGroupsScanned || 0}
+                      {graph.debug.secureGroupsScanned === 0 && graph.debug.cpsConfigFound > 0 && ' ← no cps.secure.properties found'}
+                    </span>
+                    <span className="text-gray-500">URL/host values found</span>
                     <span className={graph.debug.cpsUrlsFound > 0 ? 'text-green-400' : 'text-yellow-400'}>
                       {graph.debug.cpsUrlsFound || 0}
-                      {graph.debug.cpsUrlsFound === 0 && graph.debug.cpsConfigFound > 0 && ' ← CPS props have no URL values'}
                     </span>
                     <span className="text-gray-500">Edges discovered</span>
                     <span className="text-gray-400">{graph.debug.edges || 0}</span>

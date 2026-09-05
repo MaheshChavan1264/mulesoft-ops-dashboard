@@ -42,6 +42,22 @@ axiosClient.interceptors.response.use(
         // page reload) and their session has expired again, the redirect fires.
         setTimeout(() => { _redirecting = false; }, 5000);
         window.location.href = '/login';
+      } else {
+        // For skip-redirect URLs the 401 might be a per-resource access issue
+        // OR a fully-expired session (e.g. server restarted while tab was open).
+        // Do a lightweight session check and redirect to login only if the session
+        // is truly gone, leaving per-resource 401s for the caller to handle.
+        if (!_redirecting) {
+          axios.get('/api/auth/session', { withCredentials: true })
+            .then(r => {
+              if (!r.data?.authenticated && !_redirecting) {
+                _redirecting = true;
+                setTimeout(() => { _redirecting = false; }, 5000);
+                window.location.href = '/login';
+              }
+            })
+            .catch(() => { /* server unreachable — don't redirect */ });
+        }
       }
     }
     return Promise.reject(error);
