@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const { createClient } = require('../utils/anypointClient');
 const authMiddleware = require('../middleware/authMiddleware');
 
 router.use(authMiddleware);
 
-// ── Simple in-memory graph cache ──────────────────────────────────────────────
-// Avoids re-running 100+ Anypoint HTTP calls on every "Build Graph" click.
-// TTL: 2 minutes. Pass ?noCache=true to bypass.
+// ── In-memory graph cache (TTL: 2 minutes) ────────────────────────────────────
 const CACHE_TTL_MS = 2 * 60 * 1000;
 const graphCache = new Map();
 
@@ -23,135 +22,153 @@ function setCache(orgId, envId, data) {
   graphCache.set(`${orgId}:${envId}`, { data, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-// ── Normalise an app name for fuzzy matching ──────────────────────────────────
-// Strips common version AND environment suffixes so that:
-//   "orders-sapi-v1"   matches "orders-sapi"
-//   "orders-sapi-dev"  matches "orders-sapi-prod"
-//   "orders-sapi-uat"  matches "orders-sapi"
+// ── Name normalisation ────────────────────────────────────────────────────────
 function normaliseName(name) {
   return (name || '')
     .toLowerCase()
     .trim()
-    // Strip environment suffixes: -dev, -sit, -uat, -prod, -sandbox, -staging, -qa, -test, -local
     .replace(/[-_](dev|sit|uat|prod|sandbox|staging|qa|test|local|hotfix|release)$/i, '')
-    // Strip version tags: -v1, -v2, -v2.1, -1.0.0
     .replace(/-v?\d+(\.\d+)*$/, '')
-    // Strip trailing separators
     .replace(/[-_\s]+$/, '');
 }
 
+// ── CPS helpers ───────────────────────────────────────────────────────────────
+
+function normaliseUrl(url = '') {
+  return url.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+}
+
+function extractArmProps(detail) {
+  const ds = detail?.target?.deploymentSettings || {};
+  const appCfg = detail?.application?.configuration || {};
+  const ps = appCfg['mule.agent.application.properties.service'] || {};
+  return {
+    ...(detail?.properties || {}),
+    ...(ps.properties || {}),
+    ...(ds.runtimeProperties || {}),
+    ...(ds.properties || {}),
+    ...(ds.environmentVariables || ds.environmentVars || {}),
+  };
+}
+
+function flattenCpsProps(data) {
+  if (!data) return {};
+  const flat = {};
+  const arr = Array.isArray(data?.responses) ? data.responses : Array.isArray(data) ? data : null;
+  if (arr) {
+    arr.forEach(entry => {
+      const inner = entry?.properties;
+      if (inner && typeof inner === 'object' && !Array.isArray(inner)) Object.assign(flat, inner);
+    });
+  } else if (data && typeof data === 'object') {
+    const first = Object.values(data)[0];
+    if (first && typeof first === 'object') Object.assign(flat, first);
+    else Object.assign(flat, data);
+  }
+  return flat;
+}
+
+function getSessionCpsCred(session, rawBaseUrl, bgOrgId) {
+  const creds = session.cpsCreds || {};
+  const norm = normaliseUrl(rawBaseUrl);
+  if (bgOrgId) {
+    const c = creds[`${norm}::${bgOrgId}`];
+    if (c?.clientId && c?.clientSecret) return c;
+  }
+  const byUrl = creds[norm];
+  if (byUrl?.clientId && byUrl?.clientSecret) return byUrl;
+  const fallback = Object.entries(creds).find(([k, v]) =>
+    k.startsWith(`${norm}::`) && v?.clientId && v?.clientSecret
+  );
+  return fallback ? fallback[1] : null;
+}
+
+/**
+ * Extract a hostname candidate from a CPS property value.
+ * Handles:
+ *   - Full URLs:       https://orders-sapi-v1.cloudhub.io/api → orders-sapi-v1.cloudhub.io
+ *   - Bare hostnames:  orders-sapi-v1.cloudhub.io            → orders-sapi-v1.cloudhub.io
+ *   - host:port:       orders-sapi.example.com:8080           → orders-sapi.example.com
+ */
+function extractHostname(value) {
+  const v = String(value || '').trim();
+  if (!v) return null;
+  // Full URL
+  if (/^https?:\/\//i.test(v)) {
+    try { return new URL(v).hostname || null; } catch { return null; }
+  }
+  // Bare hostname or host:port (contains a dot, no spaces, looks like a domain)
+  if (/^[a-z0-9-]+\.[a-z0-9.\-]+(:\d+)?(\/.*)?$/i.test(v)) {
+    return v.split('/')[0].split(':')[0];
+  }
+  return null;
+}
+
+/**
+ * Try to match a hostname to a deployed app by comparing normalised segments.
+ */
+function matchHostnameToApp(hostname, appByNorm) {
+  if (!hostname) return null;
+  const sub = hostname.split('.')[0];
+  const norm = normaliseName(sub);
+  if (!norm || norm.length < 3) return null;
+  if (appByNorm[norm]) return appByNorm[norm];
+  for (const [key, app] of Object.entries(appByNorm)) {
+    if (key.length < 4) continue;
+    if (norm === key || norm.startsWith(key) || key.startsWith(norm)) return app;
+  }
+  return null;
+}
+
+// Property key suffixes that strongly indicate a URL/endpoint value
+const URL_KEY_PATTERNS = /\.(url|base[_.\-]?url|uri|host|endpoint|address|server|location|baseuri|baseurl|apiurl|service[_.\-]?url)$/i;
+
 // ── GET /api/graph/dependencies ───────────────────────────────────────────────
-// Builds a dependency graph of Mule apps → API Manager instances for a given
-// org + environment.
+// CPS-based service dependency graph.
 //
-// Matching strategy (contract application → deployed app):
-//   1. Exact name match  (case-insensitive)
-//   2. Normalised name match  (strips version/env suffixes)
-//   3. Substring match  (only when normalised name is ≥ 5 chars to prevent
-//      false positives from short tokens like "api", "app", "service")
-//   If none match, the contract app is included as a 'client' node.
+// For each deployed app this route:
+//   1. Fetches ARM deployment detail to extract CPS config
+//   2. Fetches CPS non-secure properties (using session credentials)
+//   3. Scans property VALUES for http(s) URLs
+//   4. Matches URLs to other deployed apps → 'app' target nodes
+//      Unmatched URLs → 'external' endpoint nodes (hostname as label)
 //
-// Query params:
-//   orgId    (required)
-//   envId    (required)
-//   noCache  (optional) — pass 'true' to force a fresh fetch
+// Requires CPS credentials stored in session via POST /api/cps/credentials.
+// Returns { noCpsCredentials: true } when no credentials are configured.
 router.get('/dependencies', async (req, res) => {
   const { orgId, envId, noCache } = req.query;
   const client = createClient(req.session.token);
 
   if (!orgId || !envId) {
-    return res.status(400).json({ error: 'orgId and envId are required query parameters' });
+    return res.status(400).json({ error: 'orgId and envId are required' });
   }
 
-  // ── Serve from cache if available ─────────────────────────────────────────
+  // Check CPS credentials before doing the expensive fan-out
+  if (!req.session.cpsCreds || Object.keys(req.session.cpsCreds).length === 0) {
+    return res.json({
+      nodes: [], edges: [], summary: { apps: 0, endpoints: 0, edges: 0 },
+      noCpsCredentials: true,
+      debug: {},
+    });
+  }
+
   if (noCache !== 'true') {
     const cached = getCached(orgId, envId);
-    if (cached) {
-      return res.json({ ...cached, cached: true });
-    }
+    if (cached) return res.json({ ...cached, cached: true });
   }
 
-  const debug = {
-    apis: 0,
-    ch2Apps: 0,          // FIX: now properly updated below
-    ch1Apps: 0,          // FIX: now properly updated below
-    contractsChecked: 0, // FIX: now properly updated below
-    contractsFetched: 0, // FIX: now properly updated below
-    contractErrors: [],  // FIX: now populated on contract fetch failure
-    edges: 0,
-  };
+  const debug = { ch2Apps: 0, ch1Apps: 0, cpsConfigFound: 0, cpsUrlsFound: 0, edges: 0, errors: [] };
 
   try {
-    // ── 1. API instances (paginated) ──────────────────────────────────────────
-    // FIX: replaced single-page fetch (limit=100) with a pagination loop so
-    // orgs with >100 API instances are fully captured.
-    //
-    // IMPORTANT — response structure:
-    //   { assets: [ { id: <assetGroupId>, assetId: "...", apis: [ { id: <instanceId>, ... } ] } ] }
-    //
-    // The contracts endpoint uses the INSTANCE id (nested inside asset.apis[]),
-    // NOT the asset-group id at the top level. We flatten all nested instances
-    // and carry the parent assetId/assetVersion down so the rest of the code
-    // can use apiInst.id as the correct API Manager instance ID.
-    const apis = [];
-    const PAGE_SIZE = 100;
-    let offset = 0;
-    let totalApis = Infinity;
-
-    while (apis.length < totalApis) {
-      const apiRes = await client.get(
-        `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis`,
-        { params: { limit: PAGE_SIZE, offset } }
-      );
-      const assets = apiRes.data?.assets || [];
-      totalApis = typeof apiRes.data?.total === 'number' ? apiRes.data.total : assets.length;
-      if (assets.length === 0) break;
-
-      // Flatten nested api instances. Each asset may have asset.apis[] containing
-      // the actual API Manager instances with their own numeric ids. Fall back to
-      // treating the asset itself as the instance if no nested apis[] found.
-      for (const asset of assets) {
-        if (Array.isArray(asset.apis) && asset.apis.length > 0) {
-          for (const inst of asset.apis) {
-            apis.push({
-              ...inst,
-              // Ensure assetId and version are available even if omitted on child
-              assetId: inst.assetId || asset.assetId,
-              assetVersion: inst.assetVersion || asset.assetVersion,
-              productVersion: inst.productVersion || asset.productVersion,
-            });
-          }
-        } else {
-          // Older API / single-instance format — asset IS the instance
-          apis.push(asset);
-        }
-      }
-
-      offset += assets.length;
-      if (assets.length < PAGE_SIZE) break; // last page
-    }
-
-    debug.apis = apis.length;
-    console.log(`[Graph] orgId=${orgId} envId=${envId} → ${apis.length} API instances (after flattening nested apis[])`);
-
-    // ── 2. Deployed applications (CH2 + CH1) ─────────────────────────────────
-    // FIX: CH1 API requires org/env as request HEADERS (X-ANYPNT-ORG-ID /
-    // X-ANYPNT-ENV-ID), not as query parameters. Using query params caused the
-    // filter to be silently ignored, returning all orgs or nothing.
+    // ── 1. Fetch deployed apps ────────────────────────────────────────────────
     const [ch2Res, ch1Res] = await Promise.allSettled([
       client.get(
         `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments`,
         { params: { pageSize: 200 } }
       ),
-      client.get(
-        `/cloudhub/api/v2/applications`,
-        {
-          headers: {
-            'X-ANYPNT-ORG-ID': orgId,
-            'X-ANYPNT-ENV-ID': envId,
-          },
-        }
-      ),
+      client.get(`/cloudhub/api/v2/applications`, {
+        headers: { 'X-ANYPNT-ORG-ID': orgId, 'X-ANYPNT-ENV-ID': envId },
+      }),
     ]);
 
     const ch2Apps = (ch2Res.status === 'fulfilled' ? ch2Res.value.data?.items || [] : [])
@@ -160,189 +177,227 @@ router.get('/dependencies', async (req, res) => {
       ? Array.isArray(ch1Res.value.data) ? ch1Res.value.data : (ch1Res.value.data?.data || [])
       : []).map(a => ({ ...a, _type: 'CH1' }));
 
-    // FIX: debug counters for CH2/CH1 are now properly set
     debug.ch2Apps = ch2Apps.length;
     debug.ch1Apps = ch1Apps.length;
-
     const deployedApps = [...ch2Apps, ...ch1Apps];
 
-    // ── 3. Build name → deployed app lookup (for fuzzy matching) ─────────────
-    const nameToApp = {};
+    // Build normalised app name lookup for URL → app matching
+    const appByNorm = {};
     deployedApps.forEach(app => {
-      const name = (app.name || app.domain || '').toLowerCase().trim();
-      if (name) nameToApp[name] = app;
+      const name = (app.name || app.domain || '').toLowerCase();
+      if (name) {
+        appByNorm[name] = app;
+        const norm = normaliseName(name);
+        if (norm) appByNorm[norm] = app;
+      }
     });
 
-    // Lookup helper: exact → normalised → careful substring
-    function findDeployedApp(contractAppName) {
-      if (!contractAppName) return null;
-      const raw = contractAppName.toLowerCase().trim();
-
-      // 1. Exact match (case-insensitive)
-      if (nameToApp[raw]) return nameToApp[raw];
-
-      // 2. Normalised match (strips version/env suffixes)
-      const norm = normaliseName(raw);
-      for (const [key, app] of Object.entries(nameToApp)) {
-        if (normaliseName(key) === norm) return app;
-      }
-
-      // 3. Substring match — FIX: guard with minimum length (≥5 chars) to
-      //    prevent short tokens like "api", "app", "svc" from matching
-      //    any app that happens to contain those characters.
-      if (norm.length >= 5) {
-        for (const [key, app] of Object.entries(nameToApp)) {
-          const keyNorm = normaliseName(key);
-          if (keyNorm.includes(norm) || norm.includes(keyNorm)) return app;
-        }
-      }
-
-      return null;
-    }
-
-    // ── 4. Fetch contracts per API (batches of 10) ────────────────────────────
+    // ── 2. Fan-out: ARM detail → CPS config → CPS non-secure properties ───────
+    const sourceAppNodes = new Map(); // id → node
+    const targetNodes = new Map();    // id → node  (matched apps or external endpoints)
     const edges = [];
-    const clientNodeMap = {}; // contractAppName → synthetic 'client' node
-    const BATCH = 10;
+    const seenEdges = new Set();
+    const BATCH = 5;
 
-    // FIX: contractsChecked is now set to the actual count before fetching
-    debug.contractsChecked = apis.length;
-
-    for (let i = 0; i < apis.length; i += BATCH) {
+    for (let i = 0; i < deployedApps.length; i += BATCH) {
       await Promise.allSettled(
-        apis.slice(i, i + BATCH).map(async (apiInst) => {
+        deployedApps.slice(i, i + BATCH).map(async (app) => {
           try {
-            const cRes = await client.get(
-              `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiInst.id}/contracts`
-            );
-            const contracts = cRes.data?.contracts || [];
+            // Step A: fetch ARM detail
+            let armProps = {};
+            if (app._type === 'CH2') {
+              const r = await client.get(
+                `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${app.id}`
+              );
+              armProps = extractArmProps(r.data);
+            } else {
+              const appName = app.domain || app.name;
+              const r = await client.get(`/cloudhub/api/applications/${appName}`, {
+                headers: { 'X-ANYPNT-ORG-ID': orgId, 'X-ANYPNT-ENV-ID': envId },
+              });
+              armProps = r.data?.properties || {};
+            }
 
-            // FIX: contractsFetched is now incremented for each contract found
-            debug.contractsFetched += contracts.length;
+            const cpsBaseUrl =
+              armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] ||
+              armProps['cps.baseUrl'] || armProps['cps.url'] || '';
+            const cpsKey =
+              armProps['cps.projectName'] || armProps['cloudhub.api.name'] || app.name || '';
+            const cpsEnv = armProps['cps.prefix'] || armProps['cps.environment'] || '';
 
-            contracts.forEach(contract => {
-              const contractAppName = contract.application?.name || '';
-              if (!contractAppName) return;
+            if (!cpsBaseUrl || !cpsKey) return;
+            debug.cpsConfigFound++;
 
-              const deployedApp = findDeployedApp(contractAppName);
+            const cred = getSessionCpsCred(req.session, cpsBaseUrl, orgId);
+            if (!cred) return;
 
-              let sourceId, sourceLabel;
-              if (deployedApp) {
-                sourceId    = `app-${deployedApp.id || deployedApp.domain || deployedApp.name}`;
-                sourceLabel = deployedApp.name || deployedApp.domain || contractAppName;
+            // Step B: fetch CPS non-secure properties
+            const nsUrl = `${normaliseUrl(cpsBaseUrl)}/api/v2/properties/non-secure`;
+            const nsRes = await axios.get(nsUrl, {
+              headers: {
+                client_id: cred.clientId,
+                client_secret: cred.clientSecret,
+                'Content-Type': 'application/json',
+              },
+              params: { ...(cpsEnv && { environment: cpsEnv }), keys: cpsKey },
+              timeout: 12000,
+              validateStatus: () => true,
+            });
+
+            if (nsRes.status !== 200) return;
+            const nsFlat = flattenCpsProps(nsRes.data);
+
+            const srcId = `app-${app.id || app.domain || app.name}`;
+
+            // Step C: scan property values for hostnames / URLs
+            for (const [key, value] of Object.entries(nsFlat)) {
+              if (typeof value !== 'string') continue;
+              const v = String(value).trim();
+              if (!v) continue;
+
+              // Extract hostname from value (handles http:// URLs, bare hostnames, host:port)
+              // Also check key name hints for connection properties
+              const isConnectionKey = URL_KEY_PATTERNS.test(key);
+              const hostname = extractHostname(v);
+              if (!hostname && !isConnectionKey) continue;
+              if (!hostname) continue;
+
+              // Skip the CPS server itself
+              const cpsHost = normaliseUrl(cpsBaseUrl).replace(/^https?:\/\//, '');
+              if (hostname.includes(cpsHost) || cpsHost.includes(hostname)) continue;
+              // Skip Anypoint / MuleSoft platform
+              if (hostname.includes('anypoint.mulesoft') || hostname.includes('mulesoft.com') ||
+                  hostname.includes('anypoint.com') || hostname.includes('cloudhub.io') && hostname.split('.').length > 3) {
+                // Allow single-subdomain cloudhub.io (app deployments), skip platform domains
+                if (!hostname.match(/^[^.]+\.cloudhub\.io$/)) continue;
+              }
+              // Skip clearly internal/localhost values
+              if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('10.') ||
+                  hostname.startsWith('192.168.') || hostname.startsWith('172.')) continue;
+
+              debug.cpsUrlsFound++;
+
+              // Try to match hostname to a deployed app
+              let targetId, targetLabel, targetType;
+              const matched = matchHostnameToApp(hostname, appByNorm);
+
+              if (matched) {
+                targetId = `app-${matched.id || matched.domain || matched.name}`;
+                targetLabel = matched.name || matched.domain;
+                targetType = 'app';
+                if (targetId === srcId) continue;
+
+                // Ensure target app node exists
+                if (!targetNodes.has(targetId)) {
+                  targetNodes.set(targetId, {
+                    id: targetId,
+                    label: targetLabel,
+                    type: 'app',
+                    status: matched.status || matched.desiredStatus || 'UNKNOWN',
+                    deploymentType: matched._type,
+                    meta: { appId: matched.id || matched.domain, deploymentType: matched._type },
+                  });
+                }
               } else {
-                // Unknown client — create a synthetic node keyed by app name
-                const key = contractAppName.toLowerCase().trim();
-                sourceId    = `client-${key}`;
-                sourceLabel = contractAppName;
-                if (!clientNodeMap[sourceId]) {
-                  clientNodeMap[sourceId] = {
-                    id: sourceId,
-                    label: contractAppName,
-                    type: 'client',
-                    status: null,
-                    deploymentType: null,
-                    meta: { contractApp: contractAppName },
-                  };
+                // External endpoint — use hostname as node key
+                targetId = `ext-${hostname}`;
+                targetLabel = hostname;
+                targetType = 'external';
+
+                if (!targetNodes.has(targetId)) {
+                  targetNodes.set(targetId, {
+                    id: targetId,
+                    label: hostname,
+                    type: 'external',
+                    meta: { hostname, exampleUrl: v },
+                  });
                 }
               }
 
-              const apiNodeId = `api-${apiInst.id}`;
-              const edgeId = `${sourceId}->${apiNodeId}`;
+              const edgeId = `${srcId}->${targetId}::${key}`;
+              // Deduplicate: same source → same target via same property key
+              const dedupKey = `${srcId}->${targetId}`;
+              if (seenEdges.has(dedupKey)) continue;
+              seenEdges.add(dedupKey);
+
+              // Ensure source app node exists
+              if (!sourceAppNodes.has(srcId)) {
+                sourceAppNodes.set(srcId, {
+                  id: srcId,
+                  label: app.name || app.domain || String(app.id),
+                  type: 'app',
+                  status: app.status || app.desiredStatus || 'UNKNOWN',
+                  deploymentType: app._type,
+                  meta: {
+                    appId: app.id || app.domain,
+                    deploymentType: app._type,
+                    status: app.status || 'UNKNOWN',
+                  },
+                });
+              }
 
               edges.push({
                 id: edgeId,
-                source: sourceId,
-                target: apiNodeId,
-                contractStatus: contract.status || 'APPROVED',
-                appName: sourceLabel,
-                apiName: apiInst.assetId || String(apiInst.id),
-                slaTier: contract.tier?.name || '',
+                source: srcId,
+                target: targetId,
+                edgeType: targetType === 'app' ? 'internal' : 'external',
+                cpsKey: key,
+                cpsValue: v,
+                appName: app.name || app.domain,
+                targetName: targetLabel,
               });
-            });
+              debug.edges++;
+            }
           } catch (err) {
-            // FIX: contract fetch failures are now recorded in debug.contractErrors
-            // instead of being silently swallowed.
-            const msg = `API ${apiInst.id} (${apiInst.assetId || 'unknown'}): ${err.message}`;
-            debug.contractErrors.push(msg);
-            console.warn(`[Graph] contract fetch failed — ${msg}`);
+            debug.errors.push(`${app.name || app.domain}: ${err.message}`);
           }
         })
       );
     }
 
-    // Deduplicate edges (same app → same API)
-    const seenEdges = new Set();
-    const uniqueEdges = edges.filter(e => {
-      if (seenEdges.has(e.id)) return false;
-      seenEdges.add(e.id);
-      return true;
-    });
+    // ── 3. Build final node/edge sets ─────────────────────────────────────────
+    // Some target app nodes may also be source nodes — merge them
+    const allNodesMap = new Map();
 
-    // ── 5. Build node sets ────────────────────────────────────────────────────
-    const apiNodeIds = new Set(uniqueEdges.map(e => e.target));
-    const appNodeIds = new Set(uniqueEdges.map(e => e.source));
+    // Add source app nodes first (they have full status info)
+    for (const [id, node] of sourceAppNodes.entries()) {
+      allNodesMap.set(id, node);
+    }
 
-    // API nodes (only those with at least one contract edge)
-    const apiNodes = apis
-      .filter(apiInst => apiNodeIds.has(`api-${apiInst.id}`))
-      .map(apiInst => ({
-        id: `api-${apiInst.id}`,
-        label: apiInst.assetId || String(apiInst.id),
-        type: 'api',
-        meta: {
-          apiId: apiInst.id,
-          assetId: apiInst.assetId,
-          assetVersion: apiInst.assetVersion,
-          productVersion: apiInst.productVersion,
-          orgId,
-          envId,
-        },
-      }));
+    // Add target nodes (if a target is also a source, source version wins)
+    for (const [id, node] of targetNodes.entries()) {
+      if (!allNodesMap.has(id)) allNodesMap.set(id, node);
+    }
 
-    // Matched deployed app nodes
-    const deployedAppNodes = deployedApps
-      .filter(app => appNodeIds.has(`app-${app.id || app.domain || app.name}`))
-      .map(app => ({
-        id: `app-${app.id || app.domain || app.name}`,
-        label: app.name || app.domain || String(app.id),
-        type: 'app',
-        status: app.status || app.desiredStatus || 'UNKNOWN',
-        deploymentType: app._type,
-        meta: {
-          appId: app.id || app.domain,
-          status: app.status || app.desiredStatus || 'UNKNOWN',
-          deploymentType: app._type,
-          orgId,
-          envId,
-        },
-      }));
+    // Only keep edges where both nodes exist
+    const allNodeIds = new Set(allNodesMap.keys());
+    const validEdges = edges.filter(e => allNodeIds.has(e.source) && allNodeIds.has(e.target));
 
-    // Unmatched client nodes (contract apps with no deployed counterpart)
-    const clientNodes = Object.values(clientNodeMap)
-      .filter(n => appNodeIds.has(n.id));
+    const allNodes = [...allNodesMap.values()];
+    const internalCount = validEdges.filter(e => e.edgeType === 'internal').length;
+    const externalCount = validEdges.filter(e => e.edgeType === 'external').length;
 
-    const allAppNodes = [...deployedAppNodes, ...clientNodes];
-
-    debug.edges = uniqueEdges.length;
-    console.log(`[Graph] result: ${apiNodes.length} apis, ${allAppNodes.length} apps (${deployedAppNodes.length} matched, ${clientNodes.length} unmatched), ${uniqueEdges.length} edges`);
+    console.log(
+      `[Graph/CPS] orgId=${orgId} envId=${envId} — ` +
+      `${deployedApps.length} apps, ${debug.cpsConfigFound} with CPS, ` +
+      `${allNodes.length} nodes, ${validEdges.length} edges ` +
+      `(${internalCount} internal + ${externalCount} external)`
+    );
 
     const result = {
-      nodes: [...allAppNodes, ...apiNodes],
-      edges: uniqueEdges,
+      nodes: allNodes,
+      edges: validEdges,
       summary: {
-        apis: apiNodes.length,
-        apps: allAppNodes.length,
-        edges: uniqueEdges.length,
-        matched: deployedAppNodes.length,
-        unmatched: clientNodes.length,
+        apps: [...allNodesMap.values()].filter(n => n.type === 'app').length,
+        endpoints: [...allNodesMap.values()].filter(n => n.type === 'external').length,
+        edges: validEdges.length,
+        internalEdges: internalCount,
+        externalEdges: externalCount,
       },
       debug,
     };
 
-    // Store in cache for subsequent requests
     setCache(orgId, envId, result);
-
     res.json(result);
   } catch (err) {
     console.error('[Graph] dependencies error:', err.message);

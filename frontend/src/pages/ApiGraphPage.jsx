@@ -7,7 +7,6 @@ import EmptyState from '../components/EmptyState.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
 
 const NODE_W = 170, NODE_H = 38, ROW_GAP = 54, COL_APP = 40, COL_API = 700, CANVAS_PADDING = 60;
-const CANVAS_W = COL_API + NODE_W + COL_APP;
 
 function appColors(status) {
   const s = (status || '').toUpperCase();
@@ -18,10 +17,15 @@ function appColors(status) {
   return { fill: '#1f2937', stroke: '#4b5563', text: '#9ca3af' };
 }
 
-// BUG9-FIX: 'client' nodes go on the left with app nodes
 function computeLayout(nodes, edges) {
-  const left  = nodes.filter(n => n.type === 'app' || n.type === 'client');
-  const right = nodes.filter(n => n.type === 'api');
+  // Source apps (have outgoing edges) go left; target apps + external go right
+  const sourceIds = new Set(edges.map(e => e.source));
+  const targetIds = new Set(edges.map(e => e.target));
+  // Nodes that are ONLY targets go right; source nodes go left
+  // Nodes that are both source and target go left
+  const left  = nodes.filter(n => sourceIds.has(n.id));
+  const right = nodes.filter(n => !sourceIds.has(n.id) && targetIds.has(n.id));
+  // Sort right by incoming edge count (most connected first)
   const cnt = {};
   edges.forEach(e => { cnt[e.target] = (cnt[e.target] || 0) + 1; });
   right.sort((a, b) => (cnt[b.id] || 0) - (cnt[a.id] || 0));
@@ -31,7 +35,6 @@ function computeLayout(nodes, edges) {
   return { posMap, canvasH: Math.max(left.length, right.length) * ROW_GAP + CANVAS_PADDING * 2 };
 }
 
-// BUG13+BUG14-FIX: two markers with stable unique IDs; arrowhead matches edge color
 function Markers({ mid }) {
   return (
     <defs>
@@ -41,6 +44,12 @@ function Markers({ mid }) {
       <marker id={`${mid}-h`} markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
         <polygon points="0 0, 8 3, 0 6" fill="#60a5fa" />
       </marker>
+      <marker id={`${mid}-ext`} markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="#f59e0b" />
+      </marker>
+      <marker id={`${mid}-exth`} markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="#fbbf24" />
+      </marker>
     </defs>
   );
 }
@@ -49,13 +58,24 @@ function Edge({ edge, posMap, highlighted, faded, mid }) {
   const s = posMap[edge.source], t = posMap[edge.target];
   if (!s || !t) return null;
   const x1 = s.x + NODE_W, y1 = s.y + NODE_H / 2, x2 = t.x, y2 = t.y + NODE_H / 2, cx = (x1 + x2) / 2;
+  const isExt = edge.edgeType === 'external';
+  const stroke = isExt
+    ? (highlighted ? '#fbbf24' : '#92400e')
+    : (highlighted ? '#60a5fa' : '#374151');
+  const markerId = isExt
+    ? `${mid}-${highlighted ? 'exth' : 'ext'}`
+    : `${mid}-${highlighted ? 'h' : 'n'}`;
   return (
     <g opacity={faded ? 0.12 : 1}>
       <path d={`M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`}
-        fill="none" stroke={highlighted ? '#60a5fa' : '#374151'} strokeWidth={highlighted ? 2 : 1}
-        markerEnd={`url(#${mid}-${highlighted ? 'h' : 'n'})`} />
-      {edge.slaTier && highlighted && (
-        <text x={cx} y={(y1 + y2) / 2 - 4} fontSize="9" fill="#93c5fd" textAnchor="middle">{edge.slaTier}</text>
+        fill="none" stroke={stroke} strokeWidth={highlighted ? 2 : 1}
+        strokeDasharray={isExt ? '4 3' : undefined}
+        markerEnd={`url(#${markerId})`} />
+      {highlighted && edge.cpsKey && (
+        <text x={cx} y={(y1 + y2) / 2 - 5} fontSize="9"
+          fill={isExt ? '#fcd34d' : '#93c5fd'} textAnchor="middle">
+          {edge.cpsKey.length > 24 ? '…' + edge.cpsKey.slice(-22) : edge.cpsKey}
+        </text>
       )}
     </g>
   );
@@ -74,73 +94,86 @@ function AppNode({ node, pos, selected, faded, onClick }) {
   );
 }
 
-// BUG9-FIX: amber dashed style for unmatched contract apps
-function ClientNode({ node, pos, selected, faded, onClick }) {
+// External endpoint node — amber dashed, globe icon style
+function ExternalNode({ node, pos, selected, faded, onClick }) {
   const lbl = node.label.length > 22 ? node.label.slice(0, 20) + '…' : node.label;
   return (
     <g transform={`translate(${pos.x},${pos.y})`} opacity={faded ? 0.22 : 1} onClick={() => onClick(node)} style={{ cursor: 'pointer' }}>
-      <rect width={NODE_W} height={NODE_H} rx={6} fill="#1c1107" stroke={selected ? '#60a5fa' : '#d97706'} strokeWidth={selected ? 2 : 1} strokeDasharray="4 2" />
-      <circle cx={14} cy={NODE_H / 2} r={4} fill="#d97706" />
+      <rect width={NODE_W} height={NODE_H} rx={6} fill="#1c0f02" stroke={selected ? '#60a5fa' : '#b45309'} strokeWidth={selected ? 2 : 1} strokeDasharray="4 2" />
+      <circle cx={14} cy={NODE_H / 2} r={4} fill="#f59e0b" />
       <text x={26} y={NODE_H / 2 + 1} dominantBaseline="middle" fontSize="11" fill="#fcd34d" fontFamily="monospace">{lbl}</text>
-      <text x={NODE_W - 4} y={NODE_H - 4} fontSize="8" fill="#d97706" textAnchor="end" opacity={0.8}>ext</text>
+      <text x={NODE_W - 4} y={NODE_H - 4} fontSize="8" fill="#f59e0b" textAnchor="end" opacity={0.8}>ext</text>
     </g>
   );
 }
 
-function ApiNode({ node, pos, selected, faded, edgeCount, onClick }) {
-  const lbl = node.label.length > 22 ? node.label.slice(0, 20) + '…' : node.label;
-  return (
-    <g transform={`translate(${pos.x},${pos.y})`} opacity={faded ? 0.22 : 1} onClick={() => onClick(node)} style={{ cursor: 'pointer' }}>
-      <rect width={NODE_W} height={NODE_H} rx={NODE_H / 2} fill={selected ? '#1e3a5f' : '#172554'} stroke={selected ? '#60a5fa' : '#3b82f6'} strokeWidth={selected ? 2 : 1} />
-      <text x={NODE_W / 2} y={NODE_H / 2 + 1} dominantBaseline="middle" textAnchor="middle" fontSize="11" fill="#93c5fd" fontFamily="monospace">{lbl}</text>
-      {edgeCount > 1 && <text x={NODE_W - 8} y={12} fontSize="8" fill="#60a5fa" textAnchor="end">{edgeCount}</text>}
-    </g>
-  );
-}
-
-// BUG10-FIX: 'client' treated as source (same as 'app') in detail panel
 function DetailPanel({ node, edges, nodes, onClose }) {
   if (!node) return null;
-  const isSource = node.type === 'app' || node.type === 'client';
-  const connected = isSource
-    ? edges.filter(e => e.source === node.id).map(e => ({ edge: e, peer: nodes.find(n => n.id === e.target) }))
-    : edges.filter(e => e.target === node.id).map(e => ({ edge: e, peer: nodes.find(n => n.id === e.source) }));
-  const badge = node.type === 'api' ? 'bg-blue-900/60 text-blue-300' : node.type === 'client' ? 'bg-amber-900/60 text-amber-300' : 'bg-green-900/60 text-green-300';
-  const label = node.type === 'api' ? 'API Instance' : node.type === 'client' ? 'External Consumer' : 'Mule App';
+  const outgoing = edges.filter(e => e.source === node.id).map(e => ({ edge: e, peer: nodes.find(n => n.id === e.target) }));
+  const incoming = edges.filter(e => e.target === node.id).map(e => ({ edge: e, peer: nodes.find(n => n.id === e.source) }));
+  const badge = node.type === 'external'
+    ? 'bg-amber-900/60 text-amber-300'
+    : 'bg-green-900/60 text-green-300';
+  const typeLabel = node.type === 'external' ? 'External Endpoint' : 'Mule App';
   return (
     <div className="w-72 shrink-0 bg-gray-900 border-l border-gray-800 p-4 overflow-y-auto text-sm">
       <div className="flex items-center justify-between mb-3">
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge}`}>{label}</span>
+        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge}`}>{typeLabel}</span>
         <button onClick={onClose} className="text-gray-500 hover:text-white text-lg leading-none">✕</button>
       </div>
       <p className="font-mono text-white font-semibold text-sm break-all mb-3">{node.label}</p>
-      {node.status && <div className="mb-3"><p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</p><p className="text-xs text-gray-300">{node.status}</p></div>}
-      {node.type === 'client' && (
-        <div className="mb-3 px-2 py-1.5 bg-amber-900/20 border border-amber-800/40 rounded text-xs text-amber-400">
-          Contract exists but no matching deployment found in this environment.
+      {node.status && node.type !== 'external' && (
+        <div className="mb-3">
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</p>
+          <p className="text-xs text-gray-300">{node.status}</p>
+        </div>
+      )}
+      {node.type === 'external' && node.meta?.exampleUrl && (
+        <div className="mb-3 px-2 py-1.5 bg-amber-900/20 border border-amber-800/40 rounded text-xs text-amber-400 break-all">
+          {node.meta.exampleUrl}
         </div>
       )}
       {node.meta && (
         <div className="mb-3 space-y-1">
-          {Object.entries(node.meta).filter(([, v]) => v).map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-2">
-              <span className="text-xs text-gray-500 shrink-0">{k}</span>
-              <span className="text-xs text-gray-300 font-mono break-all text-right">{v}</span>
-            </div>
-          ))}
+          {Object.entries(node.meta)
+            .filter(([k, v]) => v && k !== 'exampleUrl')
+            .map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-2">
+                <span className="text-xs text-gray-500 shrink-0">{k}</span>
+                <span className="text-xs text-gray-300 font-mono break-all text-right">{v}</span>
+              </div>
+            ))}
         </div>
       )}
-      {connected.length > 0 && (
-        <div>
-          <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">{isSource ? `Consumes ${connected.length} API(s)` : `${connected.length} Consumer(s)`}</p>
+      {outgoing.length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Calls {outgoing.length} service(s)</p>
           <div className="space-y-1.5">
-            {connected.map(({ edge, peer }) => (
+            {outgoing.map(({ edge, peer }) => (
               <div key={edge.id} className="bg-gray-800 rounded p-2">
-                <p className="text-xs text-gray-300 font-mono truncate">{peer?.label || '—'}</p>
-                <div className="flex gap-2 mt-1">
-                  {edge.contractStatus && <span className="text-xs text-green-400">{edge.contractStatus}</span>}
-                  {edge.slaTier && <span className="text-xs text-blue-400">{edge.slaTier}</span>}
-                </div>
+                <p className="text-xs text-gray-300 font-mono truncate">{peer?.label || edge.targetName || '—'}</p>
+                {edge.cpsKey && (
+                  <p className="text-[10px] text-gray-500 font-mono mt-0.5 truncate" title={edge.cpsKey}>
+                    via <span className={edge.edgeType === 'external' ? 'text-amber-400/80' : 'text-blue-400/80'}>{edge.cpsKey}</span>
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {incoming.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Called by {incoming.length} app(s)</p>
+          <div className="space-y-1.5">
+            {incoming.map(({ edge, peer }) => (
+              <div key={edge.id} className="bg-gray-800 rounded p-2">
+                <p className="text-xs text-gray-300 font-mono truncate">{peer?.label || edge.appName || '—'}</p>
+                {edge.cpsKey && (
+                  <p className="text-[10px] text-gray-500 font-mono mt-0.5 truncate" title={edge.cpsKey}>
+                    via <span className="text-blue-400/80">{edge.cpsKey}</span>
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -160,9 +193,7 @@ export default function ApiGraphPage() {
   const [error, setError]             = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
-  // BUG14-FIX: unique marker ID per mount
   const mid = useMemo(() => `arr-${Math.random().toString(36).slice(2, 8)}`, []);
-  // BUG16-FIX: pan/zoom
   const [xf, setXf]    = useState({ scale: 1, x: 0, y: 0 });
   const panning        = useRef(false);
   const panOrigin      = useRef({ x: 0, y: 0 });
@@ -227,7 +258,7 @@ export default function ApiGraphPage() {
   const visibleNodes = graph
     ? filterStatus === 'all'
       ? graph.nodes
-      : graph.nodes.filter(n => n.type === 'api' || n.type === 'client' || (n.status || '').toUpperCase() === filterStatus)
+      : graph.nodes.filter(n => n.type === 'external' || (n.status || '').toUpperCase() === filterStatus)
     : [];
   const visNodeIds = new Set(visibleNodes.map(n => n.id));
   const visEdges   = graph ? graph.edges.filter(e => visNodeIds.has(e.source) && visNodeIds.has(e.target)) : [];
@@ -241,17 +272,16 @@ export default function ApiGraphPage() {
       if (e.source === sid || e.target === sid) { connectedIds.add(e.source); connectedIds.add(e.target); hiEdges.add(e.id); }
     });
   }
-  const apiCnt = {};
-  visEdges.forEach(e => { apiCnt[e.target] = (apiCnt[e.target] || 0) + 1; });
 
   const orgName = orgs.find(o => o.id === selectedOrg)?.name || '';
   const envName = envs.find(e => e.id === selectedEnv)?.name || '';
-  const trueEmpty   = graph && graph.nodes.length === 0;
-  const filterEmpty = graph && graph.nodes.length > 0 && visibleNodes.length === 0;
+  const trueEmpty   = graph && !graph.noCpsCredentials && graph.nodes.length === 0;
+  const filterEmpty = graph && !graph.noCpsCredentials && graph.nodes.length > 0 && visibleNodes.length === 0;
   const selId       = selectedNode?.id;
 
   return (
     <div className="flex flex-col h-full bg-gray-950 text-white min-h-0">
+      {/* Toolbar */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-800 bg-gray-900 shrink-0 flex-wrap">
         <span className="text-sm font-semibold">🕸️ API Dependency Graph</span>
         <select value={selectedOrg} onChange={e => setSelectedOrg(e.target.value)} className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
@@ -262,25 +292,34 @@ export default function ApiGraphPage() {
           <option value="">Environment…</option>
           {envs.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
-        <button onClick={() => loadGraph(false)} disabled={!selectedOrg || !selectedEnv || loading} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs rounded font-medium transition-colors">
-          {loading ? 'Loading…' : 'Build Graph'}
+        <button onClick={() => loadGraph(false)} disabled={!selectedOrg || !selectedEnv || loading}
+          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs rounded font-medium transition-colors">
+          {loading ? 'Scanning CPS…' : 'Build Graph'}
         </button>
-        {graph && <button onClick={() => loadGraph(true)} disabled={loading} title="Force refresh (bypass 2-min cache)" className="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-gray-300 text-xs rounded transition-colors">↺ Refresh</button>}
-        {graph && (
+        {graph && !graph.noCpsCredentials && (
+          <button onClick={() => loadGraph(true)} disabled={loading}
+            title="Force refresh (bypass 2-min cache)"
+            className="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-gray-300 text-xs rounded transition-colors">
+            ↺ Refresh
+          </button>
+        )}
+        {graph && !graph.noCpsCredentials && (
           <>
             <div className="flex items-center gap-2 ml-2">
               <span className="text-xs text-gray-400">Filter:</span>
               {['all', 'RUNNING', 'FAILED', 'STOPPED'].map(s => (
-                <button key={s} onClick={() => setFilterStatus(s)} className={`px-2 py-1 text-xs rounded transition-colors ${filterStatus === s ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                <button key={s} onClick={() => setFilterStatus(s)}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${filterStatus === s ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
                   {s === 'all' ? 'All' : s}
                 </button>
               ))}
             </div>
             <div className="ml-auto flex items-center gap-3 text-xs text-gray-400">
-              <span>🟦 {graph.summary.apps} apps</span>
-              {graph.summary.unmatched > 0 && <span className="text-amber-500" title="Unmatched contract apps">🟠 {graph.summary.unmatched} ext</span>}
-              <span>🔵 {graph.summary.apis} APIs</span>
-              <span>→ {graph.summary.edges} contracts</span>
+              <span>🟩 {graph.summary.apps} apps</span>
+              {graph.summary.endpoints > 0 && <span className="text-amber-500">🟠 {graph.summary.endpoints} external</span>}
+              <span>→ {graph.summary.edges} connections</span>
+              {graph.summary.internalEdges > 0 && <span className="text-blue-400">({graph.summary.internalEdges} internal)</span>}
+              {graph.summary.externalEdges > 0 && <span className="text-amber-500">({graph.summary.externalEdges} ext)</span>}
               {graph.cached && <span className="text-gray-600 italic">cached</span>}
             </div>
           </>
@@ -291,7 +330,7 @@ export default function ApiGraphPage() {
 
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 overflow-hidden relative">
-          {/* BUG16-FIX: zoom buttons */}
+          {/* Zoom buttons */}
           {graph && visibleNodes.length > 0 && (
             <div className="absolute top-4 right-4 z-10 flex flex-col gap-1">
               <button onClick={() => setXf(p => ({ ...p, scale: Math.min(3, p.scale * 1.25) }))} className="w-7 h-7 bg-gray-800 border border-gray-700 rounded text-white hover:bg-gray-700 flex items-center justify-center" title="Zoom in">+</button>
@@ -303,52 +342,104 @@ export default function ApiGraphPage() {
 
           {loading && (
             <div className="space-y-2 p-6">
-              {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-9 w-full max-w-2xl" />)}
+              <p className="text-xs text-gray-500 mb-3">Fetching CPS properties for all deployed apps…</p>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-9 w-full max-w-2xl" />
+              ))}
+            </div>
+          )}
+
+          {/* No CPS credentials configured */}
+          {!loading && graph?.noCpsCredentials && (
+            <div className="p-8 flex flex-col items-center gap-4">
+              <div className="text-5xl">🔑</div>
+              <div className="text-center">
+                <p className="text-white font-semibold text-sm mb-1">CPS Credentials Required</p>
+                <p className="text-gray-400 text-xs max-w-md">
+                  Import a CPS credentials CSV using the <strong className="text-white">CPS Credentials</strong> button in the CPS Manager or CPS Comparison page, then build the graph again.
+                </p>
+                <p className="text-gray-600 text-xs mt-2">
+                  The graph scans each app's CPS non-secure properties to discover which APIs and services it calls.
+                </p>
+              </div>
             </div>
           )}
 
           {!loading && !graph && !error && (
-            <EmptyState icon="🕸️" title="No graph loaded" description="Select a Business Group and Environment, then click Build Graph." />
+            <EmptyState icon="🕸️" title="No graph loaded"
+              description="Select a Business Group and Environment, then click Build Graph. CPS credentials must be imported first." />
           )}
 
-          {/* BUG11-FIX: filter hiding all vs truly no data */}
           {!loading && filterEmpty && (
-            <EmptyState icon="🔍" title={`No "${filterStatus}" apps`} description='The status filter removed all app nodes. Click "All" to see the full graph.' />
+            <EmptyState icon="🔍" title={`No "${filterStatus}" apps`}
+              description='The status filter removed all app nodes. Click "All" to see the full graph.' />
           )}
 
           {!loading && trueEmpty && (
-            <div className="p-4">
-              <EmptyState icon="🔍" title="No dependency data found" description="No API consumer contracts were found, or no contract application names matched deployed applications." />
+            <div className="p-6 max-w-2xl mx-auto space-y-4">
+              <div className="flex items-start gap-4 bg-gray-900 border border-gray-700 rounded-xl p-5">
+                <div className="text-3xl flex-shrink-0">🔍</div>
+                <div>
+                  <p className="text-white font-semibold text-sm mb-1">No CPS connections found</p>
+                  <p className="text-gray-400 text-xs leading-relaxed">
+                    The scan completed but no connections were discovered. Common reasons:
+                  </p>
+                  <ul className="text-gray-500 text-xs mt-2 space-y-1 list-disc pl-4">
+                    <li>Apps don't have <code className="text-gray-400">cps.configServerBaseUrl</code> in their ARM properties</li>
+                    <li>CPS credentials don't have access to the apps' project keys</li>
+                    <li>CPS non-secure properties don't contain URL values pointing to other apps</li>
+                    <li>URLs in CPS properties don't match the deployed app names in this environment</li>
+                  </ul>
+                </div>
+              </div>
               {graph.debug && (
-                <div className="mt-4 mx-auto max-w-lg bg-gray-900 border border-gray-700 rounded-lg p-4 text-xs font-mono text-gray-400 space-y-1">
-                  <p className="text-gray-300 font-semibold mb-2">Debug info</p>
-                  <p>API instances: <span className="text-blue-400">{graph.debug.apis}</span></p>
-                  <p>CH2 apps: <span className="text-blue-400">{graph.debug.ch2Apps}</span></p>
-                  <p>CH1 apps: <span className="text-blue-400">{graph.debug.ch1Apps}</span></p>
-                  <p>APIs checked: <span className="text-blue-400">{graph.debug.contractsChecked}</span></p>
-                  <p>Contracts found: <span className="text-blue-400">{graph.debug.contractsFetched}</span></p>
-                  <p>Edges built: <span className="text-blue-400">{graph.debug.edges}</span></p>
-                  {graph.debug.contractErrors?.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-yellow-400">Contract errors ({graph.debug.contractErrors.length}):</p>
-                      {graph.debug.contractErrors.slice(0, 5).map((e, i) => <p key={i} className="text-red-400 pl-2">{e}</p>)}
+                <div className="bg-gray-900 border border-gray-700 rounded-xl p-4 text-xs font-mono space-y-2">
+                  <p className="text-gray-300 font-semibold mb-1">Scan diagnostics</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                    <span className="text-gray-500">Deployed apps found</span>
+                    <span className={graph.debug.ch2Apps + graph.debug.ch1Apps > 0 ? 'text-green-400' : 'text-red-400'}>
+                      {(graph.debug.ch2Apps || 0) + (graph.debug.ch1Apps || 0)} ({graph.debug.ch2Apps || 0} CH2, {graph.debug.ch1Apps || 0} CH1)
+                    </span>
+                    <span className="text-gray-500">Apps with CPS config</span>
+                    <span className={graph.debug.cpsConfigFound > 0 ? 'text-green-400' : 'text-red-400'}>
+                      {graph.debug.cpsConfigFound || 0}
+                      {graph.debug.cpsConfigFound === 0 && ' ← no cps.configServerBaseUrl found'}
+                    </span>
+                    <span className="text-gray-500">URL/host values scanned</span>
+                    <span className={graph.debug.cpsUrlsFound > 0 ? 'text-green-400' : 'text-yellow-400'}>
+                      {graph.debug.cpsUrlsFound || 0}
+                      {graph.debug.cpsUrlsFound === 0 && graph.debug.cpsConfigFound > 0 && ' ← CPS props have no URL values'}
+                    </span>
+                    <span className="text-gray-500">Edges discovered</span>
+                    <span className="text-gray-400">{graph.debug.edges || 0}</span>
+                  </div>
+                  {graph.debug.errors?.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-800">
+                      <p className="text-yellow-400 mb-1">Fetch errors ({graph.debug.errors.length}) — first 5:</p>
+                      {graph.debug.errors.slice(0, 5).map((e, i) => (
+                        <p key={i} className="text-red-400 pl-2 truncate text-[10px]">{e}</p>
+                      ))}
                     </div>
                   )}
+                  <p className="text-gray-700 text-[10px] mt-2 pt-2 border-t border-gray-800">
+                    Tip: Use ↺ Refresh (noCache) to bypass the 2-min cache after fixing credentials.
+                  </p>
                 </div>
               )}
             </div>
           )}
 
-          {!loading && graph && visibleNodes.length > 0 && (
+          {!loading && graph && !graph.noCpsCredentials && visibleNodes.length > 0 && (
             <div className="w-full h-full overflow-hidden">
               <div className="flex items-center gap-4 px-4 pt-3 pb-1 text-xs text-gray-400 shrink-0 flex-wrap">
                 <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-green-700 border border-green-500" /> Running</span>
                 <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-900 border border-red-500" /> Failed</span>
-                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full bg-blue-900 border border-blue-500" /> API instance</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-gray-700 border border-gray-500" /> Stopped</span>
                 <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-900 border border-amber-600" style={{ borderStyle: 'dashed' }} /> External</span>
-                <span className="flex items-center gap-1"><span className="text-blue-400">→</span> Contract</span>
+                <span className="flex items-center gap-1"><span className="text-blue-400">→</span> Internal call</span>
+                <span className="flex items-center gap-1"><span className="text-amber-500">⤳</span> External call</span>
                 {orgName && <span className="ml-auto text-gray-500">{orgName} / {envName}</span>}
-                <span className="text-gray-600 text-xs">Scroll to zoom · Drag to pan</span>
+                <span className="text-gray-600 text-xs">Scroll to zoom · Drag to pan · Click node for details</span>
               </div>
               <svg
                 ref={svgRef}
@@ -373,9 +464,10 @@ export default function ApiGraphPage() {
                     const isFaded = selId != null && !connectedIds.has(node.id);
                     const isSel = node.id === selId;
                     const toggle = n => setSelectedNode(prev => prev?.id === n.id ? null : n);
-                    if (node.type === 'app')    return <AppNode    key={node.id} node={node} pos={pos} selected={isSel} faded={isFaded} onClick={toggle} />;
-                    if (node.type === 'client') return <ClientNode key={node.id} node={node} pos={pos} selected={isSel} faded={isFaded} onClick={toggle} />;
-                    return <ApiNode key={node.id} node={node} pos={pos} selected={isSel} faded={isFaded} edgeCount={apiCnt[node.id] || 0} onClick={toggle} />;
+                    if (node.type === 'external') {
+                      return <ExternalNode key={node.id} node={node} pos={pos} selected={isSel} faded={isFaded} onClick={toggle} />;
+                    }
+                    return <AppNode key={node.id} node={node} pos={pos} selected={isSel} faded={isFaded} onClick={toggle} />;
                   })}
                 </g>
               </svg>

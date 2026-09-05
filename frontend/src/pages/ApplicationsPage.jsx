@@ -1351,15 +1351,123 @@ export default function ApplicationsPage() {
         />
       )}
 
-      {/* Header */}
+      {/* Header — title + inline CSV banner + action buttons all on one row */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-white">Applications</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            {loading ? 'Loading...' : `${apps.length} integrations in ${selectedBgName}`}
-          </p>
+        <div className="flex items-center gap-3 flex-wrap min-w-0 flex-1">
+          {/* Inline CSV banner — only when a CSV is uploaded */}
+          {csvMatchedNames !== null && (
+            <div className={`flex items-center gap-2 flex-wrap px-3 py-1.5 rounded-lg border text-xs ${
+              selectedIds.size > 0 ? 'bg-blue-950/30 border-blue-800/50' : 'bg-gray-800/60 border-gray-700/50'
+            }`}>
+              <UploadCloud size={12} className="text-blue-400 flex-shrink-0" />
+              <span className="font-mono text-[10px] text-gray-500 max-w-[120px] truncate">{csvFileName}</span>
+              {selectedIds.size > 0
+                ? <span className="text-blue-300 font-semibold text-[10px]">{selectedIds.size} matched</span>
+                : <span className="text-gray-500 text-[10px]">no match</span>}
+              {csvMatchedNames.length > 0 && (
+                <span className="text-gray-600 text-[10px]">({csvMatchedNames.length} in CSV)</span>
+              )}
+              {/* Match mode */}
+              <div className="flex items-center gap-0.5 bg-gray-800/60 border border-gray-700/50 rounded p-0.5">
+                {[['exact', 'Exact'], ['fuzzy', '~']].map(([mode, label]) => (
+                  <button key={mode} onClick={() => setCsvMatchMode(mode)}
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-medium transition-all ${
+                      csvMatchMode === mode ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {/* Env dropdown */}
+              {environments.length > 0 && (() => {
+                const envList = applyEnvFilter(environments);
+                const selNames = [...csvEnvFilter].map(id => envList.find(e => e.id === id)?.name).filter(Boolean);
+                const dropLabel = csvEnvFilter.size === 0 ? 'All envs' : `${csvEnvFilter.size} envs`;
+                return (
+                  <>
+                    <div className="relative" ref={csvEnvDropRef}>
+                      <button onClick={() => setCsvEnvDropOpen(o => !o)}
+                        className="flex items-center gap-1 text-[9px] bg-gray-800/60 border border-gray-700/50 rounded px-2 py-1 font-medium text-gray-400 hover:text-gray-200 hover:border-blue-600/50 transition-colors">
+                        {dropLabel}
+                        <span className={`text-gray-600 transition-transform inline-block ${csvEnvDropOpen ? 'rotate-180' : ''}`}>▾</span>
+                      </button>
+                      {csvEnvDropOpen && (
+                        <div className="absolute top-full left-0 mt-1 z-30 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl min-w-[11rem] overflow-hidden">
+                          <div className="px-2 pt-2 pb-1 border-b border-gray-800/60">
+                            <div className="relative">
+                              <Search size={9} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                              <input autoFocus placeholder="Search…"
+                                onChange={e => {
+                                  const q = e.target.value.toLowerCase();
+                                  csvEnvDropRef.current?.querySelectorAll('[data-env-name]').forEach(el => {
+                                    el.style.display = el.dataset.envName.includes(q) ? '' : 'none';
+                                  });
+                                }}
+                                className="w-full bg-gray-800 border border-gray-700/50 rounded pl-5 pr-2 py-1 text-[9px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500/50"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-44 overflow-y-auto py-1">
+                            {envList.map(env => {
+                              const isSel = csvEnvFilter.has(env.id);
+                              const isProd = env.type === 'production';
+                              return (
+                                <button key={env.id} data-env-name={env.name.toLowerCase()}
+                                  onClick={() => setCsvEnvFilter(prev => { const n = new Set(prev); n.has(env.id) ? n.delete(env.id) : n.add(env.id); return n; })}
+                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-800/50 transition-colors text-left">
+                                  <div className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${isSel ? 'bg-blue-600 border-blue-500' : 'border-gray-600'}`}>
+                                    {isSel && <span className="text-white text-[7px] font-bold leading-none">✓</span>}
+                                  </div>
+                                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
+                                  <span className="text-[9px] text-gray-300">{env.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {csvEnvFilter.size > 0 && (
+                            <div className="px-3 py-1.5 border-t border-gray-800/60">
+                              <button onClick={() => { setCsvEnvFilter(new Set()); setCsvEnvDropOpen(false); }}
+                                className="text-[9px] text-gray-600 hover:text-gray-400">Clear</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {selNames.length > 0 && (
+                      <span className="text-[9px] text-blue-300/80 font-medium truncate max-w-[140px]">{selNames.join(', ')}</span>
+                    )}
+                  </>
+                );
+              })()}
+              {/* Close CSV */}
+              <button onClick={() => { setCsvMatchedNames(null); setCsvFileName(''); setSelectedIds(new Set()); setCsvEnvFilter(new Set()); }}
+                className="text-gray-600 hover:text-gray-300 ml-0.5 flex-shrink-0 transition-colors">
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Bulk actions — shown before Upload CSV when apps are selected */}
+          {selectedApps.length > 0 && (
+            <>
+              <span className="text-[10px] text-blue-300 font-semibold">{selectedApps.length} sel</span>
+              <button onClick={() => setSelectedIds(new Set())}
+                className="text-[9px] text-blue-500 hover:text-blue-300 underline underline-offset-2">Clear</button>
+              {bulkActions.map(action => {
+                const { Icon, label, bulkCls } = ACTION_CONFIG[action];
+                return (
+                  <button key={action} onClick={() => requestBulkAction(action)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${bulkCls}`}>
+                    <Icon size={13} /> {label}
+                  </button>
+                );
+              })}
+              <span className="w-px h-5 bg-gray-700 mx-1 flex-shrink-0" />
+            </>
+          )}
           {/* Hidden CSV file input */}
           <input ref={csvInputRef} type="file" accept=".csv,text/csv" onChange={handleCsvUpload} className="hidden" />
           {/* CSV upload button */}
@@ -1396,137 +1504,14 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* CSV match banner */}
-      {csvMatchedNames !== null && (
-        <div className={`flex flex-col gap-2 px-4 py-3 rounded-xl border ${
-          selectedIds.size > 0 ? 'bg-blue-950/30 border-blue-800/50' : 'bg-gray-900 border-gray-800'
-        }`}>
-          {/* Row 1: file info + close */}
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <UploadCloud size={14} className="text-blue-400 flex-shrink-0" />
-              <span className="text-gray-300 text-xs truncate">
-                <span className="font-mono text-gray-500">{csvFileName}</span>{' — '}
-                {selectedIds.size > 0
-                  ? <span className="text-blue-300 font-semibold">{selectedIds.size} app{selectedIds.size !== 1 ? 's' : ''} matched</span>
-                  : <span className="text-gray-500">No apps matched</span>}
-                {csvMatchedNames.length > 0 && (
-                  <span className="text-gray-600 ml-1">({csvMatchedNames.length} name{csvMatchedNames.length !== 1 ? 's' : ''} in CSV)</span>
-                )}
-              </span>
-            </div>
-            <button onClick={() => { setCsvMatchedNames(null); setCsvFileName(''); setSelectedIds(new Set()); setCsvEnvFilter(new Set()); }}
-              className="text-gray-600 hover:text-gray-300 transition-colors flex-shrink-0">
-              <X size={14} />
-            </button>
-          </div>
-          {/* Row 2: match mode + env dropdown — single line */}
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Match mode toggle */}
-            <span className="text-[10px] text-gray-600 font-medium flex-shrink-0">Match:</span>
-            <div className="flex items-center gap-0.5 bg-gray-800/60 border border-gray-700/50 rounded-lg p-0.5">
-              {[['exact', 'Exact name'], ['fuzzy', 'Contains']].map(([mode, label]) => (
-                <button key={mode} onClick={() => setCsvMatchMode(mode)}
-                  className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${
-                    csvMatchMode === mode ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'
-                  }`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {/* Env dropdown — same line */}
-            {environments.length > 0 && (() => {
-              const envList = applyEnvFilter(environments);
-              const selectedEnvNames = [...csvEnvFilter]
-                .map(id => envList.find(e => e.id === id)?.name)
-                .filter(Boolean);
-              const dropLabel = csvEnvFilter.size === 0 ? 'All environments' : `${csvEnvFilter.size} selected`;
-              return (
-                <>
-                  <span className="text-[10px] text-gray-600 font-medium flex-shrink-0">Envs:</span>
-                  <div className="relative" ref={csvEnvDropRef}>
-                    {/* Trigger button */}
-                    <button
-                      onClick={() => setCsvEnvDropOpen(o => !o)}
-                      className="flex items-center gap-1.5 text-[10px] bg-gray-800/60 border border-gray-700/50 rounded-lg px-2.5 py-1.5 font-medium select-none transition-colors hover:border-blue-600/50 hover:text-gray-200 text-gray-400">
-                      {dropLabel}
-                      <span className={`text-gray-600 transition-transform inline-block ${csvEnvDropOpen ? 'rotate-180' : ''}`}>▾</span>
-                    </button>
-                    {/* Dropdown panel */}
-                    {csvEnvDropOpen && (
-                      <div className="absolute top-full left-0 mt-1 z-30 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl min-w-[12rem] overflow-hidden">
-                        {/* Search */}
-                        <div className="px-2 pt-2 pb-1 border-b border-gray-800/60">
-                          <div className="relative">
-                            <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
-                            <input
-                              autoFocus
-                              placeholder="Search environments…"
-                              onChange={e => {
-                                const q = e.target.value.toLowerCase();
-                                csvEnvDropRef.current?.querySelectorAll('[data-env-name]').forEach(el => {
-                                  el.style.display = el.dataset.envName.includes(q) ? '' : 'none';
-                                });
-                              }}
-                              className="w-full bg-gray-800 border border-gray-700/50 rounded-md pl-6 pr-2 py-1 text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500/50"
-                            />
-                          </div>
-                        </div>
-                        <div className="max-h-44 overflow-y-auto py-1">
-                          {envList.map(env => {
-                            const isSelected = csvEnvFilter.has(env.id);
-                            const isProd = env.type === 'production';
-                            return (
-                              <button key={env.id}
-                                data-env-name={env.name.toLowerCase()}
-                                onClick={() => setCsvEnvFilter(prev => {
-                                  const n = new Set(prev);
-                                  n.has(env.id) ? n.delete(env.id) : n.add(env.id);
-                                  return n;
-                                })}
-                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-800/50 transition-colors text-left">
-                                <div className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-500' : 'border-gray-600 hover:border-blue-500'}`}>
-                                  {isSelected && <span className="text-white text-[8px] font-bold leading-none">✓</span>}
-                                </div>
-                                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
-                                <span className="text-[10px] text-gray-300">{env.name}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {csvEnvFilter.size > 0 && (
-                          <div className="px-3 py-1.5 border-t border-gray-800/60">
-                            <button onClick={() => { setCsvEnvFilter(new Set()); setCsvEnvDropOpen(false); }}
-                              className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
-                              Clear — all envs
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {/* Selected env names shown inline after dropdown */}
-                  {selectedEnvNames.length > 0 && (
-                    <span className="text-[10px] text-blue-300/80 font-medium truncate max-w-xs">
-                      {selectedEnvNames.join(', ')}
-                    </span>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">{error}</div>
       )}
 
-      {/* Filters row — Search first, then BG, Env, Status, Type */}
+      {/* Filters row — Search, BG, Env, Status, Type (no labels) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {/* Search */}
         <div className="sm:col-span-2 lg:col-span-1">
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Search</p>
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
             <input value={search} onChange={(e) => setSearch(e.target.value)}
@@ -1536,10 +1521,6 @@ export default function ApplicationsPage() {
         </div>
         {/* BG selector */}
         <div className="lg:col-span-1">
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1 flex items-center gap-1">
-            Business Group
-            {bgLoading && <span className="animate-spin inline-block w-2.5 h-2.5 border border-gray-600 border-t-gray-400 rounded-full" />}
-          </p>
           <Select
             value={selectedBg}
             onChange={(v) => {
@@ -1563,47 +1544,10 @@ export default function ApplicationsPage() {
             </p>
           )}
         </div>
-        <div>
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Environment</p>
-          <Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="All Environments" searchable />
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Status</p>
-          <Select value={filterStatus} onChange={setFilterStatus} options={statusOptions} placeholder="All Statuses" />
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1">Type</p>
-          <Select value={filterType} onChange={setFilterType} options={typeOptions} placeholder="All Types" />
-        </div>
+        <div><Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="All Environments" searchable /></div>
+        <div><Select value={filterStatus} onChange={setFilterStatus} options={statusOptions} placeholder="All Statuses" /></div>
+        <div><Select value={filterType} onChange={setFilterType} options={typeOptions} placeholder="All Types" /></div>
       </div>
-
-      {/* Bulk action toolbar — appears when rows are selected */}
-      {selectedApps.length > 0 && (
-        <div className="flex items-center justify-between flex-wrap gap-3 px-4 py-3 bg-blue-950/40 border border-blue-800/50 rounded-xl">
-          <div className="flex items-center gap-3">
-            <span className="text-blue-300 text-sm font-medium">
-              {selectedApps.length} application{selectedApps.length !== 1 ? 's' : ''} selected
-            </span>
-            <button
-              onClick={() => setSelectedIds(new Set())}
-              className="text-blue-500 hover:text-blue-300 text-xs underline underline-offset-2">
-              Clear
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-blue-500 text-xs hidden sm:inline">Bulk action:</span>
-            {bulkActions.map((action) => {
-              const { Icon, label, bulkCls } = ACTION_CONFIG[action];
-              return (
-                <button key={action} onClick={() => requestBulkAction(action)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${bulkCls}`}>
-                  <Icon size={12} /> {label} All
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
 
       {loading ? (
