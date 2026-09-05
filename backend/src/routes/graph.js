@@ -6,7 +6,6 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 router.use(authMiddleware);
 
-// ── In-memory graph cache (TTL: 2 minutes) ────────────────────────────────────
 const CACHE_TTL_MS = 2 * 60 * 1000;
 const graphCache = new Map();
 
@@ -17,22 +16,16 @@ function getCached(orgId, envId) {
   graphCache.delete(key);
   return null;
 }
-
 function setCache(orgId, envId, data) {
   graphCache.set(`${orgId}:${envId}`, { data, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-// ── Name normalisation ────────────────────────────────────────────────────────
 function normaliseName(name) {
-  return (name || '')
-    .toLowerCase()
-    .trim()
+  return (name || '').toLowerCase().trim()
     .replace(/[-_](dev|sit|uat|prod|sandbox|staging|qa|test|local|hotfix|release)$/i, '')
     .replace(/-v?\d+(\.\d+)*$/, '')
     .replace(/[-_\s]+$/, '');
 }
-
-// ── CPS helpers ───────────────────────────────────────────────────────────────
 
 function normaliseUrl(url = '') {
   return url.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
@@ -80,33 +73,26 @@ function getSessionCpsCred(session, rawBaseUrl, bgOrgId) {
   const fallback = Object.entries(creds).find(([k, v]) =>
     k.startsWith(`${norm}::`) && v?.clientId && v?.clientSecret
   );
-  return fallback ? fallback[1] : null;
+  if (fallback) return fallback[1];
+  // Last resort: graph-scan bulk credentials posted by ApiGraphPage
+  const graphScan = Object.entries(creds).find(([k, v]) =>
+    k.startsWith('graph-scan::') && v?.clientId && v?.clientSecret
+  );
+  return graphScan ? graphScan[1] : null;
 }
 
-/**
- * Extract a hostname candidate from a CPS property value.
- * Handles:
- *   - Full URLs:       https://orders-sapi-v1.cloudhub.io/api → orders-sapi-v1.cloudhub.io
- *   - Bare hostnames:  orders-sapi-v1.cloudhub.io            → orders-sapi-v1.cloudhub.io
- *   - host:port:       orders-sapi.example.com:8080           → orders-sapi.example.com
- */
 function extractHostname(value) {
   const v = String(value || '').trim();
   if (!v) return null;
-  // Full URL
   if (/^https?:\/\//i.test(v)) {
     try { return new URL(v).hostname || null; } catch { return null; }
   }
-  // Bare hostname or host:port (contains a dot, no spaces, looks like a domain)
   if (/^[a-z0-9-]+\.[a-z0-9.\-]+(:\d+)?(\/.*)?$/i.test(v)) {
     return v.split('/')[0].split(':')[0];
   }
   return null;
 }
 
-/**
- * Try to match a hostname to a deployed app by comparing normalised segments.
- */
 function matchHostnameToApp(hostname, appByNorm) {
   if (!hostname) return null;
   const sub = hostname.split('.')[0];
@@ -120,21 +106,53 @@ function matchHostnameToApp(hostname, appByNorm) {
   return null;
 }
 
-// Property key suffixes that strongly indicate a URL/endpoint value
+// Property key patterns indicating infrastructure (not API connections)
+const INFRA_KEY_PATTERNS = /password|secret|\.jks|truststore|keystore|bootstrap\.servers|\.pgp\.|ssl\.|\.db\.|msk\.|zookeeper|\.kafka\.|\.alias$|\.path$|\.type$/i;
+
+// Property key patterns indicating a URL/endpoint value
 const URL_KEY_PATTERNS = /\.(url|base[_.\-]?url|uri|host|endpoint|address|server|location|baseuri|baseurl|apiurl|service[_.\-]?url)$/i;
+
+/**
+ * Check if a secure group contains meaningful API connection info
+ * (at least one host/URL value that isn't pure infrastructure).
+ */
+function isApiConnectionGroup(groupKey, properties) {
+  // Skip groups that are clearly infrastructure-only
+  if (/^(https?-jks|jks-tls|pgp-cred|db-cred|kafka-cred|truststore|keystore|msk-cred|ssl-cred|binaries)/i.test(groupKey)) {
+    return false;
+  }
+  return Object.entries(properties || {}).some(([k, v]) => {
+    if (INFRA_KEY_PATTERNS.test(k)) return false;
+    return extractHostname(String(v || '')) !== null;
+  });
+}
+
+/**
+ * Helper: ensure a source app node exists in the map.
+ */
+function ensureSourceNode(map, srcId, app) {
+  if (!map.has(srcId)) {
+    map.set(srcId, {
+      id: srcId,
+      label: app.name || app.domain || String(app.id),
+      type: 'app',
+      status: app.status || app.desiredStatus || 'UNKNOWN',
+      deploymentType: app._type,
+      meta: { appId: app.id || app.domain, deploymentType: app._type, status: app.status || 'UNKNOWN' },
+    });
+  }
+}
 
 // ── GET /api/graph/dependencies ───────────────────────────────────────────────
 // CPS-based service dependency graph.
 //
-// For each deployed app this route:
-//   1. Fetches ARM deployment detail to extract CPS config
-//   2. Fetches CPS non-secure properties (using session credentials)
-//   3. Scans property VALUES for http(s) URLs
-//   4. Matches URLs to other deployed apps → 'app' target nodes
-//      Unmatched URLs → 'external' endpoint nodes (hostname as label)
+// Discovery strategy (in priority order):
+//   1. Secure group KEY name → matches deployed app name
+//      e.g. "sapi-coupa-lookup-commons" → "sapi-coupa-lookup" → matches "sapi-coupa-lookup-v2-uw2-ut"
+//   2. Secure group property VALUES containing host/URL → match to deployed app or external
+//   3. Non-secure property VALUES containing host/URL → same matching
 //
-// Requires CPS credentials stored in session via POST /api/cps/credentials.
-// Returns { noCpsCredentials: true } when no credentials are configured.
+// Requires CPS credentials posted via POST /api/cps/credentials (done by ApiGraphPage).
 router.get('/dependencies', async (req, res) => {
   const { orgId, envId, noCache } = req.query;
   const client = createClient(req.session.token);
@@ -143,21 +161,12 @@ router.get('/dependencies', async (req, res) => {
     return res.status(400).json({ error: 'orgId and envId are required' });
   }
 
-  // Check CPS credentials before doing the expensive fan-out
-  if (!req.session.cpsCreds || Object.keys(req.session.cpsCreds).length === 0) {
-    return res.json({
-      nodes: [], edges: [], summary: { apps: 0, endpoints: 0, edges: 0 },
-      noCpsCredentials: true,
-      debug: {},
-    });
-  }
-
   if (noCache !== 'true') {
     const cached = getCached(orgId, envId);
     if (cached) return res.json({ ...cached, cached: true });
   }
 
-  const debug = { ch2Apps: 0, ch1Apps: 0, cpsConfigFound: 0, cpsUrlsFound: 0, edges: 0, errors: [] };
+  const debug = { ch2Apps: 0, ch1Apps: 0, cpsConfigFound: 0, cpsUrlsFound: 0, secureGroupsScanned: 0, edges: 0, errors: [] };
 
   try {
     // ── 1. Fetch deployed apps ────────────────────────────────────────────────
@@ -171,8 +180,7 @@ router.get('/dependencies', async (req, res) => {
       }),
     ]);
 
-    const ch2Apps = (ch2Res.status === 'fulfilled' ? ch2Res.value.data?.items || [] : [])
-      .map(a => ({ ...a, _type: 'CH2' }));
+    const ch2Apps = (ch2Res.status === 'fulfilled' ? ch2Res.value.data?.items || [] : []).map(a => ({ ...a, _type: 'CH2' }));
     const ch1Apps = (ch1Res.status === 'fulfilled'
       ? Array.isArray(ch1Res.value.data) ? ch1Res.value.data : (ch1Res.value.data?.data || [])
       : []).map(a => ({ ...a, _type: 'CH1' }));
@@ -181,7 +189,7 @@ router.get('/dependencies', async (req, res) => {
     debug.ch1Apps = ch1Apps.length;
     const deployedApps = [...ch2Apps, ...ch1Apps];
 
-    // Build normalised app name lookup for URL → app matching
+    // Build normalised app name lookup
     const appByNorm = {};
     deployedApps.forEach(app => {
       const name = (app.name || app.domain || '').toLowerCase();
@@ -192,18 +200,38 @@ router.get('/dependencies', async (req, res) => {
       }
     });
 
-    // ── 2. Fan-out: ARM detail → CPS config → CPS non-secure properties ───────
-    const sourceAppNodes = new Map(); // id → node
-    const targetNodes = new Map();    // id → node  (matched apps or external endpoints)
+    // ── 2. Fan-out: ARM → CPS non-secure → CPS secure ─────────────────────────
+    const sourceAppNodes = new Map();
+    const targetNodes = new Map();
     const edges = [];
     const seenEdges = new Set();
     const BATCH = 5;
+
+    /** Add an edge (source → target) if not already seen. */
+    function addEdge(srcId, srcApp, targetId, targetNode, edgeId, cpsKey, cpsValue) {
+      const dedupKey = `${srcId}->${targetId}`;
+      if (seenEdges.has(dedupKey)) return;
+      seenEdges.add(dedupKey);
+      ensureSourceNode(sourceAppNodes, srcId, srcApp);
+      if (!targetNodes.has(targetId)) targetNodes.set(targetId, targetNode);
+      edges.push({
+        id: edgeId || dedupKey,
+        source: srcId,
+        target: targetId,
+        edgeType: targetNode.type === 'app' ? 'internal' : 'external',
+        cpsKey,
+        cpsValue,
+        appName: srcApp.name || srcApp.domain,
+        targetName: targetNode.label,
+      });
+      debug.edges++;
+    }
 
     for (let i = 0; i < deployedApps.length; i += BATCH) {
       await Promise.allSettled(
         deployedApps.slice(i, i + BATCH).map(async (app) => {
           try {
-            // Step A: fetch ARM detail
+            // Step A: ARM detail
             let armProps = {};
             if (app._type === 'CH2') {
               const r = await client.get(
@@ -218,11 +246,9 @@ router.get('/dependencies', async (req, res) => {
               armProps = r.data?.properties || {};
             }
 
-            const cpsBaseUrl =
-              armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] ||
+            const cpsBaseUrl = armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] ||
               armProps['cps.baseUrl'] || armProps['cps.url'] || '';
-            const cpsKey =
-              armProps['cps.projectName'] || armProps['cloudhub.api.name'] || app.name || '';
+            const cpsKey = armProps['cps.projectName'] || armProps['cloudhub.api.name'] || app.name || '';
             const cpsEnv = armProps['cps.prefix'] || armProps['cps.environment'] || '';
 
             if (!cpsBaseUrl || !cpsKey) return;
@@ -231,122 +257,128 @@ router.get('/dependencies', async (req, res) => {
             const cred = getSessionCpsCred(req.session, cpsBaseUrl, orgId);
             if (!cred) return;
 
-            // Step B: fetch CPS non-secure properties
+            const cpsHost = normaliseUrl(cpsBaseUrl).replace(/^https?:\/\//, '');
+            const srcId = `app-${app.id || app.domain || app.name}`;
+
+            // Step B: fetch CPS non-secure
             const nsUrl = `${normaliseUrl(cpsBaseUrl)}/api/v2/properties/non-secure`;
             const nsRes = await axios.get(nsUrl, {
-              headers: {
-                client_id: cred.clientId,
-                client_secret: cred.clientSecret,
-                'Content-Type': 'application/json',
-              },
+              headers: { client_id: cred.clientId, client_secret: cred.clientSecret, 'Content-Type': 'application/json' },
               params: { ...(cpsEnv && { environment: cpsEnv }), keys: cpsKey },
               timeout: 12000,
               validateStatus: () => true,
             });
-
             if (nsRes.status !== 200) return;
             const nsFlat = flattenCpsProps(nsRes.data);
 
-            const srcId = `app-${app.id || app.domain || app.name}`;
-
-            // Step C: scan property values for hostnames / URLs
+            // Step C: scan non-secure values for URLs/hostnames
             for (const [key, value] of Object.entries(nsFlat)) {
               if (typeof value !== 'string') continue;
-              const v = String(value).trim();
-              if (!v) continue;
-
-              // Extract hostname from value (handles http:// URLs, bare hostnames, host:port)
-              // Also check key name hints for connection properties
-              const isConnectionKey = URL_KEY_PATTERNS.test(key);
-              const hostname = extractHostname(v);
-              if (!hostname && !isConnectionKey) continue;
+              const hostname = extractHostname(value);
               if (!hostname) continue;
-
-              // Skip the CPS server itself
-              const cpsHost = normaliseUrl(cpsBaseUrl).replace(/^https?:\/\//, '');
               if (hostname.includes(cpsHost) || cpsHost.includes(hostname)) continue;
-              // Skip Anypoint / MuleSoft platform
-              if (hostname.includes('anypoint.mulesoft') || hostname.includes('mulesoft.com') ||
-                  hostname.includes('anypoint.com') || hostname.includes('cloudhub.io') && hostname.split('.').length > 3) {
-                // Allow single-subdomain cloudhub.io (app deployments), skip platform domains
-                if (!hostname.match(/^[^.]+\.cloudhub\.io$/)) continue;
-              }
-              // Skip clearly internal/localhost values
-              if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('10.') ||
-                  hostname.startsWith('192.168.') || hostname.startsWith('172.')) continue;
+              if (hostname.includes('anypoint.mulesoft') || hostname.includes('mulesoft.com')) continue;
+              if (hostname === 'localhost' || hostname === '127.0.0.1') continue;
 
               debug.cpsUrlsFound++;
-
-              // Try to match hostname to a deployed app
-              let targetId, targetLabel, targetType;
               const matched = matchHostnameToApp(hostname, appByNorm);
-
               if (matched) {
-                targetId = `app-${matched.id || matched.domain || matched.name}`;
-                targetLabel = matched.name || matched.domain;
-                targetType = 'app';
-                if (targetId === srcId) continue;
-
-                // Ensure target app node exists
-                if (!targetNodes.has(targetId)) {
-                  targetNodes.set(targetId, {
-                    id: targetId,
-                    label: targetLabel,
-                    type: 'app',
-                    status: matched.status || matched.desiredStatus || 'UNKNOWN',
-                    deploymentType: matched._type,
-                    meta: { appId: matched.id || matched.domain, deploymentType: matched._type },
-                  });
+                const tId = `app-${matched.id || matched.domain || matched.name}`;
+                if (tId !== srcId) {
+                  addEdge(srcId, app, tId,
+                    { id: tId, label: matched.name || matched.domain, type: 'app', status: matched.status || 'UNKNOWN', deploymentType: matched._type, meta: { appId: matched.id || matched.domain, deploymentType: matched._type } },
+                    `${srcId}->${tId}::ns:${key}`, key, value
+                  );
                 }
               } else {
-                // External endpoint — use hostname as node key
-                targetId = `ext-${hostname}`;
-                targetLabel = hostname;
-                targetType = 'external';
+                const extId = `ext-${hostname}`;
+                addEdge(srcId, app, extId,
+                  { id: extId, label: hostname, type: 'external', meta: { hostname, exampleUrl: value } },
+                  `${srcId}->${extId}::ns:${key}`, key, value
+                );
+              }
+            }
 
-                if (!targetNodes.has(targetId)) {
-                  targetNodes.set(targetId, {
-                    id: targetId,
-                    label: hostname,
-                    type: 'external',
-                    meta: { hostname, exampleUrl: v },
-                  });
+            // Step D: fetch and scan SECURE properties
+            // The secure group KEY NAME typically matches an API app name directly.
+            // e.g. "sapi-coupa-lookup-commons" → "sapi-coupa-lookup" → deployed app
+            const secStr = nsFlat['cps.secure.properties'] || nsFlat['cps.secureProperties'] || '';
+            if (!secStr.trim()) return;
+
+            const secUrl = `${normaliseUrl(cpsBaseUrl)}/api/v2/properties/secure`;
+            const secRes = await axios.get(secUrl, {
+              headers: { client_id: cred.clientId, client_secret: cred.clientSecret, 'Content-Type': 'application/json' },
+              params: { ...(cpsEnv && { environment: cpsEnv }), keys: secStr.trim() },
+              timeout: 15000,
+              validateStatus: () => true,
+            });
+            if (secRes.status !== 200) return;
+
+            const secGroups = Array.isArray(secRes.data?.responses) ? secRes.data.responses : [];
+            debug.secureGroupsScanned += secGroups.length;
+
+            for (const group of secGroups) {
+              const groupKey = group.key || '';
+              const groupProps = group.properties || {};
+              if (typeof groupProps === 'string') continue; // "COULD NOT ACCESS"
+
+              // Strategy 1: match GROUP KEY NAME to a deployed app
+              if (groupKey && isApiConnectionGroup(groupKey, groupProps)) {
+                const groupNorm = normaliseName(groupKey);
+                if (groupNorm && groupNorm.length >= 5) {
+                  // Try hostname matcher first (treats groupNorm as if it were a hostname subdomain)
+                  let matchedByKey = null;
+                  for (const [k, a] of Object.entries(appByNorm)) {
+                    if (k.length < 5) continue;
+                    const kNorm = normaliseName(k);
+                    if (groupNorm === kNorm || groupNorm.startsWith(kNorm) || kNorm.startsWith(groupNorm)) {
+                      matchedByKey = a;
+                      break;
+                    }
+                  }
+                  if (matchedByKey) {
+                    const tId = `app-${matchedByKey.id || matchedByKey.domain || matchedByKey.name}`;
+                    if (tId !== srcId) {
+                      addEdge(srcId, app, tId,
+                        { id: tId, label: matchedByKey.name || matchedByKey.domain, type: 'app', status: matchedByKey.status || 'UNKNOWN', deploymentType: matchedByKey._type, meta: { appId: matchedByKey.id || matchedByKey.domain, deploymentType: matchedByKey._type } },
+                        `${srcId}->${tId}::sec-key:${groupKey}`,
+                        `[secure] ${groupKey}`, groupKey
+                      );
+                    }
+                  }
                 }
               }
 
-              const edgeId = `${srcId}->${targetId}::${key}`;
-              // Deduplicate: same source → same target via same property key
-              const dedupKey = `${srcId}->${targetId}`;
-              if (seenEdges.has(dedupKey)) continue;
-              seenEdges.add(dedupKey);
+              // Strategy 2: scan property VALUES in secure group
+              for (const [propKey, propValue] of Object.entries(groupProps)) {
+                if (typeof propValue !== 'string') continue;
+                if (INFRA_KEY_PATTERNS.test(propKey)) continue; // skip passwords, JKS, bootstrap servers
+                const h = extractHostname(propValue);
+                if (!h) continue;
+                if (h.includes(cpsHost) || cpsHost.includes(h)) continue;
+                if (h.includes('anypoint.mulesoft') || h.includes('mulesoft.com')) continue;
+                if (h === 'localhost' || h === '127.0.0.1') continue;
 
-              // Ensure source app node exists
-              if (!sourceAppNodes.has(srcId)) {
-                sourceAppNodes.set(srcId, {
-                  id: srcId,
-                  label: app.name || app.domain || String(app.id),
-                  type: 'app',
-                  status: app.status || app.desiredStatus || 'UNKNOWN',
-                  deploymentType: app._type,
-                  meta: {
-                    appId: app.id || app.domain,
-                    deploymentType: app._type,
-                    status: app.status || 'UNKNOWN',
-                  },
-                });
+                debug.cpsUrlsFound++;
+                const matched = matchHostnameToApp(h, appByNorm);
+                if (matched) {
+                  const tId = `app-${matched.id || matched.domain || matched.name}`;
+                  if (tId !== srcId) {
+                    addEdge(srcId, app, tId,
+                      { id: tId, label: matched.name || matched.domain, type: 'app', status: matched.status || 'UNKNOWN', deploymentType: matched._type, meta: { appId: matched.id || matched.domain, deploymentType: matched._type } },
+                      `${srcId}->${tId}::${propKey}`,
+                      `[sec:${groupKey}] ${propKey}`, propValue
+                    );
+                  }
+                } else {
+                  const extId = `ext-${h}`;
+                  addEdge(srcId, app, extId,
+                    { id: extId, label: h, type: 'external', meta: { hostname: h, exampleUrl: propValue } },
+                    `${srcId}->${extId}::${propKey}`,
+                    `[sec:${groupKey}] ${propKey}`, propValue
+                  );
+                }
               }
-
-              edges.push({
-                id: edgeId,
-                source: srcId,
-                target: targetId,
-                edgeType: targetType === 'app' ? 'internal' : 'external',
-                cpsKey: key,
-                cpsValue: v,
-                appName: app.name || app.domain,
-                targetName: targetLabel,
-              });
-              debug.edges++;
             }
           } catch (err) {
             debug.errors.push(`${app.name || app.domain}: ${err.message}`);
@@ -356,23 +388,12 @@ router.get('/dependencies', async (req, res) => {
     }
 
     // ── 3. Build final node/edge sets ─────────────────────────────────────────
-    // Some target app nodes may also be source nodes — merge them
     const allNodesMap = new Map();
+    for (const [id, node] of sourceAppNodes.entries()) allNodesMap.set(id, node);
+    for (const [id, node] of targetNodes.entries()) { if (!allNodesMap.has(id)) allNodesMap.set(id, node); }
 
-    // Add source app nodes first (they have full status info)
-    for (const [id, node] of sourceAppNodes.entries()) {
-      allNodesMap.set(id, node);
-    }
-
-    // Add target nodes (if a target is also a source, source version wins)
-    for (const [id, node] of targetNodes.entries()) {
-      if (!allNodesMap.has(id)) allNodesMap.set(id, node);
-    }
-
-    // Only keep edges where both nodes exist
     const allNodeIds = new Set(allNodesMap.keys());
     const validEdges = edges.filter(e => allNodeIds.has(e.source) && allNodeIds.has(e.target));
-
     const allNodes = [...allNodesMap.values()];
     const internalCount = validEdges.filter(e => e.edgeType === 'internal').length;
     const externalCount = validEdges.filter(e => e.edgeType === 'external').length;
@@ -380,16 +401,16 @@ router.get('/dependencies', async (req, res) => {
     console.log(
       `[Graph/CPS] orgId=${orgId} envId=${envId} — ` +
       `${deployedApps.length} apps, ${debug.cpsConfigFound} with CPS, ` +
-      `${allNodes.length} nodes, ${validEdges.length} edges ` +
-      `(${internalCount} internal + ${externalCount} external)`
+      `${debug.secureGroupsScanned} secure groups, ` +
+      `${allNodes.length} nodes, ${validEdges.length} edges (${internalCount} int + ${externalCount} ext)`
     );
 
     const result = {
       nodes: allNodes,
       edges: validEdges,
       summary: {
-        apps: [...allNodesMap.values()].filter(n => n.type === 'app').length,
-        endpoints: [...allNodesMap.values()].filter(n => n.type === 'external').length,
+        apps: allNodes.filter(n => n.type === 'app').length,
+        endpoints: allNodes.filter(n => n.type === 'external').length,
         edges: validEdges.length,
         internalEdges: internalCount,
         externalEdges: externalCount,

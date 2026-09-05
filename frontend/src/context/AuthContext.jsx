@@ -14,7 +14,19 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     checkSession();
-  }, []);
+
+    // Recheck session when the user switches back to this tab.
+    // This handles the "server restarted while tab was open" case:
+    // the React state still shows the user as logged in but the backend
+    // session is gone — the visibility change triggers a re-validation.
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkSession();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkSession = async () => {
     try {
@@ -30,9 +42,18 @@ export const AuthProvider = ({ children }) => {
         setUser(res.data.user);
         setOrgId(res.data.orgId);
         setOrgName(res.data.orgName);
+      } else {
+        // Session expired or server restarted — clear stale user state
+        // so the route guard redirects to the login page.
+        setUser(null);
+        setOrgId(null);
+        setOrgName(null);
       }
     } catch (e) {
-      // not authenticated
+      // Network error or unexpected failure — clear user state to be safe
+      setUser(null);
+      setOrgId(null);
+      setOrgName(null);
     } finally {
       setLoading(false);
     }
