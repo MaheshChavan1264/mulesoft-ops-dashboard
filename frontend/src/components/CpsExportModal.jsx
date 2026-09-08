@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, Globe, ChevronRight, Building2, Layers, Key, Zap, Search } from 'lucide-react';
+import { X, Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, Globe, ChevronRight, Building2, Layers, Key, Zap, Search, FileJson } from 'lucide-react';
 import { exportCpsProperties } from '../utils/exportCps';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { applyBgFilter } from './BgFilterModal';
@@ -200,6 +200,8 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
   const [cpsBaseUrl, setCpsBaseUrl] = useState('');
   const [cpsEnv, setCpsEnv] = useState('');
   const [bgEnvSelections, setBgEnvSelections] = useState([]);
+  // Export format: 'excel' | 'json'
+  const [exportFormat, setExportFormat] = useState('excel');
 
   // Whether to use the pre-passed apps (selected from Applications page) or BG/Env selector
   const hasPreselected = passedApps?.length > 0;
@@ -269,6 +271,69 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
     });
   }, [bgOrgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── JSON export helper: fetch CPS non-secure props for one app ──────────
+  const fetchAppCpsJson = useCallback(async (app) => {
+    const appBgId = app._bgId || bgOrgId;
+    const envId = app.environment?.id;
+    const result = {
+      name: app.name,
+      id: app.id,
+      deploymentType: app.deploymentType,
+      environment: app.environment?.name || '',
+      environmentId: envId || '',
+      businessGroup: app._bgName || bgName,
+      businessGroupId: appBgId,
+      cpsBaseUrl: null,
+      cpsEnv: null,
+      projectKey: null,
+      properties: null,
+      error: null,
+    };
+    try {
+      // Step 1: get ARM detail to extract CPS config
+      let armProps = {};
+      if (app.deploymentType === 'CloudHub 2.0') {
+        const r = await api.get(`/applications/cloudhub2/${appBgId}/${envId}/${app.id}`);
+        const ds = r.data?.target?.deploymentSettings || {};
+        const ps = (r.data?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
+        armProps = { ...(r.data?.properties || {}), ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}) };
+      } else {
+        const r = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: appBgId } });
+        armProps = r.data?.properties || {};
+      }
+      const detectedUrl = (cpsBaseUrl.trim() || armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] || '').trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+      const detectedEnv = cpsEnv.trim() || armProps['cps.prefix'] || armProps['cps.environment'] || '';
+      const detectedKey = armProps['cps.projectName'] || armProps['cloudhub.api.name'] || app.name;
+      result.cpsBaseUrl = detectedUrl || null;
+      result.cpsEnv = detectedEnv || null;
+      result.projectKey = detectedKey || null;
+      if (!detectedUrl || !detectedKey) {
+        result.error = 'No CPS config found in deployment properties';
+        return result;
+      }
+      // Step 2: fetch non-secure CPS properties
+      const nsRes = await api.get('/cps/fetch', {
+        params: { baseUrl: detectedUrl, type: 'non-secure', environment: detectedEnv || undefined, keys: detectedKey, bgOrgId: appBgId },
+      });
+      // Flatten the response
+      const data = nsRes.data;
+      let props = {};
+      if (Array.isArray(data?.responses)) {
+        data.responses.forEach(r => { if (r?.key === detectedKey) Object.assign(props, r.properties || {}); });
+        if (Object.keys(props).length === 0) data.responses.forEach(r => Object.assign(props, r.properties || {}));
+      } else if (Array.isArray(data)) {
+        data.forEach(r => { if (r?.properties) Object.assign(props, r.properties); });
+      } else if (data && typeof data === 'object') {
+        const firstVal = Object.values(data)[0];
+        props = (firstVal && typeof firstVal === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
+      }
+      result.properties = props;
+    } catch (err) {
+      result.error = err.response?.data?.error || err.message || 'Failed to fetch CPS properties';
+    }
+    return result;
+  }, [bgOrgId, bgName, cpsBaseUrl, cpsEnv]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleExport = async () => {
     if (bgEnvSelections.length === 0 && !usePreselected) {
       setErrorMsg('Please select at least one Business Group / Environment.');
@@ -299,6 +364,45 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
       }
     }
 
+    // ── JSON export path ──────────────────────────────────────────────────────
+    if (exportFormat === 'json') {
+      try {
+        setProgress({ current: 0, total: allApps.length, label: 'Fetching CPS properties…' });
+        const results = [];
+        for (let i = 0; i < allApps.length; i++) {
+          setProgress({ current: i, total: allApps.length, label: allApps[i].name });
+          const appResult = await fetchAppCpsJson(allApps[i]);
+          results.push(appResult);
+        }
+        setProgress({ current: allApps.length, total: allApps.length, label: '' });
+        // Build output JSON
+        const output = {
+          exportedAt: new Date().toISOString(),
+          appCount: results.length,
+          apps: results,
+        };
+        // Trigger download
+        const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const safeName = allApps.length === 1
+          ? allApps[0].name.replace(/[^a-z0-9_-]/gi, '-').toLowerCase()
+          : `cps-export-${allApps.length}-apps`;
+        a.href = url;
+        a.download = `${safeName}-cps-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setStatus('done');
+      } catch (e) {
+        setErrorMsg(e.message || 'JSON export failed');
+        setStatus('error');
+      }
+      return;
+    }
+
+    // ── Excel export path ─────────────────────────────────────────────────────
     if (usePreselected) {
       // ── Pre-selected apps: single file with Environment column ─────────────
       const uniqueEnvNames = [...new Set(allApps.map(a => a._envName || a.environment?.name).filter(Boolean))];
@@ -456,17 +560,48 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
             </div>
           )}
 
-          {/* Output format */}
+          {/* Format selector */}
           {status === 'idle' && (
-            <div className="space-y-1.5">
-              <p className="text-gray-500 text-[10px] uppercase tracking-wider font-medium">Output: Excel (.xlsx) — 4 sheets</p>
-              {['AllPropertiesCatalog', 'Host_APIUsersCatalog', 'ScheduleCatalog', 'StaticIPsCatalog'].map(s => (
-                <div key={s} className="flex items-center gap-2 bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-1.5">
-                  <ChevronRight size={10} className="text-gray-600 flex-shrink-0" />
-                  <span className="text-gray-300 text-xs font-mono">{s}</span>
+            <div className="space-y-2">
+              <p className="text-gray-500 text-[10px] uppercase tracking-wider font-medium">Export Format</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setExportFormat('excel')}
+                  className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+                    exportFormat === 'excel'
+                      ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-300'
+                      : 'bg-gray-800/40 border-gray-700/40 text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                  }`}>
+                  <FileSpreadsheet size={13} /> Excel (.xlsx)
+                  <span className="ml-auto text-[9px] opacity-60">4 sheets</span>
+                </button>
+                <button
+                  onClick={() => setExportFormat('json')}
+                  className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+                    exportFormat === 'json'
+                      ? 'bg-blue-950/40 border-blue-700/60 text-blue-300'
+                      : 'bg-gray-800/40 border-gray-700/40 text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                  }`}>
+                  <FileJson size={13} /> JSON (.json)
+                  <span className="ml-auto text-[9px] opacity-60">raw props</span>
+                </button>
+              </div>
+              {exportFormat === 'excel' && (
+                <div className="space-y-1 mt-1">
+                  {['AllPropertiesCatalog', 'Host_APIUsersCatalog', 'ScheduleCatalog', 'StaticIPsCatalog'].map(s => (
+                    <div key={s} className="flex items-center gap-2 bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-1.5">
+                      <ChevronRight size={10} className="text-gray-600 flex-shrink-0" />
+                      <span className="text-gray-300 text-xs font-mono">{s}</span>
+                    </div>
+                  ))}
+                  <p className="text-gray-700 text-[10px]">⚠ Sensitive values masked as <code>****</code></p>
                 </div>
-              ))}
-              <p className="text-gray-700 text-[10px]">⚠ Sensitive values masked as <code>****</code></p>
+              )}
+              {exportFormat === 'json' && (
+                <p className="text-gray-600 text-[10px] pl-1">
+                  Exports raw CPS non-secure properties as <code className="text-gray-500">{`{ appName: { key: value } }`}</code> per app.
+                </p>
+              )}
             </div>
           )}
 
@@ -517,10 +652,18 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
             </button>
             {status !== 'done' && (
               <button onClick={handleExport} disabled={status === 'running' || !canExport}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg disabled:opacity-50 transition-colors">
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 transition-colors ${
+                  exportFormat === 'json'
+                    ? 'bg-blue-600 hover:bg-blue-500'
+                    : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}>
                 {status === 'running'
                   ? <><RefreshCw size={13} className="animate-spin" /> Exporting…</>
-                  : status === 'error' ? <><RefreshCw size={13} /> Retry</> : <><Download size={13} /> Export to Excel</>}
+                  : status === 'error'
+                    ? <><RefreshCw size={13} /> Retry</>
+                    : exportFormat === 'json'
+                      ? <><FileJson size={13} /> Export to JSON</>
+                      : <><Download size={13} /> Export to Excel</>}
               </button>
             )}
             {status === 'done' && (
