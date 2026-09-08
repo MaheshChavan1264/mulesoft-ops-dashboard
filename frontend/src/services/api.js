@@ -68,31 +68,6 @@ const mockHandler = async (url, params) => {
   if (url === '/cps/credentials/test') return { valid: true, statusCode: 200, message: 'Demo mode — connected successfully' };
   if (url === '/cps/binary') return { success: true, uploaded: 'demo.jks', sizeBytes: 1024 };
 
-  // BUG12-FIX: Graph dependencies mock — previously returned {} causing a
-  // runtime crash because graph.nodes / graph.edges were undefined.
-  if (url.startsWith('/graph/dependencies')) {
-    return {
-      nodes: [
-        { id: 'app-demo-1', label: 'orders-exp-app', type: 'app', status: 'RUNNING', deploymentType: 'CH2', meta: { appId: 'demo-1', status: 'RUNNING', deploymentType: 'CH2' } },
-        { id: 'app-demo-2', label: 'payments-prc-app', type: 'app', status: 'RUNNING', deploymentType: 'CH2', meta: { appId: 'demo-2', status: 'RUNNING', deploymentType: 'CH2' } },
-        { id: 'app-demo-3', label: 'inventory-svc', type: 'app', status: 'FAILED', deploymentType: 'CH2', meta: { appId: 'demo-3', status: 'FAILED', deploymentType: 'CH2' } },
-        { id: 'client-ext-portal', label: 'partner-portal', type: 'client', status: null, deploymentType: null, meta: { contractApp: 'partner-portal' } },
-        { id: 'api-1001', label: 'orders-sapi', type: 'api', meta: { apiId: 1001, assetId: 'orders-sapi', assetVersion: '1.0.0' } },
-        { id: 'api-1002', label: 'payments-sapi', type: 'api', meta: { apiId: 1002, assetId: 'payments-sapi', assetVersion: '2.1.0' } },
-        { id: 'api-1003', label: 'inventory-sapi', type: 'api', meta: { apiId: 1003, assetId: 'inventory-sapi', assetVersion: '1.2.0' } },
-      ],
-      edges: [
-        { id: 'app-demo-1->api-1001', source: 'app-demo-1', target: 'api-1001', contractStatus: 'APPROVED', appName: 'orders-exp-app', apiName: 'orders-sapi', slaTier: 'Gold' },
-        { id: 'app-demo-1->api-1002', source: 'app-demo-1', target: 'api-1002', contractStatus: 'APPROVED', appName: 'orders-exp-app', apiName: 'payments-sapi', slaTier: '' },
-        { id: 'app-demo-2->api-1002', source: 'app-demo-2', target: 'api-1002', contractStatus: 'APPROVED', appName: 'payments-prc-app', apiName: 'payments-sapi', slaTier: 'Silver' },
-        { id: 'app-demo-3->api-1003', source: 'app-demo-3', target: 'api-1003', contractStatus: 'APPROVED', appName: 'inventory-svc', apiName: 'inventory-sapi', slaTier: '' },
-        { id: 'client-ext-portal->api-1001', source: 'client-ext-portal', target: 'api-1001', contractStatus: 'APPROVED', appName: 'partner-portal', apiName: 'orders-sapi', slaTier: 'Bronze' },
-      ],
-      summary: { apis: 3, apps: 4, edges: 5, matched: 3, unmatched: 1 },
-      debug: { apis: 3, ch2Apps: 3, ch1Apps: 0, contractsChecked: 3, contractsFetched: 5, contractErrors: [], edges: 5 },
-    };
-  }
-
   // Exchange
   if (url.startsWith('/exchange/org') && url.includes('/summary')) {
     return { assetCounts: mock.MOCK_EXCHANGE_SUMMARY };

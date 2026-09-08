@@ -16,6 +16,7 @@
 import api from './api';
 import { setCached } from './apiCache';
 import { CK } from './cacheKeys';
+import { applyBgFilter } from '../components/BgFilterModal';
 
 const BG_STALE_MS  = 30 * 60 * 1000;   // BGs: 30 min (rarely change)
 const APP_STALE_MS =  3 * 60 * 1000;   // Apps: 3 min (status changes)
@@ -41,9 +42,16 @@ export function warmCache(orgId) {
       // Phase 1: cache BG list
       setCached(CK.bgs(orgId), groups, BG_STALE_MS);
 
-      const bgIds = groups.map((g) => g.id);
+      // Phase 2: fan-out only to BGs the user has chosen to see.
+      // applyBgFilter reads the BG filter selection from localStorage —
+      // if no filter is set it returns all groups unchanged, so first-login
+      // behaviour is unaffected.  With a filter active, only the selected
+      // BGs are warmed instead of all 80+ root orgs.
+      const visibleGroups = applyBgFilter(groups);
+      const bgIds = visibleGroups.map((g) => g.id);
 
-      // Phase 2: fan-out apps fetch for all BGs in parallel
+      if (!bgIds.length) return;
+
       Promise.allSettled(bgIds.map((id) => api.get(`/applications/summary/${id}`)))
         .then((results) => {
           const merged = [];
