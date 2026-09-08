@@ -168,6 +168,8 @@ export default function CpsManagerPage() {
   const location = useLocation();
   // Stores the pending auto-select from navigation state (set by ApplicationsPage / ApplicationDetailPage)
   const pendingAutoSelectRef = useRef(null);
+  // Survives the apps-effect reset: holds the compositeId to re-apply after filtered apps load
+  const pendingSelectCompositeRef = useRef(null);
   // Version counters — incremented each time a new fetch starts so stale Promises are ignored
   const envsFetchIdRef = useRef(0);
   const appsFetchIdRef = useRef(0);
@@ -313,20 +315,18 @@ export default function CpsManagerPage() {
   // selectedAppComposite when the filtered load arrives.
   useEffect(() => {
     const auto = pendingAutoSelectRef.current;
-    if (!auto || !apps.length || appLoading) return;
-    // Don't fire on the transitional unfiltered apps list; wait for the correct env
+    if (!auto) return;
+    if (appLoading) return;
+    if (!apps.length) return;
     if (selectedEnvId !== auto.envId) return;
-    // Also wait for the correct BG to be selected
     if (selectedBgId !== auto.bgId) return;
-    // Match by appId only — don't rely on exact full compositeId match since
-    // the _bgId segment may differ slightly between ApplicationsPage and CPS Manager.
-    // We already guard selectedBgId === auto.bgId above, so we're in the right BG.
     const targetAppId = String(auto.compositeId.split('|')[0]);
     const found = apps.find(a => String(a.id) === targetAppId);
     if (found) {
-      // Use the app's ACTUAL compositeId from CPS Manager's own list
       const actualCompositeId = `${found.id}|${found.environment?.id || ''}|${found._bgId || ''}`;
-      pendingAutoSelectRef.current = null; // clear so it doesn't re-trigger
+      pendingAutoSelectRef.current = null;
+      // Store compositeId so the apps effect can re-apply it after the filtered list loads
+      pendingSelectCompositeRef.current = actualCompositeId;
       selectApp(actualCompositeId);
     }
   }, [apps, appLoading, selectedEnvId, selectedBgId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -406,7 +406,21 @@ export default function CpsManagerPage() {
     ).then(results => {
       // Discard stale fetches
       if (fetchId !== appsFetchIdRef.current) return;
-      setApps(results.flat());
+      const flatApps = results.flat();
+      setApps(flatApps);
+      // Re-apply auto-select if a compositeId was queued (the apps-effect reset above clears
+      // selectedAppComposite, so we must re-set it after the filtered list arrives)
+      const pendingCid = pendingSelectCompositeRef.current;
+      if (pendingCid) {
+        const targetId = String(pendingCid.split('|')[0]);
+        const found = flatApps.find(a => String(a.id) === targetId);
+        if (found) {
+          pendingSelectCompositeRef.current = null;
+          const actualCid = `${found.id}|${found.environment?.id || ''}|${found._bgId || ''}`;
+          // Defer one tick so setApps state is applied before selectApp reads it
+          setTimeout(() => selectApp(actualCid), 0);
+        }
+      }
     }).catch(() => {}).finally(() => {
       if (fetchId === appsFetchIdRef.current) setAppLoading(false);
     });
