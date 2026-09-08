@@ -272,23 +272,10 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
   }, [bgOrgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── JSON export helper: fetch CPS non-secure props for one app ──────────
+  // Returns the raw CPS API response exactly as received — no transformation.
   const fetchAppCpsJson = useCallback(async (app) => {
     const appBgId = app._bgId || bgOrgId;
     const envId = app.environment?.id;
-    const result = {
-      name: app.name,
-      id: app.id,
-      deploymentType: app.deploymentType,
-      environment: app.environment?.name || '',
-      environmentId: envId || '',
-      businessGroup: app._bgName || bgName,
-      businessGroupId: appBgId,
-      cpsBaseUrl: null,
-      cpsEnv: null,
-      projectKey: null,
-      properties: null,
-      error: null,
-    };
     try {
       // Step 1: get ARM detail to extract CPS config
       let armProps = {};
@@ -304,35 +291,16 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
       const detectedUrl = (cpsBaseUrl.trim() || armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] || '').trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
       const detectedEnv = cpsEnv.trim() || armProps['cps.prefix'] || armProps['cps.environment'] || '';
       const detectedKey = armProps['cps.projectName'] || armProps['cloudhub.api.name'] || app.name;
-      result.cpsBaseUrl = detectedUrl || null;
-      result.cpsEnv = detectedEnv || null;
-      result.projectKey = detectedKey || null;
-      if (!detectedUrl || !detectedKey) {
-        result.error = 'No CPS config found in deployment properties';
-        return result;
-      }
-      // Step 2: fetch non-secure CPS properties
+      if (!detectedUrl || !detectedKey) return { _app: app.name, _error: 'No CPS config found in deployment properties' };
+      // Step 2: fetch non-secure CPS properties — return raw response as-is
       const nsRes = await api.get('/cps/fetch', {
         params: { baseUrl: detectedUrl, type: 'non-secure', environment: detectedEnv || undefined, keys: detectedKey, bgOrgId: appBgId },
       });
-      // Flatten the response
-      const data = nsRes.data;
-      let props = {};
-      if (Array.isArray(data?.responses)) {
-        data.responses.forEach(r => { if (r?.key === detectedKey) Object.assign(props, r.properties || {}); });
-        if (Object.keys(props).length === 0) data.responses.forEach(r => Object.assign(props, r.properties || {}));
-      } else if (Array.isArray(data)) {
-        data.forEach(r => { if (r?.properties) Object.assign(props, r.properties); });
-      } else if (data && typeof data === 'object') {
-        const firstVal = Object.values(data)[0];
-        props = (firstVal && typeof firstVal === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
-      }
-      result.properties = props;
+      return nsRes.data;
     } catch (err) {
-      result.error = err.response?.data?.error || err.message || 'Failed to fetch CPS properties';
+      return { _app: app.name, _error: err.response?.data?.error || err.message || 'Failed to fetch CPS properties' };
     }
-    return result;
-  }, [bgOrgId, bgName, cpsBaseUrl, cpsEnv]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bgOrgId, cpsBaseUrl, cpsEnv]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExport = async () => {
     if (bgEnvSelections.length === 0 && !usePreselected) {
@@ -375,12 +343,10 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
           results.push(appResult);
         }
         setProgress({ current: allApps.length, total: allApps.length, label: '' });
-        // Build output JSON
-        const output = {
-          exportedAt: new Date().toISOString(),
-          appCount: results.length,
-          apps: results,
-        };
+        // Build output: single app → just the raw response; multiple → keyed by app name
+        const output = results.length === 1
+          ? results[0]
+          : Object.fromEntries(allApps.map((a, i) => [a.name, results[i]]));
         // Trigger download
         const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
