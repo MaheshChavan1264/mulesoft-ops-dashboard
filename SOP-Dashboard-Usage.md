@@ -1,557 +1,886 @@
-# SOP: MuleSoft Integration Dashboard — Usage Guide
+# MuleSoft Integration Dashboard — Standard Operating Procedure (SOP)
 
-**Document Type:** Standard Operating Procedure  
-**Audience:** MuleSoft Platform Operators, Integration Developers  
-**Version:** 1.2  
-**Last Updated:** August 2026
+> **Version:** 1.0 | **Last Updated:** September 2026 | **Audience:** MuleSoft Integration Team
 
 ---
 
-## Revision History
+## Table of Contents
 
-| Version | Date | Change Summary |
-|---|---|---|
-| 1.0 | August 2026 | Initial release |
-| 1.1 | August 2026 | Added Section 10: CPS Properties Comparison (single-app and multi-app diff, collapsible side panels, credentials import); updated Quick Reference Card, Common Workflows, and Do's & Don'ts |
-| 1.2 | August 2026 | Updated Section 6 (Applications): Import Credentials CSV, BG Filter, Export CPS, Deployment Type filter, lifecycle confirmation dialog. Rewrote Section 9 (Ping Test): Bulk Ping Modal with auto-credential resolution from API Manager, parallel batches of 10, 3-status system (Healthy/Partial/Unreachable), latency colour coding, 10-column CSV export, attempt log with per-attempt latency. Updated Quick Reference, Pre-Release Smoke Test and Post-Incident workflows, Do's & Don'ts |
-
----
-
-## 1. Purpose
-
-This SOP provides step-by-step instructions for using the MuleSoft Integration Dashboard to monitor applications, verify API configurations, inspect CPS properties, compare CPS property values across environments, and run live health checks against deployed Mule integrations.
-
----
-
-## 2. Prerequisites
-
-Before using the dashboard, confirm:
-
-- [ ] You have an active Anypoint Platform account with at least **Read** access to the relevant Business Groups and Environments.
-- [ ] The dashboard backend is running (`http://localhost:5000` or the hosted URL your team uses).
-- [ ] The dashboard frontend is accessible in your browser (`http://localhost:5173` or the hosted URL).
-- [ ] Your Anypoint session is active (tokens expire after ~60 minutes — re-login if prompted).
+1. [Overview](#1-overview)
+2. [Architecture & Tech Stack](#2-architecture--tech-stack)
+3. [First-Time Setup](#3-first-time-setup)
+4. [Logging In](#4-logging-in)
+5. [Applications Page](#5-applications-page)
+6. [Application Detail Page](#6-application-detail-page)
+7. [API Manager Page](#7-api-manager-page)
+8. [Anypoint Exchange Page](#8-anypoint-exchange-page)
+9. [Ping Test Page](#9-ping-test-page)
+10. [CPS Property Manager](#10-cps-property-manager)
+11. [CPS Compare Page](#11-cps-compare-page)
+12. [User Search Page](#12-user-search-page)
+13. [Credential Management](#13-credential-management)
+14. [Filters & Global Controls](#14-filters--global-controls)
+15. [Navigating Between Pages (Deep Links)](#15-navigating-between-pages-deep-links)
+16. [Common Workflows (Step-by-Step)](#16-common-workflows-step-by-step)
+17. [Troubleshooting](#17-troubleshooting)
+18. [Security & Best Practices](#18-security--best-practices)
+19. [Backend API Reference](#19-backend-api-reference)
 
 ---
 
-## 3. Logging In
+## 1. Overview
 
-1. Open the dashboard URL in your browser.
-2. Enter your **Anypoint Platform username** and **password**.
-3. Click **Login**.
-4. On success, you are redirected to the **Dashboard** home page.
+The **MuleSoft Integration Dashboard** is an internal web application that provides a unified, browser-based interface for managing MuleSoft Anypoint Platform resources across **all Business Groups and Environments** from a single screen.
 
-> ⚠️ If login fails, verify your credentials directly on [anypoint.mulesoft.com](https://anypoint.mulesoft.com). Do not share credentials with others — each user should log in with their own account.
+### What it does
 
----
-
-## 4. Navigation
-
-The **left sidebar** provides access to all modules:
-
-| Sidebar Link | What It Does |
+| Capability | Description |
 |---|---|
-| 🏠 Dashboard | Platform overview — app counts, status charts |
-| 📦 Applications | Full list of all deployed Mule applications |
-| 🌐 Environments | List of Anypoint environments |
-| 🏢 Business Groups | Organisation / BG hierarchy |
-| 🔌 API Manager | API instances, policies, contracts |
-| 📚 Exchange Assets | Anypoint Exchange asset browser |
-| 🏓 Ping Test | Live HTTP health-check workspace |
-| 🔀 CPS Compare | Side-by-side CPS property diff tool |
+| **Applications** | View, search, filter, start/stop/restart CloudHub 1.0 and 2.0 apps |
+| **API Manager** | Browse and inspect API instances and policies |
+| **Exchange** | Search and view Exchange assets (APIs, connectors, templates) |
+| **Ping Test** | Smoke-test application `/ping` endpoints with auto-credential resolution |
+| **CPS Property Manager** | Read, write, delete CPS (Config Property Server) non-secure/secure/binary properties |
+| **CPS Compare** | Diff CPS property sets between multiple environments side-by-side |
+| **User Search** | Find platform users by name or email across BGs |
 
 ---
 
-## 5. Viewing the Dashboard (Home)
+## 2. Architecture & Tech Stack
 
-**When to use:** Start of day health check; executive overview of platform health.
+```
+┌─────────────────────────────────────┐
+│           Browser (Vite + React)     │
+│  React 18 · React Router v6          │
+│  Tailwind CSS · Lucide Icons         │
+│  Axios (API calls)                   │
+└──────────────────┬──────────────────┘
+                   │ HTTP (localhost:5173 → :5000)
+┌──────────────────▼──────────────────┐
+│        Node.js / Express Backend     │
+│  express-session (SQLite store)      │
+│  axios → Anypoint Platform REST APIs │
+│  Rate limiting · CORS                │
+└──────────────────┬──────────────────┘
+                   │ HTTPS
+         Anypoint Platform API
+         (anypoint.mulesoft.com)
+```
 
-1. Click **Dashboard** in the sidebar.
-2. Select a **Business Group** from the dropdown at the top, or leave it on **All Organizations** to see the full estate.
-3. Review the summary cards:
-   - **Total Applications** — total deployments in scope
-   - **Running / Stopped** — live status counts
-   - **Total APIs** — API Manager instances registered
-4. Review the **status chart** (donut) and **environment breakdown chart** (bar).
-5. If numbers look unexpected, proceed to the **Applications** page for details.
+### Frontend (port 5173)
+- **Framework:** React 18 with Vite
+- **Routing:** React Router v6 — all routes are under `/` after login
+- **Styling:** Tailwind CSS (dark theme, `bg-gray-950` base)
+- **State:** React `useState` / `useContext` — no external state library
+- **Caching:** In-memory SWR cache (`apiCache.js`) with 3-minute freshness windows
 
----
-
-## 6. Monitoring Applications
-
-**When to use:** Identifying failed/stopped apps; reviewing what is deployed across BGs.
-
-1. Click **Applications** in the sidebar.
-2. Use the filters at the top to narrow results:
-   - **Business Group** — select a specific BG or keep **All Organizations**.
-   - **Environment** — Production, Sandbox, UAT, etc.
-   - **Status** — Running, Stopped, Deploying, Partially Started, etc.
-   - **Deployment Type** — Filter to CloudHub 2.0 (CH2) or CloudHub 1.0 (CH1) only.
-   - **Search box** — type an app name or partial name.
-3. Review the table. Apps are listed with Status, Environment, Type (CH1/CH2), Mule Version, and Last Modified date.
-4. Click an **application name** to open the Application Detail page.
-
-### 6.1 Importing Credentials for Ping Tests
-
-Before running a bulk ping test, import a credentials CSV so the dashboard can auto-resolve `client_id`/`client_secret` per app:
-
-1. Click **Import Creds CSV** in the Applications page toolbar.
-2. Upload a CSV file with at least `clientId` and `clientSecret` columns.
-3. A **N creds loaded 🛡** badge replaces the import button when successful.
-4. Credentials are stored in browser memory only — never written to disk or sent to any server until a ping is triggered.
-5. To clear credentials, click the **✕** next to the badge.
-
-> 💡 Imported credentials persist for the full session. You only need to import once even if you navigate away and return.
-
-### 6.2 Filtering Business Groups
-
-1. Click **Filter BGs** in the Business Group section of the page.
-2. Check only the BGs relevant to your work and click **Save**.
-3. The dropdown shows `N/M shown` when a filter is active.
-
-### 6.3 Exporting CPS Properties
-
-1. Click **Export CPS** in the toolbar.
-2. In the Export modal, choose the scope (current env, all envs, etc.).
-3. Click **Export** to download the CPS properties for all visible apps as an Excel/CSV file.
-
-### 6.4 Starting / Stopping / Restarting an Application
-
-1. Locate the application row in the table.
-2. Click the **▶ Start**, **⏹ Stop**, or **🔄 Restart** button at the end of the row.
-3. A confirmation dialog appears — review and confirm.
-4. Wait for the status badge to update (may take 15–30 seconds; use **Refresh** button if needed).
-
-> ⚠️ Only perform start/stop/restart after confirming with the application owner. Stopping a production app mid-traffic can cause data loss.
+### Backend (port 5000)
+- **Runtime:** Node.js + Express
+- **Sessions:** SQLite-backed (`./data/sessions.db`) — survives restarts
+- **Auth:** Anypoint Platform credentials stored in session (never in client)
+- **Body limit:** 1 MB default, 50 MB for `/api/cps` routes
 
 ---
 
-## 7. Inspecting an Application in Detail
+## 3. First-Time Setup
 
-**When to use:** Troubleshooting a specific app; verifying deployment configuration.
+### Prerequisites
+- Node.js ≥ 18
+- npm ≥ 9
 
-1. From the Applications page, click the application name.
-2. Use the **six tabs** to inspect different aspects:
+### Installation
 
-| Tab | What to Look For |
+```bash
+# Clone the repository
+git clone <repo-url>
+cd mulesoft-dashboard
+
+# Install backend dependencies
+cd backend && npm install
+
+# Install frontend dependencies
+cd ../frontend && npm install
+```
+
+### Backend Configuration
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+Edit `backend/.env`:
+
+```env
+PORT=5000
+SESSION_SECRET=<generate with: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))">
+ANYPOINT_PLATFORM_URL=https://anypoint.mulesoft.com
+
+# Optional: pre-configure CPS credentials
+CPS_CH1_PROD_CLIENT_ID=
+CPS_CH1_PROD_CLIENT_SECRET=
+CPS_CH2_PROD_CLIENT_ID=
+CPS_CH2_PROD_CLIENT_SECRET=
+CPS_CH1_UAT_CLIENT_ID=
+CPS_CH1_UAT_CLIENT_SECRET=
+CPS_CH2_UAT_CLIENT_ID=
+CPS_CH2_UAT_CLIENT_SECRET=
+```
+
+> ⚠️ **Never commit `.env` to git.** It contains secrets.
+
+### Starting the Servers
+
+**Terminal 1 — Backend:**
+```bash
+cd backend
+npm run dev       # development (nodemon, auto-restart)
+# or
+npm start         # production
+```
+
+**Terminal 2 — Frontend:**
+```bash
+cd frontend
+npm run dev       # Vite dev server on http://localhost:5173
+```
+
+Open `http://localhost:5173` in your browser.
+
+---
+
+## 4. Logging In
+
+Navigate to `http://localhost:5173`. You will be redirected to `/login`.
+
+### Login Methods
+
+| Method | When to use |
 |---|---|
-| **Overview** | Status, runtime version, region, last deployment time |
-| **Properties** | Property placeholder values (e.g., `db.url`, `api.key`) |
-| **Infra & Config** | Worker size, persistent queues, VPC settings |
-| **CPS Config** | Config Property Server values at runtime |
-| **Ping Test** | Run a live health check from this page (see Section 9) |
-| **Raw JSON** | Full ARM API response — useful for debugging |
+| **Username + Password** | Standard Anypoint Platform username/password |
+| **Access Token** | You have a valid bearer token (e.g. from CI/CD) |
+| **Connected App** | OAuth2 client credentials (Client ID + Secret) |
 
-### Checking CPS Config Values
+> 💡 Your credentials are sent to the backend and used to obtain a session token from Anypoint. They are **never stored in the browser**.
 
-1. Open the **CPS Config** tab.
-2. Review the key-value pairs.
-3. If values are missing or wrong, escalate to the platform team to update CPS entries in Anypoint.
+After login you land on the **Applications** page.
 
 ---
 
-## 8. Reviewing API Manager Instances
+## 5. Applications Page
 
-**When to use:** Governance checks; identifying policy enforcement; finding consumer client IDs.
+**Route:** `/applications`
 
-1. Click **API Manager** in the sidebar.
-2. The table lists all API instances with Name, Version, Status, and Environment.
-3. Click an API row to expand it and see:
+The main dashboard. Shows all deployed Mule applications across all visible Business Groups and Environments.
 
-### 8.1 Applied Policies
+### Layout
 
-- Lists each policy by **name** (e.g., "Client ID Enforcement", "Rate Limiting SLA Based").
-- Verify that required policies are applied before going live.
-- If a policy shows an unexpected name or is missing, raise a governance ticket.
+```
+[Search] [BG Selector] [Env Selector] [Status Filter] [Type Filter]
+                                               [Upload CSV] [Ping] [Export] [Refresh]
 
-### 8.2 Consumer Contracts
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ☐  Application       Status   Environment   Type   Mule Ver  Last Modified  Actions │
+│ ☐  my-api-v1        RUNNING   Production    CH2    4.6.0     Sep 8, 2026    ▶ 🗄 │
+│ ☐  customer-sapi    STOPPED   Sandbox       CH1    4.5.1     Sep 7, 2026   ⏹ ▶ 🗄 │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
 
-- Lists all client applications that have been granted access.
-- Each entry shows: **Consumer App Name**, **Client ID**, **Status** (APPROVED / PENDING / REVOKED), and **SLA Tier**.
-- Use this to identify which teams/apps are consuming your API.
-- If an unknown client ID appears, investigate with the Anypoint Platform admin.
+### Filters
 
----
-
-## 9. Running a Ping / Health Check
-
-There are two ways to run a ping test.
-
-### Method A — Single App Ping (from Application Detail)
-
-**When to use:** Quick spot-check on one app.
-
-1. Navigate to **Applications** → click the app name.
-2. Click the **Ping Test** tab.
-3. (Optional) Enter `client_id` and `client_secret` if the app's API requires client credentials.
-4. Click **Run Ping**.
-5. Review the result:
-   - ✅ **Healthy** — app is reachable and responded successfully.
-   - ❌ **Unreachable / Error** — check the error message and attempt log.
-
-### Method B — Bulk Ping from Applications Page
-
-**When to use:** Verifying a set of apps (or all apps) before or after a release; incident sweep.
-
-#### Step 1 — Launch the Bulk Ping Modal
-
-1. Go to **Applications** in the sidebar.
-2. (Optional) Filter/search to narrow the app list.
-3. To ping **selected apps only**: tick checkboxes on the desired rows, then click **Ping (N)**.  
-   To ping **all visible apps**: click **Ping Test** without selecting any rows.
-4. The **Bulk Ping Modal** opens.
-
-#### Step 2 — Configure Credentials in the Modal
-
-- **Auto-resolve (recommended):** If you imported a credentials CSV (Section 6.1), leave `client_id` blank. The modal will automatically look up each app's `client_id` via API Manager contracts and match it against your CSV. A "Resolving credentials…" banner appears during this step.
-- **Manual override:** Enter `client_id` and `client_secret` directly to use the same credentials for all apps.
-- **x-transaction-id:** Defaults to `smokeTest`; change if your API requires a specific value.
-
-#### Step 3 — Run
-
-1. Click **Run All Pings**.
-2. Pings run in **parallel batches of 10**. Per-app result cards update in real time showing status, HTTP code, and latency.
-3. A progress summary shows `X/total · N healthy · N partial · N failed · N auto-creds`.
-4. When complete, the modal automatically navigates to the **Ping Test Results page**.
-
-### 9.3 Reading the Ping Test Results Page
-
-The results page (`/ping-test`) shows all outcomes from the most recent bulk ping run:
-
-**Summary bar** (top of results):
-- Total apps tested
-- ✓ Healthy / ~ Partial / ✗ Failed counts
-- 🔑 Number of apps where credentials were auto-resolved
-- Toggle: **✓ Showing tested (N)** ↔ **Show all apps**
-
-**Results table** — sorted by status (Healthy first, then Partial, then Unreachable):
-
-| Status Badge | Meaning |
+| Control | What it does |
 |---|---|
-| ✅ Healthy | At least one endpoint path returned a successful response |
-| ⚠️ Partial | App responded but with a non-success HTTP status |
-| ❌ Unreachable | All paths failed or timed out |
+| **Search box** | Filter by application name (substring match) |
+| **Business Group** | Show apps from one BG or all BGs |
+| **Environment** | Filter by specific environment (Production, Sandbox, etc.) |
+| **Status** | Filter by RUNNING / STOPPED / FAILED / DEPLOYING etc. |
+| **Type** | CloudHub 1.0 or CloudHub 2.0 |
 
-- **🔑 auto badge** next to an app name: credentials were auto-resolved from API Manager
-- **HTTP column**: colour-coded — green (<300), yellow (<500), red (≥500)
-- **Latency column**: colour-coded — green (<300 ms), yellow (<1000 ms), red (≥1000 ms)
+> 💡 Filter selections are **persisted in `localStorage`** and survive page navigation.
 
-**Expanding a row** for detail:
-1. Click the **▶** button on any row.
-2. The row expands to show:
-   - 🔑 Auto-resolved credentials detail (API Manager instance → contract app → `client_id` prefix)
-   - Full endpoint URL
-   - Error message (if failed)
-   - Response payload (formatted)
-   - Attempt log: each path tried, HTTP result or error, per-attempt latency
+### Actions Per Row
 
-**Exporting results:**
-- Click **Export CSV** to download a 10-column CSV (Application, Environment, Type, Status, HTTP Code, Active Endpoint, Latency, Credentials, Error, Response Payload).
-
-### 9.4 Interpreting Result Statuses
-
-| Status / Indicator | Meaning | Action |
-|---|---|---|
-| ✅ Healthy, low latency (<300 ms) | App is healthy and fast | No action needed |
-| ✅ Healthy, high latency (>1000 ms) | App reachable but slow | Investigate GC, thread contention, or DB latency |
-| ⚠️ Partial — HTTP 401 / 403 | App running but credentials rejected | Verify auto-resolved or manual `client_id`/`client_secret`; check Client ID Enforcement policy |
-| ⚠️ Partial — HTTP 404 | App running but no matching ping endpoint | Expected for apps without `/ping` — not a failure |
-| ❌ Unreachable — ECONNREFUSED | App port not accepting connections | App may be stopped or crashed — check ARM status |
-| ❌ Unreachable — ETIMEDOUT | Request timed out | Check network routing, VPC rules, or app overload |
-| ❌ All paths: "No listener" | App running but no HTTP listener for any ping path | Not a connectivity failure — inform app owner to add a `/ping` or `/api/v1/ping` endpoint |
-
----
-
-## 10. Comparing CPS Properties Between Environments
-
-**When to use:** Verifying CPS property values are aligned between UAT and Production before a release; detecting configuration drift after a migration; auditing all apps' CPS configurations in bulk.
-
-Click **CPS Compare** in the sidebar to open the comparison workspace.
-
-### 10.1 Importing CPS Credentials (one-time setup)
-
-CPS secure property fetches require a `clientId`/`clientSecret` pair. Import these once per session:
-
-1. Click **Import CPS Creds** in the page header.
-2. Upload a CSV file containing at least `clientId` and `clientSecret` columns.
-3. The credentials are stored in the browser session.
-4. When you select an app, the dashboard automatically matches credentials to that app based on its `clientId` deployment property. A **🔑 CPS creds** badge in the side panel confirms the match.
-
-> 💡 Credentials persist for the entire browser session. You only need to import once per login.
-
-### 10.2 Configuring Side A and Side B
-
-Both side panels start **expanded** for initial setup. Complete these steps for both sides:
-
-1. **Select a Business Group** — choose from the dropdown, or leave on "All Organizations".
-2. **Select an Environment** — Production, Sandbox, UAT, etc., or leave on "All Environments".
-3. **Select an Application** — type to search/filter the app list. CPS Base URL, environment prefix, and project key are **auto-populated** from the selected app's deployment properties. Edit manually if needed.
-4. **Select Property Type** using the three tabs at the top of each panel:
-
-   | Tab | Properties Fetched |
-   |---|---|
-   | **Non-Secure** | Standard key-value CPS properties |
-   | **Secure** | Encrypted properties (keys auto-discovered from `cps.secure.properties`) |
-   | **Binaries** | Binary files stored in CPS (keys auto-discovered from `cps.secure.binaries`) |
-
-   > ℹ️ Side A and Side B can independently use different property types.
-
-### 10.3 Choosing a Compare Mode
-
-Use the **1 App / All Apps** toggle in the centre column:
-
-| Mode | When to Use |
+| Icon | Action |
 |---|---|
-| **1 App** | Comparing one application between two environments or BGs |
-| **All Apps** | Comparing all (or a selected subset of) apps across two BGs or environments in one run |
+| ▶ Start | Start a stopped application |
+| ⏹ Stop | Stop a running application |
+| 🔄 Restart | Restart a running application |
+| 🗄 CPS Manager | Navigate to CPS Manager with this app pre-selected |
+| ↗ Open in Anypoint | Opens app in Anypoint Platform (copies app name to clipboard) |
 
-**In All Apps mode:** a numbered checklist replaces the single app dropdown. Check the apps you want; they are paired **positionally** (1st Side A ↔ 1st Side B, 2nd ↔ 2nd, etc.). Use **All** / **Clear** to select or deselect all at once.
+> ⚠️ Stop and restart actions show a **confirmation modal** before executing.
 
-### 10.4 Running the Comparison
+### Bulk Operations
 
-1. Confirm both sides are configured (BG, environment, app, property type).
-2. Click **Compare** (single-app) or **Compare (N)** (multi-app) in the centre column.
-3. The diff results appear below the panels.
-4. **Both side panels automatically collapse** to compact summary bars after the comparison completes, maximising space for the diff table.
+1. **Select rows** using the checkboxes (left column) or the header checkbox to select all visible
+2. Selected rows float to the top
+3. Bulk action buttons appear in the top toolbar: **Start All / Stop All / Restart All**
+4. **Bulk Ping** button tests all selected apps (or all visible if none selected)
+5. **Export CPS** exports CPS properties for all selected apps to Excel
 
-Each collapsed bar shows: **Side A / Side B** label · Business Group · Environment · App/key · 🔑 if credentials matched.
+### CSV Upload (Bulk Select by Name)
 
-### 10.5 Re-expanding a Side Panel
+1. Click **Upload CSV**
+2. Upload a CSV file with app names in a column (supported headers: `appname`, `name`, `domain`, `application` — or just the first column)
+3. Matching apps are automatically selected
+4. Use **Exact / ~** toggle for exact vs fuzzy matching
+5. Filter by environment using the **env dropdown** in the banner
 
-To change a selection after comparing:
+### Sorting
 
-1. Click the **▼ Edit** bar on the collapsed panel you want to change.
-2. The panel re-expands to the full form.
-3. Make your changes, then click **Compare** again.
+Click any column header to sort ascending/descending:
+- Application name, Status, Environment, Type, Mule Version, Last Modified
 
-To collapse manually without re-running, click **▲ Collapse** in the expanded panel header.
+### Refreshing
 
-### 10.6 Reading the Diff Table (Single-App Mode)
-
-| Badge | Row Colour | Meaning |
-|---|---|---|
-| **DIFF** | 🔴 Red | Key on both sides, values differ |
-| **A ONLY** | 🔵 Blue | Key only in Side A |
-| **B ONLY** | 🟠 Orange | Key only in Side B |
-| **MATCH** | No highlight | Identical on both sides |
-
-- **Filter tabs** — All / Different / Only A / Only B / Matching.
-- **Search box** — filter visible rows by key name.
-- **Click any 🔴🔵🟠 row** — opens the word-level diff modal; changed tokens highlighted red (A) and orange (B).
-- **Export CSV** — downloads the complete diff as a `.csv` file.
-
-### 10.7 Reading Multi-App Results (All Apps Mode)
-
-Results appear as a collapsible accordion — one row per app pair:
-
-1. Each row shows app name (Side A), Side B match, 🔴 **N diffs** or ✅ **identical**, and total property count.
-2. Click a row to expand and see the per-property diff for that pair.
-3. Click any 🔴🔵🟠 property row to open the word-level diff modal.
-4. **Export All CSV** downloads a combined diff across all pairs.
-
-The summary line above the accordion shows: total apps compared · pairs with diffs · identical pairs.
-
-### 10.8 Using the BG Filter
-
-1. Click **Filter BGs** in the page header.
-2. Check only the BGs relevant to your comparison and click **Save**.
-3. The button label changes to **N/M BGs** while the filter is active.
+Click **Refresh** (top right) to force a fresh API fetch, bypassing the 3-minute SWR cache.
 
 ---
 
-## 11. Browsing Exchange Assets
+## 6. Application Detail Page
 
-**When to use:** Discovering published APIs or connectors; verifying spec versions before implementing an integration.
+**Route:** `/applications/:orgId/:envId/:appId`
 
-1. Click **Exchange Assets** in the sidebar.
-2. Select a **Business Group** from the dropdown.
-3. (Optional) Enter a search term in the search box.
-4. (Optional) Filter by asset type (REST API, RAML Fragment, Connector, etc.).
-5. Click an asset in the list to open the **detail panel** on the right.
-6. Review the description, version, classifier, tags, and portal link.
+Click any application row to open the detail view.
 
----
+### Sections
 
-## 12. Checking Business Groups and Environments
+| Section | Content |
+|---|---|
+| **Hero Header** | App name, status badge, deployment type, environment, Mule version |
+| **Actions** | Start / Stop / Restart / Open in Anypoint / CPS Manager |
+| **Properties** | All deployment properties (ARM properties) |
+| **Runtime Info** | Replica count, worker size, runtime version |
+| **URLs** | Ingress URL(s) for CloudHub 2.0 apps |
 
-### Business Groups
+### CPS Manager Button
 
-1. Click **Business Groups** in the sidebar.
-2. View the BG hierarchy tree.
-3. Note the **Organisation ID** for each BG — useful when raising support tickets or constructing direct API calls.
-
-### Environments
-
-1. Click **Environments** in the sidebar.
-2. Review the list of environments (Production, Sandbox, UAT, Design, etc.).
-3. Use environment **IDs** when needed for direct Anypoint API calls.
+In the hero header, the **CPS Manager** button navigates directly to CPS Manager with the BG, Environment, and Application **pre-selected**.
 
 ---
 
-## 13. Common Workflows
+## 7. API Manager Page
 
-### Pre-Release Smoke Test
+**Route:** `/api-manager`
 
-1. Go to **Applications** → set Status filter to **Running**.
-2. (Optional) Import credentials CSV via **Import Creds CSV** if apps use Client ID Enforcement (Section 6.1).
-3. Leave rows unselected (to ping all visible apps) or select specific apps using checkboxes.
-4. Click **Ping Test** or **Ping (N)** to open the Bulk Ping Modal.
-5. Leave `client_id` blank to use auto-resolve, or enter manually if needed.
-6. Click **Run All Pings** and wait for completion.
-7. Review results on the Ping Test Results page:
-   - Sort by status — ❌ Unreachable apps appear at the bottom.
-   - Click **Export CSV** and attach to your release ticket as evidence.
-8. Flag any ❌ Unreachable or ⚠️ Partial apps for investigation before go-live.
+Displays API instances registered in Anypoint API Manager.
+
+### Features
+- Filter by Business Group and Environment
+- View API instance name, version, status, and applied policies
+- Click any row to see full API instance details
+- Copy API instance ID
 
 ---
 
-### Post-Incident Health Sweep
+## 8. Anypoint Exchange Page
 
-1. Go to **Applications** in the sidebar.
-2. Set BG to the affected Business Group and Environment.
-3. Click **Ping Test** (no rows selected) to ping all visible apps.
-4. In the Bulk Ping Modal click **Run All Pings**.
-5. On the Results page, review the summary bar for ❌ Unreachable counts.
-6. Expand any failing row to capture the error message and attempt log.
-7. Navigate to Application Detail → **Raw JSON** tab for full deployment state.
+**Route:** `/exchange`
 
----
+Search and browse assets published to Anypoint Exchange.
 
-### Verifying a Property Change After Deployment
-
-1. Go to **Applications** → find the redeployed app.
-2. Click the app name → open the **Properties** tab.
-3. Confirm the expected property value is showing.
-4. Open the **CPS Config** tab to verify CPS-managed values.
-5. Run a quick ping from the **Ping Test** tab to confirm the app is responding.
+### Features
+- Full-text search across all asset types
+- Filter by asset type (RAML, OAS, connector, template, example, etc.)
+- View asset details, version history, and documentation
+- Copy asset coordinates (groupId, assetId, version)
 
 ---
 
-### Comparing CPS Values Before a Release (UAT → Production)
+## 9. Ping Test Page
 
-1. Click **CPS Compare** in the sidebar.
-2. If you have secure properties, click **Import CPS Creds** and upload your credentials CSV first.
-3. **Side A — UAT:**
-   - Select the UAT Business Group and Environment.
-   - Select the application being released.
-   - Choose the property type (Non-Secure, Secure, or Binaries).
-4. **Side B — Production:**
-   - Select the Production Business Group and Environment.
-   - Select the same application (production instance).
-   - Choose the same property type.
-5. Click **Compare**.
-6. Both panels collapse automatically. Review the diff table:
-   - 🔴 **DIFF** rows — values differ between UAT and Production; verify which is correct.
-   - 🔵 **A ONLY** rows — properties set in UAT but missing from Production; may need to be added before go-live.
-   - 🟠 **B ONLY** rows — properties in Production but not in UAT; confirm these are expected.
-7. Click any coloured row to open the word-level diff modal for detailed inspection.
-8. Click **Export CSV** to attach the diff report to your release ticket.
-9. To change a selection (e.g., switch to Secure properties), click **▼ Edit** on the relevant panel, update the selection, and click **Compare** again.
+**Route:** `/ping-test`
 
----
+Tests application health endpoints. Supports both manual testing and bulk testing initiated from the Applications page.
 
-### Bulk CPS Audit Across a Business Group
+### How Ping Works
 
-1. Click **CPS Compare** in the sidebar.
-2. Import CPS credentials if required (Section 10.1).
-3. Switch the mode toggle to **All Apps**.
-4. **Side A:** Select the source BG and environment; tick all relevant apps.
-5. **Side B:** Select the target BG and environment; tick the corresponding apps in the same order.
-6. Click **Compare (N)**.
-7. Panels collapse and the multi-app accordion appears.
-8. Review the summary line: total apps · pairs with diffs · identical pairs.
-9. Expand any app row to see its full property diff.
-10. Click **Export All CSV** for a consolidated audit report.
+For each app, the backend tries these paths in order:
+1. `/api/v1/ping`
+2. `/api/v2/ping`
+3. `/api/ping`
+4. `/ping`
+
+### Status Codes
+
+| Status | Meaning |
+|---|---|
+| **SUCCESS** (green) | 2xx response |
+| **PARTIAL** (yellow) | Response received but with 4xx/5xx status |
+| **FAILED** (red) | Connection error or timeout |
+| **SKIPPED_CONTRACT_PENDING** | OAuth contract awaiting approval |
+
+### Auto-Credential Resolution
+
+If a **Credentials CSV** has been imported (see §13), the Ping page automatically resolves `client_id` / `client_secret` pairs for each app by:
+1. Looking up the app's `api.id` from CPS properties (Layer 1)
+2. Matching against API Manager instances (Layer 2)
+3. Fuzzy name matching (Layers 3–5)
+
+### Manual Credentials
+
+You can override auto-resolved credentials by entering `client_id` and `client_secret` in the form.
 
 ---
 
-### Checking Which Apps Are Consuming a Given API
+## 10. CPS Property Manager
 
-1. Go to **API Manager**.
-2. Find the API instance by name or environment.
-3. Expand the row and open the **Consumer Contracts** section.
-4. Note the Consumer App Name, Client ID, and Contract Status.
-5. If an unexpected consumer appears, notify the API owner and Anypoint Platform admin.
+**Route:** `/cps-manager`
+
+The most powerful feature of the dashboard — a full CRUD interface for CPS (Configuration Property Server) properties.
+
+### What is CPS?
+
+CPS is an internal config server that stores properties for Mule applications (database URLs, credentials, feature flags, etc.) separate from the deployment config. Apps fetch their config at startup via CPS REST APIs.
+
+### Selector Panel (BG → Environment → Application)
+
+1. **Business Group** — select a specific BG or "All Business Groups"
+2. **Environment** — filtered by the selected BG
+3. **Application** — filtered by the selected environment; selecting an app auto-fills the CPS connection fields from the app's ARM deployment properties
+
+> 💡 When navigating from the Applications page via the 🗄 icon, all three dropdowns are **automatically pre-selected**.
+
+### CPS Connection Fields
+
+After selecting an app (or manually):
+
+| Field | Description |
+|---|---|
+| **CPS Base URL** | The CPS server hostname (e.g. `https://cps.example.net`) |
+| **CPS Env** | CPS environment name (e.g. `prod`, `uat`) |
+| **Project Key** | The CPS project/key name (e.g. `my-api-name`) |
+
+Click **+ save preset** to save a CPS Base URL for quick reuse (up to 5 presets stored in localStorage).
+
+### Property Tabs
+
+| Tab | Content |
+|---|---|
+| **Non-Secure** | Plain-text properties (most common). Inline editable table. |
+| **Secure** | Encrypted property groups. Each group has its own editor. |
+| **Binaries** | Binary file uploads (certificates, keystores) |
+| **🔐 Access Control** | Manage OAuth2 credentials per project key |
+
+### Non-Secure Properties — Operations
+
+| Operation | How |
+|---|---|
+| **View** | Load Properties button → inline table |
+| **Edit** | Click any value cell to edit in-place; press Enter or click away to commit |
+| **Add** | Use the bottom row (new key + value → Add button) |
+| **Bulk Add** | Click **Bulk Add** → paste `key=value` lines or JSON |
+| **Delete** | Hover over a row → trash icon → row marked DEL (pending) |
+| **Save** | Click **Save (N changes)** → diff preview modal → Confirm |
+| **Discard** | Click **Discard** to revert all pending changes |
+| **Undo** | Click **↩ Undo (N)** or press `Ctrl+Z` to undo last N changes |
+| **Search** | Search box filters visible rows by key or value |
+| **Find & Replace** | Click **Find & Replace** → search in values → Replace All |
+| **Export** | Click **Export** → downloads `cps-{key}-{env}-{date}.csv` |
+| **Import** | Click **Import** → upload CSV to batch-add/overwrite properties |
+| **Copy as…** | Export all properties as JSON / .properties / YAML / Env vars |
+
+### Change Indicators
+
+| Color | Meaning |
+|---|---|
+| Green left border + **NEW** badge | Newly added property (unsaved) |
+| Blue left border + **MOD** badge | Modified property (unsaved) |
+| Red opacity + **DEL** badge | Marked for deletion (unsaved) |
+
+### Value Type Icons
+
+The table automatically identifies value types:
+- ⚡ `${placeholder}` — placeholder reference
+- 🌐 URL
+- 🔑 UUID
+- ✅/❌ Boolean
+- 🔢 Number
+- 📋 JSON object/array
+
+### Auto-Draft Save
+
+Pending changes are **automatically saved to `localStorage`** as a draft. If you navigate away and return, a **"📝 Unsaved draft found"** banner appears with a **Restore Draft** option.
+
+### Production Safety
+
+If the selected environment is marked as Production, a **⚠️ PRODUCTION** banner appears and the Save button turns **red**. The save diff modal also warns "⚠ PRODUCTION" and requires explicit confirmation.
+
+### Secure Properties
+
+Secure property groups are listed under the **Secure** tab. Each group:
+- Shows all key-value pairs (if credentials allow)
+- Supports inline editing with Save/Discard per group
+- Shows **⚠ Access Denied** if credentials lack access (but still allows write)
+- Has **Auth** button to manage OAuth2 access for that group
+- Has **Delete Group** button (requires typing the group key in Production)
+
+### Binary Properties
+
+Upload binary files (JKS keystores, PEM certs, etc.) under the **Binaries** tab. Existing binary keys are listed from the `cps.secure.binaries` non-secure property.
+
+### Access Control Tab
+
+The **🔐 Access Control** tab lists all project keys (non-secure + all secure groups) and lets you manage OAuth2 client credentials per key. Use the search bar to find a specific project key.
+
+### Session Change Log
+
+At the bottom of the page, a collapsible **📋 Session Change Log** records every save action performed in the current session (timestamp, key, env, change count, success/fail).
+
+### Request / Response Panel
+
+After every CPS write operation a collapsible **Request / Response** panel appears showing the exact HTTP request sent and the raw response received — useful for debugging.
 
 ---
 
-## 14. Troubleshooting the Dashboard Itself
+## 11. CPS Compare Page
 
-| Symptom | Likely Cause | Resolution |
-|---|---|---|
-| Login fails | Wrong credentials or account locked | Verify on anypoint.mulesoft.com directly |
-| All pages show "Unauthorised" | Session expired (60-min token TTL) | Log out and log back in |
-| Applications page shows empty list | No apps in selected BG/environment | Try **All Organizations** and remove filters |
-| Ping Test shows all ETIMEDOUT | Network/firewall blocking outbound HTTPS from backend server | Check proxy/firewall rules on the machine running the backend |
-| CPS Config tab shows empty | CPS not enabled for this org or app name mismatch | Contact your Anypoint Platform admin |
-| CPS Compare shows no properties | CPS URL or project key incorrect; credentials missing | Verify auto-populated CPS fields; re-import credentials (Section 10.1) |
-| CPS Compare panels won't collapse | JavaScript error in the browser | Refresh the page; check browser console for errors |
-| Exchange assets return no results | Search query too narrow or wrong BG selected | Broaden the search or switch to a parent BG |
-| Metrics widgets show "N/A" | Metrics API not returning data for this BG | Expected for BGs without active traffic or Anypoint Monitoring entitlement |
+**Route:** `/cps-compare`
 
----
+Compare CPS property sets side-by-side across multiple environments for the same application.
 
-## 15. Logging Out
+### How to Use
 
-1. Click your username or the **Logout** button in the sidebar or header.
-2. You will be redirected to the login page.
-3. Your server-side session is cleared immediately — no further API calls can be made with the previous token.
+1. Select a Business Group
+2. Select an Application
+3. Add 2–4 environments to compare
+4. Click **Compare** — properties are fetched for each environment
+5. Differences are highlighted:
+   - 🟡 Value differs between environments
+   - 🔴 Key missing in one or more environments
+   - ⚪ Key exists and matches in all environments
+6. Click **Export** to download the comparison as an Excel file
 
-> 💡 Always log out when leaving your workstation, especially in shared or production-access environments. CPS credentials imported during your session are also cleared on logout.
+### Typical Use Case
 
----
-
-## 16. Quick Reference Card
-
-| Task | Where to Go | Key Action |
-|---|---|---|
-| See overall platform health | Dashboard | Check summary cards and charts |
-| Find a stopped/failed app | Applications → Status: Stopped | Review status badge |
-| Start / stop an app | Applications → action buttons | ▶ / ⏹ buttons on the row |
-| Check property values | App Detail → Properties tab | Read property list |
-| Check CPS values (single app) | App Detail → CPS Config tab | Read key-value list |
-| Compare CPS values (two environments) | CPS Compare → 1 App mode | Configure sides, click Compare |
-| Compare CPS values (bulk / all apps) | CPS Compare → All Apps mode | Select app checklists, click Compare (N) |
-| Re-edit a CPS side after comparison | CPS Compare → collapsed summary bar | Click ▼ Edit to re-expand |
-| Export CPS diff report | CPS Compare → diff table | Click Export CSV |
-| Import ping credentials | Applications → Import Creds CSV | Upload client_id/secret CSV |
-| Ping one app quickly | App Detail → Ping Test tab | Click Run Ping |
-| Ping selected apps | Applications → select rows → Ping (N) | Complete modal → review Results page |
-| Ping all visible apps | Applications → Ping Test (no rows selected) | Complete modal → review Results page |
-| Export ping results | Ping Test Results page | Click Export CSV |
-| View auto-creds detail | Ping Test Results → expand row | Check 🔑 auto-resolved section |
-| Check who consumes an API | API Manager → expand row → Contracts | Note Client ID and status |
-| Find a published API spec | Exchange Assets → search | Click asset for details |
-| View BG org IDs | Business Groups | Note Organisation ID column |
+Before a UAT → Production release:
+- Compare `UAT` vs `Production` CPS properties
+- Identify missing keys or incorrect values in Production
+- Fix in CPS Manager before deploying
 
 ---
 
-## 17. Do's and Don'ts
+## 12. User Search Page
+
+**Route:** `/user-search`
+
+Search for Anypoint Platform users by name or email.
+
+### Features
+- Search across the root organization and all sub-Business Groups
+- View user details: name, email, role, BG membership
+- Copy user ID or email
+
+---
+
+## 13. Credential Management
+
+The dashboard uses two types of in-memory credential stores. Both are **session-local** — they are never sent to the backend and are cleared when you close the tab.
+
+### 13.1 Ping Credentials CSV
+
+Used for auto-resolving `client_id` / `client_secret` when pinging applications.
+
+**Format:**
+```csv
+clientId,clientSecret
+abc123,secret456
+def789,secret012
+```
+
+**How to import:**
+1. Go to **Applications** page or **Ping Test** page
+2. Click **Import Credentials** (shield icon in the header)
+3. Upload the CSV
+4. A green banner confirms "N credential pairs loaded"
+
+### 13.2 CPS Credentials CSV
+
+Used for authenticating with CPS servers that require OAuth2.
+
+**Format:**
+```csv
+clientId,clientSecret
+cps-client-id,cps-secret
+```
+
+**How to import:**
+1. Go to **CPS Manager**
+2. Click **Import CSV** (top right, next to "CPS Credentials")
+3. Upload the CSV
+4. Green "CPS creds auto-resolved" badge appears when an app's credentials are matched
+
+### 13.3 CPS Credentials Modal
+
+Click **CPS Credentials** button (top right of CPS Manager) to manually enter a `clientId` + `clientSecret` for a specific CPS base URL. This is persisted in the backend session for the duration of your login.
+
+### 13.4 Backend `.env` Pre-configuration
+
+For environments shared by the whole team, add CPS credentials to `backend/.env`:
+
+```env
+CPS_CH2_PROD_CLIENT_ID=your-client-id
+CPS_CH2_PROD_CLIENT_SECRET=your-secret
+```
+
+These are loaded at server start and available to all users without manual import.
+
+---
+
+## 14. Filters & Global Controls
+
+### BG Filter Modal
+
+The **BG Filter** (accessible from the sidebar or filter icon) lets you restrict which Business Groups are visible across all pages. Hidden BGs are excluded from fan-out API calls, improving performance.
+
+### Env Filter Modal
+
+The **Env Filter** hides specific environments globally (e.g. hide all Sandbox environments to focus on Production).
+
+Both filters persist in `localStorage` and survive page refreshes.
+
+### Sidebar Navigation
+
+| Link | Page |
+|---|---|
+| Applications | `/applications` |
+| API Manager | `/api-manager` |
+| Exchange | `/exchange` |
+| Ping Test | `/ping-test` |
+| CPS Compare | `/cps-compare` |
+| CPS Manager | `/cps-manager` |
+| User Search | `/user-search` |
+
+---
+
+## 15. Navigating Between Pages (Deep Links)
+
+### Applications → CPS Manager
+
+Every application row in the Applications page has a 🗄 **Database icon** in the Actions column.
+
+Clicking it navigates to `/cps-manager` and **automatically pre-selects**:
+- Business Group (from the app's BG)
+- Environment (from the app's environment)
+- Application (the exact app)
+
+The CPS connection fields (Base URL, Env, Project Key) are then auto-filled from the app's ARM deployment properties.
+
+### Application Detail → CPS Manager
+
+The **CPS Manager** button in the Application Detail page hero header does the same.
+
+### CPS Manager → Application Detail
+
+When an app is selected in CPS Manager, a small **"Open {app} in Application Details"** link appears below the Application dropdown. Click it to jump to the detail page.
+
+---
+
+## 16. Common Workflows (Step-by-Step)
+
+### 16.1 View All Running Applications
+
+1. Go to **Applications** (`/applications`)
+2. Set Status filter to **Running**
+3. Set BG to **All Organizations** (default)
+4. All running apps across all BGs and environments appear
+
+---
+
+### 16.2 Stop a Specific Application
+
+1. Find the app (use Search or filters)
+2. Click the **⏹ Stop** icon in the Actions column
+3. Confirm in the modal
+4. The row status updates to **STOPPING** → **STOPPED**
+
+---
+
+### 16.3 Bulk Restart All Failed Applications
+
+1. Go to **Applications**
+2. Set Status filter to **Failed**
+3. Click the header checkbox to select all filtered apps
+4. Click **Restart** in the bulk toolbar
+5. Confirm in the bulk modal
+6. Monitor the result list (✓ Done / ✗ Failed per app)
+
+---
+
+### 16.4 Update a CPS Property (Production)
+
+> ⚠️ Always compare with UAT first (see 16.5)
+
+1. Go to **Applications**
+2. Find the production app → click 🗄 (CPS Manager icon)
+3. CPS Manager opens with app pre-selected and ⚠️ PRODUCTION banner shown
+4. Click **Load Properties**
+5. Click the value you want to edit → type new value → press Enter
+6. Value shows blue **MOD** indicator
+7. Click **Save (1 change)** → review the diff (old value → new value) → click **Confirm Save**
+8. Verify the change in the table
+
+---
+
+### 16.5 Compare CPS Properties Before a Release
+
+1. Go to **CPS Compare** (`/cps-compare`)
+2. Select the Business Group and Application
+3. Add **UAT** and **Production** to the comparison slots
+4. Click **Compare**
+5. Review highlighted differences
+6. For each missing or different key in Production:
+   - Click 🗄 on the Production app (from Applications page) to open CPS Manager
+   - Add/update the property
+7. Re-run the compare to confirm everything matches
+
+---
+
+### 16.6 Ping Test All Production Apps
+
+1. Go to **Applications**
+2. Set Environment filter to **Production**
+3. Ensure no rows are selected (or select specific apps)
+4. Click **Ping Test** → **Bulk Ping Modal** opens
+5. If credentials CSV is loaded, auto-resolution runs automatically
+6. Click **Run All Pings**
+7. Monitor results in real-time (batches of 10)
+8. When complete, you are redirected to **Ping Test** results page
+9. Green = healthy, Yellow = auth issue, Red = down
+
+---
+
+### 16.7 Add a New CPS Property to Multiple Environments
+
+1. Go to **CPS Manager**
+2. Select the app in **UAT** environment first
+3. Load Properties → click **Add** row → enter key and value → click Add
+4. Save → confirm in diff modal
+5. Change Environment dropdown to **Production**
+6. App re-selects automatically
+7. Load Properties → Add the same key → Save
+
+---
+
+### 16.8 Export CPS Properties for Audit
+
+1. Go to **CPS Manager**
+2. Select the app and load properties
+3. Click **Export** → CSV downloads with all non-secure properties
+4. Or use **Copy as… → JSON** to copy to clipboard
+
+For a bulk export across many apps:
+1. Go to **Applications**
+2. Select the apps you want (or all via header checkbox)
+3. Click **Export CPS** → Excel file downloads with one sheet per app
+
+---
+
+### 16.9 Import Bulk Properties from a Config File
+
+1. Go to **CPS Manager**
+2. Select the app and load properties
+3. Click **Import** → Upload a CSV (columns: `key`, `value`)
+4. Preview shows N properties to be added/updated
+5. Confirm → properties added as pending changes
+6. Review in the table → Save
+
+---
+
+### 16.10 Find a User's Anypoint Account
+
+1. Go to **User Search** (`/user-search`)
+2. Type name or email in the search box
+3. Results show all matching users across BGs with their roles
+
+---
+
+## 17. Troubleshooting
+
+### "No applications found"
+
+| Cause | Fix |
+|---|---|
+| BG filter hiding BGs | Open BG Filter modal → show all BGs |
+| Wrong BG selected | Change BG selector to "All Organizations" |
+| Session expired | Refresh the page — you'll be redirected to login |
+
+### "Failed to load CPS properties"
+
+| Cause | Fix |
+|---|---|
+| CPS credentials not set | Import CPS credentials CSV or enter via CPS Credentials modal |
+| CPS server unreachable | Check VPN / network access to the CPS base URL |
+| Wrong CPS Base URL | Verify the URL extracted from the app's ARM properties |
+| Wrong CPS Env | Check `cps.prefix` or `cps.environment` in the app's deployment properties |
+
+### CPS Manager dropdowns not auto-selecting
+
+This was a known issue (fixed in commit `e0d8695`). If it recurs:
+1. Hard refresh the page (`Ctrl+Shift+R`)
+2. Manually select BG → Environment → Application
+
+### "Ping PARTIAL / FAILED"
+
+| Cause | Fix |
+|---|---|
+| Wrong credentials | Import/update the Credentials CSV |
+| App not running | Check Status on Applications page |
+| VPN not connected | Connect to the appropriate VPN for the environment |
+| API contract pending | Approve the contract in API Manager |
+
+### Session Lost After Backend Restart
+
+Sessions are stored in SQLite (`backend/data/sessions.db`). They survive restarts. If sessions are lost:
+1. Check the `data/` directory exists
+2. Verify the `SESSION_SECRET` in `.env` has not changed (changing it invalidates all sessions)
+
+### Backend Returns 401 / 403
+
+Your Anypoint session has expired. Click anywhere in the app — you'll be redirected to the login page automatically.
+
+### Properties Show "⚠ Placeholder key not found"
+
+A property value references `${some.key}` but that key doesn't exist in the same property set. This is a validation warning only — not an error. Add the missing key or fix the reference.
+
+---
+
+## 18. Security & Best Practices
 
 ### ✅ Do
 
-- Use **All Organizations** as your default starting point on the Dashboard and Applications pages to get a complete picture.
-- Always **run a bulk ping before a release** — use the Applications page Bulk Ping modal rather than the App Detail ping tab for multiple apps.
-- **Import the credentials CSV** before running a bulk ping so credentials are auto-resolved per app rather than using a single manual pair.
-- Check the **attempt log** in expanded ping result rows when diagnosing failures — it shows each path tried, the HTTP result, and per-attempt latency.
-- Use the **CPS Config** tab as your first stop when an app behaves differently between environments.
-- Use **CPS Compare** before every release to verify property alignment between UAT and Production.
-- **Import CPS credentials** at the start of any CPS comparison session to enable automatic credential matching.
-- After a CPS comparison, use the **▼ Edit** bar to switch property types (Non-Secure → Secure → Binaries) and re-run without reconfiguring from scratch.
-- **Export CSV** from CPS Compare and attach to your release record as evidence of property verification.
-- **Log out** when you're done, especially if accessing production data.
+- Set a strong `SESSION_SECRET` in production (64 random hex chars minimum)
+- Use HTTPS in production (configure nginx/load balancer in front of the Express server)
+- Rotate CPS credentials regularly and update the `.env` accordingly
+- Use the **CPS Compare** page before every Production deployment to catch config drift
+- Import CPS credentials via CSV (in-memory only) — never paste them into properties
+- Review the **diff modal** carefully before saving Production properties
 
 ### ❌ Don't
 
-- Don't **stop or restart production applications** without a change approval and owner sign-off.
-- Don't interpret **HTTP 404** as an app failure on the Ping Test page — many apps don't implement a `/ping` endpoint.
-- Don't **share your Anypoint credentials** to let others use the dashboard — each user must log in independently.
-- Don't treat the dashboard as a real-time monitor — data is fetched on page load/navigation, not streamed live. Refresh to get the latest state.
-- Don't use the **Raw JSON** tab data for automated integrations — call the Anypoint APIs directly for that purpose.
-- Don't close the browser tab **during a bulk ping run** — the batch processing will be interrupted and results will be incomplete.
-- Don't close the browser tab mid-comparison in **CPS All Apps** mode — the CPS batch processing will also be interrupted.
-- Don't rely solely on **MATCH** rows in CPS Compare to confirm a property is correctly set — also verify the value itself makes sense for the target environment.
+- Don't commit `.env` to git
+- Don't share your Anypoint login credentials — each team member logs in individually
+- Don't run `npm start` in production with `NODE_ENV` unset (rate limiting is only enforced in production)
+- Don't edit Production CPS properties without first verifying on UAT
+- Don't close the tab mid-save — use the **Discard** button if you need to abort
+
+### Production Deployment Checklist
+
+Before modifying Production CPS properties:
+
+- [ ] Compare UAT vs Production (CPS Compare page)
+- [ ] Identify all differences
+- [ ] Test the change in UAT first
+- [ ] Get approval from a second team member (four-eyes principle)
+- [ ] Save the change in Production (you'll see the red ⚠️ PRODUCTION banner)
+- [ ] Confirm in the diff modal
+- [ ] Verify the app behaves correctly after config update
 
 ---
 
-*For technical issues with the dashboard itself, contact your platform engineering team. For Anypoint Platform access issues, contact your Anypoint Platform administrator.*
+## 19. Backend API Reference
+
+The frontend communicates exclusively with the backend. The backend proxies requests to Anypoint Platform.
+
+### Auth Routes (`/api/auth`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/auth/login` | POST | Login with username/password |
+| `/api/auth/token-login` | POST | Login with bearer token |
+| `/api/auth/connected-app-login` | POST | Login with Connected App credentials |
+| `/api/auth/logout` | POST | Logout and destroy session |
+| `/api/auth/me` | GET | Get current user info |
+
+### Organizations (`/api/organizations`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/organizations/business-groups` | GET | Get all Business Groups |
+
+### Environments (`/api/environments`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/environments/:orgId` | GET | Get environments for a BG |
+
+### Applications (`/api/applications`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/applications/summary/:orgId` | GET | List all apps in a BG |
+| `/api/applications/cloudhub2/:orgId/:envId/:appId` | GET | Get CH2 app details |
+| `/api/applications/cloudhub1/:envId/:appId` | GET | Get CH1 app details |
+| `/api/applications/cloudhub2/:orgId/:envId/:appId/action` | POST | Start/stop/restart CH2 app |
+| `/api/applications/cloudhub1/:envId/:appId/action` | POST | Start/stop/restart CH1 app |
+
+### APIs (`/api/apis`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/apis/:orgId/:envId` | GET | List API instances |
+
+### Exchange (`/api/exchange`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/exchange/search` | GET | Search Exchange assets |
+
+### CPS (`/api/cps`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/cps/fetch` | GET | Fetch CPS properties (non-secure or secure) |
+| `/api/cps/write` | POST | Write CPS properties (PUT) |
+| `/api/cps/project` | DELETE | Delete a CPS project |
+| `/api/cps/credentials` | POST | Store CPS OAuth2 credentials in session |
+| `/api/cps/auth` | GET/POST/DELETE | Manage CPS access control |
+
+### Health (`/api/health`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/health/ping` | POST | Ping an application endpoint |
+| `/api/health/auto-credentials` | POST | Auto-resolve credentials for an app |
+| `/api/health/auto-contract-creds` | POST | Fetch contract credentials from API Manager |
+| `/api/health/oauth2-token` | POST | Obtain OAuth2 token for JWT ping |
+
+### Metrics (`/api/metrics`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/metrics/:orgId/:envId/:appId` | GET | Get application metrics |
+
+---
+
+## Appendix A — Keyboard Shortcuts
+
+| Shortcut | Context | Action |
+|---|---|---|
+| `Ctrl+Z` | CPS Manager (non-secure table) | Undo last property change |
+| `Enter` | CPS property edit cell | Commit edit and move to next |
+| `Escape` | CPS property edit cell | Cancel edit |
+| `Enter` | Add new property row | Add the property |
+
+---
+
+## Appendix B — Glossary
+
+| Term | Definition |
+|---|---|
+| **BG** | Business Group — an organizational unit in Anypoint Platform |
+| **CH1** | CloudHub 1.0 — legacy MuleSoft hosting platform |
+| **CH2** | CloudHub 2.0 — current MuleSoft container-based hosting |
+| **CPS** | Config Property Server — internal service storing app properties |
+| **ARM** | Anypoint Runtime Manager — the deployment management API |
+| **SWR** | Stale-While-Revalidate — caching strategy that shows cached data immediately while refreshing in background |
+| **compositeId** | Internal app identifier: `appId|envId|bgId` used to uniquely identify an app across BGs |
+| **Non-Secure** | CPS properties stored in plain text (readable by anyone with CPS access) |
+| **Secure** | CPS properties stored encrypted (require OAuth2 credentials to read) |
+| **Project Key** | The CPS identifier for an application's property set |
+| **Session** | Server-side login state stored in SQLite � valid for 24 hours |
+| **SWR Cache** | Frontend in-memory cache; entries expire after 3 minutes and refreshed in background |
+
+---
+
+*End of SOP � MuleSoft Integration Dashboard v1.0*
