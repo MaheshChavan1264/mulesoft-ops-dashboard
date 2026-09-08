@@ -5,6 +5,12 @@
 @layer base {
   body {
     @apply bg-gray-950 text-gray-100 font-sans;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  code, kbd, pre, .font-mono {
+    font-feature-settings: 'liga' 1, 'calt' 1;
   }
   ::-webkit-scrollbar {
     @apply w-2;
