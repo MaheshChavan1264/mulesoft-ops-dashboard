@@ -292,7 +292,28 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
       const detectedEnv = cpsEnv.trim() || armProps['cps.prefix'] || armProps['cps.environment'] || '';
       const detectedKey = armProps['cps.projectName'] || armProps['cloudhub.api.name'] || app.name;
       if (!detectedUrl || !detectedKey) return { _app: app.name, _error: 'No CPS config found in deployment properties' };
-      // Step 2: fetch non-secure CPS properties — return raw response as-is
+
+      // Step 2: post CPS credentials to backend session (mirrors CPS Manager logic)
+      if (hasCpsCreds) {
+        const isMasked = v => !v || /^\*+$/.test(String(v).trim());
+        const cpsClientId = armProps['cps.clientId'] || armProps['cps.client_id'] || armProps['cps.client.id'] || armProps['cps.apiClientId'] || '';
+        const credMap = {};
+        // Try the specific clientId from ARM first
+        if (cpsClientId && !isMasked(cpsClientId)) {
+          const secret = getSecret(cpsClientId);
+          if (secret) credMap[`${detectedUrl}::${appBgId}`] = { clientId: cpsClientId, clientSecret: secret };
+        }
+        // Fall back to all CSV credentials
+        const allCreds = getAllCredentials();
+        for (const { clientId, clientSecret } of allCreds) {
+          credMap[`${detectedUrl}::${clientId}`] = { clientId, clientSecret };
+        }
+        if (Object.keys(credMap).length > 0) {
+          try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
+        }
+      }
+
+      // Step 3: fetch non-secure CPS properties — return raw response as-is
       const nsRes = await api.get('/cps/fetch', {
         params: { baseUrl: detectedUrl, type: 'non-secure', environment: detectedEnv || undefined, keys: detectedKey, bgOrgId: appBgId },
       });
@@ -300,7 +321,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
     } catch (err) {
       return { _app: app.name, _error: err.response?.data?.error || err.message || 'Failed to fetch CPS properties' };
     }
-  }, [bgOrgId, cpsBaseUrl, cpsEnv]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bgOrgId, cpsBaseUrl, cpsEnv, hasCpsCreds, getSecret, getAllCredentials]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExport = async () => {
     if (bgEnvSelections.length === 0 && !usePreselected) {
