@@ -293,13 +293,14 @@ export default function CpsManagerPage() {
       .finally(() => setBgLoading(false));
   }, []);
 
-  // When BG list loads and there's a pending auto-select, set the BG+env
+  // When BG list loads and there's a pending auto-select, set the BG
   useEffect(() => {
     const auto = pendingAutoSelectRef.current;
     if (!auto || !allBgs.length || bgLoading) return;
     if (selectedBgId !== auto.bgId) {
       setSelectedBgId(auto.bgId);
-      if (auto.envId) setSelectedEnvId(auto.envId);
+      // Don't set envId here — the envs loading effect resets it.
+      // pendingAutoSelectRef keeps the envId so the envs effect can pick it up.
     }
   }, [allBgs, bgLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -347,7 +348,13 @@ export default function CpsManagerPage() {
         return true;
       });
       setEnvs(merged);
-      if (merged.length > 0) setSelectedEnvId(merged[0].id);
+      // Use the pending auto-select envId if it exists in the loaded list;
+      // otherwise fall back to the first environment.
+      const auto = pendingAutoSelectRef.current;
+      const targetEnv = auto?.envId && merged.some(e => e.id === auto.envId)
+        ? auto.envId
+        : merged[0]?.id || '';
+      setSelectedEnvId(targetEnv);
     }).catch(() => {}).finally(() => setEnvLoading(false));
   }, [selectedBgId, allBgs]); // eslint-disable-line react-hooks/exhaustive-deps
 
