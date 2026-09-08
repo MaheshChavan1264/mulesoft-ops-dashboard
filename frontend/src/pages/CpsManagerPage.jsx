@@ -168,6 +168,9 @@ export default function CpsManagerPage() {
   const location = useLocation();
   // Stores the pending auto-select from navigation state (set by ApplicationsPage / ApplicationDetailPage)
   const pendingAutoSelectRef = useRef(null);
+  // Version counters — incremented each time a new fetch starts so stale Promises are ignored
+  const envsFetchIdRef = useRef(0);
+  const appsFetchIdRef = useRef(0);
   const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
 
   // ── BG / Env / App state ─────────────────────────────────────────────────
@@ -340,6 +343,8 @@ export default function CpsManagerPage() {
 
     if (bgsToFetch.length === 0) { setEnvLoading(false); return; }
 
+    const fetchId = ++envsFetchIdRef.current; // capture version for this fetch
+
     Promise.all(
       bgsToFetch.map(bg =>
         api.get(`/environments/${bg.id}`)
@@ -347,6 +352,8 @@ export default function CpsManagerPage() {
           .catch(() => [])
       )
     ).then(results => {
+      // Discard stale fetches (e.g. the all-BGs fan-out that started before BG was set)
+      if (fetchId !== envsFetchIdRef.current) return;
       // Merge + deduplicate by environment ID
       const seen = new Set();
       const merged = results.flat().filter(e => {
@@ -362,7 +369,9 @@ export default function CpsManagerPage() {
         ? auto.envId
         : merged[0]?.id || '';
       setSelectedEnvId(targetEnv);
-    }).catch(() => {}).finally(() => setEnvLoading(false));
+    }).catch(() => {}).finally(() => {
+      if (fetchId === envsFetchIdRef.current) setEnvLoading(false);
+    });
   }, [selectedBgId, allBgs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load Apps when Env or BG changes ─────────────────────────────────────
@@ -377,6 +386,8 @@ export default function CpsManagerPage() {
 
     if (bgsToFetch.length === 0) { setAppLoading(false); return; }
 
+    const fetchId = ++appsFetchIdRef.current; // capture version for this fetch
+
     Promise.all(
       bgsToFetch.map(bg =>
         api.get(`/applications/summary/${bg.id}`)
@@ -390,8 +401,12 @@ export default function CpsManagerPage() {
           .catch(() => [])
       )
     ).then(results => {
+      // Discard stale fetches
+      if (fetchId !== appsFetchIdRef.current) return;
       setApps(results.flat());
-    }).catch(() => {}).finally(() => setAppLoading(false));
+    }).catch(() => {}).finally(() => {
+      if (fetchId === appsFetchIdRef.current) setAppLoading(false);
+    });
   }, [selectedBgId, selectedEnvId, allBgs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Select App → fetch ARM detail → extract CPS config ───────────────────
