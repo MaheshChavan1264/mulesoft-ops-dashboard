@@ -19,7 +19,6 @@ const navItems = [
   { to: '/cps-compare', icon: GitCompare, label: 'CPS Compare' },
   { to: '/cps-manager', icon: Database, label: 'CPS Manager' },
   { to: '/user-search', icon: Users, label: 'Global Search' },
-  { to: '/api-graph',   icon: Activity, label: 'API Graph' },
 ];
 
 export default function Sidebar({ open }) {

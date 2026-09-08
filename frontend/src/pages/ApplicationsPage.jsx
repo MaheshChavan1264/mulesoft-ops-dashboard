@@ -1658,14 +1658,14 @@ export default function ApplicationsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 group">
+                      <div className="flex items-center gap-1">
                         <span className="text-white font-medium">{app.name}</span>
-                        <CopyBtn text={app.name} />
+                        <CopyBtn text={app.name} fade={false} />
                         <button
                           type="button"
                           title={`Open in Anypoint Platform${app.environment?.name ? ` — ${app.environment.name}` : ''} (app name copied to clipboard)`}
                           onClick={(e) => openInAnypoint(e, app, selectedBg !== '__all__' ? selectedBg : orgId)}
-                          className="opacity-0 group-hover:opacity-100 ml-0.5 text-gray-500 hover:text-blue-400 transition-all flex-shrink-0"
+                          className="ml-0.5 text-gray-500 hover:text-blue-400 transition-colors flex-shrink-0"
                         >
                           <ExternalLink size={11} />
                         </button>
@@ -1684,16 +1684,15 @@ export default function ApplicationsPage() {
                       }`}>{app.deploymentType}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-400 font-mono text-xs">{app.muleVersion || '—'}</td>
-                    <td className="px-4 py-3 text-xs" title={app.lastModifiedDate ? new Date(app.lastModifiedDate).toLocaleString() : ''}>
-                      {/* Feature 10: relative time with absolute date as tooltip */}
-                      {app.lastModifiedDate ? (() => {
-                        const diff = Date.now() - new Date(app.lastModifiedDate).getTime();
-                        const days = Math.floor(diff / 86400000);
-                        const hours = Math.floor(diff / 3600000);
-                        const mins = Math.floor(diff / 60000);
-                        const rel = days > 0 ? `${days}d ago` : hours > 0 ? `${hours}h ago` : mins > 0 ? `${mins}m ago` : 'just now';
-                        return <span className="text-gray-500 tabular-nums">{rel}</span>;
-                      })() : <span className="text-gray-700">—</span>}
+                    <td className="px-4 py-3 text-xs">
+                      {app.lastModifiedDate
+                        ? <span className="text-gray-400 tabular-nums whitespace-nowrap">
+                            {new Date(app.lastModifiedDate).toLocaleString(undefined, {
+                              year: 'numeric', month: 'short', day: '2-digit',
+                              hour: '2-digit', minute: '2-digit', hour12: false,
+                            })}
+                          </span>
+                        : <span className="text-gray-700">—</span>}
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1">
