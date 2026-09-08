@@ -782,6 +782,22 @@ export default function ApplicationDetailPage() {
                 })}
               </div>
             )}
+            {/* CPS Manager shortcut — navigates with pre-selected BG+Env+App */}
+            <button
+              onClick={() => navigate('/cps-manager', {
+                state: {
+                  cpsAutoSelect: {
+                    bgId: orgId,
+                    envId: envId,
+                    compositeId: `${appId}|${envId}|${orgId}`,
+                    appName: app.name,
+                  },
+                },
+              })}
+              title="Open this app in CPS Manager"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 text-slate-400 hover:text-cyan-300 border-slate-700/40 hover:border-cyan-700/50 hover:bg-cyan-950/30 transition-all">
+              <Database size={13} /> CPS Manager
+            </button>
             {/* Open in Exchange button — navigates to our Exchange page and auto-selects the asset */}
             {(() => {
               const ref = app.application?.ref;
