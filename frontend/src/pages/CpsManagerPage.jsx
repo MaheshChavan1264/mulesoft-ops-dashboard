@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import {
   Database, RefreshCw, Search, Plus, Trash2, Save,
@@ -165,6 +165,9 @@ function getValidationWarning(key, val, allProps) {
 export default function CpsManagerPage() {
   const { orgId: authOrgId } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Stores the pending auto-select from navigation state (set by ApplicationsPage / ApplicationDetailPage)
+  const pendingAutoSelectRef = useRef(null);
   const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
 
   // ── BG / Env / App state ─────────────────────────────────────────────────
@@ -272,6 +275,12 @@ export default function CpsManagerPage() {
   const hasPendingChanges = pendingCount > 0;
 
   // ── Load BGs ─────────────────────────────────────────────────────────────
+  // Capture auto-select request from navigation state on mount
+  useEffect(() => {
+    const auto = location.state?.cpsAutoSelect;
+    if (auto?.bgId) pendingAutoSelectRef.current = auto;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     setBgLoading(true);
     api.get('/organizations/business-groups')
@@ -283,6 +292,30 @@ export default function CpsManagerPage() {
       .catch(() => {})
       .finally(() => setBgLoading(false));
   }, []);
+
+  // When BG list loads and there's a pending auto-select, set the BG+env
+  useEffect(() => {
+    const auto = pendingAutoSelectRef.current;
+    if (!auto || !allBgs.length || bgLoading) return;
+    if (selectedBgId !== auto.bgId) {
+      setSelectedBgId(auto.bgId);
+      if (auto.envId) setSelectedEnvId(auto.envId);
+    }
+  }, [allBgs, bgLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When apps load and there's a pending auto-select, call selectApp
+  useEffect(() => {
+    const auto = pendingAutoSelectRef.current;
+    if (!auto || !apps.length || appLoading) return;
+    const found = apps.find(a => {
+      const cid = `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`;
+      return cid === auto.compositeId;
+    });
+    if (found) {
+      pendingAutoSelectRef.current = null; // clear so it doesn't re-trigger
+      selectApp(auto.compositeId);
+    }
+  }, [apps, appLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load Envs when BG selection or BG list changes ────────────────────────
   useEffect(() => {

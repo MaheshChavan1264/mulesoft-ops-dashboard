@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud, ExternalLink } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud, ExternalLink, Database } from 'lucide-react';
 import CredentialImportButton from '../components/CredentialImportButton';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
@@ -1712,6 +1712,25 @@ export default function ApplicationsPage() {
                         ) : (
                           <ChevronRight size={14} className="text-gray-600" />
                         )}
+                        {/* CPS Manager shortcut */}
+                        <button
+                          title="Open in CPS Manager"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate('/cps-manager', {
+                              state: {
+                                cpsAutoSelect: {
+                                  bgId: app._bgId || (selectedBg !== '__all__' ? selectedBg : orgId),
+                                  envId: app.environment?.id || '',
+                                  compositeId: `${app.id}|${app.environment?.id || ''}|${app._bgId || ''}`,
+                                  appName: app.name,
+                                },
+                              },
+                            });
+                          }}
+                          className="p-1.5 rounded-lg border text-gray-500 hover:text-cyan-400 border-gray-700/50 hover:border-cyan-700/60 hover:bg-cyan-950/30 transition-all">
+                          <Database size={13} />
+                        </button>
                       </div>
                     </td>
                   </tr>
