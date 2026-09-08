@@ -318,13 +318,16 @@ export default function CpsManagerPage() {
     if (selectedEnvId !== auto.envId) return;
     // Also wait for the correct BG to be selected
     if (selectedBgId !== auto.bgId) return;
-    const found = apps.find(a => {
-      const cid = `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`;
-      return cid === auto.compositeId;
-    });
+    // Match by appId only — don't rely on exact full compositeId match since
+    // the _bgId segment may differ slightly between ApplicationsPage and CPS Manager.
+    // We already guard selectedBgId === auto.bgId above, so we're in the right BG.
+    const targetAppId = String(auto.compositeId.split('|')[0]);
+    const found = apps.find(a => String(a.id) === targetAppId);
     if (found) {
+      // Use the app's ACTUAL compositeId from CPS Manager's own list
+      const actualCompositeId = `${found.id}|${found.environment?.id || ''}|${found._bgId || ''}`;
       pendingAutoSelectRef.current = null; // clear so it doesn't re-trigger
-      selectApp(auto.compositeId);
+      selectApp(actualCompositeId);
     }
   }, [apps, appLoading, selectedEnvId, selectedBgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
