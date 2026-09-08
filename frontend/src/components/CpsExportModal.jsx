@@ -289,7 +289,8 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
         armProps = r.data?.properties || {};
       }
       const detectedUrl = (cpsBaseUrl.trim() || armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] || '').trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
-      const detectedEnv = cpsEnv.trim() || armProps['cps.prefix'] || armProps['cps.environment'] || '';
+      // Default to 'prod' when env is not in ARM props — matches exportCps.js behaviour
+      const detectedEnv = cpsEnv.trim() || armProps['cps.prefix'] || armProps['cps.environment'] || 'prod';
       const detectedKey = armProps['cps.projectName'] || armProps['cloudhub.api.name'] || app.name;
       if (!detectedUrl || !detectedKey) return { _app: app.name, _error: 'No CPS config found in deployment properties' };
 
