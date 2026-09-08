@@ -304,10 +304,17 @@ export default function CpsManagerPage() {
     }
   }, [allBgs, bgLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When apps load and there's a pending auto-select, call selectApp
+  // When apps load and there's a pending auto-select, call selectApp.
+  // IMPORTANT: only fire once selectedEnvId has settled to the target env —
+  // if we fire on the intermediate "all envs" load the apps effect will reset
+  // selectedAppComposite when the filtered load arrives.
   useEffect(() => {
     const auto = pendingAutoSelectRef.current;
     if (!auto || !apps.length || appLoading) return;
+    // Don't fire on the transitional unfiltered apps list; wait for the correct env
+    if (selectedEnvId !== auto.envId) return;
+    // Also wait for the correct BG to be selected
+    if (selectedBgId !== auto.bgId) return;
     const found = apps.find(a => {
       const cid = `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`;
       return cid === auto.compositeId;
@@ -316,7 +323,7 @@ export default function CpsManagerPage() {
       pendingAutoSelectRef.current = null; // clear so it doesn't re-trigger
       selectApp(auto.compositeId);
     }
-  }, [apps, appLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [apps, appLoading, selectedEnvId, selectedBgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load Envs when BG selection or BG list changes ────────────────────────
   useEffect(() => {
