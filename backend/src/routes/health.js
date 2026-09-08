@@ -43,7 +43,7 @@ function getDomainQualifier(normalizedEnvName) {
  * @param {string} targetType      'CH1' | 'CH2'
  * @param {string} appName         Application name
  * @param {string} ch2IngressUrl   CH2 ingress URL (may be comma-separated)
- * @param {string} envType         'production' | 'sandbox' | 'design' (Anypoint env type)
+ * @param {string} envType         'production' | 'sandbox' | 'design' (not used for CH1 domain)
  * @param {string} [envName]       Full environment display name e.g. "EI-FI-FINANCIALS-STAGING"
  *                                 Used to detect domain families that need a qualifier segment.
  */
@@ -62,21 +62,13 @@ function buildBaseUrl(targetType, appName, ch2IngressUrl, envType, envName) {
     }
   }
 
-  // CH1: non-production environments use the stage subdomain.
-  // Only treat as production when envType is explicitly 'production';
-  // empty / unknown defaults to stage (all non-prod CH1 apps are on stage).
-  // Note: envName slug mapping is handled by the frontend's buildPingUrl;
-  // here we only care about prod vs non-prod via envType.
-  const isProd = (envType || '').toLowerCase() === 'production';
-  const slug = isProd ? 'prod' : 'stage';
-
-  // Detect optional domain qualifier from the full environment name.
-  // e.g. "EI-FI-FINANCIALS-STAGING" → qualifier = "fin"
-  //      → ei-sapi-et-orafin-invoice-v1-uw2-fs2.stage.fin.internalapi.sfdcbt.net
+  // CH1: URL is {appName}.internalapi.sfdcbt.net — no environment subdomain.
+  // For special environment families (e.g. EI-FI-FINANCIALS), a domain qualifier
+  // is inserted: {appName}.fin.internalapi.sfdcbt.net
   const qualifier = getDomainQualifier((envName || '').toUpperCase());
   const domain = qualifier
-    ? `${slug}.${qualifier}.internalapi.sfdcbt.net`
-    : `${slug}.internalapi.sfdcbt.net`;
+    ? `${qualifier}.internalapi.sfdcbt.net`
+    : `internalapi.sfdcbt.net`;
 
   return `https://${safe}.${domain}`;
 }
