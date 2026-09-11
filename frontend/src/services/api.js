@@ -1,5 +1,6 @@
 import axiosClient from './axiosClient.js';
 import * as mock from './mockData.js';
+import mockCpsData from './mockCpsData.json';
 
 // ── Demo-mode helpers (re-exported for backwards compatibility) ───────────────
 // Components that already import { isDemoMode } from '../services/api' continue
@@ -55,15 +56,18 @@ const mockHandler = async (url, params) => {
 
   // CPS credentials
   if (url === '/cps/credentials') {
-    return { credentials: { ch1_prod: { configured: false, source: 'none' }, ch2_prod: { configured: false, source: 'none' }, ch1_uat: { configured: false, source: 'none' }, ch2_uat: { configured: false, source: 'none' } } };
+    return mockCpsData.credentials;
   }
   if (url.startsWith('/cps/fetch')) {
-    return { properties: [{ key: 'demo-app', environment: 'prod', properties: { 'cps.projectName': 'demo-app', 'version': '1.0.0', 'api.base': '/api' } }] };
+    if (params?.type === 'secure') {
+      return mockCpsData.fetchSecure;
+    }
+    return mockCpsData.fetch;
   }
   // CPS write operations (demo mode — simulate success)
   if (url === '/cps/write') return { success: true, method: 'PUT', projectKey: 'demo-app', propertyCount: 3 };
   if (url === '/cps/project') return { success: true, deleted: 'demo-app' };
-  if (url === '/cps/auth' && params?.projectKey) return { properties: [{ key: params.projectKey, allowedClientIds: ['demo-client-id-1'], readOnlyClientIds: [] }] };
+  if (url === '/cps/auth' && params?.projectKey) return mockCpsData.auth;
   if (url === '/cps/auth') return { success: true, allowedClientIds: ['demo-client-id-1'] };
   if (url === '/cps/credentials/test') return { valid: true, statusCode: 200, message: 'Demo mode — connected successfully' };
   if (url === '/cps/binary') return { success: true, uploaded: 'demo.jks', sizeBytes: 1024 };
