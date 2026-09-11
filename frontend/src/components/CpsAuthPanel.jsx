@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShieldCheck, Plus, X, RefreshCw, AlertTriangle, Search } from 'lucide-react';
+import { ShieldCheck, Plus, X, RefreshCw, AlertTriangle, Search, Code } from 'lucide-react';
 import api from '../services/api';
+import CpsRawJsonModal from './CpsRawJsonModal';
 
 /**
  * CpsAuthPanel
@@ -31,6 +32,7 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
   const [newReadOnly, setNewReadOnly] = useState('');
   const [searchAllowed, setSearchAllowed] = useState('');
   const [searchReadOnly, setSearchReadOnly] = useState('');
+  const [showRawJson, setShowRawJson] = useState(false);
 
   const filteredAllowed = useMemo(() => {
     const q = searchAllowed.trim().toLowerCase();
@@ -149,14 +151,22 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
             <code className="text-gray-400 bg-gray-800 px-1 rounded">{projectKey}</code>
           </p>
         </div>
-        <button
-          onClick={loadAuth}
-          disabled={loading}
-          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg transition-colors"
-        >
-          <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowRawJson(true)}
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-cyan-300 bg-gray-800 border border-gray-700 hover:border-cyan-700/50 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <Code size={11} /> Raw JSON
+          </button>
+          <button
+            onClick={loadAuth}
+            disabled={loading}
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Mode toggle */}
@@ -352,6 +362,39 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
             : <><ShieldCheck size={13} /> Save Auth Changes</>}
         </button>
       </div>
+
+      {showRawJson && (
+        <CpsRawJsonModal
+          isOpen={showRawJson}
+          onClose={() => setShowRawJson(false)}
+          title="Edit Access Control as JSON"
+          description="Paste a full Postman auth properties payload."
+          initialJson={{
+            properties: [
+              {
+                environment,
+                key: projectKey,
+                allowedClientIds,
+                readOnlyClientIds
+              }
+            ]
+          }}
+          onSave={(parsed) => {
+            let newAuth = parsed;
+            if (parsed.properties && Array.isArray(parsed.properties) && parsed.properties[0]) {
+              newAuth = parsed.properties[0];
+            }
+            if (newAuth.allowedClientIds && Array.isArray(newAuth.allowedClientIds)) {
+              setAllowedClientIds(newAuth.allowedClientIds);
+            }
+            if (newAuth.readOnlyClientIds && Array.isArray(newAuth.readOnlyClientIds)) {
+              setReadOnlyClientIds(newAuth.readOnlyClientIds);
+            }
+            // For auth, replacing everything is generally what they want when editing raw JSON, so force replace mode.
+            setReplaceMode(true);
+          }}
+        />
+      )}
     </div>
   );
 }

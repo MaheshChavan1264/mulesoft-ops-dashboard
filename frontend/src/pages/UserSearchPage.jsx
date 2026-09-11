@@ -151,7 +151,12 @@ function extractCpsConfig(app, orgId) {
 function BgEnvSelector({ businessGroups, onSelectionsChange }) {
   const [allEnvs, setAllEnvs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selections, setSelections] = useState(new Set()); // "bgId:envId"
+  const [selections, setSelections] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('userSearch_selections');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
   const [search, setSearch] = useState('');
   const [envFilterVersion, setEnvFilterVersion] = useState(0);
   const [bgFilterVersion, setBgFilterVersion] = useState(0);
@@ -165,6 +170,10 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
     window.addEventListener('bgFilterChanged', h);
     return () => window.removeEventListener('bgFilterChanged', h);
   }, []);
+
+  useEffect(() => {
+    try { sessionStorage.setItem('userSearch_selections', JSON.stringify([...selections])); } catch (e) {}
+  }, [selections]);
 
   useEffect(() => {
     const visible = applyBgFilter(businessGroups);
@@ -367,9 +376,11 @@ export default function UserSearchPage() {
   const [bgs, setBgs] = useState([]);
   const [bgsLoad, setBgsLoad] = useState(false);
   const [bgEnvSelections, setBgEnvSelections] = useState([]);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => sessionStorage.getItem('userSearch_query') || '');
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(null);
+  const [results, setResults] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('userSearch_results')) || null; } catch { return null; }
+  });
   const [error, setError] = useState('');
   const [credentialErrors, setCredentialErrors] = useState(0);
   const [progress, setProgress] = useState({ envsDone: 0, envsTotal: 0, appsT: 0, appsN: 0, phase: 1, batchDone: 0, batchTotal: 0 });
@@ -377,18 +388,33 @@ export default function UserSearchPage() {
   // Feature 3: cancel
   const abortRef = useRef(null);
   // Feature 8: search mode — 'value' | 'key'
-  const [searchMode, setSearchMode] = useState('value');
+  const [searchMode, setSearchMode] = useState(() => sessionStorage.getItem('userSearch_mode') || 'value');
   // Feature 2: group by app toggle
-  const [groupByApp, setGroupByApp] = useState(false);
-  const [expandedApps, setExpandedApps] = useState(new Set());
+  const [groupByApp, setGroupByApp] = useState(() => sessionStorage.getItem('userSearch_groupApp') === 'true');
+  const [expandedApps, setExpandedApps] = useState(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem('userSearch_expandedApps') || '[]')); } catch { return new Set(); }
+  });
   // Group by term (search value) toggle — mutually exclusive with groupByApp
-  const [groupByTerm, setGroupByTerm] = useState(false);
-  const [expandedTerms, setExpandedTerms] = useState(new Set());
+  const [groupByTerm, setGroupByTerm] = useState(() => sessionStorage.getItem('userSearch_groupTerm') === 'true');
+  const [expandedTerms, setExpandedTerms] = useState(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem('userSearch_expandedTerms') || '[]')); } catch { return new Set(); }
+  });
   // Feature 15: sortable columns
-  const [sortCol, setSortCol] = useState('');
-  const [sortDir, setSortDir] = useState('asc');
+  const [sortCol, setSortCol] = useState(() => sessionStorage.getItem('userSearch_sortCol') || '');
+  const [sortDir, setSortDir] = useState(() => sessionStorage.getItem('userSearch_sortDir') || 'asc');
   // BG/Env selector collapse state
-  const [selectorCollapsed, setSelectorCollapsed] = useState(false);
+  const [selectorCollapsed, setSelectorCollapsed] = useState(() => sessionStorage.getItem('userSearch_collapsed') === 'true');
+
+  useEffect(() => { sessionStorage.setItem('userSearch_query', query); }, [query]);
+  useEffect(() => { try { sessionStorage.setItem('userSearch_results', JSON.stringify(results)); } catch (e) {} }, [results]);
+  useEffect(() => { sessionStorage.setItem('userSearch_mode', searchMode); }, [searchMode]);
+  useEffect(() => { sessionStorage.setItem('userSearch_groupApp', groupByApp); }, [groupByApp]);
+  useEffect(() => { try { sessionStorage.setItem('userSearch_expandedApps', JSON.stringify([...expandedApps])); } catch {} }, [expandedApps]);
+  useEffect(() => { sessionStorage.setItem('userSearch_groupTerm', groupByTerm); }, [groupByTerm]);
+  useEffect(() => { try { sessionStorage.setItem('userSearch_expandedTerms', JSON.stringify([...expandedTerms])); } catch {} }, [expandedTerms]);
+  useEffect(() => { sessionStorage.setItem('userSearch_sortCol', sortCol); }, [sortCol]);
+  useEffect(() => { sessionStorage.setItem('userSearch_sortDir', sortDir); }, [sortDir]);
+  useEffect(() => { sessionStorage.setItem('userSearch_collapsed', selectorCollapsed); }, [selectorCollapsed]);
 
   useEffect(() => {
     setBgsLoad(true);
@@ -559,6 +585,20 @@ export default function UserSearchPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cancelSearch = () => { abortRef.current?.abort(); };
+
+  const clearSearchState = () => {
+    cancelSearch();
+    setQuery('');
+    setResults(null);
+    setError('');
+    setProgress({ envsDone: 0, envsTotal: 0, appsT: 0, appsN: 0, phase: 1, batchDone: 0, batchTotal: 0 });
+    setEnvStats([]);
+    setExpandedApps(new Set());
+    setExpandedTerms(new Set());
+    setSelectorCollapsed(false);
+    // Note: bgEnvSelections are managed by BgEnvSelector and not cleared by default
+    // to preserve UX, but we clear the results and query to reset the view.
+  };
 
   const toggleSort = (col) => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -1045,10 +1085,20 @@ export default function UserSearchPage() {
                 className="flex items-center gap-2 px-5 py-3 bg-red-800 hover:bg-red-700 text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
                 <X size={14} /> Cancel
               </button>
-            : <button onClick={runSearch} disabled={!query.trim() || !selCount}
-                className="flex items-center gap-2 px-5 py-3 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
-                <Search size={14} /> Search
-              </button>}
+            : (
+              <>
+                {(query || results) && (
+                  <button onClick={clearSearchState}
+                    className="flex items-center gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
+                    <X size={14} /> Clear
+                  </button>
+                )}
+                <button onClick={runSearch} disabled={!query.trim() || !selCount}
+                  className="flex items-center gap-2 px-5 py-3 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
+                  <Search size={14} /> Search
+                </button>
+              </>
+            )}
         </div>
         {/* Feature 8: Search mode toggle + Feature 9: multi-term hint */}
         <div className="flex items-center gap-3 flex-wrap">

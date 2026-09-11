@@ -5,7 +5,7 @@ import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import {
   Database, RefreshCw, Search, Plus, Trash2, Save,
   X, AlertTriangle, Download, Upload, ShieldCheck, Key,
-  FileArchive, Eye, EyeOff, Copy, Check, ExternalLink,
+  FileArchive, Eye, EyeOff, Copy, Check, ExternalLink, Code,
 } from 'lucide-react';
 import Select from '../components/Select';
 import CpsCredentialImportButton from '../components/CpsCredentialImportButton';
@@ -17,6 +17,7 @@ import CpsImportModal from '../components/CpsImportModal';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 import CpsCredTestButton from '../components/CpsCredTestButton';
 import CpsRequestResponsePanel from '../components/CpsRequestResponsePanel';
+import CpsRawJsonModal from '../components/CpsRawJsonModal';
 import api from '../services/api';
 import { extractCpsConfig } from '../utils/cpsHelpers';
 import { flattenCpsResponse } from '../utils/cpsHelpers';
@@ -713,7 +714,15 @@ export default function CpsManagerPage() {
   const filteredSecureGroups = useMemo(() => {
     if (!secureGroupSearch.trim()) return secureGroups;
     const q = secureGroupSearch.toLowerCase();
-    return secureGroups.filter(g => (g.key || '').toLowerCase().includes(q));
+    return secureGroups.filter(g => {
+      if ((g.key || '').toLowerCase().includes(q)) return true;
+      if (g.properties && typeof g.properties === 'object') {
+        return Object.entries(g.properties).some(([k, v]) => 
+          k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q)
+        );
+      }
+      return false;
+    });
   }, [secureGroups, secureGroupSearch]);
 
   // ── Filtered visible properties ───────────────────────────────────────────
@@ -1063,6 +1072,7 @@ export default function CpsManagerPage() {
               onUpdate={updateProperty}
               onDelete={markDeleted}
               onAdd={addProperty}
+              onReplaceAll={setPendingChanges}
               hasPendingChanges={hasPendingChanges}
               pendingCount={pendingCount}
               onSave={requestSave}
@@ -1072,6 +1082,8 @@ export default function CpsManagerPage() {
               allProps={mergedProps}
               onUndo={undoLastChange}
               undoCount={undoHistory.length}
+              envStr={cpsEnv}
+              keyStr={cpsKey}
             />
           )}
 
@@ -1091,7 +1103,7 @@ export default function CpsManagerPage() {
                     <input
                       value={secureGroupSearch}
                       onChange={e => setSecureGroupSearch(e.target.value)}
-                      placeholder={`Search secure group key… (${secureGroups.length} group${secureGroups.length !== 1 ? 's' : ''})`}
+                      placeholder={`Search groups, keys, or values… (${secureGroups.length} group${secureGroups.length !== 1 ? 's' : ''})`}
                       className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600/50"
                     />
                     {secureGroupSearch && (
@@ -1115,6 +1127,7 @@ export default function CpsManagerPage() {
                       bgOrgId={resolvedBgId}
                       isProd={isProd}
                       onResult={setLastOperation}
+                      globalSearch={secureGroupSearch}
                       onGroupDeleted={deletedKey => {
                         setSecureGroups(prev => prev.filter(g => g.key !== deletedKey));
                         showToast(`Secure group "${deletedKey}" deleted`);
@@ -1233,16 +1246,19 @@ export default function CpsManagerPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 function PropertyTable({
   props, originalProps, pendingChanges, search, setSearch,
-  onUpdate, onDelete, onAdd, hasPendingChanges, pendingCount,
+  onUpdate, onDelete, onAdd, onReplaceAll, hasPendingChanges, pendingCount,
   onSave, onDiscard, saving, isProd,
   allProps, // for placeholder resolution + validation (features 9/14/17)
   onUndo, undoCount = 0, // Feature 5: undo stack
+  envStr, keyStr, // Passed from parent for Raw JSON full payload structure
+  hideSearchInput,
 }) {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
   const [editingKey, setEditingKey] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [showRawJson, setShowRawJson] = useState(false);
   const [bulkText, setBulkText] = useState('');
   // Feature 6: copy as formats
   const [showCopyMenu, setShowCopyMenu] = useState(false);
@@ -1391,17 +1407,19 @@ function PropertyTable({
 
       {/* Search + toolbar row */}
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-48">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search properties…"
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-9 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
-          {search && (
-            <button onClick={() => setSearch('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors">
-              <X size={12} />
-            </button>
-          )}
-        </div>
+        {!hideSearchInput && (
+          <div className="relative flex-1 min-w-48">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search properties…"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-9 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors">
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        )}
         {/* Feature 7: Find & Replace toggle */}
         <button onClick={() => setShowFindReplace(s => !s)}
           className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
@@ -1439,6 +1457,13 @@ function PropertyTable({
             </div>
           )}
         </div>
+        {/* Raw JSON Edit toggle */}
+        <button
+          onClick={() => setShowRawJson(true)}
+          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border bg-gray-800 border-gray-700 text-gray-400 hover:text-cyan-300 hover:border-cyan-700/50 transition-colors"
+        >
+          <Code size={11} /> Raw JSON
+        </button>
         {/* Bulk Add toggle */}
         <button
           onClick={() => setShowBulkAdd(s => !s)}
@@ -1660,6 +1685,52 @@ function PropertyTable({
         {filtered.length} of {allEntries.length} properties shown
         {hasPendingChanges && <span className="ml-2 text-cyan-500">{pendingCount} unsaved change{pendingCount !== 1 ? 's' : ''}</span>}
       </p>
+
+      {/* Raw JSON Modal */}
+      {showRawJson && (
+        <CpsRawJsonModal
+          isOpen={showRawJson}
+          onClose={() => setShowRawJson(false)}
+          title="Edit Properties as JSON"
+          description="Paste a full Postman properties payload. Your changes will be diffed and added to pending changes."
+          initialJson={{
+            properties: [
+              {
+                environment: envStr || '',
+                key: keyStr || '',
+                properties: props
+              }
+            ]
+          }}
+          onSave={(parsed) => {
+            let newProps = parsed;
+            if (parsed.properties && Array.isArray(parsed.properties) && parsed.properties[0]?.properties) {
+              newProps = parsed.properties[0].properties;
+            }
+            const newPending = { added: {}, modified: {}, deleted: new Set() };
+            for (const k of Object.keys(originalProps)) {
+              if (!(k in newProps)) {
+                newPending.deleted.add(k);
+              } else if (String(newProps[k]) !== String(originalProps[k])) {
+                newPending.modified[k] = String(newProps[k]);
+              }
+            }
+            for (const k of Object.keys(newProps)) {
+              if (!(k in originalProps)) {
+                newPending.added[k] = String(newProps[k]);
+              }
+            }
+            
+            if (onReplaceAll) {
+              onReplaceAll(newPending);
+            } else {
+              newPending.deleted.forEach(k => onDelete(k));
+              Object.entries(newPending.modified).forEach(([k, v]) => onUpdate(k, v));
+              Object.entries(newPending.added).forEach(([k, v]) => onAdd(k, v));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1667,7 +1738,7 @@ function PropertyTable({
 // ─────────────────────────────────────────────────────────────────────────────
 // SecureGroupEditor — full CRUD + Auth panel for a single CPS secure group
 // ─────────────────────────────────────────────────────────────────────────────
-function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onResult, onGroupDeleted }) {
+function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onResult, onGroupDeleted, globalSearch }) {
   const isAccessDenied = typeof group.properties === 'string';
   const [originalProps, setOriginalProps] = useState(!isAccessDenied ? (group.properties || {}) : {});
   const [pendingChanges, setPendingChanges] = useState({ added: {}, modified: {}, deleted: new Set() });
@@ -1677,7 +1748,6 @@ function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onRes
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [showAuth, setShowAuth] = useState(false);
-  const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState(false);
 
   const mergedProps = useMemo(() => {
@@ -1927,8 +1997,9 @@ function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onRes
                 props={mergedProps}
                 originalProps={originalProps}
                 pendingChanges={pendingChanges}
-                search={search}
-                setSearch={setSearch}
+                search={globalSearch || ''}
+                setSearch={() => {}}
+                hideSearchInput={true}
                 onUpdate={updateProperty}
                 onDelete={markDeleted}
                 onAdd={addProperty}
@@ -1939,6 +2010,8 @@ function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onRes
                 saving={saving}
                 isProd={isProd}
                 allProps={mergedProps}
+                envStr={environment}
+                keyStr={group.key}
               />
             </div>
           </div>
@@ -1948,8 +2021,9 @@ function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onRes
               props={mergedProps}
               originalProps={originalProps}
               pendingChanges={pendingChanges}
-              search={search}
-              setSearch={setSearch}
+              search={globalSearch || ''}
+              setSearch={() => {}}
+              hideSearchInput={true}
               onUpdate={updateProperty}
               onDelete={markDeleted}
               onAdd={addProperty}
@@ -1960,6 +2034,8 @@ function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onRes
               saving={saving}
               isProd={isProd}
               allProps={mergedProps}
+              envStr={environment}
+              keyStr={group.key}
             />
           </div>
         )
