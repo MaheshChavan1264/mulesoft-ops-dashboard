@@ -14,17 +14,17 @@ export function parseGlobalCpsCsv(text) {
 
   const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase().trim());
   
-  // Find indices for each expected header
+  // Find indices for each expected header with lenient matching
   const idxMap = {
-    ch1_uat_client_id: headers.indexOf('ch1_uat_client_id'),
-    ch1_uat_client_secret: headers.indexOf('ch1_uat_client_secret'),
-    ch1_prod_client_id: headers.indexOf('ch1_prod_client_id'),
-    ch1_prod_client_secret: headers.indexOf('ch1_prod_client_secret'),
-    ch2_uat_client_id: headers.indexOf('ch2_uat_client_id'),
-    ch2_uat_client_secret: headers.indexOf('ch2_uat_client_secret'),
-    ch2_prod_client_id: headers.indexOf('ch2_prod_client_id'),
-    ch2_prod_client_secret: headers.indexOf('ch2_prod_client_secret'),
-    business_group: headers.indexOf('business-group'),
+    ch1_uat_client_id: headers.findIndex(h => h.includes('ch1') && h.includes('uat') && h.includes('id')),
+    ch1_uat_client_secret: headers.findIndex(h => h.includes('ch1') && h.includes('uat') && h.includes('secret')),
+    ch1_prod_client_id: headers.findIndex(h => h.includes('ch1') && h.includes('prod') && h.includes('id')),
+    ch1_prod_client_secret: headers.findIndex(h => h.includes('ch1') && h.includes('prod') && h.includes('secret')),
+    ch2_uat_client_id: headers.findIndex(h => h.includes('ch2') && h.includes('uat') && h.includes('id')),
+    ch2_uat_client_secret: headers.findIndex(h => h.includes('ch2') && h.includes('uat') && h.includes('secret')),
+    ch2_prod_client_id: headers.findIndex(h => h.includes('ch2') && h.includes('prod') && h.includes('id')),
+    ch2_prod_client_secret: headers.findIndex(h => h.includes('ch2') && h.includes('prod') && h.includes('secret')),
+    business_group: headers.findIndex(h => h.includes('business') && h.includes('group') || h.includes('bg') || h.includes('bussiness')),
   };
 
   const results = [];
