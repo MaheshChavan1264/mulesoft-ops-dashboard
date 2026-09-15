@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Database, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Upload, FileUp, Settings } from 'lucide-react';
+import { Database, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Upload, FileUp, Settings, X, Download } from 'lucide-react';
 import Select from '../components/Select';
 import GlobalCpsCsvUpload from '../components/GlobalCpsCsvUpload';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { PropertyTable, SecureGroupEditor, AuthTabWithSearch } from './CpsManagerPage';
 import CpsBinaryUploadPanel from '../components/CpsBinaryUploadPanel';
+import CpsImportModal from '../components/CpsImportModal';
 import api from '../services/api';
 import axios from 'axios';
 import { flattenCpsResponse } from '../utils/cpsHelpers';
 import { mockNonSecureResponse, mockSecureResponse } from '../utils/mockCpsData';
 import { isDemoMode } from '../utils/demoMode';
+import { downloadJson } from '../utils/appUtils';
 
 const PROP_TYPE_TABS = [
   { id: 'non-secure', label: 'Non-Secure' },
@@ -53,6 +55,8 @@ export default function GlobalCpsManagerPage() {
   const [pendingChanges, setPendingChanges] = useState({ added: {}, modified: {}, deleted: new Set() });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [showImport, setShowImport] = useState(false);
   const [saving, setSaving] = useState(false);
   
   const [activeTab, setActiveTab] = useState('non-secure');
@@ -305,6 +309,29 @@ export default function GlobalCpsManagerPage() {
     setSaving(false);
   };
 
+  const exportJson = () => {
+    if (activeTab === 'non-secure') {
+      downloadJson(mergedProps, `cps-nonsecure-${queryKeys || 'export'}.json`);
+    } else if (activeTab === 'secure') {
+      downloadJson(secureGroups, `cps-secure-${queryKeys || 'export'}.json`);
+    }
+  };
+
+  const handleImport = (importedRows) => {
+    if (activeTab === 'non-secure') {
+      setPendingChanges(prev => {
+        const next = { ...prev, added: { ...prev.added }, modified: { ...prev.modified } };
+        importedRows.forEach(({ key, value }) => {
+          if (key in originalProps) { next.modified[key] = value; }
+          else { next.added[key] = value; }
+        });
+        return next;
+      });
+    } else if (activeTab === 'secure') {
+      alert("Bulk import for secure properties on the Global page must be done per group, which is currently unsupported here.");
+    }
+  };
+
   const mergedProps = useMemo(() => {
     const m = { ...originalProps, ...pendingChanges.modified, ...pendingChanges.added };
     pendingChanges.deleted.forEach(k => delete m[k]);
@@ -504,14 +531,28 @@ export default function GlobalCpsManagerPage() {
               >
                 <Settings size={16} />
               </button>
-              <button
-                onClick={fetchProperties}
-                disabled={loading || !queryKeys.trim()}
-                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-indigo-900/20 h-[42px]"
-              >
-                {loading ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
-                Load Properties
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setHasSearched(false);
+                    setOriginalProps({});
+                    setSecureGroups([]);
+                    setBinaryKeys([]);
+                  }}
+                  disabled={!hasSearched}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors h-[42px]"
+                >
+                  <X size={16} /> Clear
+                </button>
+                <button
+                  onClick={fetchProperties}
+                  disabled={loading || !queryKeys.trim()}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-indigo-900/20 h-[42px]"
+                >
+                  {loading ? <RefreshCw size={16} className="animate-spin" /> : (hasSearched ? <RefreshCw size={16} /> : <Search size={16} />)}
+                  {hasSearched ? 'Refresh' : 'Load Properties'}
+                </button>
+              </div>
             </div>
             
             {showOverrides && (
@@ -603,20 +644,35 @@ export default function GlobalCpsManagerPage() {
 
           {hasSearched && (
             <div className="space-y-4">
-              <div className="flex items-center gap-1 p-1 bg-gray-900 border border-gray-800 rounded-xl w-fit">
-                {PROP_TYPE_TABS.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setActiveTab(t.id)}
-                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all ${
-                      activeTab === t.id
-                        ? 'bg-gray-800 text-white shadow-sm'
-                        : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-1 p-1 bg-gray-900 border border-gray-800 rounded-xl w-fit">
+                  {PROP_TYPE_TABS.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveTab(t.id)}
+                      className={`px-4 py-2 text-xs font-medium rounded-lg transition-all ${
+                        activeTab === t.id
+                          ? 'bg-gray-800 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                
+                {activeTab !== 'binaries' && (
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowImport(true)}
+                      className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                      <Upload size={11} /> Import
+                    </button>
+                    <button onClick={exportJson}
+                      className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                      <Download size={11} /> Export JSON
+                    </button>
+                  </div>
+                )}
               </div>
 
               {activeTab === 'non-secure' && (
