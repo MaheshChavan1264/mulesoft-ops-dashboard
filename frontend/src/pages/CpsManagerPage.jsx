@@ -809,7 +809,15 @@ export default function CpsManagerPage() {
           baseUrl={cpsBaseUrl} type={activeTab} environment={cpsEnv} projectKey={cpsKey}
           bgOrgId={resolvedBgId} isProd={isProd} existingProps={originalProps}
           onClose={() => setShowImport(false)}
-          onImported={({ count }) => { showToast(`Imported ${count} properties`); loadProperties(); }}
+          onImported={({ count, mergedProps }) => { 
+            showToast(`Imported ${count} properties`); 
+            if (isDemoMode && mergedProps) {
+              setOriginalProps(mergedProps);
+              setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+            } else {
+              loadProperties(); 
+            }
+          }}
         />
       )}
       {showCpsSettings && (
