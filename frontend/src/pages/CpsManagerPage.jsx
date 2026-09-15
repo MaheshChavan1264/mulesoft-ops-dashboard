@@ -19,8 +19,10 @@ import CpsCredTestButton from '../components/CpsCredTestButton';
 import CpsRequestResponsePanel from '../components/CpsRequestResponsePanel';
 import CpsRawJsonModal from '../components/CpsRawJsonModal';
 import api from '../services/api';
-import { extractCpsConfig } from '../utils/cpsHelpers';
-import { flattenCpsResponse } from '../utils/cpsHelpers';
+import axios from 'axios';
+import { extractCpsConfig, flattenCpsResponse } from '../utils/cpsHelpers';
+import { isDemoMode } from '../utils/demoMode';
+import { mockNonSecureResponse, mockSecureResponse } from '../utils/mockCpsData';
 import { downloadCsv } from '../utils/appUtils';
 import { applyBgFilter } from '../components/BgFilterModal';
 import { applyEnvFilter } from '../components/EnvFilterModal';
@@ -498,6 +500,22 @@ export default function CpsManagerPage() {
     setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
     setSecureGroups([]);
     setBinaryKeys([]);
+
+    if (isDemoMode()) {
+      const nonSecureKey = mockNonSecureResponse.responses[0].key;
+      const flat = flattenCpsResponse(mockNonSecureResponse, nonSecureKey);
+      setOriginalProps(flat);
+      setUndoHistory([]);
+      
+      const binStr = flat['cps.secure.binaries'] || '';
+      if (binStr) setBinaryKeys(binStr.split(',').map(k => k.trim()).filter(Boolean));
+      
+      const groups = Array.isArray(mockSecureResponse.responses) ? mockSecureResponse.responses : [];
+      setSecureGroups(groups);
+      
+      setPropsLoading(false);
+      return;
+    }
 
     const bgOrgId = resolvedBgId;
     try {
