@@ -3,10 +3,18 @@ import { Database, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Upload, F
 import Select from '../components/Select';
 import GlobalCpsCsvUpload from '../components/GlobalCpsCsvUpload';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
-import { PropertyTable } from './CpsManagerPage';
+import { PropertyTable, SecureGroupEditor, AuthTabWithSearch } from './CpsManagerPage';
+import CpsBinaryUploadPanel from '../components/CpsBinaryUploadPanel';
 import api from '../services/api';
 import axios from 'axios';
 import { flattenCpsResponse } from '../utils/cpsHelpers';
+
+const PROP_TYPE_TABS = [
+  { id: 'non-secure', label: 'Non-Secure' },
+  { id: 'secure', label: 'Secure' },
+  { id: 'binaries', label: 'Binaries' },
+  { id: 'auth', label: '🔐 Access Control' },
+];
 
 const CPS_URLS = {
   ch1: {
@@ -44,6 +52,12 @@ export default function GlobalCpsManagerPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  
+  const [activeTab, setActiveTab] = useState('non-secure');
+  const [secureGroups, setSecureGroups] = useState([]);
+  const [binaryKeys, setBinaryKeys] = useState([]);
+  const [secureGroupSearch, setSecureGroupSearch] = useState('');
+  const [lastOperation, setLastOperation] = useState(null);
 
   const [showOverrides, setShowOverrides] = useState(false);
   const [customHost, setCustomHost] = useState('');
@@ -120,6 +134,22 @@ export default function GlobalCpsManagerPage() {
       const flat = flattenCpsResponse(nsRes.data, activeParams.keys);
       setOriginalProps(flat);
       setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+
+      // Extract binary keys from non-secure
+      const binStr = flat['cps.secure.binaries'] || '';
+      if (binStr) setBinaryKeys(binStr.split(',').map(k => k.trim()).filter(Boolean));
+
+      // Try to load secure
+      const secStr = flat['cps.secure.properties'] || '';
+      if (secStr) {
+        try {
+          const secRes = await api.get('/cps/fetch', {
+            params: { baseUrl: activeHost, type: 'secure', environment: activeParams.environment, keys: secStr, bgOrgId: bg }
+          });
+          const groups = Array.isArray(secRes.data?.responses) ? secRes.data.responses : [];
+          setSecureGroups(groups);
+        } catch {}
+      }
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to load CPS properties');
     }
@@ -485,27 +515,123 @@ export default function GlobalCpsManagerPage() {
           )}
 
           {Object.keys(originalProps).length > 0 && (
-             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4">
-                <PropertyTable
-                  props={mergedProps}
-                  originalProps={originalProps}
-                  pendingChanges={pendingChanges}
-                  search={globalSearch}
-                  setSearch={setGlobalSearch}
-                  onUpdate={updateProperty}
-                  onDelete={markDeleted}
-                  onAdd={addProperty}
-                  hasPendingChanges={hasPendingChanges}
-                  pendingCount={pendingCount}
-                  onSave={saveProperties}
-                  onDiscard={discardChanges}
-                  saving={saving}
-                  isProd={isProd}
-                  allProps={mergedProps}
-                  envStr={env}
-                  keyStr={queryKeys}
+            <div className="space-y-4">
+              <div className="flex items-center gap-1 p-1 bg-gray-900 border border-gray-800 rounded-xl w-fit">
+                {PROP_TYPE_TABS.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-all ${
+                      activeTab === t.id
+                        ? 'bg-gray-800 text-white shadow-sm'
+                        : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {activeTab === 'non-secure' && (
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4">
+                  <PropertyTable
+                    props={mergedProps}
+                    originalProps={originalProps}
+                    pendingChanges={pendingChanges}
+                    search={globalSearch}
+                    setSearch={setGlobalSearch}
+                    onUpdate={updateProperty}
+                    onDelete={markDeleted}
+                    onAdd={addProperty}
+                    hasPendingChanges={hasPendingChanges}
+                    pendingCount={pendingCount}
+                    onSave={saveProperties}
+                    onDiscard={discardChanges}
+                    saving={saving}
+                    isProd={isProd}
+                    allProps={mergedProps}
+                    envStr={env}
+                    keyStr={queryKeys}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'secure' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">Secure Properties</h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Encrypted values that are securely stored in the CPS.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                    <input
+                      value={secureGroupSearch}
+                      onChange={e => setSecureGroupSearch(e.target.value)}
+                      placeholder={`Search groups, keys, or values... (${secureGroups.length} group${secureGroups.length !== 1 ? 's' : ''})`}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600/50"
+                    />
+                  </div>
+
+                  {secureGroups
+                    .filter(g => {
+                      if (!secureGroupSearch.trim()) return true;
+                      const q = secureGroupSearch.toLowerCase();
+                      if ((g.key || '').toLowerCase().includes(q)) return true;
+                      if (g.properties && typeof g.properties === 'object') {
+                        return Object.entries(g.properties).some(([k, v]) => 
+                          k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q)
+                        );
+                      }
+                      return false;
+                    })
+                    .map(group => (
+                      <SecureGroupEditor
+                        key={group.key}
+                        group={group}
+                        baseUrl={customHost.trim() || cpsBaseUrl}
+                        environment={queryEnv.trim() || env}
+                        bgOrgId={bg}
+                        isProd={isProd}
+                        onResult={setLastOperation}
+                        globalSearch={secureGroupSearch}
+                        onGroupDeleted={deletedKey => {
+                          setSecureGroups(prev => prev.filter(g => g.key !== deletedKey));
+                        }}
+                      />
+                    ))}
+                </div>
+              )}
+
+              {activeTab === 'binaries' && (
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                  <CpsBinaryUploadPanel
+                    baseUrl={customHost.trim() || cpsBaseUrl}
+                    environment={queryEnv.trim() || env}
+                    bgOrgId={bg}
+                    existingKeys={binaryKeys}
+                    isProd={isProd}
+                    onUploaded={key => { fetchProperties(); }}
+                    onResult={setLastOperation}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'auth' && (
+                <AuthTabWithSearch
+                  cpsBaseUrl={customHost.trim() || cpsBaseUrl}
+                  cpsEnv={queryEnv.trim() || env}
+                  cpsKey={queryKeys.trim()}
+                  secureGroups={secureGroups}
+                  resolvedBgId={bg}
+                  setLastOperation={setLastOperation}
                 />
-             </div>
+              )}
+            </div>
           )}
         </>
       )}

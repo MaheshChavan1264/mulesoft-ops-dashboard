@@ -1738,7 +1738,7 @@ export function PropertyTable({
 // ─────────────────────────────────────────────────────────────────────────────
 // SecureGroupEditor — full CRUD + Auth panel for a single CPS secure group
 // ─────────────────────────────────────────────────────────────────────────────
-function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onResult, onGroupDeleted, globalSearch }) {
+export function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onResult, onGroupDeleted, globalSearch }) {
   const isAccessDenied = typeof group.properties === 'string';
   const [originalProps, setOriginalProps] = useState(!isAccessDenied ? (group.properties || {}) : {});
   const [pendingChanges, setPendingChanges] = useState({ added: {}, modified: {}, deleted: new Set() });
@@ -2047,7 +2047,7 @@ function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd, onRes
 // ─────────────────────────────────────────────────────────────────────────────
 // AuthTabWithSearch — Access Control tab with project-key search at the top
 // ─────────────────────────────────────────────────────────────────────────────
-function AuthTabWithSearch({ cpsBaseUrl, cpsEnv, cpsKey, secureGroups, resolvedBgId, setLastOperation }) {
+export function AuthTabWithSearch({ cpsBaseUrl, cpsEnv, cpsKey, secureGroups, resolvedBgId, setLastOperation }) {
   const [keySearch, setKeySearch] = useState('');
 
   const q = keySearch.trim().toLowerCase();
