@@ -503,7 +503,7 @@ export default function GlobalCpsManagerPage() {
                   isProd={isProd}
                   allProps={mergedProps}
                   envStr={env}
-                  keyStr={projectKey}
+                  keyStr={queryKeys}
                 />
              </div>
           )}
