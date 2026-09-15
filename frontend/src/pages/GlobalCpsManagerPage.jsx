@@ -8,6 +8,8 @@ import CpsBinaryUploadPanel from '../components/CpsBinaryUploadPanel';
 import api from '../services/api';
 import axios from 'axios';
 import { flattenCpsResponse } from '../utils/cpsHelpers';
+import { mockNonSecureResponse, mockSecureResponse } from '../utils/mockCpsData';
+import { isDemoMode } from '../utils/demoMode';
 
 const PROP_TYPE_TABS = [
   { id: 'non-secure', label: 'Non-Secure' },
@@ -84,7 +86,13 @@ export default function GlobalCpsManagerPage() {
   const pendingCount = Object.keys(pendingChanges.added).length + Object.keys(pendingChanges.modified).length + pendingChanges.deleted.size;
 
   const fetchProperties = useCallback(async () => {
-    if (!bg || !queryKeys.trim()) return;
+    if (!queryKeys.trim()) return;
+
+    if (isDemoMode()) {
+      loadMockData();
+      return;
+    }
+
     setLoading(true);
     setError('');
     
@@ -155,6 +163,21 @@ export default function GlobalCpsManagerPage() {
     }
     setLoading(false);
   }, [bg, queryKeys, queryEnv, customHost, customClientId, customClientSecret, env, chVersion, cpsBaseUrl, getGlobalCredential]);
+
+  const loadMockData = () => {
+    const nonSecureKey = mockNonSecureResponse.responses[0].key;
+    const flat = flattenCpsResponse(mockNonSecureResponse, nonSecureKey);
+    setOriginalProps(flat);
+    setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+    setQueryKeys(nonSecureKey);
+    setQueryEnv(mockNonSecureResponse.responses[0].environment);
+
+    const binStr = flat['cps.secure.binaries'] || '';
+    if (binStr) setBinaryKeys(binStr.split(',').map(k => k.trim()).filter(Boolean));
+
+    const groups = Array.isArray(mockSecureResponse.responses) ? mockSecureResponse.responses : [];
+    setSecureGroups(groups);
+  };
 
   const updateProperty = (key, newValue) => {
     setPendingChanges(prev => {
