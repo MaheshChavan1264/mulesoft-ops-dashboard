@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Code, AlertTriangle, Save } from 'lucide-react';
+import { X, Code, AlertTriangle, Save, AlignLeft } from 'lucide-react';
 
 export default function CpsRawJsonModal({ 
   isOpen, 
@@ -28,6 +28,16 @@ export default function CpsRawJsonModal({
       onClose();
     } catch (err) {
       setError(`Invalid JSON: ${err.message}`);
+    }
+  };
+
+  const handleFormat = () => {
+    try {
+      const parsed = JSON.parse(jsonText);
+      setJsonText(JSON.stringify(parsed, null, 2));
+      setError('');
+    } catch (err) {
+      setError(`Cannot format invalid JSON: ${err.message}`);
     }
   };
 
@@ -73,13 +83,21 @@ export default function CpsRawJsonModal({
         )}
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-gray-800 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-800 flex-shrink-0">
           <button 
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 border border-gray-700 rounded-lg transition-colors"
+            onClick={handleFormat}
+            className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-300 hover:text-white bg-gray-800 border border-gray-700 hover:border-gray-600 rounded-lg transition-colors"
           >
-            Cancel
+            <AlignLeft size={14} /> Format JSON
           </button>
+          
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 border border-gray-700 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
           <button 
             onClick={handleSave}
             disabled={!!error}
@@ -87,6 +105,7 @@ export default function CpsRawJsonModal({
           >
             <Save size={14} /> Update JSON
           </button>
+          </div>
         </div>
       </div>
     </div>
