@@ -143,7 +143,7 @@ export default function CpsImportModal({
         properties: merged,
         bgOrgId,
       });
-      onImported?.({ count: toImport.length, conflictCount: conflicts.length });
+      onImported?.({ count: toImport.length, conflictCount: conflicts.length, mergedProps: merged });
       onClose();
     } catch (err) {
       setImportError(err.response?.data?.error || err.message || 'Import failed');

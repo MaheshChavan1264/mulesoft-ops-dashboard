@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Database, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Upload, FileUp, Settings, X, Download } from 'lucide-react';
+import { Database, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Upload, FileUp, Settings, X, Download, Trash2 } from 'lucide-react';
 import Select from '../components/Select';
 import GlobalCpsCsvUpload from '../components/GlobalCpsCsvUpload';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { PropertyTable, SecureGroupEditor, AuthTabWithSearch } from './CpsManagerPage';
 import CpsBinaryUploadPanel from '../components/CpsBinaryUploadPanel';
 import CpsImportModal from '../components/CpsImportModal';
+import CpsDeleteProjectModal from '../components/CpsDeleteProjectModal';
 import api from '../services/api';
 import axios from 'axios';
 import { flattenCpsResponse } from '../utils/cpsHelpers';
@@ -57,6 +58,7 @@ export default function GlobalCpsManagerPage() {
   const [error, setError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [showImport, setShowImport] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
   const [saving, setSaving] = useState(false);
   
   const [activeTab, setActiveTab] = useState('non-secure');
@@ -317,16 +319,15 @@ export default function GlobalCpsManagerPage() {
     }
   };
 
-  const handleImport = (importedRows) => {
+  const handleImport = ({ count, mergedProps }) => {
     if (activeTab === 'non-secure') {
-      setPendingChanges(prev => {
-        const next = { ...prev, added: { ...prev.added }, modified: { ...prev.modified } };
-        importedRows.forEach(({ key, value }) => {
-          if (key in originalProps) { next.modified[key] = value; }
-          else { next.added[key] = value; }
-        });
-        return next;
-      });
+      alert(`Successfully imported ${count} properties.`);
+      if (isDemoMode && mergedProps) {
+        setOriginalProps(mergedProps);
+        setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+      } else {
+        fetchProperties();
+      }
     } else if (activeTab === 'secure') {
       alert("Bulk import for secure properties on the Global page must be done per group, which is currently unsupported here.");
     }
@@ -661,18 +662,26 @@ export default function GlobalCpsManagerPage() {
                   ))}
                 </div>
                 
-                {activeTab !== 'binaries' && (
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setShowImport(true)}
-                      className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
-                      <Upload size={11} /> Import
+                <div className="flex items-center gap-2">
+                  {activeTab !== 'binaries' && (
+                    <>
+                      <button onClick={() => setShowImport(true)}
+                        className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                        <Upload size={11} /> Import
+                      </button>
+                      <button onClick={exportJson}
+                        className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                        <Download size={11} /> Export JSON
+                      </button>
+                    </>
+                  )}
+                  {activeTab !== 'auth' && (
+                    <button onClick={() => setShowDelete(true)}
+                      className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 bg-red-950/40 border border-red-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                      <Trash2 size={11} /> Delete Project
                     </button>
-                    <button onClick={exportJson}
-                      className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 px-2.5 py-1.5 rounded-lg transition-colors">
-                      <Download size={11} /> Export JSON
-                    </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {activeTab === 'non-secure' && (
@@ -777,6 +786,43 @@ export default function GlobalCpsManagerPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Render Import Modal if toggled */}
+      {showImport && (
+        <CpsImportModal
+          onClose={() => setShowImport(false)}
+          baseUrl={customHost.trim() || cpsBaseUrl}
+          type={activeTab}
+          environment={queryEnv.trim() || env}
+          projectKey={queryKeys}
+          bgOrgId={bg}
+          isProd={isProd}
+          existingProps={mergedProps}
+          onImported={handleImport}
+        />
+      )}
+
+      {/* Render Delete Modal if toggled */}
+      {showDelete && (
+        <CpsDeleteProjectModal
+          onClose={() => setShowDelete(false)}
+          baseUrl={customHost.trim() || cpsBaseUrl}
+          type={activeTab === 'secure' ? 'secure' : activeTab === 'binaries' ? 'binaries' : 'non-secure'}
+          environment={queryEnv.trim() || env}
+          projectKey={queryKeys}
+          bgOrgId={bg}
+          isProd={isProd}
+          onResult={setLastOperation}
+          onDeleted={() => {
+            setShowDelete(false);
+            setHasSearched(false);
+            setOriginalProps({});
+            setSecureGroups([]);
+            setBinaryKeys([]);
+            alert(`Successfully deleted properties for ${queryKeys}.`);
+          }}
+        />
       )}
     </div>
   );
