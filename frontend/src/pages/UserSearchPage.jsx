@@ -765,16 +765,25 @@ export default function UserSearchPage() {
         // Feature 4: incrementally build and display results after each batch
         const batchRows = [];
         for (const item of r.data?.results || []) {
+          let origApp = {};
+          if(batch && batch.length > 0){
+            for (let i = 0;i<batch.length; i++){
+              if(batch[i] && batch[i].appName === item?.appName && batch[i].envName === item?.envName){
+                origApp = batch[i];
+                break;
+              }
+            }
+          }
           for (const prop of item.matchedProps || []) {
             batchRows.push({
-              bgName: item.bgName || item.envName?.split('/')[0] || '—',
-              chEnv: item.envName || '—',
-              chVersion: chLabel(item.deploymentType),
+              bgName: item.bgName || origApp.bgName || origApp.envName?.split('/')[0] || item.envName?.split('/')[0] || '—',
+              chEnv: item.envName || origApp.envName || '—',
+              chVersion: chLabel(item.deploymentType || origApp.deploymentType),
               appName: item.appName,
-              appId: item.appId || item.appName,
-              bgOrgId: item.bgOrgId || '',
-              envId: item.envId || '',
-              status: item.status || '',
+              appId: item.appId || origApp.appId || item.appName,
+              bgOrgId: item.bgOrgId || origApp.bgOrgId || '',
+              envId: item.envId || origApp.envId || '',
+              status: item.status || origApp.status || '',
               nsKey: item.cpsKey || '—',
               cpsPrefix: item.cpsPrefix || '—',
               secureKey: prop.secureGroupKey || (prop.source === 'secure' ? '(secure)' : ''),
