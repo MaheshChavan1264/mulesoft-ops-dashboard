@@ -60,6 +60,9 @@ export default function GlobalCpsManagerPage() {
   const [binaryKeys, setBinaryKeys] = useState([]);
   const [secureGroupSearch, setSecureGroupSearch] = useState('');
   const [lastOperation, setLastOperation] = useState(null);
+  
+  const [queryType, setQueryType] = useState('non-secure');
+  const [hasSearched, setHasSearched] = useState(false);
 
   const [showOverrides, setShowOverrides] = useState(false);
   const [customHost, setCustomHost] = useState('');
@@ -129,7 +132,34 @@ export default function GlobalCpsManagerPage() {
         }
       });
 
-      // Fetch via backend proxy
+      setOriginalProps({});
+      setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
+      setSecureGroups([]);
+      setBinaryKeys([]);
+      setHasSearched(true);
+
+      if (queryType === 'binary') {
+        const keysArr = activeParams.keys.split(',').map(k => k.trim()).filter(Boolean);
+        setBinaryKeys(keysArr);
+        setActiveTab('binaries');
+        setLoading(false);
+        return;
+      }
+
+      if (queryType === 'secure') {
+        try {
+          const secRes = await api.get('/cps/fetch', {
+            params: { baseUrl: activeHost, type: 'secure', environment: activeParams.environment, keys: activeParams.keys, bgOrgId: bg }
+          });
+          const groups = Array.isArray(secRes.data?.responses) ? secRes.data.responses : [];
+          setSecureGroups(groups);
+        } catch {}
+        setActiveTab('secure');
+        setLoading(false);
+        return;
+      }
+
+      // Fetch via backend proxy for non-secure
       const nsRes = await api.get('/cps/fetch', {
         params: {
           baseUrl: activeHost,
@@ -165,12 +195,27 @@ export default function GlobalCpsManagerPage() {
   }, [bg, queryKeys, queryEnv, customHost, customClientId, customClientSecret, env, chVersion, cpsBaseUrl, getGlobalCredential]);
 
   const loadMockData = () => {
+    setHasSearched(true);
+    if (queryType === 'binary') {
+      setBinaryKeys(['mock-keystore.jks', 'mock-truststore.p12']);
+      setActiveTab('binaries');
+      return;
+    }
+    if (queryType === 'secure') {
+      const groups = Array.isArray(mockSecureResponse.responses) ? mockSecureResponse.responses : [];
+      setSecureGroups(groups);
+      setActiveTab('secure');
+      return;
+    }
+    
+    // Default non-secure mock
     const nonSecureKey = mockNonSecureResponse.responses[0].key;
     const flat = flattenCpsResponse(mockNonSecureResponse, nonSecureKey);
     setOriginalProps(flat);
     setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
     setQueryKeys(nonSecureKey);
     setQueryEnv(mockNonSecureResponse.responses[0].environment);
+    setActiveTab('non-secure');
 
     const binStr = flat['cps.secure.binaries'] || '';
     if (binStr) setBinaryKeys(binStr.split(',').map(k => k.trim()).filter(Boolean));
@@ -405,19 +450,38 @@ export default function GlobalCpsManagerPage() {
             </div>
             
             <div className="flex flex-wrap items-end gap-4 border-t border-gray-800 pt-5">
-              <div className="flex-[1] min-w-[200px]">
+              <div className="flex-[1.5] min-w-[300px]">
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <Key size={12} className="text-gray-500" />
-                  Query: keys
+                  Query Type & Keys
                 </label>
-                <input
-                  type="text"
-                  value={queryKeys}
-                  onChange={e => setQueryKeys(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && fetchProperties()}
-                  placeholder="e.g. my-app-v1"
-                  className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
-                />
+                <div className="flex">
+                  <div className="w-[140px] flex-shrink-0">
+                    <Select
+                      value={queryType}
+                      onChange={val => {
+                        setQueryType(val);
+                        if (val === 'secure') setActiveTab('secure');
+                        if (val === 'binary') setActiveTab('binaries');
+                        if (val === 'non-secure') setActiveTab('non-secure');
+                      }}
+                      options={[
+                        { value: 'non-secure', label: 'Non-Secure' },
+                        { value: 'secure', label: 'Secure' },
+                        { value: 'binary', label: 'Binary' }
+                      ]}
+                      className="[&>button]:rounded-l-xl [&>button]:rounded-r-none [&>button]:border-r-0 [&>button]:h-[42px]"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={queryKeys}
+                    onChange={e => setQueryKeys(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && fetchProperties()}
+                    placeholder={queryType === 'binary' ? "e.g. keystore.jks" : "e.g. my-app-v1"}
+                    className="flex-1 min-w-0 bg-gray-900 border border-gray-700 rounded-r-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
+                  />
+                </div>
               </div>
 
               <div className="flex-[1] min-w-[200px]">
@@ -537,7 +601,7 @@ export default function GlobalCpsManagerPage() {
             </div>
           )}
 
-          {Object.keys(originalProps).length > 0 && (
+          {hasSearched && (
             <div className="space-y-4">
               <div className="flex items-center gap-1 p-1 bg-gray-900 border border-gray-800 rounded-xl w-fit">
                 {PROP_TYPE_TABS.map(t => (

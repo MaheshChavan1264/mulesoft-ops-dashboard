@@ -2,6 +2,7 @@
 node_modules/
 backend/data/
 .npm
+.agents
 
 # Environment files
 .env
