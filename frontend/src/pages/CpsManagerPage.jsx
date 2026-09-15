@@ -1244,7 +1244,7 @@ export default function CpsManagerPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 // PropertyTable — inline-editable property table with pending change tracking
 // ─────────────────────────────────────────────────────────────────────────────
-function PropertyTable({
+export function PropertyTable({
   props, originalProps, pendingChanges, search, setSearch,
   onUpdate, onDelete, onAdd, onReplaceAll, hasPendingChanges, pendingCount,
   onSave, onDiscard, saving, isProd,

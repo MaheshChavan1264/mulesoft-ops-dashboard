@@ -18,6 +18,7 @@ const navItems = [
   { to: '/ping-test', icon: Activity, label: 'Ping Test' },
   { to: '/cps-compare', icon: GitCompare, label: 'CPS Compare' },
   { to: '/cps-manager', icon: Database, label: 'CPS Manager' },
+  { to: '/global-cps-manager', icon: Database, label: 'Global CPS Manager' },
   { to: '/user-search', icon: Users, label: 'Global Search' },
 ];
 
