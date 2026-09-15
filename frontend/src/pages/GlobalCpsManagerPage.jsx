@@ -85,7 +85,7 @@ export default function GlobalCpsManagerPage() {
 
     const activeHost = customHost.trim() || cpsBaseUrl;
     const activeParams = { 
-      env: queryEnv.trim() || env, 
+      environment: queryEnv.trim() || env, 
       keys: queryKeys.trim()
     };
 
@@ -166,8 +166,8 @@ export default function GlobalCpsManagerPage() {
 
     const activeHost = customHost.trim() || cpsBaseUrl;
     const activeParams = { 
-      env: customEnv.trim() || env, 
-      keys: customKeys.trim() || projectKey 
+      environment: queryEnv.trim() || env, 
+      keys: queryKeys.trim() 
     };
 
     const activeHeaders = {
