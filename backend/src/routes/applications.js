@@ -389,6 +389,11 @@ async function _fetchSummary(client, targetOrgId, session) {
 
   if (!session.summaryCache) session.summaryCache = {};
   session.summaryCache[targetOrgId] = { data: responseData, ts: Date.now() };
+  if (typeof session.save === 'function') {
+    session.save((err) => {
+      if (err) console.error(`[Summary] Failed to save session cache for ${targetOrgId}:`, err);
+    });
+  }
   console.log(`[Summary] Cache SET for org ${targetOrgId} (${results.length} apps)`);
   return responseData;
 }
