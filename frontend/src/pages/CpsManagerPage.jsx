@@ -234,6 +234,7 @@ export default function CpsManagerPage() {
   const [showDelete, setShowDelete] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showCpsSettings, setShowCpsSettings] = useState(false);
+  const [showSecureRawJson, setShowSecureRawJson] = useState(false);
   // Feature 1: save diff modal
   const [showDiffModal, setShowDiffModal] = useState(false);
   // Feature 5: undo history
@@ -937,20 +938,20 @@ export default function CpsManagerPage() {
                   <Database size={8} /> Manual entry
                 </span>
               )}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2">
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
                     CPS Base URL
                     {cpsBaseUrl && !cpsUrlPresets.includes(cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')) && (
                       <button onClick={saveUrlPreset} title="Save as preset"
-                        className="text-[8px] text-gray-600 hover:text-cyan-400 border border-gray-700 hover:border-cyan-700 px-1.5 py-0.5 rounded transition-colors">
+                        className="text-[8px] text-gray-500 hover:text-cyan-400 border border-gray-700 hover:border-cyan-700 px-1.5 py-0.5 rounded transition-colors">
                         + save preset
                       </button>
                     )}
                   </label>
                   <input value={cpsBaseUrl} onChange={e => setCpsBaseUrl(e.target.value)}
                     placeholder="https://cps-server.internalapi.sfdcbt.net"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
+                    className="w-full h-[42px] bg-gray-900/80 border border-gray-700 rounded-lg px-3 text-sm text-gray-200 font-mono focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 placeholder-gray-600 transition-all" />
                   {cpsUrlPresets.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {cpsUrlPresets.map(p => (
@@ -965,17 +966,15 @@ export default function CpsManagerPage() {
                     </div>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Env</label>
-                    <input value={cpsEnv} onChange={e => setCpsEnv(e.target.value)} placeholder="prod / uat"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Project Key</label>
-                    <input value={cpsKey} onChange={e => setCpsKey(e.target.value)} placeholder="my-api-name"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">CPS Env</label>
+                  <input value={cpsEnv} onChange={e => setCpsEnv(e.target.value)} placeholder="prod / uat"
+                    className="w-full h-[42px] bg-gray-900/80 border border-gray-700 rounded-lg px-3 text-sm text-gray-200 font-mono focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 placeholder-gray-600 transition-all" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Project Key</label>
+                  <input value={cpsKey} onChange={e => setCpsKey(e.target.value)} placeholder="my-api-name"
+                    className="w-full h-[42px] bg-gray-900/80 border border-gray-700 rounded-lg px-3 text-sm text-gray-200 font-mono focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 placeholder-gray-600 transition-all" />
                 </div>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
@@ -1116,6 +1115,20 @@ export default function CpsManagerPage() {
           {/* Secure Tab */}
           {activeTab === 'secure' && !propsLoading && (
             <div className="space-y-4">
+              <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Secure Properties</h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Encrypted values that are securely stored in the CPS.
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowSecureRawJson(true)}
+                  className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/50 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Code size={12} /> Global Raw JSON
+                </button>
+              </div>
               {secureGroups.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 gap-3 bg-gray-900 border border-gray-800 rounded-xl">
                   <Key size={28} className="text-gray-700" />
@@ -1262,6 +1275,24 @@ export default function CpsManagerPage() {
           </p>
           <p className="text-gray-600 text-xs">You can still enter the CPS URL, env, and project key manually above</p>
         </div>
+      )}
+
+      {/* Secure Global Raw JSON Editor */}
+      {showSecureRawJson && (
+        <CpsRawJsonModal
+          isOpen={showSecureRawJson}
+          onClose={() => setShowSecureRawJson(false)}
+          initialJson={secureGroups}
+          onSave={(parsedGroups) => {
+            if (Array.isArray(parsedGroups)) {
+               setSecureGroups(parsedGroups);
+            } else {
+               alert("Secure groups must be an array of objects.");
+            }
+          }}
+          title="Global Secure Properties JSON"
+          description="Edit all secure groups globally. Find and replace functionality is available."
+        />
       )}
     </div>
   );
