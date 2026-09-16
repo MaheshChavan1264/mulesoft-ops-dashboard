@@ -928,10 +928,11 @@ export default function ApplicationsPage() {
   useEffect(() => {
     if (selectedBg && allBusinessGroups.length > 0) loadApps(selectedBg);
   }, [selectedBg]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Cleanup keep-fresh registration on unmount — prevents orphaned refreshes
-  // after the user navigates away from this page.
+  // Track mount state so background refresh doesn't set state on unmounted component
+  // We intentionally do NOT stop keepFresh on unmount so the cache stays warm globally.
+  const isMounted = useRef(true);
   useEffect(() => {
-    return () => { if (keepFreshKeyRef.current) stopKeepingFresh(keepFreshKeyRef.current); };
+    return () => { isMounted.current = false; };
   }, []);
 
   useEffect(() => { setSelectedIds(new Set()); }, [selectedBg]);
@@ -1057,8 +1058,10 @@ export default function ApplicationsPage() {
       keepFreshKeyRef.current = cacheKey;
       keepFresh(cacheKey, () =>
         _fetchAndCacheApps(bgId, bgIds, cacheKey).then(({ mergedApps: ma, mergedEnvs: me }) => {
-          setApps(ma);
-          setEnvironments(me);
+          if (isMounted.current) {
+            setApps(ma);
+            setEnvironments(me);
+          }
           return { apps: ma, envs: me }; // returned value is stored by the sweep
         })
       );
