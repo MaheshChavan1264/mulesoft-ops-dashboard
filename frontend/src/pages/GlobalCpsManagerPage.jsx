@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Database, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Upload, FileUp, Settings, X, Download, Trash2 } from 'lucide-react';
+import { Database, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Upload, FileUp, Settings, X, Download, Trash2, Code } from 'lucide-react';
 import Select from '../components/Select';
 import GlobalCpsCsvUpload from '../components/GlobalCpsCsvUpload';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
@@ -7,6 +7,7 @@ import { PropertyTable, SecureGroupEditor, AuthTabWithSearch } from './CpsManage
 import CpsBinaryUploadPanel from '../components/CpsBinaryUploadPanel';
 import CpsImportModal from '../components/CpsImportModal';
 import CpsDeleteProjectModal from '../components/CpsDeleteProjectModal';
+import CpsRawJsonModal from '../components/CpsRawJsonModal';
 import api from '../services/api';
 import axios from 'axios';
 import { flattenCpsResponse } from '../utils/cpsHelpers';
@@ -59,6 +60,7 @@ export default function GlobalCpsManagerPage() {
   const [saveError, setSaveError] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [showSecureRawJson, setShowSecureRawJson] = useState(false);
   const [saving, setSaving] = useState(false);
   
   const [activeTab, setActiveTab] = useState('non-secure');
@@ -202,31 +204,46 @@ export default function GlobalCpsManagerPage() {
 
   const loadMockData = () => {
     setHasSearched(true);
+    
+    const requestedKey = queryKeys.trim() || mockNonSecureResponse.responses[0].key;
+
     if (queryType === 'binary') {
       setBinaryKeys(['mock-keystore.jks', 'mock-truststore.p12']);
       setActiveTab('binaries');
       return;
     }
     if (queryType === 'secure') {
-      const groups = Array.isArray(mockSecureResponse.responses) ? mockSecureResponse.responses : [];
+      const groups = [
+        { key: requestedKey, environment: queryEnv || 'uat', properties: { "secure.password": "mock123", "secure.token": "abc" } }
+      ];
       setSecureGroups(groups);
       setActiveTab('secure');
       return;
     }
     
     // Default non-secure mock
-    const nonSecureKey = mockNonSecureResponse.responses[0].key;
-    const flat = flattenCpsResponse(mockNonSecureResponse, nonSecureKey);
+    const mockRes = {
+      ...mockNonSecureResponse,
+      responses: [
+        {
+          ...mockNonSecureResponse.responses[0],
+          key: requestedKey,
+          environment: queryEnv || mockNonSecureResponse.responses[0].environment
+        }
+      ]
+    };
+    
+    const flat = flattenCpsResponse(mockRes, requestedKey);
     setOriginalProps(flat);
     setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
-    setQueryKeys(nonSecureKey);
-    setQueryEnv(mockNonSecureResponse.responses[0].environment);
     setActiveTab('non-secure');
 
     const binStr = flat['cps.secure.binaries'] || '';
     if (binStr) setBinaryKeys(binStr.split(',').map(k => k.trim()).filter(Boolean));
 
-    const groups = Array.isArray(mockSecureResponse.responses) ? mockSecureResponse.responses : [];
+    const groups = [
+        { key: requestedKey, environment: queryEnv || 'uat', properties: { "secure.password": "mock123" } }
+    ];
     setSecureGroups(groups);
   };
 
@@ -717,6 +734,12 @@ export default function GlobalCpsManagerPage() {
                         Encrypted values that are securely stored in the CPS.
                       </p>
                     </div>
+                    <button 
+                      onClick={() => setShowSecureRawJson(true)}
+                      className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/50 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Code size={12} /> Global Raw JSON
+                    </button>
                   </div>
 
                   <div className="relative">
@@ -822,6 +845,24 @@ export default function GlobalCpsManagerPage() {
             setBinaryKeys([]);
             alert(`Successfully deleted properties for ${queryKeys}.`);
           }}
+        />
+      )}
+
+      {/* Secure Global Raw JSON Editor */}
+      {showSecureRawJson && (
+        <CpsRawJsonModal
+          isOpen={showSecureRawJson}
+          onClose={() => setShowSecureRawJson(false)}
+          initialJson={secureGroups}
+          onSave={(parsedGroups) => {
+            if (Array.isArray(parsedGroups)) {
+               setSecureGroups(parsedGroups);
+            } else {
+               alert("Secure groups must be an array of objects.");
+            }
+          }}
+          title="Global Secure Properties JSON"
+          description="Edit all secure groups globally. Find and replace functionality is available."
         />
       )}
     </div>
