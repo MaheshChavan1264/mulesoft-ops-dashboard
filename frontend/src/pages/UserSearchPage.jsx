@@ -821,8 +821,8 @@ export default function UserSearchPage() {
   const exportCsv = () => {
     if (!results || !results.length) return;
     // Feature 13: include Business Group as first column
-    const H = ['Business Group', 'Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
-    const rows = results.map(r => [r.bgName || '—', r.chEnv, r.chVersion, r.appName, r.nsKey, r.cpsPrefix, r.secureKey, r.propKey, r.apiUser, r.password]);
+    const H = ['Business Group', 'Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Status', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
+    const rows = results.map(r => [r.bgName || '—', r.chEnv, r.chVersion, r.appName, r.status || '—', r.nsKey, r.cpsPrefix, r.secureKey, r.propKey, r.apiUser, r.password]);
     const csv = [H, ...rows].map(row => row.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -879,9 +879,10 @@ export default function UserSearchPage() {
         entry.secureKeys.get(bg).add(row.secureKey);
       }
 
-      // Connected apps — every row contributes its app name
+      // Connected apps — every row contributes its app name + status
       if (!entry.apps.has(bg)) entry.apps.set(bg, new Set());
-      entry.apps.get(bg).add(row.appName || '—');
+      const appDisplay = row.appName ? `${row.appName} -> ${row.status || 'unknown'}` : '—';
+      entry.apps.get(bg).add(appDisplay);
     });
 
     const headers = ['Username', 'Secure Keys', 'Directly connected APIs'];
