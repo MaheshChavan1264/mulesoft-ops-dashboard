@@ -417,6 +417,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
     if (!forceRefresh && cached && isFresh) {
       // ── Fresh hit — instant response, no network ─────────────────────────
+      console.log(`[Summary] Served from session cache for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s)`);
       return res.json(cached.data);
     }
 
@@ -432,6 +433,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     // ─────────────────────────────────────────────────────────────────────────
 
     // Cache miss or force-refresh — fetch synchronously
+    console.log(`[Summary] Synchronous fetch for org ${targetOrgId} (forceRefresh: ${forceRefresh}, cached: ${!!cached})`);
     const data = await _fetchSummary(client, targetOrgId, req.session);
     res.json(data);
   } catch (error) {
