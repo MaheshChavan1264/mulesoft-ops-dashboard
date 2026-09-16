@@ -4,6 +4,7 @@ import Select from '../components/Select';
 import GlobalCpsCsvUpload from '../components/GlobalCpsCsvUpload';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { PropertyTable, SecureGroupEditor, AuthTabWithSearch } from './CpsManagerPage';
+import CpsRequestResponsePanel from '../components/CpsRequestResponsePanel';
 import CpsBinaryUploadPanel from '../components/CpsBinaryUploadPanel';
 import CpsImportModal from '../components/CpsImportModal';
 import CpsDeleteProjectModal from '../components/CpsDeleteProjectModal';
@@ -71,6 +72,7 @@ export default function GlobalCpsManagerPage() {
   
   const [queryType, setQueryType] = useState('non-secure');
   const [hasSearched, setHasSearched] = useState(false);
+  const [loadedParams, setLoadedParams] = useState(null);
 
   const [showOverrides, setShowOverrides] = useState(false);
   const [customHost, setCustomHost] = useState('');
@@ -96,30 +98,28 @@ export default function GlobalCpsManagerPage() {
                             pendingChanges.deleted.size > 0;
   const pendingCount = Object.keys(pendingChanges.added).length + Object.keys(pendingChanges.modified).length + pendingChanges.deleted.size;
 
-  const fetchProperties = useCallback(async () => {
-    if (!queryKeys.trim()) return;
+  const fetchProperties = useCallback(async (isRefresh = false) => {
+    const keysToUse = isRefresh && loadedParams ? loadedParams.keys : queryKeys.trim();
+    const envToUse = isRefresh && loadedParams ? loadedParams.environment : (queryEnv.trim() || env);
+    const typeToUse = isRefresh && loadedParams ? loadedParams.type : queryType;
+
+    if (!keysToUse) return;
 
     if (isDemoMode()) {
-      loadMockData();
+      if (!isRefresh) setLoadedParams({ keys: keysToUse, environment: envToUse, type: typeToUse });
+      loadMockData(keysToUse, envToUse, typeToUse);
       return;
     }
 
     setLoading(true);
     setError('');
     
-    // We get the credentials for the backend proxy to use if needed
-    // However, our backend proxy (/api/cps/fetch) natively checks the session store
-    // The credentials should be passed or we need an endpoint to seed them? 
-    // Usually, CPS routes just use the baseUrl and bgOrgId in the current implementation.
-    // Let's pass the specific credential in headers or body if required, or we can assume
-    // the user wants us to use the global credentials to get the client id/secret.
-    
     const cred = getGlobalCredential(bg, env, chVersion);
 
     const activeHost = customHost.trim() || cpsBaseUrl;
     const activeParams = { 
-      environment: queryEnv.trim() || env, 
-      keys: queryKeys.trim()
+      environment: envToUse, 
+      keys: keysToUse
     };
 
     const activeHeaders = {
@@ -146,22 +146,49 @@ export default function GlobalCpsManagerPage() {
       setBinaryKeys([]);
       setHasSearched(true);
 
-      if (queryType === 'binary') {
+      if (!isRefresh) {
+        setLoadedParams({ keys: keysToUse, environment: envToUse, type: typeToUse });
+      }
+
+      if (typeToUse === 'binary') {
         const keysArr = activeParams.keys.split(',').map(k => k.trim()).filter(Boolean);
         setBinaryKeys(keysArr);
         setActiveTab('binaries');
         setLoading(false);
+        setLastOperation({
+          label: 'Fetch Binary Properties',
+          timestamp: new Date().toISOString(),
+          requestDetails: { method: 'GET', url: `/api/cps/fetch?type=binary`, params: activeParams },
+          responseDetails: { status: 200, body: keysArr },
+          success: true
+        });
         return;
       }
 
-      if (queryType === 'secure') {
+      if (typeToUse === 'secure') {
         try {
           const secRes = await api.get('/cps/fetch', {
             params: { baseUrl: activeHost, type: 'secure', environment: activeParams.environment, keys: activeParams.keys, bgOrgId: bg }
           });
           const groups = Array.isArray(secRes.data?.responses) ? secRes.data.responses : [];
           setSecureGroups(groups);
-        } catch {}
+          setLastOperation({
+            label: 'Fetch Secure Properties',
+            timestamp: new Date().toISOString(),
+            requestDetails: secRes.data?.requestDetails || { method: 'GET', params: { ...activeParams, type: 'secure' } },
+            responseDetails: secRes.data?.responseDetails || { status: 200, body: secRes.data },
+            success: true
+          });
+        } catch (err) {
+          setLastOperation({
+            label: 'Fetch Secure Properties',
+            timestamp: new Date().toISOString(),
+            requestDetails: err.response?.data?.requestDetails || { method: 'GET', params: { ...activeParams, type: 'secure' } },
+            responseDetails: err.response?.data?.responseDetails || { status: err.response?.status, body: err.response?.data },
+            success: false
+          });
+          throw err;
+        }
         setActiveTab('secure');
         setLoading(false);
         return;
@@ -181,6 +208,14 @@ export default function GlobalCpsManagerPage() {
       setOriginalProps(flat);
       setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
 
+      setLastOperation({
+        label: 'Fetch Non-Secure Properties',
+        timestamp: new Date().toISOString(),
+        requestDetails: nsRes.data?.requestDetails || { method: 'GET', params: { ...activeParams, type: 'non-secure' } },
+        responseDetails: nsRes.data?.responseDetails || { status: 200, body: nsRes.data },
+        success: true
+      });
+
       // Extract binary keys from non-secure
       const binStr = flat['cps.secure.binaries'] || '';
       if (binStr) setBinaryKeys(binStr.split(',').map(k => k.trim()).filter(Boolean));
@@ -198,23 +233,30 @@ export default function GlobalCpsManagerPage() {
       }
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to load CPS properties');
+      setLastOperation({
+        label: 'Fetch Properties Error',
+        timestamp: new Date().toISOString(),
+        requestDetails: err.response?.data?.requestDetails || { method: 'GET', params: { type: typeToUse } },
+        responseDetails: err.response?.data?.responseDetails || { status: err.response?.status, body: err.response?.data },
+        success: false
+      });
     }
     setLoading(false);
-  }, [bg, queryKeys, queryEnv, customHost, customClientId, customClientSecret, env, chVersion, cpsBaseUrl, getGlobalCredential]);
+  }, [bg, queryKeys, queryEnv, queryType, loadedParams, customHost, customClientId, customClientSecret, env, chVersion, cpsBaseUrl, getGlobalCredential]);
 
-  const loadMockData = () => {
+  const loadMockData = (keysToUse, envToUse, typeToUse) => {
     setHasSearched(true);
     
-    const requestedKey = queryKeys.trim() || mockNonSecureResponse.responses[0].key;
+    const requestedKey = keysToUse || mockNonSecureResponse.responses[0].key;
 
-    if (queryType === 'binary') {
+    if (typeToUse === 'binary') {
       setBinaryKeys(['mock-keystore.jks', 'mock-truststore.p12']);
       setActiveTab('binaries');
       return;
     }
-    if (queryType === 'secure') {
+    if (typeToUse === 'secure') {
       const groups = [
-        { key: requestedKey, environment: queryEnv || 'uat', properties: { "secure.password": "mock123", "secure.token": "abc" } }
+        { key: requestedKey, environment: envToUse || 'uat', properties: { "secure.password": "mock123", "secure.token": "abc" } }
       ];
       setSecureGroups(groups);
       setActiveTab('secure');
@@ -228,7 +270,7 @@ export default function GlobalCpsManagerPage() {
         {
           ...mockNonSecureResponse.responses[0],
           key: requestedKey,
-          environment: queryEnv || mockNonSecureResponse.responses[0].environment
+          environment: envToUse || mockNonSecureResponse.responses[0].environment
         }
       ]
     };
@@ -242,7 +284,7 @@ export default function GlobalCpsManagerPage() {
     if (binStr) setBinaryKeys(binStr.split(',').map(k => k.trim()).filter(Boolean));
 
     const groups = [
-        { key: requestedKey, environment: queryEnv || 'uat', properties: { "secure.password": "mock123" } }
+        { key: requestedKey, environment: envToUse || 'uat', properties: { "secure.password": "mock123" } }
     ];
     setSecureGroups(groups);
   };
@@ -553,6 +595,7 @@ export default function GlobalCpsManagerPage() {
                 <button
                   onClick={() => {
                     setHasSearched(false);
+                    setLoadedParams(null);
                     setOriginalProps({});
                     setSecureGroups([]);
                     setBinaryKeys([]);
@@ -563,13 +606,23 @@ export default function GlobalCpsManagerPage() {
                   <X size={16} /> Clear
                 </button>
                 <button
-                  onClick={fetchProperties}
+                  onClick={() => fetchProperties(false)}
                   disabled={loading || !queryKeys.trim()}
                   className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-indigo-900/20 h-[42px]"
                 >
-                  {loading ? <RefreshCw size={16} className="animate-spin" /> : (hasSearched ? <RefreshCw size={16} /> : <Search size={16} />)}
-                  {hasSearched ? 'Refresh' : 'Load Properties'}
+                  {loading && !loadedParams ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
+                  Load Properties
                 </button>
+                {hasSearched && (
+                  <button
+                    onClick={() => fetchProperties(true)}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-cyan-900/20 h-[42px]"
+                  >
+                    <RefreshCw size={16} className={loading && loadedParams ? "animate-spin" : ""} />
+                    Refresh
+                  </button>
+                )}
               </div>
             </div>
             
@@ -863,6 +916,14 @@ export default function GlobalCpsManagerPage() {
           }}
           title="Global Secure Properties JSON"
           description="Edit all secure groups globally. Find and replace functionality is available."
+        />
+      )}
+
+      {/* Request / Response debug panel */}
+      {lastOperation && (
+        <CpsRequestResponsePanel
+          operation={lastOperation}
+          onDismiss={() => setLastOperation(null)}
         />
       )}
     </div>
