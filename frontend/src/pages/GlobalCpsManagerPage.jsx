@@ -23,12 +23,12 @@ const PROP_TYPE_TABS = [
 
 const CPS_URLS = {
   ch1: {
-    uat: 'https://cps-server-uat.internalapi.sfdcbt.net',
-    prod: 'https://cps-server.internalapi.sfdcbt.net'
+    uat: import.meta.env.VITE_CPS_CH1_UAT || 'https://cps-server-uat.internalapi.sfdcbt.net',
+    prod: import.meta.env.VITE_CPS_CH1_PROD || 'https://cps-server.internalapi.sfdcbt.net'
   },
   ch2: {
-    uat: 'https://ch2-uat-cps.example.com',
-    prod: 'https://ch2-prod-cps.example.com'
+    uat: import.meta.env.VITE_CPS_CH2_UAT || 'https://ch2-uat-cps.example.com',
+    prod: import.meta.env.VITE_CPS_CH2_PROD || 'https://ch2-prod-cps.example.com'
   }
 };
 
