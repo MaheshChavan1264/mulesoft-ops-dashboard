@@ -11,6 +11,13 @@ export default function CpsRawJsonModal({
 }) {
   const [jsonText, setJsonText] = useState('');
   const [error, setError] = useState('');
+  const [findText, setFindText] = useState('');
+  const [replaceText, setReplaceText] = useState('');
+
+  const handleFindReplace = () => {
+    if (!findText) return;
+    setJsonText(prev => prev.split(findText).join(replaceText));
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -59,8 +66,33 @@ export default function CpsRawJsonModal({
           </button>
         </div>
 
-        {/* Editor */}
-        <div className="flex-1 p-4 overflow-hidden flex flex-col">
+        {/* Editor & Find/Replace */}
+        <div className="flex-1 p-4 overflow-hidden flex flex-col gap-3">
+          
+          <div className="flex items-center gap-2 bg-gray-800/50 p-2 rounded-lg border border-gray-700/50">
+            <input
+              type="text"
+              placeholder="Find..."
+              value={findText}
+              onChange={e => setFindText(e.target.value)}
+              className="flex-1 bg-gray-900 border border-gray-700 rounded-md px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600"
+            />
+            <input
+              type="text"
+              placeholder="Replace with..."
+              value={replaceText}
+              onChange={e => setReplaceText(e.target.value)}
+              className="flex-1 bg-gray-900 border border-gray-700 rounded-md px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600"
+            />
+            <button
+              onClick={handleFindReplace}
+              disabled={!findText}
+              className="px-3 py-1.5 bg-blue-900/50 hover:bg-blue-800/60 border border-blue-700/50 text-blue-300 text-xs rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Replace All
+            </button>
+          </div>
+
           <textarea
             value={jsonText}
             onChange={(e) => {
