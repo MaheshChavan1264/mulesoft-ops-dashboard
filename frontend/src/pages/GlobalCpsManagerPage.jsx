@@ -516,6 +516,7 @@ export default function GlobalCpsManagerPage() {
                   value={bg}
                   onChange={setBg}
                   options={bgOptions.length ? bgOptions : [{ value: '', label: 'No BGs found' }]}
+                  className="[&>button]:h-[42px] [&>button]:!bg-gray-900/80 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
                 />
               </div>
               
@@ -530,6 +531,7 @@ export default function GlobalCpsManagerPage() {
                     { value: 'uat', label: 'UAT' },
                     { value: 'prod', label: 'PROD' }
                   ]}
+                  className="[&>button]:h-[42px] [&>button]:!bg-gray-900/80 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
                 />
               </div>
 
@@ -544,6 +546,7 @@ export default function GlobalCpsManagerPage() {
                     { value: 'ch1', label: 'CloudHub 1.0 (CH1)' },
                     { value: 'ch2', label: 'CloudHub 2.0 (CH2)' }
                   ]}
+                  className="[&>button]:h-[42px] [&>button]:!bg-gray-900/80 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
                 />
               </div>
 
@@ -551,7 +554,7 @@ export default function GlobalCpsManagerPage() {
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   CPS Config URL (Auto)
                 </label>
-                <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 font-mono flex items-center gap-2 h-[38px]">
+                <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl px-3 py-2 text-sm text-gray-300 font-mono flex items-center gap-2 h-[42px]">
                   <Database size={14} className="text-indigo-400 flex-shrink-0" />
                   <span className="truncate">{cpsBaseUrl}</span>
                 </div>
@@ -579,7 +582,7 @@ export default function GlobalCpsManagerPage() {
                         { value: 'secure', label: 'Secure' },
                         { value: 'binary', label: 'Binary' }
                       ]}
-                      className="[&>button]:rounded-l-xl [&>button]:rounded-r-none [&>button]:border-r-0 [&>button]:h-[42px]"
+                      className="[&>button]:rounded-l-xl [&>button]:rounded-r-none [&>button]:border-r-0 [&>button]:h-[42px] [&>button]:!bg-gray-900/80 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
                     />
                   </div>
                   <input
@@ -588,7 +591,7 @@ export default function GlobalCpsManagerPage() {
                     onChange={e => setQueryKeys(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && fetchProperties()}
                     placeholder={queryType === 'binary' ? "e.g. keystore.jks" : "e.g. my-app-v1"}
-                    className="flex-1 min-w-0 bg-gray-900 border border-gray-700 rounded-r-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
+                    className="flex-1 min-w-0 bg-gray-900/80 border border-gray-700 rounded-r-xl px-3 h-[42px] text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:bg-gray-900 font-mono transition-all"
                   />
                 </div>
               </div>
@@ -602,7 +605,7 @@ export default function GlobalCpsManagerPage() {
                   value={queryEnv}
                   onChange={e => setQueryEnv(e.target.value)}
                   placeholder={env}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
+                  className="w-full bg-gray-900/80 border border-gray-700 rounded-xl px-3 h-[42px] text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:bg-gray-900 font-mono transition-all"
                 />
               </div>
               <button
