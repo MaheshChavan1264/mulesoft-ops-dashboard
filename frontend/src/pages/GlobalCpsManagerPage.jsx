@@ -352,7 +352,14 @@ export default function GlobalCpsManagerPage() {
       });
 
       // Write via backend proxy
-      await api.post('/cps/write', {
+      const reqDetails = {
+        method: 'PUT',
+        url: `/api/cps/write`,
+        params: { baseUrl: activeHost, type: 'non-secure', bgOrgId: bg, ...activeParams, projectKey: activeParams.keys },
+        body: mergedProps
+      };
+      
+      const saveRes = await api.post('/cps/write', {
         baseUrl: activeHost,
         type: 'non-secure',
         method: 'PUT',
@@ -362,10 +369,25 @@ export default function GlobalCpsManagerPage() {
         projectKey: activeParams.keys
       });
       
+      setLastOperation({
+        label: 'Save Properties',
+        timestamp: new Date().toISOString(),
+        requestDetails: saveRes.data?.requestDetails || reqDetails,
+        responseDetails: saveRes.data?.responseDetails || { status: 200, body: saveRes.data },
+        success: true
+      });
+      
       setOriginalProps(mergedProps);
       setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Save failed');
+      setLastOperation({
+        label: 'Save Properties',
+        timestamp: new Date().toISOString(),
+        requestDetails: err.response?.data?.requestDetails || { method: 'PUT', params: { ...activeParams, type: 'non-secure' } },
+        responseDetails: err.response?.data?.responseDetails || { status: err.response?.status, body: err.response?.data },
+        success: false
+      });
     }
     setSaving(false);
   };
@@ -599,6 +621,7 @@ export default function GlobalCpsManagerPage() {
                     setOriginalProps({});
                     setSecureGroups([]);
                     setBinaryKeys([]);
+                    setLastOperation(null);
                   }}
                   disabled={!hasSearched}
                   className="flex items-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors h-[42px]"
