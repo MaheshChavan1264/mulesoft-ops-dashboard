@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Database, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Upload, FileUp, Settings, X, Download, Trash2, Code } from 'lucide-react';
+import { Database, Globe, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Upload, FileUp, Settings, X, Download, Trash2, Code } from 'lucide-react';
 import Select from '../components/Select';
 import GlobalCpsCsvUpload from '../components/GlobalCpsCsvUpload';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
@@ -425,7 +425,7 @@ export default function GlobalCpsManagerPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Database className="text-indigo-500" />
+            <Globe className="text-indigo-500" />
             Global CPS Manager
           </h1>
           <p className="text-gray-400 text-sm mt-1">
