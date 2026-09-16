@@ -199,6 +199,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
       headers: { 'client_id': clientId, 'client_secret': clientSecret, 'Content-Type': 'application/json' },
       params,
       timeout: timeoutMs,
+      httpsAgent,
       validateStatus: () => true, // handle all statuses ourselves
     });
   };
@@ -335,6 +336,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
               headers: { 'client_id': altCred.clientId, 'client_secret': altCred.clientSecret, 'Content-Type': 'application/json' },
               params: altParams,
               timeout: 8000,
+              httpsAgent,
               validateStatus: () => true,
             });
 
