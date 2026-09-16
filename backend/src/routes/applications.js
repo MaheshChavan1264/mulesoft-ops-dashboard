@@ -10,6 +10,10 @@ const {
 } = require('../utils/appHelpers');
 const { sendProxyError } = require('../utils/responseHelpers');
 
+// Global in-memory cache to avoid express-session race conditions
+// during concurrent background refreshes.
+const globalSummaryCache = {};
+
 // Get all applications for an environment (CloudHub 2.0)
 router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
   try {
@@ -297,10 +301,10 @@ const SUMMARY_CACHE_FRESH_MS  = 15 * 60 * 1000; // SWR freshness threshold (15 m
  *
  * @param {object} client     Anypoint HTTP client
  * @param {string} targetOrgId
- * @param {object} session    req.session (mutated to store result)
+ * @param {string} sessionId  req.sessionID (used as cache key)
  * @returns {Promise<object>} responseData
  */
-async function _fetchSummary(client, targetOrgId, session) {
+async function _fetchSummary(client, targetOrgId, sessionId) {
   const envResponse = await client.get(
     `/accounts/api/organizations/${targetOrgId}/environments`
   );
@@ -387,13 +391,8 @@ async function _fetchSummary(client, targetOrgId, session) {
     _cachedAt: new Date().toISOString(),
   };
 
-  if (!session.summaryCache) session.summaryCache = {};
-  session.summaryCache[targetOrgId] = { data: responseData, ts: Date.now() };
-  if (typeof session.save === 'function') {
-    session.save((err) => {
-      if (err) console.error(`[Summary] Failed to save session cache for ${targetOrgId}:`, err);
-    });
-  }
+  if (!globalSummaryCache[sessionId]) globalSummaryCache[sessionId] = {};
+  globalSummaryCache[sessionId][targetOrgId] = { data: responseData, ts: Date.now() };
   console.log(`[Summary] Cache SET for org ${targetOrgId} (${results.length} apps)`);
   return responseData;
 }
@@ -405,24 +404,24 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     const targetOrgId = req.params.orgId;
     const forceRefresh = req.query.refresh === 'true';
 
-    // ── Session cache with Stale-While-Revalidate ─────────────────────────────
-    // Cache is keyed by orgId inside the user's session so different users
-    // never share cached data.
+    // ── Global Memory Cache with Stale-While-Revalidate ──────────────────────
+    // Cache is keyed by sessionId so different users never share cached data.
     //
     //  age < FRESH_MS  (15 min) → serve cached data, no network call
     //  age < TTL_MS   (20 min) → serve cached data immediately +
     //                            kick off background refresh so the
     //                            NEXT request also hits a warm cache
     //  age ≥ TTL_MS            → synchronous fetch (cold cache)
-    if (!req.session.summaryCache) req.session.summaryCache = {};
-    const cached  = req.session.summaryCache[targetOrgId];
+    const sessionId = req.sessionID;
+    if (!globalSummaryCache[sessionId]) globalSummaryCache[sessionId] = {};
+    const cached  = globalSummaryCache[sessionId][targetOrgId];
     const ageMs   = cached ? Date.now() - cached.ts : Infinity;
     const isFresh = ageMs < SUMMARY_CACHE_FRESH_MS;
     const isUsable = ageMs < SUMMARY_CACHE_TTL_MS;
 
     if (!forceRefresh && cached && isFresh) {
       // ── Fresh hit — instant response, no network ─────────────────────────
-      console.log(`[Summary] Served from session cache for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s)`);
+      console.log(`[Summary] Served from global cache for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s)`);
       return res.json(cached.data);
     }
 
@@ -430,7 +429,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
       // ── Stale-but-usable — respond immediately, refresh silently ─────────
       res.json(cached.data);
       // Fire-and-forget: refresh in background so the next call is instant
-      _fetchSummary(client, targetOrgId, req.session)
+      _fetchSummary(client, targetOrgId, sessionId)
         .then(() => console.log(`[Summary] BG refresh done for org ${targetOrgId}`))
         .catch((err) => console.warn(`[Summary] BG refresh failed for org ${targetOrgId}:`, err.message));
       return;
@@ -439,7 +438,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
     // Cache miss or force-refresh — fetch synchronously
     console.log(`[Summary] Synchronous fetch for org ${targetOrgId} (forceRefresh: ${forceRefresh}, cached: ${!!cached})`);
-    const data = await _fetchSummary(client, targetOrgId, req.session);
+    const data = await _fetchSummary(client, targetOrgId, sessionId);
     res.json(data);
   } catch (error) {
     sendProxyError(res, error, 'Failed to fetch application summary');
