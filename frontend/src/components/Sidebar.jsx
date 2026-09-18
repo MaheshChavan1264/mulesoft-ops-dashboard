@@ -40,7 +40,7 @@ export default function Sidebar({ open }) {
           {open && (
             <div>
               <p className="text-white font-semibold text-sm leading-tight">MuleSoft</p>
-              <p className="text-gray-400 text-xs">Integration Dashboard</p>
+              <p className="text-gray-400 text-xs">Ops Dashboard</p>
             </div>
           )}
         </div>

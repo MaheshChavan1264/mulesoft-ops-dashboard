@@ -434,7 +434,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
    }
 */
 router.post('/search-user', authMiddleware, async (req, res) => {
-  const { username, apps = [] } = req.body || {};
+  const { username, apps = [], searchMode = 'value', exactMatch = false } = req.body || {};
   if (!username || !username.trim()) {
     return res.status(400).json({ error: 'username is required' });
   }
@@ -485,8 +485,16 @@ router.post('/search-user', authMiddleware, async (req, res) => {
   function scanProps(flat, source) {
     const hits = [];
     for (const [k, v] of Object.entries(flat)) {
-      if (v != null && searchTerms.some(term => String(v).toLowerCase().includes(term))) {
-        hits.push({ key: k, value: String(v), source });
+      if (v != null) {
+        const target = searchMode === 'key' ? String(k) : String(v);
+        const matchFound = searchTerms.some(term => {
+          return exactMatch 
+            ? target.toLowerCase() === term 
+            : target.toLowerCase().includes(term);
+        });
+        if (matchFound) {
+          hits.push({ key: k, value: String(v), source });
+        }
       }
     }
     return hits;
