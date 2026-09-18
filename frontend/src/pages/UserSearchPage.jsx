@@ -389,6 +389,7 @@ export default function UserSearchPage() {
   const abortRef = useRef(null);
   // Feature 8: search mode — 'value' | 'key'
   const [searchMode, setSearchMode] = useState(() => sessionStorage.getItem('userSearch_mode') || 'value');
+  const [exactMatch, setExactMatch] = useState(() => sessionStorage.getItem('userSearch_exactMatch') === 'true');
   // Feature 2: group by app toggle
   const [groupByApp, setGroupByApp] = useState(() => sessionStorage.getItem('userSearch_groupApp') === 'true');
   const [expandedApps, setExpandedApps] = useState(() => {
@@ -408,6 +409,7 @@ export default function UserSearchPage() {
   useEffect(() => { sessionStorage.setItem('userSearch_query', query); }, [query]);
   useEffect(() => { try { sessionStorage.setItem('userSearch_results', JSON.stringify(results)); } catch (e) {} }, [results]);
   useEffect(() => { sessionStorage.setItem('userSearch_mode', searchMode); }, [searchMode]);
+  useEffect(() => { sessionStorage.setItem('userSearch_exactMatch', exactMatch); }, [exactMatch]);
   useEffect(() => { sessionStorage.setItem('userSearch_groupApp', groupByApp); }, [groupByApp]);
   useEffect(() => { try { sessionStorage.setItem('userSearch_expandedApps', JSON.stringify([...expandedApps])); } catch {} }, [expandedApps]);
   useEffect(() => { sessionStorage.setItem('userSearch_groupTerm', groupByTerm); }, [groupByTerm]);
@@ -671,11 +673,12 @@ export default function UserSearchPage() {
           if (ctl.signal.aborted) break;
           const p = mergeAppProps(a);
           // Feature 8: key mode searches property keys; value mode searches values
-          const hits = Object.entries(p).filter(([k, v]) =>
-            searchMode === 'key'
-              ? terms.some(t => k.toLowerCase().includes(t.toLowerCase()))
-              : typeof v === 'string' && terms.some(t => v.toLowerCase().includes(t.toLowerCase()))
-          );
+          // Feature 8: key mode searches property keys; value mode searches values
+          const hits = Object.entries(p).filter(([k, v]) => {
+            const target = searchMode === 'key' ? k : (typeof v === 'string' ? v : '');
+            if (!target) return false;
+            return terms.some(t => exactMatch ? target.toLowerCase() === t.toLowerCase() : target.toLowerCase().includes(t.toLowerCase()));
+          });
           if (hits.length > 0) {
             armRows.push({
               bgName: sel.bgName,
@@ -756,9 +759,12 @@ export default function UserSearchPage() {
       const batchNum = Math.floor(bi / BACKEND_BATCH) + 1;
       try {
         // Feature 8: pass searchMode to backend (value search = username, key search = different param)
-        const payload = searchMode === 'key'
-          ? { username: terms.join(','), searchMode: 'key', apps: batch }
-          : { username: terms.join(','), apps: batch };
+        const payload = {
+          username: terms.join(','),
+          apps: batch,
+          searchMode,
+          exactMatch
+        };
         const r = await api.post('/cps/search-user', payload, { timeout: 120000 });
         totalCredErrors += r.data?.credentialErrors || 0;
 
@@ -1119,6 +1125,12 @@ export default function UserSearchPage() {
                 {label}
               </button>
             ))}
+          </div>
+          <div className="flex items-center gap-1 bg-slate-800/60 border border-slate-700/40 rounded-lg p-0.5">
+            <button onClick={() => setExactMatch(!exactMatch)}
+              className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${exactMatch ? 'bg-cyan-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+              Exact Match (Case Insensitive)
+            </button>
           </div>
           <p className="text-[10px] text-slate-600">
             {searchMode === 'value'
