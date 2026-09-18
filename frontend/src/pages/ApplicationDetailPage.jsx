@@ -1174,7 +1174,22 @@ export default function ApplicationDetailPage() {
                               {decodedCron && (
                                 <p className="text-[11px] text-cyan-300 font-medium">{decodedCron}</p>
                               )}
-                         <td className="px-5 py-4 align-top">
+                              {wasResolved && (
+                                <p className="text-[10px] text-slate-600 font-mono" title="Property placeholder resolved from app properties">{rawCron}</p>
+                              )}
+                            </div>
+                          ) : isUnresolvedPlaceholder ? (
+                            <div className="space-y-1">
+                              <MetaTag color="gray">{rawCron}</MetaTag>
+                              <p className="text-[10px] text-yellow-600/80">⚠ property not in runtime props — check CPS</p>
+                            </div>
+                          ) : freq ? <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
+                            : <span className="text-slate-700 text-xs">—</span>}
+                        </td>
+                        <td className="px-5 py-4 align-top">
+                          <span className="text-slate-500 text-xs">{s.lastRun?new Date(s.lastRun).toLocaleString():'—'}</span>
+                        </td>
+                        <td className="px-5 py-4 align-top">
                           <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${active?'bg-emerald-950/50 text-emerald-300 border-emerald-700/50':'bg-slate-800/60 text-slate-500 border-slate-700/50'}`}>
                             {active?'Enabled':'Disabled'}
                           </span>
