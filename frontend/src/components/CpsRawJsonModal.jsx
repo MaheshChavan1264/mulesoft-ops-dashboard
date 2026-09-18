@@ -7,7 +7,8 @@ export default function CpsRawJsonModal({
   initialJson, 
   onSave, 
   title = "Edit Raw JSON", 
-  description = "Paste or edit your raw JSON payload here."
+  description = "Paste or edit your raw JSON payload here.",
+  readOnly = false
 }) {
   const [jsonText, setJsonText] = useState('');
   const [error, setError] = useState('');
@@ -120,9 +121,12 @@ export default function CpsRawJsonModal({
             {/* Textarea */}
             <textarea
               value={jsonText}
+              readOnly={readOnly}
               onChange={(e) => {
-                setJsonText(e.target.value);
-                setError('');
+                if (!readOnly) {
+                  setJsonText(e.target.value);
+                  setError('');
+                }
               }}
               onScroll={(e) => {
                 const backdrop = e.target.previousElementSibling;
@@ -161,15 +165,17 @@ export default function CpsRawJsonModal({
               onClick={onClose}
               className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 border border-gray-700 rounded-lg transition-colors"
             >
-              Cancel
+              {readOnly ? 'Close' : 'Cancel'}
             </button>
-          <button 
-            onClick={handleSave}
-            disabled={!!error}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg disabled:opacity-50 transition-colors"
-          >
-            <Save size={14} /> Update JSON
-          </button>
+            {!readOnly && (
+              <button 
+                onClick={handleSave}
+                disabled={!!error}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg disabled:opacity-50 transition-colors"
+              >
+                <Save size={14} /> Update JSON
+              </button>
+            )}
           </div>
         </div>
       </div>

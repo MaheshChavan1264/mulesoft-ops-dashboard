@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity } from 'lucide-react';
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
+import CpsRawJsonModal from '../components/CpsRawJsonModal';
 import PingTestPanel from '../components/PingTestPanel';
 import CopyBtn from '../components/CopyBtn';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
@@ -283,6 +284,7 @@ export default function ApplicationDetailPage() {
   const [cpsError, setCpsError] = useState('');
   const [cpsMissingCred, setCpsMissingCred] = useState(null);
   const [showCpsSettings, setShowCpsSettings] = useState(false);
+  const [rawJsonView, setRawJsonView] = useState(null); // { title: string, data: any }
   const [cpsSearch, setCpsSearch] = useState('');
   const [cpsKeyOverride, setCpsKeyOverride] = useState('');
   const [cpsEnvOverride, setCpsEnvOverride] = useState('');
@@ -701,6 +703,14 @@ export default function ApplicationDetailPage() {
         prefilledBgName={app.environment?.organizationId === orgId ? '' : ''}
         onClose={() => { setShowCpsSettings(false); if (cpsMissingCred) { setCpsMissingCred(null); loadCpsData(); } }}
       />}
+      <CpsRawJsonModal
+        isOpen={!!rawJsonView}
+        onClose={() => setRawJsonView(null)}
+        initialJson={rawJsonView?.data}
+        title={rawJsonView?.title || 'Raw JSON'}
+        description="View the exact JSON response returned by the CPS API."
+        readOnly={true}
+      />
       <AppConfirmModal
         state={confirmState}
         onConfirm={executeAction}
@@ -1259,34 +1269,60 @@ export default function ApplicationDetailPage() {
             </div>
             <div className="flex items-center gap-2">
               {cpsData && Object.keys(cpsData.nonSecure).length > 0 && (
-                <button
-                  onClick={() => {
-                    // Copy the original raw CPS API response (not the parsed flat object)
-                    const raw = cpsData.rawNsResponse;
-                    navigator.clipboard.writeText(
-                      typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
-                    );
-                    setCopiedCpsNs(true);
-                    setTimeout(() => setCopiedCpsNs(false), 2000);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 rounded-lg transition-colors">
-                  {copiedCpsNs ? <><Check size={11} className="text-emerald-400" /> Copied!</> : <><Copy size={11} /> Non-Secure</>}
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      const raw = cpsData.rawNsResponse;
+                      setRawJsonView({
+                        title: 'Non-Secure Properties (Raw JSON)',
+                        data: raw
+                      });
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded-lg transition-colors">
+                    <Database size={11} /> Raw JSON (NS)
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Copy the original raw CPS API response (not the parsed flat object)
+                      const raw = cpsData.rawNsResponse;
+                      navigator.clipboard.writeText(
+                        typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
+                      );
+                      setCopiedCpsNs(true);
+                      setTimeout(() => setCopiedCpsNs(false), 2000);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 rounded-lg transition-colors">
+                    {copiedCpsNs ? <><Check size={11} className="text-emerald-400" /> Copied!</> : <><Copy size={11} /> Non-Secure</>}
+                  </button>
+                </>
               )}
               {cpsData && cpsData.secureGroups.length > 0 && (
-                <button
-                  onClick={() => {
-                    // Copy the original raw secure CPS API response
-                    const raw = cpsData.rawSecureResponse;
-                    navigator.clipboard.writeText(
-                      typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
-                    );
-                    setCopiedCpsSec(true);
-                    setTimeout(() => setCopiedCpsSec(false), 2000);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-400 hover:text-purple-300 bg-purple-950/40 border border-purple-800/40 rounded-lg transition-colors">
-                  {copiedCpsSec ? <><Check size={11} className="text-purple-400" /> Copied!</> : <><Copy size={11} /> Secure</>}
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      const raw = cpsData.rawSecureResponse;
+                      setRawJsonView({
+                        title: 'Secure Properties (Raw JSON)',
+                        data: raw
+                      });
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded-lg transition-colors">
+                    <Database size={11} /> Raw JSON (Sec)
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Copy the original raw secure CPS API response
+                      const raw = cpsData.rawSecureResponse;
+                      navigator.clipboard.writeText(
+                        typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
+                      );
+                      setCopiedCpsSec(true);
+                      setTimeout(() => setCopiedCpsSec(false), 2000);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-400 hover:text-purple-300 bg-purple-950/40 border border-purple-800/40 rounded-lg transition-colors">
+                    {copiedCpsSec ? <><Check size={11} className="text-purple-400" /> Copied!</> : <><Copy size={11} /> Secure</>}
+                  </button>
+                </>
               )}
               <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors"><RefreshCw size={11}/> {cpsData ? 'Refresh' : 'Load'}</button>
               <button onClick={() => setShowCpsSettings(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded-lg transition-colors"><Key size={11}/> Configure CPS</button>
