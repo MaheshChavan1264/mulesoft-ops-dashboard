@@ -19,6 +19,21 @@ export default function CpsRawJsonModal({
     setJsonText(prev => prev.split(findText).join(replaceText));
   };
 
+  const renderHighlighted = (text, query) => {
+    if (!query) return text;
+    const parts = text.split(query);
+    return (
+      <>
+        {parts.map((part, i) => (
+          <React.Fragment key={i}>
+            {part}
+            {i !== parts.length - 1 && <mark className="bg-yellow-500/50 text-transparent rounded-[2px]">{query}</mark>}
+          </React.Fragment>
+        ))}
+      </>
+    );
+  };
+
   useEffect(() => {
     if (isOpen) {
       setJsonText(JSON.stringify(initialJson, null, 2));
@@ -93,15 +108,33 @@ export default function CpsRawJsonModal({
             </button>
           </div>
 
-          <textarea
-            value={jsonText}
-            onChange={(e) => {
-              setJsonText(e.target.value);
-              setError('');
-            }}
-            className="flex-1 w-full h-full bg-[#0d1117] border border-gray-800 rounded-xl p-4 text-[13px] leading-relaxed text-emerald-400 font-mono focus:outline-none focus:border-cyan-700/50 resize-none overflow-y-auto"
-            spellCheck="false"
-          />
+          <div className="relative flex-1 w-full bg-[#0d1117] border border-gray-800 rounded-xl overflow-hidden focus-within:border-cyan-700/50 transition-colors">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 p-4 text-[13px] leading-relaxed font-mono whitespace-pre-wrap break-words pointer-events-none text-transparent overflow-hidden"
+              aria-hidden="true"
+            >
+              {renderHighlighted(jsonText, findText)}
+            </div>
+            
+            {/* Textarea */}
+            <textarea
+              value={jsonText}
+              onChange={(e) => {
+                setJsonText(e.target.value);
+                setError('');
+              }}
+              onScroll={(e) => {
+                const backdrop = e.target.previousElementSibling;
+                if (backdrop) {
+                  backdrop.scrollTop = e.target.scrollTop;
+                  backdrop.scrollLeft = e.target.scrollLeft;
+                }
+              }}
+              className="absolute inset-0 w-full h-full p-4 text-[13px] leading-relaxed text-emerald-400 font-mono bg-transparent focus:outline-none resize-none overflow-auto whitespace-pre-wrap break-words"
+              spellCheck="false"
+            />
+          </div>
         </div>
 
         {/* Error message */}
