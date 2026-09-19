@@ -282,7 +282,7 @@ export default function ApiManagerPage() {
       <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 min-h-[26px]">
               <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">Business Group</p>
               <button onClick={() => setShowBgFilter(true)} className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border transition-all ${filterActive ? 'bg-blue-600/20 border-blue-600/50 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'}`}>
                 <SlidersHorizontal size={11} />{filterActive ? `${visibleGroups.length}/${allBusinessGroups.length}` : 'Filter'}
@@ -291,7 +291,9 @@ export default function ApiManagerPage() {
             <Select value={selectedBg} onChange={v => setSelectedBg(v)} options={bgOptions} placeholder="Select business group..." searchable={visibleGroups.length > 5} disabled={bgLoading} />
           </div>
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-2">Environment</p>
+            <div className="flex items-center mb-2 min-h-[26px]">
+              <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">Environment</p>
+            </div>
             <Select value={selectedEnv} onChange={setSelectedEnv} options={envOptions} placeholder="Select environment..." searchable />
           </div>
         </div>
