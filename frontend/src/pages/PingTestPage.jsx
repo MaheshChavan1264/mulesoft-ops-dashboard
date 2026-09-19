@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, ChevronDown, ChevronRight, CheckCircle2, XCircle,
   AlertCircle, Globe, ShieldCheck, ArrowLeft, Download, RefreshCw,
-  UploadCloud, X, Lock, Terminal, Check,
+  UploadCloud, X, Lock, Terminal, Check, History, Trash2
 } from 'lucide-react';
 import api from '../services/api';
 import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId, downloadCsv } from '../utils/appUtils';
@@ -366,6 +366,143 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
 }
 
 const SESSION_KEY = 'pingTestResults_v1';
+
+// ─── PingHistoryView ─────────────────────────────────────────────────────────
+
+function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
+  const exportHistoryCsv = useCallback(() => {
+    const rows = [
+      ['Timestamp', 'Application', 'Status', 'Active Endpoint', 'Latency (ms)', 'Error', 'Response Payload'],
+    ];
+    globalHistory.forEach(entry => {
+      let payloadStr = '—';
+      if (entry.payload != null) {
+        payloadStr = typeof entry.payload === 'string' ? entry.payload : JSON.stringify(entry.payload);
+      }
+      rows.push([
+        new Date(entry.timestamp).toLocaleString(),
+        entry.appName || '—',
+        entry.status,
+        entry.endpoint || '—',
+        entry.responseTimeMs ?? '—',
+        entry.error || '—',
+        payloadStr
+      ]);
+    });
+    downloadCsv(rows, `ping-history-${new Date().toISOString().slice(0, 10)}.csv`);
+  }, [globalHistory]);
+
+  return (
+    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+            <History size={20} className="text-indigo-400" /> Ping Test History
+          </h1>
+          <p className="text-gray-400 text-sm mt-1">
+            {globalHistory.length} recorded ping test results in this session
+            {historyLoading && <RefreshCw size={12} className="inline animate-spin ml-2 text-indigo-400" />}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {globalHistory.length > 0 && (
+            <button onClick={exportHistoryCsv}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 rounded-lg transition-colors">
+              <Download size={13} /> Export CSV
+            </button>
+          )}
+          {globalHistory.length > 0 && (
+            <button onClick={onClear}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 bg-red-950/40 border border-red-800/50 rounded-lg transition-colors">
+              <Trash2 size={13} /> Clear History
+            </button>
+          )}
+          <button onClick={onClose}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors">
+            <ArrowLeft size={13} /> Back to Results
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-xl">
+        {globalHistory.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center text-slate-500 space-y-2">
+            <History size={32} className="opacity-20 mb-2" />
+            <p className="text-sm">No ping test history available yet.</p>
+            <p className="text-xs text-slate-600">Run a batch ping or ping individual apps to generate history.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto max-h-[75vh]">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-800/95 text-gray-400 text-xs uppercase tracking-wider backdrop-blur-sm">
+                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 w-44 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Timestamp</th>
+                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Application</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Status</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Active Endpoint</th>
+                  <th className="px-3 py-3 font-medium text-right sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Latency</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800/60">
+                {globalHistory.map((entry, i) => {
+                  const isOk = entry.status === 'SUCCESS';
+                  const isPartial = entry.status === 'PARTIAL';
+                  const statusConfig = STATUS_CONFIG[entry.status] || { label: entry.status, cls: 'text-gray-400 bg-gray-900/50' };
+                  
+                  return (
+                    <React.Fragment key={entry.id || i}>
+                      <tr className="hover:bg-gray-800/40 transition-colors">
+                        <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-400 font-mono">
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-200">
+                          {entry.appName || '—'}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${statusConfig.cls}`}>
+                            {isOk ? <CheckCircle2 size={10} /> : isPartial ? <AlertCircle size={10} /> : <XCircle size={10} />}
+                            {statusConfig.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 font-mono text-xs text-cyan-400/90 truncate max-w-xs" title={entry.endpoint}>
+                          {entry.endpoint || '—'}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-right font-mono text-xs">
+                          {entry.responseTimeMs != null ? (
+                            <span className={latencyColor(entry.responseTimeMs)}>{entry.responseTimeMs}ms</span>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                      {(entry.error || entry.payload) && (
+                        <tr className="bg-gray-900/20">
+                          <td colSpan={5} className="px-4 py-2 pb-4">
+                            <div className="pl-4 border-l-2 border-gray-700/50 space-y-2">
+                              {entry.error && <p className="text-xs text-red-400">{entry.error}</p>}
+                              {entry.payload && (
+                                <div>
+                                  <span className="text-[10px] font-bold tracking-wider text-gray-500 uppercase">Response</span>
+                                  <pre className="text-xs text-emerald-400/80 mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-all font-mono bg-black/20 p-2 rounded border border-gray-800/50">
+                                    {typeof entry.payload === 'object' ? JSON.stringify(entry.payload, null, 2) : entry.payload}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ─── PingTestPage ─────────────────────────────────────────────────────────────
 
@@ -782,6 +919,41 @@ export default function PingTestPage() {
   const [pingingAllApproved, setPingingAllApproved] = useState(false);
   const [checkingAll, setCheckingAll] = useState(false);
 
+  // History State
+  const [showHistoryView, setShowHistoryView] = useState(false);
+  const [globalHistory, setGlobalHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const fetchGlobalHistory = useCallback(async () => {
+    try {
+      setHistoryLoading(true);
+      const { data } = await api.get('/health/ping/history');
+      setGlobalHistory(data || []);
+    } catch (e) {
+      console.error('Failed to fetch global history', e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const clearGlobalHistory = async () => {
+    try {
+      setHistoryLoading(true);
+      await api.delete('/health/ping/history');
+      setGlobalHistory([]);
+    } catch (e) {
+      console.error('Failed to clear global history', e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showHistoryView) {
+      fetchGlobalHistory();
+    }
+  }, [showHistoryView, fetchGlobalHistory]);
+
   const pingAllApproved = useCallback(async () => {
     const approvedApps = testedApps.filter(a =>
       results[a.id]?.status === 'SKIPPED_CONTRACT_PENDING' &&
@@ -905,6 +1077,17 @@ export default function PingTestPage() {
 
   // ─── Results view ─────────────────────────────────────────────────────────────
 
+  if (showHistoryView) {
+    return (
+      <PingHistoryView 
+        globalHistory={globalHistory} 
+        onClose={() => setShowHistoryView(false)} 
+        onClear={clearGlobalHistory} 
+        historyLoading={historyLoading} 
+      />
+    );
+  }
+
   return (
     <div className="space-y-5">
       {/* Hidden CSV file input */}
@@ -989,6 +1172,10 @@ export default function PingTestPage() {
               <X size={13} /> Clear Results
             </button>
           )}
+          <button onClick={() => setShowHistoryView(true)}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-indigo-400 hover:text-indigo-300 bg-indigo-950/40 border border-indigo-800/50 rounded-lg transition-colors">
+            <History size={13} /> View History
+          </button>
           <button onClick={() => navigate('/applications')}
             className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors">
             <ArrowLeft size={13} /> Back to Applications

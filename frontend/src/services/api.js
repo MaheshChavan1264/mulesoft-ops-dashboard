@@ -72,6 +72,30 @@ const mockHandler = async (url, params) => {
   if (url === '/cps/credentials/test') return { valid: true, statusCode: 200, message: 'Demo mode — connected successfully' };
   if (url === '/cps/binary') return { success: true, uploaded: 'demo.jks', sizeBytes: 1024 };
 
+  // Health / Ping History
+  if (url.includes('/health/ping/history')) {
+    return [
+      {
+        id: 1,
+        timestamp: Date.now() - 60000,
+        status: 'SUCCESS',
+        responseTimeMs: 120,
+        endpoint: 'https://demo-api.sfdcbt.net/api/v1/ping',
+        appName: 'customer-api-v2',
+        payload: { status: 'ok', version: '2.0.1' }
+      },
+      {
+        id: 2,
+        timestamp: Date.now() - 120000,
+        status: 'FAILED',
+        responseTimeMs: null,
+        endpoint: 'https://order-api.sfdcbt.net/api/v1/ping',
+        appName: 'order-process-sapi',
+        error: 'ECONNREFUSED'
+      }
+    ];
+  }
+
   // Exchange
   if (url.startsWith('/exchange/org') && url.includes('/summary')) {
     return { assetCounts: mock.MOCK_EXCHANGE_SUMMARY };

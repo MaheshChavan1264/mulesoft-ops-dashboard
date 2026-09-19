@@ -378,53 +378,61 @@ router.post('/ping', authMiddleware, async (req, res) => {
 // ─── GET /api/health/ping/history ───────────────────────────────────────────
 router.get('/ping/history', authMiddleware, (req, res) => {
   const { orgId, envId, appName } = req.query;
-  if (!orgId || !envId || !appName) return res.status(400).json({ error: 'orgId, envId, and appName are required' });
+  
+  let query = `SELECT * FROM ping_history WHERE session_id = ?`;
+  let params = [req.sessionID];
 
-  db.all(
-    `SELECT * FROM ping_history WHERE session_id = ? AND org_id = ? AND env_id = ? AND app_name = ? ORDER BY timestamp DESC LIMIT 20`,
-    [req.sessionID, orgId, envId, appName],
-    (err, rows) => {
-      if (err) {
-        console.error('[ping/history] Error fetching history:', err.message);
-        return res.status(500).json({ error: 'Failed to fetch ping history' });
-      }
-      // parse payload
-      const history = rows.map(r => {
-        let parsedPayload = null;
-        if (r.payload) {
-          try { parsedPayload = JSON.parse(r.payload); } catch { parsedPayload = r.payload; }
-        }
-        return {
-          id: r.id,
-          timestamp: r.timestamp,
-          status: r.status,
-          responseTimeMs: r.response_time_ms,
-          endpoint: r.endpoint,
-          payload: parsedPayload,
-          error: r.error
-        };
-      });
-      return res.json(history);
+  if (orgId && envId && appName) {
+    query += ` AND org_id = ? AND env_id = ? AND app_name = ?`;
+    params.push(orgId, envId, appName);
+  }
+
+  query += ` ORDER BY timestamp DESC LIMIT 100`; // Limit to 100 for global view
+
+  db.all(query, params, (err, rows) => {
+    if (err) {
+      console.error('[ping/history] Error fetching history:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch ping history' });
     }
-  );
+    const history = rows.map(r => {
+      let parsedPayload = null;
+      if (r.payload) {
+        try { parsedPayload = JSON.parse(r.payload); } catch { parsedPayload = r.payload; }
+      }
+      return {
+        id: r.id,
+        timestamp: r.timestamp,
+        status: r.status,
+        responseTimeMs: r.response_time_ms,
+        endpoint: r.endpoint,
+        payload: parsedPayload,
+        error: r.error,
+        appName: r.app_name // include app_name for global view
+      };
+    });
+    return res.json(history);
+  });
 });
 
 // ─── DELETE /api/health/ping/history ────────────────────────────────────────
 router.delete('/ping/history', authMiddleware, (req, res) => {
   const { orgId, envId, appName } = req.query;
-  if (!orgId || !envId || !appName) return res.status(400).json({ error: 'orgId, envId, and appName are required' });
 
-  db.run(
-    `DELETE FROM ping_history WHERE session_id = ? AND org_id = ? AND env_id = ? AND app_name = ?`,
-    [req.sessionID, orgId, envId, appName],
-    (err) => {
-      if (err) {
-        console.error('[ping/history] Error deleting history:', err.message);
-        return res.status(500).json({ error: 'Failed to clear history' });
-      }
-      return res.json({ success: true });
+  let query = `DELETE FROM ping_history WHERE session_id = ?`;
+  let params = [req.sessionID];
+
+  if (orgId && envId && appName) {
+    query += ` AND org_id = ? AND env_id = ? AND app_name = ?`;
+    params.push(orgId, envId, appName);
+  }
+
+  db.run(query, params, (err) => {
+    if (err) {
+      console.error('[ping/history] Error deleting history:', err.message);
+      return res.status(500).json({ error: 'Failed to clear history' });
     }
-  );
+    return res.json({ success: true });
+  });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
