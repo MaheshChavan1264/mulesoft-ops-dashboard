@@ -101,6 +101,30 @@ router.get('/:orgId/:envId/:apiId/contracts', authMiddleware, async (req, res) =
   }
 });
 
+// Update a contract status (Approve / Revoke)
+router.patch('/:orgId/:envId/:apiId/contracts/:contractId', authMiddleware, async (req, res) => {
+  const { orgId, envId, apiId, contractId } = req.params;
+  const { status } = req.body; // e.g., 'APPROVED', 'REVOKED'
+  
+  if (!status) {
+    return res.status(400).json({ error: 'Contract status is required' });
+  }
+
+  const url = `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts/${contractId}`;
+  console.log(`[APIs] PATCH contract status to ${status} →`, url);
+  try {
+    const client = createClient(req.anypointToken);
+    const response = await client.patch(url, { status });
+    res.json(response.data);
+  } catch (error) {
+    console.error('[APIs] patch contract error:', error.response?.status, error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data?.message || 'Failed to update contract status',
+      _debug: { orgId, envId, apiId, contractId, url }
+    });
+  }
+});
+
 // Get SLA tiers for an API instance
 router.get('/:orgId/:envId/:apiId/tiers', authMiddleware, async (req, res) => {
   try {

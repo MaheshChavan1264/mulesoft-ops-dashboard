@@ -9,7 +9,16 @@ import { ENV_BADGE } from '../utils/appUtils';
 
 const ENV_TAG_COLOR = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yellow-500/20 text-yellow-400' };
 
-function ContractCard({ c, i }) {
+function ContractCard({ c, i, onUpdateContract }) {
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleUpdate = async (newStatus) => {
+    setLoading(true);
+    await onUpdateContract(c.id, newStatus);
+    setLoading(false);
+    setConfirmRevoke(false);
+  };
   const appName =
     c.application?.name ||
     c.clientApplication?.name ||
@@ -79,6 +88,35 @@ function ContractCard({ c, i }) {
             <span className="text-blue-400 text-[10px] bg-blue-500/10 border border-blue-700/40 px-1.5 py-0.5 rounded">{tierName}</span>
           )}
           {created && <span className="text-gray-600 text-[10px]">{created}</span>}
+        </div>
+      </div>
+      
+      <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-800/60">
+        <div className="flex gap-2 min-h-[24px] items-center">
+          {loading && <RefreshCw size={12} className="animate-spin text-gray-500" />}
+          
+          {!loading && status === 'PENDING_APPROVAL' && (
+            <>
+              <button onClick={() => handleUpdate('APPROVED')} className="text-[10px] uppercase font-bold tracking-wider bg-green-900/40 text-green-400 border border-green-700/50 hover:bg-green-800/60 px-3 py-1 rounded transition-colors">Approve</button>
+              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-900/40 text-red-400 border border-red-700/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Reject</button>
+            </>
+          )}
+
+          {!loading && (status === 'ACTIVE' || status === 'APPROVED') && !confirmRevoke && (
+            <button onClick={() => setConfirmRevoke(true)} className="text-[10px] uppercase font-bold tracking-wider bg-red-900/40 text-red-400 border border-red-700/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Revoke</button>
+          )}
+
+          {!loading && confirmRevoke && (
+            <div className="flex gap-2 items-center">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-red-400 flex items-center gap-1"><AlertCircle size={10} /> Revoke this contract?</span>
+              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-600 text-white hover:bg-red-500 px-3 py-1 rounded transition-colors">Yes, Revoke</button>
+              <button onClick={() => setConfirmRevoke(false)} className="text-[10px] uppercase font-bold tracking-wider text-gray-400 hover:text-white px-2 py-1 rounded transition-colors">Cancel</button>
+            </div>
+          )}
+
+          {!loading && status === 'REVOKED' && (
+            <button onClick={() => handleUpdate('APPROVED')} className="text-[10px] uppercase font-bold tracking-wider bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700 px-3 py-1 rounded transition-colors">Restore</button>
+          )}
         </div>
       </div>
     </div>
@@ -200,6 +238,18 @@ export default function ApiManagerPage() {
     // No enrichment needed — coreServicesId in application{} is the client_id.
     setContracts(contractList);
     setContractsLoading(false);
+  };
+
+  const updateContractStatus = async (contractId, newStatus) => {
+    try {
+      await api.patch(`/apis/${selectedBg}/${selectedEnv}/${selectedApi.id}/contracts/${contractId}`, { status: newStatus });
+      // Refetch just the contracts to update the list smoothly
+      const cRes = await api.get(`/apis/${selectedBg}/${selectedEnv}/${selectedApi.id}/contracts`);
+      const d = cRes.data;
+      setContracts(d.contracts || (Array.isArray(d) ? d : []));
+    } catch (e) {
+      alert(`Failed to update contract: ${e.response?.data?.error || e.message}`);
+    }
   };
 
   const visibleGroups = applyBgFilter(allBusinessGroups);
@@ -339,7 +389,7 @@ export default function ApiManagerPage() {
                     <RefreshCw size={13} className="animate-spin" /> Loading contracts…
                   </div>
                 ) : contracts.length > 0
-                  ? contracts.map((c, i) => <ContractCard key={c.id || i} c={c} i={i} />)
+                  ? contracts.map((c, i) => <ContractCard key={c.id || i} c={c} i={i} onUpdateContract={updateContractStatus} />)
                   : <p className="px-5 py-6 text-center text-gray-500 text-sm">No contracts found.</p>
                 }
               </div>
