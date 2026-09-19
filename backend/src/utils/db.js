@@ -15,25 +15,27 @@ const db = new sqlite3.Database(dbPath, (err) => {
   } else {
     console.log('[DB] Connected to application database (app.db).');
     
-    // Initialize tables
-    db.run(`
-      CREATE TABLE IF NOT EXISTS ping_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL,
-        org_id TEXT NOT NULL,
-        env_id TEXT NOT NULL,
-        app_name TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        status TEXT NOT NULL,
-        response_time_ms INTEGER,
-        endpoint TEXT,
-        payload TEXT,
-        error TEXT
-      )
-    `);
-    
-    // Create indexes for faster queries
-    db.run(`CREATE INDEX IF NOT EXISTS idx_ping_history_session_app ON ping_history(session_id, org_id, env_id, app_name)`);
+    db.serialize(() => {
+      // Initialize tables
+      db.run(`
+        CREATE TABLE IF NOT EXISTS ping_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          org_id TEXT NOT NULL,
+          env_id TEXT NOT NULL,
+          app_name TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          response_time_ms INTEGER,
+          endpoint TEXT,
+          payload TEXT,
+          error TEXT
+        )
+      `);
+      
+      // Create indexes for faster queries
+      db.run(`CREATE INDEX IF NOT EXISTS idx_ping_history_session_app ON ping_history(session_id, org_id, env_id, app_name)`);
+    });
   }
 });
 
