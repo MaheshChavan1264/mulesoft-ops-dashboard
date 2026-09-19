@@ -129,6 +129,7 @@ router.post('/ping', authMiddleware, async (req, res) => {
     envName = '',       // full env display name e.g. "EI-FI-FINANCIALS-STAGING" — used for domain qualifier
     orgId,
     envId,
+    credentialsLabel = '—',
   } = req.body || {};
 
   if (!appName) {
@@ -295,8 +296,8 @@ router.post('/ping', authMiddleware, async (req, res) => {
         // Save to DB
         if (orgId && envId) {
           db.run(
-            `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [req.sessionID, orgId, envId, appName, Date.now(), status, responseTimeMs, url, JSON.stringify(payload)],
+            `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload, env_name, target_type, credentials, http_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [req.sessionID, orgId, envId, appName, Date.now(), status, responseTimeMs, url, JSON.stringify(payload), envName, targetType, credentialsLabel, httpStatus],
             (err) => { if (err) console.error('[ping] Error saving history:', err.message); }
           );
         }
@@ -311,8 +312,8 @@ router.post('/ping', authMiddleware, async (req, res) => {
         // Save to DB
         if (orgId && envId) {
           db.run(
-            `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [req.sessionID, orgId, envId, appName, Date.now(), 'PARTIAL', responseTimeMs, url, JSON.stringify(payload)],
+            `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload, env_name, target_type, credentials, http_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [req.sessionID, orgId, envId, appName, Date.now(), 'PARTIAL', responseTimeMs, url, JSON.stringify(payload), envName, targetType, credentialsLabel, httpStatus],
             (err) => { if (err) console.error('[ping] Error saving history:', err.message); }
           );
         }
@@ -366,8 +367,8 @@ router.post('/ping', authMiddleware, async (req, res) => {
   // Save failed ping to DB
   if (orgId && envId) {
     db.run(
-      `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, error) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [req.sessionID, orgId, envId, appName, Date.now(), 'FAILED', summary],
+      `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, error, env_name, target_type, credentials) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.sessionID, orgId, envId, appName, Date.now(), 'FAILED', summary, envName, targetType, credentialsLabel],
       (err) => { if (err) console.error('[ping] Error saving history:', err.message); }
     );
   }
@@ -407,7 +408,11 @@ router.get('/ping/history', authMiddleware, (req, res) => {
         endpoint: r.endpoint,
         payload: parsedPayload,
         error: r.error,
-        appName: r.app_name // include app_name for global view
+        appName: r.app_name, // include app_name for global view
+        env_name: r.env_name,
+        target_type: r.target_type,
+        credentials: r.credentials,
+        http_status: r.http_status
       };
     });
     return res.json(history);
