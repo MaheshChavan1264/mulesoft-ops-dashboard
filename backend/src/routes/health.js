@@ -7,6 +7,7 @@ const { createClient } = require('../utils/anypointClient');
 const { stripDeploymentSuffix } = require('../utils/appHelpers');
 const { fetchExchangeAppCreds } = require('../utils/exchangeHelpers');
 const { sendProxyError } = require('../utils/responseHelpers');
+const db = require('../utils/db');
 
 // Agent that tolerates self-signed / internal-CA certs
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -126,6 +127,8 @@ router.post('/ping', authMiddleware, async (req, res) => {
     queryParams = '',   // optional: "key1=val1&key2=val2" appended to every ping URL
     envType = '',       // 'production' | 'sandbox' | 'design' — selects CH1 domain
     envName = '',       // full env display name e.g. "EI-FI-FINANCIALS-STAGING" — used for domain qualifier
+    orgId,
+    envId,
   } = req.body || {};
 
   if (!appName) {
@@ -287,12 +290,34 @@ router.post('/ping', authMiddleware, async (req, res) => {
         const status =
           httpStatus >= 200 && httpStatus < 300 ? 'SUCCESS' :
           httpStatus >= 400 && httpStatus < 500 ? 'PARTIAL' : 'FAILED';
-        return res.json({ status, activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts });
+        const result = { status, activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts };
+        
+        // Save to DB
+        if (orgId && envId) {
+          db.run(
+            `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [req.sessionID, orgId, envId, appName, Date.now(), status, responseTimeMs, url, JSON.stringify(payload)],
+            (err) => { if (err) console.error('[ping] Error saving history:', err.message); }
+          );
+        }
+        
+        return res.json(result);
       }
 
       if (httpStatus >= 500 && !isNoListener && hasMeaningfulBody) {
         console.log(`[Ping] ${url} → ${httpStatus} with meaningful pingResponse body — marking PARTIAL (app reachable, downstream error)`);
-        return res.json({ status: 'PARTIAL', activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts });
+        const result = { status: 'PARTIAL', activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts };
+        
+        // Save to DB
+        if (orgId && envId) {
+          db.run(
+            `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [req.sessionID, orgId, envId, appName, Date.now(), 'PARTIAL', responseTimeMs, url, JSON.stringify(payload)],
+            (err) => { if (err) console.error('[ping] Error saving history:', err.message); }
+          );
+        }
+
+        return res.json(result);
       }
     } catch (err) {
       const responseTimeMs = Date.now() - t0;
@@ -328,7 +353,7 @@ router.post('/ping', authMiddleware, async (req, res) => {
     summary = 'App returned 5xx (server error) on all ping paths — the app is reachable but erroring internally.';
   }
 
-  return res.json({
+  const result = {
     status: 'FAILED',
     activeEndpoint: null,
     responseTimeMs: null,
@@ -336,7 +361,70 @@ router.post('/ping', authMiddleware, async (req, res) => {
     payload: null,
     attempts,
     error: summary,
-  });
+  };
+
+  // Save failed ping to DB
+  if (orgId && envId) {
+    db.run(
+      `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, error) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [req.sessionID, orgId, envId, appName, Date.now(), 'FAILED', summary],
+      (err) => { if (err) console.error('[ping] Error saving history:', err.message); }
+    );
+  }
+
+  return res.json(result);
+});
+
+// ─── GET /api/health/ping/history ───────────────────────────────────────────
+router.get('/ping/history', authMiddleware, (req, res) => {
+  const { orgId, envId, appName } = req.query;
+  if (!orgId || !envId || !appName) return res.status(400).json({ error: 'orgId, envId, and appName are required' });
+
+  db.all(
+    `SELECT * FROM ping_history WHERE session_id = ? AND org_id = ? AND env_id = ? AND app_name = ? ORDER BY timestamp DESC LIMIT 20`,
+    [req.sessionID, orgId, envId, appName],
+    (err, rows) => {
+      if (err) {
+        console.error('[ping/history] Error fetching history:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch ping history' });
+      }
+      // parse payload
+      const history = rows.map(r => {
+        let parsedPayload = null;
+        if (r.payload) {
+          try { parsedPayload = JSON.parse(r.payload); } catch { parsedPayload = r.payload; }
+        }
+        return {
+          id: r.id,
+          timestamp: r.timestamp,
+          status: r.status,
+          responseTimeMs: r.response_time_ms,
+          endpoint: r.endpoint,
+          payload: parsedPayload,
+          error: r.error
+        };
+      });
+      return res.json(history);
+    }
+  );
+});
+
+// ─── DELETE /api/health/ping/history ────────────────────────────────────────
+router.delete('/ping/history', authMiddleware, (req, res) => {
+  const { orgId, envId, appName } = req.query;
+  if (!orgId || !envId || !appName) return res.status(400).json({ error: 'orgId, envId, and appName are required' });
+
+  db.run(
+    `DELETE FROM ping_history WHERE session_id = ? AND org_id = ? AND env_id = ? AND app_name = ?`,
+    [req.sessionID, orgId, envId, appName],
+    (err) => {
+      if (err) {
+        console.error('[ping/history] Error deleting history:', err.message);
+        return res.status(500).json({ error: 'Failed to clear history' });
+      }
+      return res.json({ success: true });
+    }
+  );
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

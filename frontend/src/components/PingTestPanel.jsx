@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X, Copy, Check, Terminal } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X, Copy, Check, Terminal, History, Trash2 } from 'lucide-react';
 import api from '../services/api';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
@@ -43,6 +43,41 @@ export default function PingTestPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [configOpen, setConfigOpen] = useState(true); // auto-collapses after ping completes
+  const [pingHistory, setPingHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const fetchHistory = useCallback(async () => {
+    if (!orgId || !envId || !appName) return;
+    try {
+      setHistoryLoading(true);
+      const { data } = await api.get('/health/ping/history', {
+        params: { orgId, envId, appName }
+      });
+      setPingHistory(data || []);
+    } catch (e) {
+      console.error('Failed to fetch ping history', e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [orgId, envId, appName]);
+
+  const clearHistory = async () => {
+    if (!orgId || !envId || !appName) return;
+    try {
+      setHistoryLoading(true);
+      await api.delete('/health/ping/history', { params: { orgId, envId, appName } });
+      setPingHistory([]);
+    } catch (e) {
+      console.error('Failed to clear ping history', e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
 
   const flattenCpsProps = (data) => {
     if (!data) return {};
@@ -261,7 +296,7 @@ export default function PingTestPanel({
 
     try {
       const { data } = await api.post('/health/ping', {
-        targetType, appName,
+        targetType, appName, orgId, envId,
         ch2IngressUrl: isCH1 ? undefined : ch2IngressUrl,
         envType: isCH1 ? envType : undefined,
         envName: isCH1 ? envName : undefined,  // full name — backend injects .fin. for FINANCIALS envs
@@ -273,6 +308,7 @@ export default function PingTestPanel({
       });
       clearTimeout(clientTimeout);
       setResult(data);
+      fetchHistory(); // Fetch history after a successful or failed ping
     } catch (err) {
       clearTimeout(clientTimeout);
       setError(err.response?.data?.error || err.message || 'Ping request failed');
@@ -647,6 +683,97 @@ export default function PingTestPanel({
           <Activity size={36} className="text-slate-700" />
           <p className="text-slate-500 text-sm">Click <strong>Run Ping Test</strong> to check if the app is reachable</p>
           <p className="text-slate-600 text-xs">Will test: <span className="text-slate-500 font-mono">{displayBase}/api/v1/ping</span> and fallbacks</p>
+        </div>
+      )}
+
+      {/* Ping History Section */}
+      <div className="mt-6 border-t border-slate-800/60 pt-6">
+        <div className="flex items-center justify-between mb-4">
+          <button 
+            onClick={() => setShowHistory(!showHistory)}
+            className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
+          >
+            <History size={16} />
+            <span className="text-sm font-semibold">Ping History {pingHistory.length > 0 ? `(${pingHistory.length})` : ''}</span>
+            {historyLoading && <RefreshCw size={12} className="animate-spin text-slate-500" />}
+            {showHistory ? <ChevronDown size={16} className="text-slate-500" /> : <ChevronRight size={16} className="text-slate-500" />}
+          </button>
+          
+          {pingHistory.length > 0 && showHistory && (
+            <button 
+              onClick={clearHistory}
+              disabled={historyLoading}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-950/30 text-red-400 hover:bg-red-900/50 border border-red-900/50 transition-colors disabled:opacity-50"
+            >
+              <Trash2 size={12} /> Clear History
+            </button>
+          )}
+        </div>
+
+        {showHistory && (
+          <div className="space-y-3">
+            {pingHistory.length === 0 ? (
+              <p className="text-slate-500 text-xs text-center py-4">No ping history found for this app.</p>
+            ) : (
+              pingHistory.map((entry, idx) => (
+                <PingHistoryItem key={entry.id || idx} entry={entry} />
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PingHistoryItem({ entry }) {
+  const [expanded, setExpanded] = useState(false);
+  
+  const isOk = entry.status === 'SUCCESS';
+  const isPartial = entry.status === 'PARTIAL';
+
+  const badgeCls = isOk ? 'bg-emerald-950/50 text-emerald-300 border-emerald-700/50' :
+                   isPartial ? 'bg-yellow-950/50 text-yellow-300 border-yellow-700/50' :
+                   'bg-red-950/50 text-red-300 border-red-700/50';
+
+  const icon = isOk ? <CheckCircle2 size={12} /> : 
+               isPartial ? <AlertCircle size={12} /> : 
+               <XCircle size={12} />;
+
+  return (
+    <div className="bg-slate-900/40 border border-slate-800/60 rounded-xl overflow-hidden">
+      <div 
+        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-slate-800/40 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-4">
+          <span className="text-xs text-slate-400 font-mono">
+            {new Date(entry.timestamp).toLocaleString()}
+          </span>
+          <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badgeCls}`}>
+            {icon} {entry.status}
+          </span>
+          {entry.responseTimeMs != null && (
+            <span className="text-xs font-mono text-slate-300">{entry.responseTimeMs}ms</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-500 max-w-[200px] truncate font-mono" title={entry.endpoint}>{entry.endpoint || 'No Endpoint'}</span>
+          {expanded ? <ChevronDown size={14} className="text-slate-500"/> : <ChevronRight size={14} className="text-slate-500"/>}
+        </div>
+      </div>
+      
+      {expanded && (
+        <div className="px-4 py-3 border-t border-slate-800/60 bg-[#0B0F17]">
+          {entry.error && <p className="text-xs text-red-400 mb-2">{entry.error}</p>}
+          {entry.payload && (
+            <div>
+              <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase mb-2">Response Body</p>
+              <pre className="text-xs text-emerald-400/90 overflow-auto font-mono whitespace-pre-wrap break-all max-h-60">
+                {typeof entry.payload === 'object' ? JSON.stringify(entry.payload, null, 2) : entry.payload}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>
