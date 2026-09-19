@@ -29,10 +29,20 @@ const db = new sqlite3.Database(dbPath, (err) => {
           response_time_ms INTEGER,
           endpoint TEXT,
           payload TEXT,
-          error TEXT
+          error TEXT,
+          env_name TEXT,
+          target_type TEXT,
+          credentials TEXT,
+          http_status INTEGER
         )
       `);
       
+      // Add columns if table already existed from before
+      db.run(`ALTER TABLE ping_history ADD COLUMN env_name TEXT`, () => {});
+      db.run(`ALTER TABLE ping_history ADD COLUMN target_type TEXT`, () => {});
+      db.run(`ALTER TABLE ping_history ADD COLUMN credentials TEXT`, () => {});
+      db.run(`ALTER TABLE ping_history ADD COLUMN http_status INTEGER`, () => {});
+
       // Create indexes for faster queries
       db.run(`CREATE INDEX IF NOT EXISTS idx_ping_history_session_app ON ping_history(session_id, org_id, env_id, app_name)`);
     });

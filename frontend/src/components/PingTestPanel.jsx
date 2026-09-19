@@ -305,6 +305,7 @@ export default function PingTestPanel({
           : { clientId: clientId.trim() || undefined, clientSecret: clientSecret.trim() || undefined }),
         transactionId: txId,
         queryParams: queryParams.trim() || undefined,
+        credentialsLabel: authMode === 'bearer-token' ? 'Manual / Token' : (clientId ? 'Manual / Client ID' : 'Manual / None'),
       });
       clearTimeout(clientTimeout);
       setResult(data);

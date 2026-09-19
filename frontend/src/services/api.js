@@ -8,10 +8,39 @@ import mockCpsData from './mockCpsData.json';
 export { DEMO_MODE_KEY, isDemoMode, enableDemoMode, disableDemoMode } from '../utils/demoMode.js';
 import { isDemoMode } from '../utils/demoMode.js';
 
+let demoPingHistory = [
+  {
+    id: 1,
+    timestamp: Date.now() - 60000,
+    status: 'SUCCESS',
+    responseTimeMs: 120,
+    endpoint: 'https://demo-api.sfdcbt.net/api/v1/ping',
+    appName: 'customer-api-v2',
+    payload: { status: 'ok', version: '2.0.1' },
+    env_name: 'Production',
+    target_type: 'CH1',
+    credentials: 'Auto (customer-api-client)',
+    http_status: 200
+  },
+  {
+    id: 2,
+    timestamp: Date.now() - 120000,
+    status: 'FAILED',
+    responseTimeMs: null,
+    endpoint: 'https://order-api.sfdcbt.net/api/v1/ping',
+    appName: 'order-process-sapi',
+    error: 'ECONNREFUSED',
+    env_name: 'Production',
+    target_type: 'CH1',
+    credentials: 'Manual / None',
+    http_status: null
+  }
+];
+
 // ── Mock response helper ─────────────────────────────────────────────────────
 const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 
-const mockHandler = async (url, params) => {
+const mockHandler = async (url, params, data = null) => {
   await delay();
 
   // Auth session
@@ -74,26 +103,25 @@ const mockHandler = async (url, params) => {
 
   // Health / Ping History
   if (url.includes('/health/ping/history')) {
-    return [
-      {
-        id: 1,
-        timestamp: Date.now() - 60000,
-        status: 'SUCCESS',
-        responseTimeMs: 120,
-        endpoint: 'https://demo-api.sfdcbt.net/api/v1/ping',
-        appName: 'customer-api-v2',
-        payload: { status: 'ok', version: '2.0.1' }
-      },
-      {
-        id: 2,
-        timestamp: Date.now() - 120000,
-        status: 'FAILED',
-        responseTimeMs: null,
-        endpoint: 'https://order-api.sfdcbt.net/api/v1/ping',
-        appName: 'order-process-sapi',
-        error: 'ECONNREFUSED'
-      }
-    ];
+    return [...demoPingHistory].sort((a, b) => b.timestamp - a.timestamp);
+  }
+  if (url === '/health/ping') {
+    const result = {
+      id: Date.now(),
+      status: 'SUCCESS',
+      responseTimeMs: Math.floor(Math.random() * 200) + 50,
+      endpoint: `https://${data?.appName || 'app'}.internalapi.sfdcbt.net/api/v1/ping`,
+      appName: data?.appName || 'unknown-app',
+      timestamp: Date.now(),
+      payload: { status: 'ok' },
+      attempts: [],
+      env_name: data?.envName || 'Sandbox',
+      target_type: data?.targetType || 'CH1',
+      credentials: data?.credentialsLabel || 'Manual / None',
+      http_status: 200
+    };
+    demoPingHistory.push(result);
+    return result;
   }
 
   // Exchange
@@ -127,15 +155,19 @@ const api = {
     }
     return axiosClient.get(url, config);
   },
-  post: async (url, data, config = {}) => {
+  post: async (url, payload, config = {}) => {
     if (isDemoMode()) {
       if (url === '/auth/logout') return { data: { success: true } };
-      return { data: { success: true } };
+      const data = await mockHandler(url, config.params, payload);
+      return { data: Object.keys(data).length > 0 ? data : { success: true } };
     }
-    return axiosClient.post(url, data, config);
+    return axiosClient.post(url, payload, config);
   },
   delete: async (url, config = {}) => {
-    if (isDemoMode()) return { data: { success: true } };
+    if (isDemoMode()) {
+      if (url === '/health/ping/history') demoPingHistory = [];
+      return { data: { success: true } };
+    }
     return axiosClient.delete(url, config);
   },
   patch: async (url, data, config = {}) => {

@@ -372,7 +372,7 @@ const SESSION_KEY = 'pingTestResults_v1';
 function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
   const exportHistoryCsv = useCallback(() => {
     const rows = [
-      ['Timestamp', 'Application', 'Status', 'Active Endpoint', 'Latency (ms)', 'Error', 'Response Payload'],
+      ['Timestamp', 'Application', 'Environment', 'Type', 'Status', 'HTTP Code', 'Active Endpoint', 'Latency (ms)', 'Credentials', 'Error', 'Response Payload'],
     ];
     globalHistory.forEach(entry => {
       let payloadStr = '—';
@@ -382,9 +382,13 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
       rows.push([
         new Date(entry.timestamp).toLocaleString(),
         entry.appName || '—',
+        entry.env_name || '—',
+        entry.target_type || '—',
         entry.status,
+        entry.http_status ?? '—',
         entry.endpoint || '—',
         entry.responseTimeMs ?? '—',
+        entry.credentials || '—',
         entry.error || '—',
         payloadStr
       ]);
@@ -440,9 +444,13 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                 <tr className="bg-gray-800/95 text-gray-400 text-xs uppercase tracking-wider backdrop-blur-sm">
                   <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 w-44 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Timestamp</th>
                   <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Application</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Environment</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Type</th>
                   <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Status</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">HTTP Code</th>
                   <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Active Endpoint</th>
                   <th className="px-3 py-3 font-medium text-right sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Latency</th>
+                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Credentials</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/60">
@@ -460,11 +468,32 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                         <td className="px-4 py-3 font-medium text-gray-200">
                           {entry.appName || '—'}
                         </td>
+                        <td className="px-3 py-3 text-xs text-gray-300">
+                          {entry.env_name || '—'}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {entry.target_type ? (
+                            <span className="text-[10px] font-semibold text-gray-400 bg-gray-800/80 px-2 py-0.5 rounded border border-gray-700">
+                              {entry.target_type}
+                            </span>
+                          ) : '—'}
+                        </td>
                         <td className="px-3 py-3 whitespace-nowrap">
                           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${statusConfig.cls}`}>
                             {isOk ? <CheckCircle2 size={10} /> : isPartial ? <AlertCircle size={10} /> : <XCircle size={10} />}
                             {statusConfig.label}
                           </span>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {entry.http_status ? (
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                              entry.http_status >= 200 && entry.http_status < 300 ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/30' :
+                              entry.http_status >= 400 && entry.http_status < 500 ? 'bg-yellow-950/40 text-yellow-400 border border-yellow-800/30' :
+                              'bg-red-950/40 text-red-400 border border-red-800/30'
+                            }`}>
+                              {entry.http_status}
+                            </span>
+                          ) : '—'}
                         </td>
                         <td className="px-3 py-3 font-mono text-xs text-cyan-400/90 truncate max-w-xs" title={entry.endpoint}>
                           {entry.endpoint || '—'}
@@ -474,10 +503,13 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                             <span className={latencyColor(entry.responseTimeMs)}>{entry.responseTimeMs}ms</span>
                           ) : '—'}
                         </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-[10px] text-gray-400">
+                          {entry.credentials || '—'}
+                        </td>
                       </tr>
                       {(entry.error || entry.payload) && (
                         <tr className="bg-gray-900/20">
-                          <td colSpan={5} className="px-4 py-2 pb-4">
+                          <td colSpan={9} className="px-4 py-2 pb-4">
                             <div className="pl-4 border-l-2 border-gray-700/50 space-y-2">
                               {entry.error && <p className="text-xs text-red-400">{entry.error}</p>}
                               {entry.payload && (
@@ -673,6 +705,9 @@ export default function PingTestPage() {
         transactionId: generateTxId(),
         envType: app.environment?.type || '',
         envName: app.environment?.name || '',
+        orgId: app._bgId,
+        envId: app.environment?.id,
+        credentialsLabel: auto ? `Auto (${auto.contractApp})` : 'Manual / None',
       });
       setResults(prev => ({ ...prev, [appId]: data }));
     } catch (err) {
@@ -794,6 +829,9 @@ export default function PingTestPage() {
         transactionId: generateTxId(),
         envType: app.environment?.type || '',
         envName: app.environment?.name || '',
+        orgId,
+        envId: app.environment?.id,
+        credentialsLabel: auto ? `Auto (${auto.contractApp})` : 'Manual / None',
       });
       setResults(prev => ({ ...prev, [appId]: { ...pingRes.data, _jwtUsed: true } }));
     } catch (err) {
@@ -1052,6 +1090,19 @@ export default function PingTestPage() {
     setCheckingAll(false);
   }, [testedApps, results, checkContractApproval]);
 
+  // ─── Results view ─────────────────────────────────────────────────────────────
+
+  if (showHistoryView) {
+    return (
+      <PingHistoryView 
+        globalHistory={globalHistory} 
+        onClose={() => setShowHistoryView(false)} 
+        onClear={clearGlobalHistory} 
+        historyLoading={historyLoading} 
+      />
+    );
+  }
+
   // ─── Empty state ─────────────────────────────────────────────────────────────
 
   if (!hasResults && apps.length === 0) {
@@ -1064,27 +1115,20 @@ export default function PingTestPage() {
           <Activity size={48} className="text-gray-700" />
           <div className="text-center space-y-2">
             <p className="text-white font-medium">No ping results yet</p>
-            <p className="text-gray-400 text-sm">Run a bulk ping test from the <strong>Applications</strong> page.</p>
+            <p className="text-gray-400 text-sm">Run a bulk ping test from the <strong>Applications</strong> page or view past history.</p>
           </div>
-          <button onClick={() => navigate('/applications')}
-            className="flex items-center gap-2 px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-sm font-medium rounded-lg transition-colors">
-            <ArrowLeft size={14} /> Go to Applications
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/applications')}
+              className="flex items-center gap-2 px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-sm font-medium rounded-lg transition-colors">
+              <ArrowLeft size={14} /> Go to Applications
+            </button>
+            <button onClick={() => setShowHistoryView(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-sm font-medium rounded-lg transition-colors">
+              <History size={14} /> View History
+            </button>
+          </div>
         </div>
       </div>
-    );
-  }
-
-  // ─── Results view ─────────────────────────────────────────────────────────────
-
-  if (showHistoryView) {
-    return (
-      <PingHistoryView 
-        globalHistory={globalHistory} 
-        onClose={() => setShowHistoryView(false)} 
-        onClear={clearGlobalHistory} 
-        historyLoading={historyLoading} 
-      />
     );
   }
 
