@@ -295,11 +295,14 @@ router.post('/ping', authMiddleware, async (req, res) => {
         
         // Save to DB
         if (orgId && envId) {
+          console.log(`[Ping DB] Saving SUCCESS for ${appName} org=${orgId} env=${envId}`);
           db.run(
             `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload, env_name, target_type, credentials, http_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [req.sessionID, orgId, envId, appName, Date.now(), status, responseTimeMs, url, JSON.stringify(payload), envName, targetType, credentialsLabel, httpStatus],
-            (err) => { if (err) console.error('[ping] Error saving history:', err.message); }
+            [req.sessionID, orgId, envId, appName, Date.now(), status, responseTimeMs, url, JSON.stringify(payload), envName, targetType, credentialsLabel, httpStatus || null],
+            (err) => { if (err) console.error('[ping] Error saving history SUCCESS:', err.message, err); }
           );
+        } else {
+          console.log(`[Ping DB] Skipping save SUCCESS because orgId or envId missing. orgId=${orgId}, envId=${envId}`);
         }
         
         return res.json(result);
@@ -311,11 +314,14 @@ router.post('/ping', authMiddleware, async (req, res) => {
         
         // Save to DB
         if (orgId && envId) {
+          console.log(`[Ping DB] Saving PARTIAL for ${appName} org=${orgId} env=${envId}`);
           db.run(
             `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload, env_name, target_type, credentials, http_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [req.sessionID, orgId, envId, appName, Date.now(), 'PARTIAL', responseTimeMs, url, JSON.stringify(payload), envName, targetType, credentialsLabel, httpStatus],
-            (err) => { if (err) console.error('[ping] Error saving history:', err.message); }
+            [req.sessionID, orgId, envId, appName, Date.now(), 'PARTIAL', responseTimeMs, url, JSON.stringify(payload), envName, targetType, credentialsLabel, httpStatus || null],
+            (err) => { if (err) console.error('[ping] Error saving history PARTIAL:', err.message, err); }
           );
+        } else {
+          console.log(`[Ping DB] Skipping save PARTIAL because orgId or envId missing. orgId=${orgId}, envId=${envId}`);
         }
 
         return res.json(result);
@@ -366,11 +372,14 @@ router.post('/ping', authMiddleware, async (req, res) => {
 
   // Save failed ping to DB
   if (orgId && envId) {
+    console.log(`[Ping DB] Saving FAILED for ${appName} org=${orgId} env=${envId}`);
     db.run(
       `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, error, env_name, target_type, credentials) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [req.sessionID, orgId, envId, appName, Date.now(), 'FAILED', summary, envName, targetType, credentialsLabel],
-      (err) => { if (err) console.error('[ping] Error saving history:', err.message); }
+      (err) => { if (err) console.error('[ping] Error saving history FAILED:', err.message, err); }
     );
+  } else {
+    console.log(`[Ping DB] Skipping save FAILED because orgId or envId missing. orgId=${orgId}, envId=${envId}`);
   }
 
   return res.json(result);
