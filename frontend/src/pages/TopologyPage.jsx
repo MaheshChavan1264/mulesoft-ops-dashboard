@@ -11,7 +11,7 @@ export default function TopologyPage() {
   const { user } = useAuth();
   
   const [allBgs, setAllBgs] = useState([]);
-  const [allEnvs, setAllEnvs] = useState([]);
+  const [bgEnvs, setBgEnvs] = useState([]); // Environments specific to the selected BG
 
   // Local selection state for the specific graph to render
   const [localBgId, setLocalBgId] = useState('');
@@ -29,26 +29,36 @@ export default function TopologyPage() {
     };
   }, []);
 
-  // Fetch all BGs and Envs once
+  // Fetch all BGs once
   useEffect(() => {
-    const fetchOptions = async () => {
+    const fetchBgs = async () => {
       try {
-        const [bgRes, envRes] = await Promise.all([
-          api.get('/organizations/business-groups'),
-          api.get('/environments')
-        ]);
+        const bgRes = await api.get('/organizations/business-groups');
         setAllBgs(bgRes.data?.data || []);
-        setAllEnvs(envRes.data?.data || []);
       } catch (err) {
-        console.error('Failed to fetch filter options:', err);
+        console.error('Failed to fetch BGs:', err);
       }
     };
-    fetchOptions();
+    fetchBgs();
   }, []);
+
+  // Fetch environments whenever localBgId changes
+  useEffect(() => {
+    if (!localBgId) return;
+    const fetchEnvs = async () => {
+      try {
+        const envRes = await api.get(`/environments/${localBgId}`);
+        setBgEnvs(envRes.data?.data || []);
+      } catch (err) {
+        console.error('Failed to fetch environments for BG:', err);
+      }
+    };
+    fetchEnvs();
+  }, [localBgId]);
 
   // Filter available options by global selection
   const visibleBgs = useMemo(() => applyBgFilter(allBgs), [allBgs, globalTick]);
-  const visibleEnvs = useMemo(() => applyEnvFilter(allEnvs), [allEnvs, globalTick]);
+  const visibleEnvs = useMemo(() => applyEnvFilter(bgEnvs), [bgEnvs, globalTick]);
 
   // Set default selections when visible options change
   useEffect(() => {
