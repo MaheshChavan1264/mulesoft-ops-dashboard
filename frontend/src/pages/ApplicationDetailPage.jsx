@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity, Share2 } from 'lucide-react';
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 import CpsRawJsonModal from '../components/CpsRawJsonModal';
@@ -287,6 +287,7 @@ export default function ApplicationDetailPage() {
   const [showCpsSettings, setShowCpsSettings] = useState(false);
   const [rawJsonView, setRawJsonView] = useState(null); // { title: string, data: any }
   const [cpsSearch, setCpsSearch] = useState('');
+  const [depSearch, setDepSearch] = useState('');
   const [cpsKeyOverride, setCpsKeyOverride] = useState('');
   const [cpsEnvOverride, setCpsEnvOverride] = useState('');
   const [cpsAttemptedUrl, setCpsAttemptedUrl] = useState('');
@@ -668,6 +669,7 @@ export default function ApplicationDetailPage() {
     { id:'properties', label:'Properties', badge: Object.keys(allProps).length },
     { id:'infrastructure', label:'Schedulers', badge: allSchedulers.length > 0 ? allSchedulers.length : undefined },
     ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config', badge: cpsData ? (cpsError ? '⚠' : '✓') : undefined, badgeErr: !!cpsError }] : []),
+    { id:'dependencies', label:'Dependencies' },
     { id:'contracts', label:'Contracts', badge: contracts !== null && !contractsError ? contracts.length : undefined },
     { id:'apispec', label:'API Spec', badge: pingSpec?.allEndpoints?.length > 0 ? pingSpec.allEndpoints.length : undefined },
     { id:'ping', label:'Ping Test', badge: pingSpec?.pingEndpoints?.length > 0 ? pingSpec.pingEndpoints.length : undefined },
@@ -1624,6 +1626,206 @@ export default function ApplicationDetailPage() {
           )}
         </div>
       )}
+
+      {/* ── DEPENDENCIES ────────────────────────────── */}
+      {tab==='dependencies' && (() => {
+        // ── Dependency-detection helpers ──────────────────────────────────────
+        // Matches property keys that typically point to upstream hosts / URLs.
+        const DEP_KEY_RE = /(host|url|uri|endpoint|address|base[-_.]?url|server|upstream|callback|redirect|webhook)/i;
+
+        const isLikelyUrl = (v) => {
+          if (typeof v !== 'string' || !v.trim()) return false;
+          const s = v.trim();
+          if (s.startsWith('${')) return false; // unresolved placeholder
+          if (/^(true|false|\d+)$/i.test(s)) return false; // booleans / plain numbers
+          return (
+            s.startsWith('http://') || s.startsWith('https://') ||
+            /^[a-z0-9]([a-z0-9-]*\.)+[a-z]{2,}(:\d+)?(\/.*)?$/i.test(s)
+          );
+        };
+
+        const classifyHost = (h) => {
+          if (h.endsWith('.cloudhub.io'))
+            return { type: 'CH1', label: 'CloudHub 1.0', color: 'purple', internal: true };
+          if (h.endsWith('.sfdcbt.net') || h.endsWith('.msap.io') || /\.[a-z]+-[a-z0-9]+\.msap\.io$/.test(h))
+            return { type: 'CH2', label: 'CloudHub 2.0', color: 'blue', internal: true };
+          if (h.endsWith('.mulesoft.com') || h.includes('anypoint.mulesoft'))
+            return { type: 'ANYPOINT', label: 'Anypoint Platform', color: 'cyan', internal: true };
+          return { type: 'EXTERNAL', label: 'External', color: 'gray', internal: false };
+        };
+
+        const seen = new Map();
+        const addEntry = (key, rawVal, source) => {
+          if (!DEP_KEY_RE.test(key)) return;
+          const v = String(rawVal ?? '').trim();
+          if (!isLikelyUrl(v)) return;
+          let host;
+          try {
+            host = new URL(v.startsWith('http') ? v : `https://${v}`).hostname.toLowerCase();
+          } catch { host = v.toLowerCase(); }
+          if (!host || host === 'localhost' || host.startsWith('127.') || host.startsWith('0.0.0.')) return;
+          const appNameLo = (app.name || '').toLowerCase().replace(/-/g, '');
+          if (appNameLo && host.replace(/-/g, '').startsWith(appNameLo)) return;
+
+          if (!seen.has(host)) seen.set(host, { host, ...classifyHost(host), refs: [], _dup: new Set() });
+          const entry = seen.get(host);
+          const triplet = `${key}::${v}::${source}`;
+          if (entry._dup.has(triplet)) return;
+          entry._dup.add(triplet);
+          entry.refs.push({ key, value: v, source });
+        };
+
+        // Scan all three sources
+        Object.entries(allProps).forEach(([k, v]) => addEntry(k, v, 'ARM'));
+        if (cpsData?.nonSecure)
+          Object.entries(cpsData.nonSecure).forEach(([k, v]) => addEntry(k, v, 'CPS (non-secure)'));
+        if (cpsData?.secureGroups)
+          cpsData.secureGroups.forEach(g => {
+            if (g.properties && typeof g.properties === 'object')
+              Object.entries(g.properties).forEach(([k, v]) => addEntry(k, v, 'CPS (secure)'));
+          });
+
+        let deps = [...seen.values()];
+        const searchLo = depSearch.toLowerCase();
+        if (searchLo)
+          deps = deps.filter(d =>
+            d.host.includes(searchLo) ||
+            d.refs.some(r => r.key.toLowerCase().includes(searchLo) || r.value.toLowerCase().includes(searchLo))
+          );
+
+        const internal = deps.filter(d => d.internal);
+        const external = deps.filter(d => !d.internal);
+        const total = seen.size; // unfiltered count
+
+        const srcBadge = (source) => {
+          const s = {
+            'ARM': 'bg-blue-950/40 text-blue-300 border-blue-800/40',
+            'CPS (non-secure)': 'bg-slate-800/60 text-slate-400 border-slate-700/40',
+            'CPS (secure)': 'bg-orange-950/40 text-orange-300 border-orange-800/40',
+          }[source] || 'bg-slate-800/60 text-slate-400 border-slate-700/40';
+          return <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${s}`}>{source}</span>;
+        };
+
+        const typeBadge = (dep) => {
+          const cls = {
+            CH1:      'bg-purple-950/40 text-purple-300 border-purple-700/40',
+            CH2:      'bg-blue-950/40 text-blue-300 border-blue-700/40',
+            ANYPOINT: 'bg-cyan-950/40 text-cyan-300 border-cyan-700/40',
+            EXTERNAL: 'bg-slate-800/60 text-slate-400 border-slate-700/40',
+          }[dep.type] || 'bg-slate-800/60 text-slate-400 border-slate-700/40';
+          return <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${cls}`}>{dep.label}</span>;
+        };
+
+        const DepTable = ({ rows, title, accent }) => (
+          <GlassCard icon={Share2} title={title} count={rows.length} accent={accent} noPad>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                  {['Host / URL', 'Type', 'Discovered via (property key → value)'].map(h => (
+                    <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((dep) => (
+                  <tr key={dep.host} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors align-top">
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs text-slate-200 break-all">{dep.host}</span>
+                        <CopyBtn text={dep.host} />
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap">{typeBadge(dep)}</td>
+                    <td className="px-5 py-3">
+                      <div className="space-y-1.5">
+                        {dep.refs.map((r, i) => (
+                          <div key={i} className="flex flex-wrap items-start gap-1.5">
+                            {srcBadge(r.source)}
+                            <span className="font-mono text-[10px] text-slate-400 break-all">{r.key}</span>
+                            <span className="text-slate-600 text-[10px]">→</span>
+                            <span className="font-mono text-[10px] text-slate-300 break-all">{r.value}</span>
+                            <CopyBtn text={r.value} />
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </GlassCard>
+        );
+
+        return (
+          <div className="space-y-5">
+            {/* Header */}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-white font-semibold text-sm flex items-center gap-2">
+                  <Share2 size={14} className="text-cyan-400" /> App Dependencies
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  Upstream hosts and external services detected from ARM properties
+                  {cpsData ? ' and CPS properties' : ''}.
+                  {!cpsData && cpsBaseUrl && (
+                    <button onClick={() => { setTab('cps'); loadCpsData(); }}
+                      className="ml-1.5 text-blue-400 hover:text-blue-300 underline underline-offset-2">
+                      Load CPS to discover more
+                    </button>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-600 border border-slate-800 rounded-lg px-2 py-1">
+                  {total} unique host{total !== 1 ? 's' : ''} found
+                </span>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div className="relative">
+              <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <input
+                value={depSearch}
+                onChange={e => setDepSearch(e.target.value)}
+                placeholder="Filter by host, property key, or value…"
+                className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50"
+              />
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-600">
+              <span className="font-medium text-slate-500">Sources:</span>
+              <span className="px-1.5 py-0.5 rounded border bg-blue-950/40 text-blue-300 border-blue-800/40 font-mono">ARM</span>
+              <span className="text-slate-700">= CloudHub deployment properties</span>
+              <span className="px-1.5 py-0.5 rounded border bg-slate-800/60 text-slate-400 border-slate-700/40 font-mono">CPS (non-secure)</span>
+              <span className="px-1.5 py-0.5 rounded border bg-orange-950/40 text-orange-300 border-orange-800/40 font-mono">CPS (secure)</span>
+            </div>
+
+            {deps.length === 0 && !searchLo && (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-slate-900/50 border border-slate-800/60 rounded-2xl">
+                <Share2 size={32} className="text-slate-700" />
+                <p className="text-slate-500 text-sm">No upstream dependencies detected</p>
+                <p className="text-slate-600 text-xs text-center max-w-sm">
+                  No properties containing <code className="text-slate-500">host</code>, <code className="text-slate-500">url</code>,
+                  <code className="text-slate-500"> endpoint</code>, or <code className="text-slate-500">uri</code> patterns were found
+                  with URL-like values.
+                  {!cpsData && cpsBaseUrl && ' Load CPS properties above to scan more sources.'}
+                </p>
+              </div>
+            )}
+
+            {deps.length === 0 && searchLo && (
+              <div className="flex items-center justify-center py-12 text-slate-500 text-sm">
+                No dependencies match <span className="ml-1 font-mono text-slate-400">"{depSearch}"</span>
+              </div>
+            )}
+
+            {internal.length > 0 && <DepTable rows={internal} title="Internal MuleSoft Apps" accent="blue" />}
+            {external.length > 0 && <DepTable rows={external} title="External Hosts" />}
+          </div>
+        );
+      })()}
 
       {/* ── CONTRACTS ───────────────────────────────── */}
       {tab==='contracts' && (
