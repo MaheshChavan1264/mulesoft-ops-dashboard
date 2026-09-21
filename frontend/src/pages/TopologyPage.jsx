@@ -9,6 +9,7 @@ import { getVisibleBgIds, getVisibleEnvIds, applyBgFilter, applyEnvFilter } from
 
 export default function TopologyPage() {
   const { user } = useAuth();
+  const { getGlobalCredential } = useCpsCredentialStore();
   
   const [allBgs, setAllBgs] = useState([]);
   const [bgEnvs, setBgEnvs] = useState([]); // Environments specific to the selected BG
@@ -112,6 +113,18 @@ export default function TopologyPage() {
         direction,
       };
       
+      const activeBgName = visibleBgs.find(b => b.id === localBgId)?.name;
+      const activeEnvName = visibleEnvs.find(e => e.id === localEnvId)?.name;
+      
+      // Try to get credentials from global CSV context
+      const creds = activeBgName && activeEnvName ? getGlobalCredential(activeBgName, activeEnvName, 'ch2') : null;
+      
+      const headers = {};
+      if (creds) {
+        headers['x-cps-client-id'] = creds.clientId;
+        headers['x-cps-client-secret'] = creds.clientSecret;
+      }
+
       if (direction !== 'full') {
         if (!targetAppKey) {
           // Can't run directional without target
@@ -121,7 +134,7 @@ export default function TopologyPage() {
         params.appKey = targetAppKey;
       }
 
-      const { data } = await api.get('/topology', { params });
+      const { data } = await api.get('/topology', { params, headers });
       setGraphData(data);
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to generate topology');

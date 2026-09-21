@@ -14,7 +14,15 @@ exports.getTopology = async (req, res) => {
     const envType = detectEnvType(cpsBaseUrl, cpsEnvironment, cpsEnvironment);
     // deploymentType is not easily available here, we'll try 'CH2' as it's the default for most new deployments
     const chType = 'CH2'; 
-    const creds = getCredentials(req, cpsBaseUrl, bgOrgId, envType, chType);
+    let creds = getCredentials(req, cpsBaseUrl, bgOrgId, envType, chType);
+
+    // Fallback to headers if sent directly from frontend (e.g. from Global CSV Store)
+    if (!creds && req.headers['x-cps-client-id'] && req.headers['x-cps-client-secret']) {
+      creds = {
+        clientId: req.headers['x-cps-client-id'],
+        clientSecret: req.headers['x-cps-client-secret']
+      };
+    }
 
     if (!creds) {
       return res.status(422).json({ error: 'CPS credentials not configured for this server / BG combination' });
