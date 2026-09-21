@@ -18,6 +18,13 @@ function normaliseEnvTier(envName = '') {
   return /\b(prod|pd|production)\b/i.test(envName) ? 'prod' : 'uat';
 }
 
+function detectEnvType(envName = '') {
+  const s = envName.toLowerCase();
+  if (/\b(prod|pd)\b/.test(s)) return 'prod';
+  if (/\b(uat|ut|stag(e|ing)?|stg|uap|sandbox)\b/.test(s)) return 'uat';
+  return 'prod';
+}
+
 export default function TopologyPage() {
   const { user } = useAuth();
   // Use the simple credential map loaded by the "Import CPS Creds" header button
@@ -142,7 +149,6 @@ export default function TopologyPage() {
         bgOrgId: localBgId,
         direction,
       };
-
       const headers = {
         // Pass the full credentials map; the backend resolves the right one
         // via ARM properties (anypoint.platform.client_id)
