@@ -3,16 +3,62 @@ import { useAuth } from '../context/AuthContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { Activity, RefreshCw, AlertTriangle, Play, ChevronLeft, ChevronRight, Layers, Filter } from 'lucide-react';
 import Select from '../components/Select';
-import api from '../services/api';
+import api, { isDemoMode } from '../services/api';
 import DependencyGraph from '../components/DependencyGraph';
+import { getVisibleBgIds, getVisibleEnvIds, applyBgFilter, applyEnvFilter } from '../utils/filterUtils';
 
 export default function TopologyPage() {
   const { user } = useAuth();
-  const { activeCpsOrgId, cpsConfigs } = useCpsCredentialStore();
   
-  // Environments and selections
-  const [environments, setEnvironments] = useState([]);
-  const [envId, setEnvId] = useState('');
+  const [allBgs, setAllBgs] = useState([]);
+  const [allEnvs, setAllEnvs] = useState([]);
+
+  // Local selection state for the specific graph to render
+  const [localBgId, setLocalBgId] = useState('');
+  const [localEnvId, setLocalEnvId] = useState('');
+
+  const [globalTick, setGlobalTick] = useState(0);
+
+  useEffect(() => {
+    const handleFilterChange = () => setGlobalTick(t => t + 1);
+    window.addEventListener('bgFilterChanged', handleFilterChange);
+    window.addEventListener('envFilterChanged', handleFilterChange);
+    return () => {
+      window.removeEventListener('bgFilterChanged', handleFilterChange);
+      window.removeEventListener('envFilterChanged', handleFilterChange);
+    };
+  }, []);
+
+  // Fetch all BGs and Envs once
+  useEffect(() => {
+    const fetchOptions = async () => {
+      try {
+        const [bgRes, envRes] = await Promise.all([
+          api.get('/organizations/business-groups'),
+          api.get('/environments')
+        ]);
+        setAllBgs(bgRes.data?.data || []);
+        setAllEnvs(envRes.data?.data || []);
+      } catch (err) {
+        console.error('Failed to fetch filter options:', err);
+      }
+    };
+    fetchOptions();
+  }, []);
+
+  // Filter available options by global selection
+  const visibleBgs = useMemo(() => applyBgFilter(allBgs), [allBgs, globalTick]);
+  const visibleEnvs = useMemo(() => applyEnvFilter(allEnvs), [allEnvs, globalTick]);
+
+  // Set default selections when visible options change
+  useEffect(() => {
+    if (visibleBgs.length > 0 && (!localBgId || !visibleBgs.find(b => b.id === localBgId))) {
+      setLocalBgId(visibleBgs[0].id);
+    }
+    if (visibleEnvs.length > 0 && (!localEnvId || !visibleEnvs.find(e => e.id === localEnvId))) {
+      setLocalEnvId(visibleEnvs[0].id);
+    }
+  }, [visibleBgs, visibleEnvs, localBgId, localEnvId]);
   
   // Graph controls
   const [direction, setDirection] = useState('full'); // 'full', 'forward', 'backward'
@@ -26,21 +72,7 @@ export default function TopologyPage() {
   // Edge popover state
   const [popover, setPopover] = useState(null);
 
-  // Fetch environments
-  useEffect(() => {
-    const fetchEnvs = async () => {
-      try {
-        const { data } = await api.get('/environments');
-        setEnvironments(data.data || []);
-        if (data.data?.length > 0) {
-          setEnvId(data.data[0].id);
-        }
-      } catch (err) {
-        console.error('Failed to fetch environments:', err);
-      }
-    };
-    fetchEnvs();
-  }, []);
+
 
   // Compute available apps from graph for the dropdown
   const availableApps = useMemo(() => {
@@ -49,15 +81,10 @@ export default function TopologyPage() {
     return graphData.nodes.filter(n => n.isKnownApp).map(n => n.id).sort();
   }, [graphData]);
 
-  const activeEnv = environments.find(e => e.id === envId);
-
   const fetchTopology = useCallback(async () => {
-    if (!envId || !activeEnv) return;
-    
-    // Find active CPS config for this BG
-    const cpsConfig = cpsConfigs.find(c => c.orgId === activeCpsOrgId);
-    if (!cpsConfig || !cpsConfig.baseUrl) {
-      setError('CPS Configuration missing for the selected Business Group. Please configure CPS in the CPS Manager.');
+    if (!localBgId || !localEnvId) {
+      setError('Please select a Business Group and Environment to visualize.');
+      setGraphData(null);
       return;
     }
 
@@ -67,11 +94,11 @@ export default function TopologyPage() {
     
     try {
       const params = {
-        orgId: activeCpsOrgId, // or user.orgId if we map 1:1
-        envId,
-        cpsBaseUrl: cpsConfig.baseUrl,
-        cpsEnvironment: cpsConfig.environment || activeEnv.name,
-        bgOrgId: activeCpsOrgId,
+        orgId: localBgId,
+        envId: localEnvId,
+        cpsBaseUrl: 'https://anypoint.mulesoft.com', // Demo/Fallback
+        cpsEnvironment: 'Sandbox',
+        bgOrgId: localBgId,
         direction,
       };
       
@@ -91,14 +118,14 @@ export default function TopologyPage() {
     } finally {
       setLoading(false);
     }
-  }, [envId, activeEnv, activeCpsOrgId, cpsConfigs, direction, targetAppKey]);
+  }, [localBgId, localEnvId, direction, targetAppKey]);
 
   // Initial fetch for full graph when env changes
   useEffect(() => {
-    if (envId && direction === 'full') {
+    if (localBgId && localEnvId && direction === 'full') {
       fetchTopology();
     }
-  }, [envId, direction, fetchTopology]);
+  }, [localBgId, localEnvId, direction, fetchTopology]);
 
   // Handle edge click
   const handleEdgeClick = useCallback((edge, position) => {
@@ -123,11 +150,18 @@ export default function TopologyPage() {
           
           <div className="flex items-center gap-3">
             <Select
-              value={envId}
-              onChange={setEnvId}
-              options={environments.map(e => ({ value: e.id, label: e.name }))}
-              placeholder="Select Environment"
+              value={localBgId}
+              onChange={setLocalBgId}
+              options={visibleBgs.map(b => ({ value: b.id, label: b.name }))}
+              placeholder="Business Group..."
               className="w-48"
+            />
+            <Select
+              value={localEnvId}
+              onChange={setLocalEnvId}
+              options={visibleEnvs.map(e => ({ value: e.id, label: e.name }))}
+              placeholder="Environment..."
+              className="w-40"
             />
             <button
               onClick={fetchTopology}
