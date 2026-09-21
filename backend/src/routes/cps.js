@@ -1215,4 +1215,9 @@ router.post('/binary', authMiddleware, async (req, res) => {
   }
 });
 
+router.detectEnvType = detectEnvType;
+router.detectChType = detectChType;
+router.getCredentials = getCredentials;
+router.normaliseUrl = normaliseUrl;
+
 module.exports = router;
