@@ -16,7 +16,6 @@ import CpsComparisonPage from './pages/CpsComparisonPage';
 import UserSearchPage from './pages/UserSearchPage';
 import CpsManagerPage from './pages/CpsManagerPage';
 import GlobalCpsManagerPage from './pages/GlobalCpsManagerPage';
-import TopologyPage from './pages/TopologyPage';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -58,7 +57,6 @@ export default function App() {
             <Route path="user-search" element={<UserSearchPage />} />
             <Route path="cps-manager" element={<CpsManagerPage />} />
             <Route path="global-cps-manager" element={<GlobalCpsManagerPage />} />
-            <Route path="topology" element={<TopologyPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -34,7 +34,6 @@ const exchangeRoutes = require('./routes/exchange');
 const metricsRoutes = require('./routes/metrics');
 const cpsRoutes = require('./routes/cps');
 const healthRoutes = require('./routes/health');
-const topologyRoutes = require('./routes/topology');
 
 // ── SQLite session store ──────────────────────────────────────────────────────
 // Replaces the default MemoryStore (which loses all sessions on restart).
@@ -106,7 +105,6 @@ app.use('/api/metrics', metricsRoutes);
 app.use('/api/cps', express.json({ limit: '50mb' }));
 app.use('/api/cps', cpsRoutes);
 app.use('/api/health', healthRoutes);
-app.use('/api/topology', topologyRoutes);
 
 // Server health check
 app.get('/api/ping', (req, res) => {
