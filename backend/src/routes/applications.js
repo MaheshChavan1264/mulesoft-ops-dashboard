@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const NodeCache = require('node-cache');
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 const {
@@ -10,9 +11,46 @@ const {
 } = require('../utils/appHelpers');
 const { sendProxyError } = require('../utils/responseHelpers');
 
-// Global in-memory cache to avoid express-session race conditions
-// during concurrent background refreshes.
-const globalSummaryCache = {};
+// ── Application-summary in-memory cache ──────────────────────────────────────
+//
+// WHY in-memory and not SQLite?
+//   • App status changes every few minutes — persistence across restarts adds
+//     no value (data would be stale anyway on the next boot).
+//   • Map.get() is ~0.01 ms; a SQLite read is 1–10 ms + JSON.parse overhead.
+//   • The bottleneck is the Anypoint API fan-out (dozens of parallel HTTP calls),
+//     not the cache lookup — shaving 1 ms from the read path is irrelevant.
+//   • SQLite is the right home for operational history (→ ping_history), not
+//     for a hot read-path cache with a 3-min freshness window.
+//
+// WHY keyed by orgId (not sessionId)?
+//   • Old code: globalSummaryCache[sessionId][orgId] — 10 users from the same
+//     org triggered 10 separate full Anypoint fan-outs and held 10 copies of
+//     the same data in memory.  Dead sessions were never evicted → memory leak.
+//   • New code: summaryCache[orgId] — all users of the same org share one entry.
+//     The Anypoint token used to populate the cache belongs to whoever triggered
+//     the first fetch; subsequent users read the already-cached result instantly.
+//   • Security: the cache key IS the orgId, so users of org-A never receive
+//     org-B data.  The Anypoint token enforces row-level access at fetch time.
+//
+// TTL constants
+//   FRESH_MS  (3 min)  — serve instantly, no network call
+//   TTL_MS    (20 min) — hard eviction via NodeCache stdTTL + checkperiod
+//   SWR window = FRESH_MS … TTL_MS: serve stale data + trigger background refresh
+
+const SUMMARY_CACHE_TTL_MS  = 20 * 60 * 1000; // 20 min hard eviction
+const SUMMARY_CACHE_FRESH_MS =  3 * 60 * 1000; // 3 min SWR freshness threshold
+
+const summaryCache = new NodeCache({
+  stdTTL:      SUMMARY_CACHE_TTL_MS / 1000,  // NodeCache uses seconds
+  checkperiod: 5 * 60,                        // sweep for expired keys every 5 min
+  useClones:   false,                         // skip deep-copy on read — safe because
+                                              // we never mutate cached objects
+});
+
+// Thundering-herd guard: if multiple requests arrive for the same org while the
+// cache is cold, they all share the single in-flight Promise instead of each
+// firing an independent Anypoint fan-out.
+const inflightSummary = new Map(); // orgId → Promise<responseData>
 
 // Get all applications for an environment (CloudHub 2.0)
 router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
@@ -291,20 +329,19 @@ router.get('/private-spaces/:orgId/:privateSpaceId', authMiddleware, async (req,
   }
 });
 
-const SUMMARY_CACHE_TTL_MS   = 20 * 60 * 1000; // hard eviction window  (20 min)
-const SUMMARY_CACHE_FRESH_MS  = 15 * 60 * 1000; // SWR freshness threshold (15 min)
-
 /**
  * Core fetch-and-cache logic for the application summary.
  * Extracted so it can be called both synchronously (cache miss) and
  * fire-and-forget (SWR background refresh).
  *
- * @param {object} client     Anypoint HTTP client
+ * No longer accepts sessionId — cache is keyed by orgId only.
+ * See the cache design notes at the top of this file.
+ *
+ * @param {object} client      Anypoint HTTP client
  * @param {string} targetOrgId
- * @param {string} sessionId  req.sessionID (used as cache key)
- * @returns {Promise<object>} responseData
+ * @returns {Promise<object>}  responseData
  */
-async function _fetchSummary(client, targetOrgId, sessionId) {
+async function _fetchSummary(client, targetOrgId) {
   const envResponse = await client.get(
     `/accounts/api/organizations/${targetOrgId}/environments`
   );
@@ -391,54 +428,80 @@ async function _fetchSummary(client, targetOrgId, sessionId) {
     _cachedAt: new Date().toISOString(),
   };
 
-  if (!globalSummaryCache[sessionId]) globalSummaryCache[sessionId] = {};
-  globalSummaryCache[sessionId][targetOrgId] = { data: responseData, ts: Date.now() };
+  // Store in NodeCache — TTL eviction is handled automatically by NodeCache's
+  // internal checkperiod sweep; no manual cleanup needed.
+  summaryCache.set(targetOrgId, { data: responseData, ts: Date.now() });
   console.log(`[Summary] Cache SET for org ${targetOrgId} (${results.length} apps)`);
   return responseData;
 }
 
-// Summary: get apps across all environments for an org (accepts orgId param or query)
+// Summary: get apps across all environments for an org
 router.get('/summary/:orgId', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
     const targetOrgId = req.params.orgId;
     const forceRefresh = req.query.refresh === 'true';
 
-    // ── Global Memory Cache with Stale-While-Revalidate ──────────────────────
-    // Cache is keyed by sessionId so different users never share cached data.
+    // ── NodeCache-backed SWR (Stale-While-Revalidate) ─────────────────────
     //
-    //  age < FRESH_MS  (15 min) → serve cached data, no network call
-    //  age < TTL_MS   (20 min) → serve cached data immediately +
-    //                            kick off background refresh so the
-    //                            NEXT request also hits a warm cache
-    //  age ≥ TTL_MS            → synchronous fetch (cold cache)
-    const sessionId = req.sessionID;
-    if (!globalSummaryCache[sessionId]) globalSummaryCache[sessionId] = {};
-    const cached  = globalSummaryCache[sessionId][targetOrgId];
-    const ageMs   = cached ? Date.now() - cached.ts : Infinity;
-    const isFresh = ageMs < SUMMARY_CACHE_FRESH_MS;
-    const isUsable = ageMs < SUMMARY_CACHE_TTL_MS;
+    // Cache is keyed by orgId — all users of the same org share one entry.
+    //
+    //  age < FRESH_MS  (3 min)  → serve instantly, no network call
+    //  age < TTL_MS   (20 min)  → serve stale data immediately AND trigger a
+    //                             silent background refresh — the NEXT request
+    //                             will always hit a warm cache
+    //  age ≥ TTL_MS             → NodeCache has already evicted the key;
+    //                             synchronous fetch (cold cache)
+    //
+    // Thundering-herd protection: if N requests arrive for the same org
+    // while the cache is cold, only ONE Anypoint fan-out is issued — all
+    // N callers await the same Promise via inflightSummary.
+    // ─────────────────────────────────────────────────────────────────────
+
+    const cached   = summaryCache.get(targetOrgId);      // undefined if evicted
+    const ageMs    = cached ? Date.now() - cached.ts : Infinity;
+    const isFresh  = ageMs < SUMMARY_CACHE_FRESH_MS;
+    const isUsable = cached && ageMs < SUMMARY_CACHE_TTL_MS; // belt-and-suspenders
 
     if (!forceRefresh && cached && isFresh) {
-      // ── Fresh hit — instant response, no network ─────────────────────────
-      console.log(`[Summary] Served from global cache for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s)`);
+      // ── Fresh hit — instant response, zero network ───────────────────────
+      console.log(`[Summary] Cache HIT (fresh) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s)`);
       return res.json(cached.data);
     }
 
-    if (!forceRefresh && cached && isUsable) {
-      // ── Stale-but-usable — respond immediately, refresh silently ─────────
+    if (!forceRefresh && isUsable) {
+      // ── Stale-but-usable — respond instantly, refresh in background ──────
+      console.log(`[Summary] Cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s) — BG refresh started`);
       res.json(cached.data);
-      // Fire-and-forget: refresh in background so the next call is instant
-      _fetchSummary(client, targetOrgId, sessionId)
-        .then(() => console.log(`[Summary] BG refresh done for org ${targetOrgId}`))
-        .catch((err) => console.warn(`[Summary] BG refresh failed for org ${targetOrgId}:`, err.message));
+
+      // Only start a background refresh if one isn't already running for this org
+      if (!inflightSummary.has(targetOrgId)) {
+        const p = _fetchSummary(client, targetOrgId)
+          .then(() => console.log(`[Summary] BG refresh done for org ${targetOrgId}`))
+          .catch((err) => console.warn(`[Summary] BG refresh failed for org ${targetOrgId}:`, err.message))
+          .finally(() => inflightSummary.delete(targetOrgId));
+        inflightSummary.set(targetOrgId, p);
+      }
       return;
     }
-    // ─────────────────────────────────────────────────────────────────────────
 
-    // Cache miss or force-refresh — fetch synchronously
-    console.log(`[Summary] Synchronous fetch for org ${targetOrgId} (forceRefresh: ${forceRefresh}, cached: ${!!cached})`);
-    const data = await _fetchSummary(client, targetOrgId, sessionId);
+    // ── Cache miss / force-refresh — thundering-herd protected fetch ────────
+    console.log(`[Summary] Cache MISS for org ${targetOrgId} (forceRefresh: ${forceRefresh})`);
+
+    if (!forceRefresh && inflightSummary.has(targetOrgId)) {
+      // Another request is already fetching this org — piggyback on it
+      console.log(`[Summary] Piggybacking on in-flight fetch for org ${targetOrgId}`);
+      const data = await inflightSummary.get(targetOrgId);
+      return res.json(data);
+    }
+
+    // First request to trigger the fetch — store promise so others can piggyback
+    const p = _fetchSummary(client, targetOrgId)
+      .finally(() => inflightSummary.delete(targetOrgId));
+
+    if (!forceRefresh) inflightSummary.set(targetOrgId, p);
+
+    const data = await p;
     res.json(data);
   } catch (error) {
     sendProxyError(res, error, 'Failed to fetch application summary');

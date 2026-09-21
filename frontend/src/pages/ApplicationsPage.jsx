@@ -936,8 +936,26 @@ function ExportAppsModal({ apps, allBusinessGroups, environments, onClose }) {
   );
 }
 
+// ── Cache TTL constants ───────────────────────────────────────────────────────
+//
+// APP_STALE_MS is the EVICTION window — how long before the entry is deleted.
+// The freshness threshold (FRESH_MS = 3 min) is fixed inside apiCache.js.
+//
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │  0 – 3 min   : FRESH  — instant render, no network call                │
+// │  3 – 20 min  : STALE  — instant render from cache + silent BG refresh  │
+// │  > 20 min    : EXPIRED — full reload with loading spinner               │
+// └─────────────────────────────────────────────────────────────────────────┘
+//
+// Bug (before fix): APP_STALE_MS was set to 3 min — same as FRESH_MS.
+// This collapsed the SWR window to 0 seconds: entries went from fresh
+// directly to deleted, so ANY navigation longer than 3 minutes triggered a
+// full cold reload with spinner.  Setting it to 20 min gives a 17-minute
+// stale-but-usable window where the page renders instantly every time.
+const APP_STALE_MS = 20 * 60 * 1000; // 20 min eviction (FRESH_MS = 3 min in apiCache.js)
+
 /**
- * Standalone fetch helper used by the SWR background-refresh path in loadApps.
+ * Standalone fetch helper used by the ApplicationsPage background-refresh path in loadApps.
  * Fetches apps + envs for the given BG IDs, merges them, stores in cache,
  * and returns { mergedApps, mergedEnvs }.
  * Does NOT touch any React state — callers apply the result themselves.
@@ -969,8 +987,9 @@ async function _fetchAndCacheApps(bgId, bgIds, cacheKey) {
     }
   });
 
-  // Refresh the cache entry with a 3-min freshness window
-  setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs }, 3 * 60 * 1000);
+  // Use APP_STALE_MS (20 min) so entries stay stale-but-usable for 17 min
+  // after the 3-min freshness window expires — no cold reload needed.
+  setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs }, APP_STALE_MS);
   return { mergedApps, mergedEnvs };
 }
 
@@ -1269,9 +1288,10 @@ export default function ApplicationsPage() {
       setEnvironments(mergedEnvs);
       if (mergedApps.length === 0) setError('No applications found.');
 
-      // Store in frontend cache — 3-min freshness window (app status changes often)
+      // Store in frontend cache — APP_STALE_MS eviction window (20 min)
+      // FRESH_MS (3 min) is fixed inside apiCache.js, giving a 17-min SWR window.
       const cacheKey = CK.apps(bgId, bgIds);
-      setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs }, 3 * 60 * 1000);
+      setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs }, APP_STALE_MS);
 
       // Proactive background refresh — the idle sweep will re-fetch this entry
       // when it goes stale (after 3 min), so the cache is NEVER cold while the
