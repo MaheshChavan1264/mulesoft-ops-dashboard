@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { createClient } = require('../utils/anypointClient');
-const { detectEnvType, detectChType } = require('../utils/appHelpers');
+const { detectEnvType, detectChType } = require('../routes/cps');
 
 // We need a helper to fetch apps from Anypoint (CH1 and CH2)
 async function fetchAllAppsForEnv(anypointToken, orgId, envId) {
