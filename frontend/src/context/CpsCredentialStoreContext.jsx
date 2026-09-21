@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { parseCsvToCredentialMap } from '../utils/csvCredentialStore';
 import { parseGlobalCpsCsv } from '../utils/globalCpsCsvParser';
+
+const GLOBAL_CREDS_KEY = 'mule_dashboard_global_cps_creds';
 
 const CpsCredentialStoreContext = createContext(null);
 
@@ -8,8 +10,24 @@ export function CpsCredentialStoreProvider({ children }) {
   const [credentialMap, setCredentialMap] = useState(new Map());
   const [loadedCount, setLoadedCount] = useState(0);
 
-  // Global CPS specific state
-  const [globalCredentials, setGlobalCredentials] = useState([]);
+  // Global CPS specific state — persisted to localStorage so credentials survive page refreshes
+  const [globalCredentials, setGlobalCredentials] = useState(() => {
+    try {
+      const raw = localStorage.getItem(GLOBAL_CREDS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Persist to localStorage whenever globalCredentials changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(GLOBAL_CREDS_KEY, JSON.stringify(globalCredentials));
+    } catch {
+      // ignore quota errors
+    }
+  }, [globalCredentials]);
 
   const loadFromCsv = useCallback((text) => {
     const map = parseCsvToCredentialMap(text);
@@ -28,6 +46,7 @@ export function CpsCredentialStoreProvider({ children }) {
     setCredentialMap(new Map());
     setLoadedCount(0);
     setGlobalCredentials([]);
+    try { localStorage.removeItem(GLOBAL_CREDS_KEY); } catch { /* ignore */ }
   }, []);
 
   const getSecret = useCallback(

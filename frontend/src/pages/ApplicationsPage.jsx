@@ -17,6 +17,7 @@ import { getCachedSWR, setCached, bustCache, keepFresh, stopKeepingFresh } from 
 import { CK } from '../services/cacheKeys';
 import { availableActions, ACTION_CONFIG, ENV_BADGE, generateTxId } from '../utils/appUtils';
 import { findOAuth2Url, flattenCpsResponse } from '../utils/cpsHelpers';
+import * as XLSX from 'xlsx';
 
 const ENV_TAG_COLOR = {
   production: 'bg-green-500/20 text-green-400',
@@ -717,6 +718,224 @@ function BulkPingModal({ apps, onClose }) {
   );
 }
 
+/* ── Export Apps Modal ──────────────────────────────────── */
+// Multi-select BGs + Envs, pre-seeded from global BG/Env filters.
+// Produces one xlsx sheet per selected environment.
+function ExportAppsModal({ apps, allBusinessGroups, environments, onClose }) {
+  // Honour the same global filters the main page uses
+  const globalBgs  = useMemo(() => applyBgFilter(allBusinessGroups),  [allBusinessGroups]);
+  const globalEnvs = useMemo(() => applyEnvFilter(environments), [environments]);
+
+  const [selBgIds,  setSelBgIds]  = useState(() => new Set(globalBgs.map(g => g.id)));
+  const [selEnvIds, setSelEnvIds] = useState(() => new Set(globalEnvs.map(e => e.id)));
+  const [bgSearch,  setBgSearch]  = useState('');
+  const [envSearch, setEnvSearch] = useState('');
+
+  // Environments that have at least one app in the selected BGs
+  const availableEnvs = useMemo(() => {
+    const bgEnvIds = new Set(
+      apps.filter(a => selBgIds.has(a._bgId)).map(a => a.environment?.id).filter(Boolean)
+    );
+    return globalEnvs.filter(e => bgEnvIds.has(e.id));
+  }, [selBgIds, globalEnvs, apps]);
+
+  // When BG selection changes, drop env selections that have no apps there
+  useEffect(() => {
+    const availIds = new Set(availableEnvs.map(e => e.id));
+    setSelEnvIds(prev => new Set([...prev].filter(id => availIds.has(id))));
+  }, [availableEnvs]);
+
+  // Apps matching selected BGs + selected Envs
+  const exportApps = useMemo(() =>
+    apps.filter(a => selBgIds.has(a._bgId) && selEnvIds.has(a.environment?.id)),
+    [apps, selBgIds, selEnvIds]
+  );
+
+  // Per-env app counts (only for selected envs)
+  const envCounts = useMemo(() => {
+    const c = {};
+    exportApps.forEach(a => { const id = a.environment?.id; if (id) c[id] = (c[id] || 0) + 1; });
+    return c;
+  }, [exportApps]);
+
+  const toggleBg  = id => setSelBgIds(prev  => { const n = new Set(prev);  n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleEnv = id => setSelEnvIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const allBgsChecked  = globalBgs.length     > 0 && globalBgs.every(g     => selBgIds.has(g.id));
+  const allEnvsChecked = availableEnvs.length > 0 && availableEnvs.every(e => selEnvIds.has(e.id));
+
+  const selectedEnvCount = availableEnvs.filter(e => selEnvIds.has(e.id) && envCounts[e.id] > 0).length;
+
+  const doExport = () => {
+    if (exportApps.length === 0) return;
+    const wb = XLSX.utils.book_new();
+
+    // One sheet per env (in global env order, only envs with apps)
+    const envsToExport = availableEnvs.filter(e => selEnvIds.has(e.id) && (envCounts[e.id] || 0) > 0);
+    envsToExport.forEach(env => {
+      const envApps = exportApps.filter(a => a.environment?.id === env.id);
+      const rows = envApps.map(app => ({
+        'Integration Name': app.name            || '—',
+        'Mule Version':     app.muleVersion     || '—',
+        'Status':           (app.status || '—').toUpperCase(),
+        'Deployment Type':  app.deploymentType  || '—',
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const headers = Object.keys(rows[0]);
+      ws['!cols'] = headers.map(h => ({
+        wch: Math.max(h.length, ...rows.map(r => String(r[h] || '').length)) + 2,
+      }));
+      // Excel sheet names: max 31 chars, no invalid chars
+      const sheetName = env.name.replace(/[/\\?*[\]:]/g, '').slice(0, 31) || 'Sheet';
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+
+    XLSX.writeFile(wb, `apps-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    onClose();
+  };
+
+  const filteredBgs  = globalBgs.filter(g => g.name.toLowerCase().includes(bgSearch.toLowerCase()));
+  const filteredEnvs = availableEnvs.filter(e => e.name.toLowerCase().includes(envSearch.toLowerCase()));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-lg shadow-2xl mx-4 flex flex-col max-h-[88vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet size={16} className="text-violet-400" />
+            <h3 className="text-white font-semibold">Export Applications</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-600 hover:text-gray-300"><X size={16} /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-5">
+
+          {/* ── Business Groups ── */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+                Business Groups
+                <span className="ml-1.5 text-gray-600 normal-case">({selBgIds.size}/{globalBgs.length} selected)</span>
+              </label>
+              <button
+                onClick={() => setSelBgIds(allBgsChecked ? new Set() : new Set(globalBgs.map(g => g.id)))}
+                className="text-[9px] text-violet-400 hover:text-violet-300 transition-colors">
+                {allBgsChecked ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+            {globalBgs.length > 6 && (
+              <div className="relative mb-2">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                <input value={bgSearch} onChange={e => setBgSearch(e.target.value)} placeholder="Filter BGs…"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500/50" />
+              </div>
+            )}
+            <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1">
+              {filteredBgs.map(g => (
+                <button key={g.id} onClick={() => toggleBg(g.id)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-800/50 transition-colors text-left">
+                  <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+                    selBgIds.has(g.id) ? 'bg-violet-600 border-violet-500' : 'border-gray-600 hover:border-violet-500'
+                  }`}>
+                    {selBgIds.has(g.id) && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+                  </div>
+                  {g.parentId && <span className="w-3 flex-shrink-0" />}
+                  <span className="text-sm text-gray-300 truncate flex-1">{g.name}</span>
+                  {!g.parentId && (
+                    <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded flex-shrink-0">Root</span>
+                  )}
+                </button>
+              ))}
+              {filteredBgs.length === 0 && (
+                <p className="text-xs text-gray-600 px-3 py-2">No BGs match</p>
+              )}
+            </div>
+          </div>
+
+          {/* ── Environments (each = one sheet tab) ── */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+                Environments
+                <span className="ml-1 text-gray-600 normal-case">— each selected env = one sheet</span>
+              </label>
+              <button
+                onClick={() => setSelEnvIds(allEnvsChecked ? new Set() : new Set(availableEnvs.map(e => e.id)))}
+                className="text-[9px] text-violet-400 hover:text-violet-300 transition-colors">
+                {allEnvsChecked ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+            {availableEnvs.length > 6 && (
+              <div className="relative mb-2">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                <input value={envSearch} onChange={e => setEnvSearch(e.target.value)} placeholder="Filter environments…"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500/50" />
+              </div>
+            )}
+            <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1">
+              {availableEnvs.length === 0 ? (
+                <p className="text-xs text-gray-600 px-3 py-2">No environments found for selected BGs</p>
+              ) : filteredEnvs.length === 0 ? (
+                <p className="text-xs text-gray-600 px-3 py-2">No environments match</p>
+              ) : (
+                filteredEnvs.map(e => {
+                  const isProd = e.type === 'production';
+                  const count  = envCounts[e.id] || 0;
+                  return (
+                    <button key={e.id} onClick={() => toggleEnv(e.id)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-800/50 transition-colors text-left">
+                      <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+                        selEnvIds.has(e.id) ? 'bg-violet-600 border-violet-500' : 'border-gray-600 hover:border-violet-500'
+                      }`}>
+                        {selEnvIds.has(e.id) && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+                      </div>
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
+                      <span className="text-sm text-gray-300 flex-1 truncate">{e.name}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${
+                        isProd ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+                      }`}>{e.type}</span>
+                      {selEnvIds.has(e.id) && count > 0 && (
+                        <span className="text-[9px] text-gray-600 flex-shrink-0 tabular-nums">{count} apps</span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* ── Preview ── */}
+          <div className="bg-gray-800/40 border border-gray-700/40 rounded-lg px-4 py-3">
+            <p className="text-sm text-gray-400">
+              <span className="text-violet-300 font-semibold text-base">{exportApps.length}</span>
+              {' '}app{exportApps.length !== 1 ? 's' : ''} across{' '}
+              <span className="text-violet-300 font-semibold">{selectedEnvCount}</span>
+              {' '}sheet{selectedEnvCount !== 1 ? 's' : ''}
+            </p>
+            <p className="text-xs text-gray-600 mt-0.5">
+              Columns per sheet: Integration Name · Mule Version · Status · Deployment Type
+            </p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-800 flex-shrink-0">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+            Cancel
+          </button>
+          <button onClick={doExport} disabled={exportApps.length === 0}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-violet-700 hover:bg-violet-600 disabled:opacity-40 text-white rounded-lg transition-colors">
+            <FileSpreadsheet size={13} />
+            Export{exportApps.length > 0 ? ` (${exportApps.length} apps · ${selectedEnvCount} sheets)` : ''}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Standalone fetch helper used by the SWR background-refresh path in loadApps.
  * Fetches apps + envs for the given BG IDs, merges them, stores in cache,
@@ -818,6 +1037,7 @@ export default function ApplicationsPage() {
 
   const [error, setError] = useState('');
   const [showExport, setShowExport] = useState(false);
+  const [showExportApps, setShowExportApps] = useState(false);
   const [showBulkPing, setShowBulkPing] = useState(false);
 
   // Single-app action states
@@ -1256,6 +1476,33 @@ export default function ApplicationsPage() {
     ];
   }, [selectedApps]);
 
+  /* ── Export Apps to XLSX ───────────────────────────── */
+  const exportAppsToXlsx = useCallback(() => {
+    const source = selectedApps.length > 0 ? selectedApps : filtered;
+    if (source.length === 0) return;
+
+    const rows = source.map(app => ({
+      'Environment': app.environment?.name || '—',
+      'Integration Name': app.name || '—',
+      'Mule Version': app.muleVersion || '—',
+      'Status': (app.status || '—').toUpperCase(),
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // Auto-size columns
+    const headers = Object.keys(rows[0]);
+    ws['!cols'] = headers.map(h => ({
+      wch: Math.max(h.length, ...rows.map(r => String(r[h] || '').length)) + 2,
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Applications');
+
+    const filename = `apps-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
+  }, [selectedApps, filtered]);
+
   /* ── Select options ────────────────────────────────── */
   // Apply BG filter to the visible list
   const visibleGroups = applyBgFilter(allBusinessGroups);
@@ -1336,6 +1583,16 @@ export default function ApplicationsPage() {
         <BulkPingModal
           apps={selectedApps.length > 0 ? selectedApps : filtered}
           onClose={() => setShowBulkPing(false)}
+        />
+      )}
+
+      {/* Export Apps Modal */}
+      {showExportApps && (
+        <ExportAppsModal
+          apps={apps}
+          allBusinessGroups={allBusinessGroups}
+          environments={environments}
+          onClose={() => setShowExportApps(false)}
         />
       )}
 
@@ -1488,6 +1745,13 @@ export default function ApplicationsPage() {
             className="flex items-center gap-2 text-sm text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 hover:bg-cyan-950/60 border border-cyan-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
             <Activity size={14} />
             {selectedApps.length > 0 ? `Ping (${selectedApps.length})` : 'Ping Test'}
+          </button>
+          <button
+            onClick={() => setShowExportApps(true)}
+            disabled={loading || apps.length === 0}
+            title="Export apps to Excel — choose Business Group and Environment"
+            className="flex items-center gap-2 text-sm text-violet-400 hover:text-violet-300 bg-violet-950/40 hover:bg-violet-950/60 border border-violet-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
+            <FileSpreadsheet size={14} /> Export Apps
           </button>
           <button onClick={() => setShowExport(true)} disabled={loading || apps.length === 0}
             title={selectedApps.length > 0 ? `Export CPS for ${selectedApps.length} selected apps` : 'Export CPS Properties to Excel'}

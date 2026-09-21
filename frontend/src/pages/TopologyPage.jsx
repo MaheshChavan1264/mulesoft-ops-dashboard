@@ -1,16 +1,28 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
-import { Activity, RefreshCw, AlertTriangle, Play, ChevronLeft, ChevronRight, Layers, Filter } from 'lucide-react';
+import { Activity, RefreshCw, AlertTriangle, Play, ChevronLeft, ChevronRight, Layers, Filter, KeyRound } from 'lucide-react';
 import Select from '../components/Select';
-import api, { isDemoMode } from '../services/api';
+import api from '../services/api';
 import DependencyGraph from '../components/DependencyGraph';
-import { getVisibleBgIds, getVisibleEnvIds, applyBgFilter, applyEnvFilter } from '../utils/filterUtils';
+import { applyBgFilter, applyEnvFilter } from '../utils/filterUtils';
+
+/**
+ * Normalise a human-readable Anypoint environment name to the two-tier key
+ * used by the CPS server: 'prod' or 'uat'.
+ *
+ * prod  → environments whose name contains "prod" or "pd"
+ * uat   → everything else  (sandbox, dev, staging, uat, stg, …)
+ */
+function normaliseEnvTier(envName = '') {
+  return /\b(prod|pd|production)\b/i.test(envName) ? 'prod' : 'uat';
+}
 
 export default function TopologyPage() {
   const { user } = useAuth();
-  const { getGlobalCredential } = useCpsCredentialStore();
-  
+  // Use the simple credential map loaded by the "Import CPS Creds" header button
+  const { hasCredentials, getAllCredentials } = useCpsCredentialStore();
+
   const [allBgs, setAllBgs] = useState([]);
   const [bgEnvs, setBgEnvs] = useState([]); // Environments specific to the selected BG
 
@@ -70,20 +82,19 @@ export default function TopologyPage() {
       setLocalEnvId(visibleEnvs[0].id);
     }
   }, [visibleBgs, visibleEnvs, localBgId, localEnvId]);
-  
+
   // Graph controls
   const [direction, setDirection] = useState('full'); // 'full', 'forward', 'backward'
   const [targetAppKey, setTargetAppKey] = useState('');
-  
+
   // Data state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [missingCreds, setMissingCreds] = useState(false);
   const [graphData, setGraphData] = useState(null);
-  
+
   // Edge popover state
   const [popover, setPopover] = useState(null);
-
-
 
   // Compute available apps from graph for the dropdown
   const availableApps = useMemo(() => {
@@ -101,33 +112,46 @@ export default function TopologyPage() {
 
     setLoading(true);
     setError(null);
+    setMissingCreds(false);
     setPopover(null);
-    
+
     try {
+      // Require credentials from the "Import CPS Creds" header button
+      if (!hasCredentials) {
+        setMissingCreds(true);
+        setLoading(false);
+        return;
+      }
+
+      const activeEnvName = visibleEnvs.find(e => e.id === localEnvId)?.name;
+
+      // Build the credentials map from all uploaded client_id/client_secret pairs.
+      // The backend will resolve which client_id to use by reading the
+      // anypoint.platform.client_id ARM property from deployed apps.
+      const allCreds = getAllCredentials(); // [{ clientId, clientSecret }, ...]
+      const credentialsMap = {};
+      for (const { clientId, clientSecret } of allCreds) {
+        credentialsMap[clientId] = clientSecret;
+      }
+
       const params = {
         orgId: localBgId,
         envId: localEnvId,
-        cpsBaseUrl: 'https://anypoint.mulesoft.com', // Demo/Fallback
-        cpsEnvironment: 'Sandbox',
+        cpsBaseUrl: 'https://anypoint.mulesoft.com',
+        cpsEnvironment: normaliseEnvTier(activeEnvName),
         bgOrgId: localBgId,
         direction,
       };
-      
-      const activeBgName = visibleBgs.find(b => b.id === localBgId)?.name;
-      const activeEnvName = visibleEnvs.find(e => e.id === localEnvId)?.name;
-      
-      // Try to get credentials from global CSV context
-      const creds = activeBgName && activeEnvName ? getGlobalCredential(activeBgName, activeEnvName, 'ch2') : null;
-      
-      const headers = {};
-      if (creds) {
-        headers['x-cps-client-id'] = creds.clientId;
-        headers['x-cps-client-secret'] = creds.clientSecret;
-      }
+
+      const headers = {
+        // Pass the full credentials map; the backend resolves the right one
+        // via ARM properties (anypoint.platform.client_id)
+        'x-cps-credentials-map': JSON.stringify(credentialsMap),
+      };
 
       if (direction !== 'full') {
         if (!targetAppKey) {
-          // Can't run directional without target
+          // Can't run directional without a target app
           setLoading(false);
           return;
         }
@@ -141,7 +165,7 @@ export default function TopologyPage() {
     } finally {
       setLoading(false);
     }
-  }, [localBgId, localEnvId, direction, targetAppKey]);
+  }, [localBgId, localEnvId, direction, targetAppKey, hasCredentials, getAllCredentials]);
 
   // Initial fetch for full graph when env changes
   useEffect(() => {
@@ -152,10 +176,7 @@ export default function TopologyPage() {
 
   // Handle edge click
   const handleEdgeClick = useCallback((edge, position) => {
-    setPopover({
-      edge,
-      position,
-    });
+    setPopover({ edge, position });
   }, []);
 
   return (
@@ -170,7 +191,7 @@ export default function TopologyPage() {
             </h1>
             <p className="text-sm text-gray-400 mt-1">Visualize dependencies and blast radius using CPS properties</p>
           </div>
-          
+
           <div className="flex items-center gap-3">
             <Select
               value={localBgId}
@@ -219,7 +240,7 @@ export default function TopologyPage() {
               <ChevronLeft size={14} /> Backward Impact
             </button>
           </div>
-          
+
           {/* Target Selector */}
           {(direction === 'forward' || direction === 'backward') && (
             <div className="flex items-center gap-3">
@@ -246,7 +267,27 @@ export default function TopologyPage() {
 
       {/* Main Canvas Area */}
       <div className="flex-1 relative overflow-hidden bg-gray-950">
-        {error ? (
+        {missingCreds ? (
+          <div className="absolute inset-0 flex items-center justify-center p-6">
+            <div className="bg-amber-950/30 border border-amber-700/50 rounded-xl p-8 max-w-lg text-center flex flex-col items-center gap-4">
+              <KeyRound className="text-amber-400" size={36} />
+              <div>
+                <h2 className="text-amber-300 font-semibold text-lg mb-1">CPS Credentials Required</h2>
+                <p className="text-gray-300 text-sm">
+                  The topology graph uses your Connected App credentials to read CPS properties.
+                  No credentials have been imported yet.
+                </p>
+              </div>
+              <p className="text-gray-400 text-xs leading-relaxed">
+                Click the <strong className="text-purple-300">Import CPS Creds</strong> button
+                in the top header to upload your <code className="text-gray-200 bg-gray-800 px-1 rounded">client_id,client_secret</code> CSV.
+                The correct credential is automatically resolved from each app's
+                <code className="text-gray-200 bg-gray-800 px-1 rounded mx-1">anypoint.platform.client_id</code>
+                ARM property.
+              </p>
+            </div>
+          </div>
+        ) : error ? (
           <div className="absolute inset-0 flex items-center justify-center p-6">
             <div className="bg-red-950/40 border border-red-900/50 rounded-xl p-6 max-w-lg text-center flex flex-col items-center">
               <AlertTriangle className="text-red-400 mb-3" size={32} />
@@ -262,8 +303,8 @@ export default function TopologyPage() {
             </div>
           </div>
         ) : (
-          <DependencyGraph 
-            graphData={graphData} 
+          <DependencyGraph
+            graphData={graphData}
             direction={direction}
             targetAppKey={targetAppKey}
             onEdgeClick={handleEdgeClick}
@@ -272,11 +313,11 @@ export default function TopologyPage() {
 
         {/* Edge details popover */}
         {popover && popover.edge && (
-          <div 
+          <div
             className="absolute z-50 bg-gray-900 border border-gray-700 shadow-2xl rounded-lg p-4 text-sm min-w-[300px]"
-            style={{ 
-              top: Math.min(popover.position.y - 120, window.innerHeight - 200), // simplistic boundary check
-              left: Math.min(popover.position.x + 10, window.innerWidth - 320)
+            style={{
+              top: Math.min(popover.position.y - 120, window.innerHeight - 200),
+              left: Math.min(popover.position.x + 10, window.innerWidth - 320),
             }}
             onClick={e => e.stopPropagation()}
           >
@@ -287,9 +328,9 @@ export default function TopologyPage() {
               <span className="text-gray-500">Target:</span>
               <span className="text-gray-200 font-mono text-xs">{popover.edge.target}</span>
               <span className="text-gray-500">CPS Key:</span>
-              <span className="text-emerald-400 font-mono text-xs bg-emerald-950/30 px-1 rounded">{popover.edge.data?.propertyKey || 'Unknown'}</span>
+              <span className="text-emerald-400 font-mono text-xs bg-emerald-950/30 px-1 rounded">{popover.edge.data?.propertyKey || popover.edge.propertyKey || 'Unknown'}</span>
               <span className="text-gray-500">Host URL:</span>
-              <span className="text-blue-400 font-mono text-xs break-all">{popover.edge.data?.propertyValue || 'Unknown'}</span>
+              <span className="text-blue-400 font-mono text-xs break-all">{popover.edge.data?.propertyValue || popover.edge.propertyValue || 'Unknown'}</span>
             </div>
           </div>
         )}
