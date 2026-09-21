@@ -9,7 +9,8 @@ import {
   Users,
   Database,
   Globe,
-  ChevronRight
+  ChevronRight,
+  Network
 } from 'lucide-react';
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { to: '/cps-compare', icon: GitCompare, label: 'CPS Compare' },
   { to: '/cps-manager', icon: Database, label: 'CPS Manager' },
   { to: '/global-cps-manager', icon: Globe, label: 'Global CPS Manager' },
+  { to: '/topology', icon: Network, label: 'Network Topology' },
   { to: '/user-search', icon: Users, label: 'Global Search' },
 ];
 

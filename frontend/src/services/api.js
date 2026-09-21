@@ -101,6 +101,25 @@ const mockHandler = async (url, params, data = null) => {
   if (url === '/cps/credentials/test') return { valid: true, statusCode: 200, message: 'Demo mode — connected successfully' };
   if (url === '/cps/binary') return { success: true, uploaded: 'demo.jks', sizeBytes: 1024 };
 
+  // Topology
+  if (url.startsWith('/topology')) {
+    return {
+      nodes: [
+        { id: 'exp-mobile-api', label: 'exp-mobile-api', type: 'XAPI', isKnownApp: true },
+        { id: 'prc-order-api', label: 'prc-order-api', type: 'PAPI', isKnownApp: true },
+        { id: 'sys-sfdc-api', label: 'sys-sfdc-api', type: 'SAPI', isKnownApp: true },
+        { id: 'sys-sap-api', label: 'sys-sap-api', type: 'SAPI', isKnownApp: true },
+        { id: 'api.stripe.com', label: 'api.stripe.com', type: 'EXTERNAL', isKnownApp: false }
+      ],
+      edges: [
+        { id: 'e1', source: 'exp-mobile-api', target: 'prc-order-api', propertyKey: 'prc.order.host', propertyValue: 'prc-order-api.cloudhub.io' },
+        { id: 'e2', source: 'prc-order-api', target: 'sys-sfdc-api', propertyKey: 'sys.sfdc.host', propertyValue: 'sys-sfdc-api.cloudhub.io' },
+        { id: 'e3', source: 'prc-order-api', target: 'sys-sap-api', propertyKey: 'sys.sap.host', propertyValue: 'sys-sap-api.cloudhub.io' },
+        { id: 'e4', source: 'sys-sap-api', target: 'api.stripe.com', propertyKey: 'stripe.url', propertyValue: 'https://api.stripe.com' },
+      ]
+    };
+  }
+
   // Health / Ping History
   if (url.includes('/health/ping/history')) {
     return [...demoPingHistory].sort((a, b) => b.timestamp - a.timestamp);
