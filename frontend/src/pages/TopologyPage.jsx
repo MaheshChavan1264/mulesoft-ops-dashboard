@@ -7,6 +7,13 @@ import api, { isDemoMode } from '../services/api';
 import DependencyGraph from '../components/DependencyGraph';
 import { getVisibleBgIds, getVisibleEnvIds, applyBgFilter, applyEnvFilter } from '../utils/filterUtils';
 
+function detectEnvType(envName = '') {
+  const s = envName.toLowerCase();
+  if (/\b(prod|pd)\b/.test(s)) return 'prod';
+  if (/\b(uat|ut|stag(e|ing)?|stg|uap|sandbox)\b/.test(s)) return 'uat';
+  return 'prod';
+}
+
 export default function TopologyPage() {
   const { user } = useAuth();
   const { getGlobalCredential } = useCpsCredentialStore();
@@ -117,7 +124,8 @@ export default function TopologyPage() {
       const activeEnvName = visibleEnvs.find(e => e.id === localEnvId)?.name;
       
       // Try to get credentials from global CSV context
-      const creds = activeBgName && activeEnvName ? getGlobalCredential(activeBgName, activeEnvName, 'ch2') : null;
+      const mappedEnvType = activeEnvName ? detectEnvType(activeEnvName) : null;
+      const creds = activeBgName && mappedEnvType ? getGlobalCredential(activeBgName, mappedEnvType, 'ch2') : null;
       
       const headers = {};
       if (creds) {
