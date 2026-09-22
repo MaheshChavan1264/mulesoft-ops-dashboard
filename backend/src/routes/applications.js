@@ -431,7 +431,7 @@ async function _fetchSummary(client, targetOrgId) {
   // Store in NodeCache — TTL eviction is handled automatically by NodeCache's
   // internal checkperiod sweep; no manual cleanup needed.
   summaryCache.set(targetOrgId, { data: responseData, ts: Date.now() });
-  console.log(`[Summary] Cache SET for org ${targetOrgId} (${results.length} apps)`);
+  //console.log(`[Summary] ${new Date().toISOString()} Cache SET for org ${targetOrgId} (${results.length} apps)`);
   return responseData;
 }
 
@@ -465,20 +465,20 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
     if (!forceRefresh && cached && isFresh) {
       // ── Fresh hit — instant response, zero network ───────────────────────
-      console.log(`[Summary] Cache HIT (fresh) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s)`);
+      //console.log(`[Summary] ${new Date().toISOString()} Cache HIT (fresh) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s)`);
       return res.json(cached.data);
     }
 
     if (!forceRefresh && isUsable) {
       // ── Stale-but-usable — respond instantly, refresh in background ──────
-      console.log(`[Summary] Cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s) — BG refresh started`);
+      //console.log(`[Summary] ${new Date().toISOString()} Cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s) — BG refresh started`);
       res.json(cached.data);
 
       // Only start a background refresh if one isn't already running for this org
       if (!inflightSummary.has(targetOrgId)) {
         const p = _fetchSummary(client, targetOrgId)
-          .then(() => console.log(`[Summary] BG refresh done for org ${targetOrgId}`))
-          .catch((err) => console.warn(`[Summary] BG refresh failed for org ${targetOrgId}:`, err.message))
+          .then(() => console.log(`[Summary] ${new Date().toISOString()} BG refresh done for org ${targetOrgId}`))
+          .catch((err) => console.warn(`[Summary] ${new Date().toISOString()} BG refresh failed for org ${targetOrgId}:`, err.message))
           .finally(() => inflightSummary.delete(targetOrgId));
         inflightSummary.set(targetOrgId, p);
       }
@@ -486,11 +486,11 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     }
 
     // ── Cache miss / force-refresh — thundering-herd protected fetch ────────
-    console.log(`[Summary] Cache MISS for org ${targetOrgId} (forceRefresh: ${forceRefresh})`);
+    //console.log(`[Summary] ${new Date().toISOString()} Cache MISS for org ${targetOrgId} (forceRefresh: ${forceRefresh})`);
 
     if (!forceRefresh && inflightSummary.has(targetOrgId)) {
       // Another request is already fetching this org — piggyback on it
-      console.log(`[Summary] Piggybacking on in-flight fetch for org ${targetOrgId}`);
+      //console.log(`[Summary] ${new Date().toISOString()} Piggybacking on in-flight fetch for org ${targetOrgId}`);
       const data = await inflightSummary.get(targetOrgId);
       return res.json(data);
     }
