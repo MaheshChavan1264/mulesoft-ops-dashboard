@@ -1099,6 +1099,10 @@ export default function ApplicationsPage() {
   const [sortColumn, setSortColumn] = useState('');
   const [sortDir, setSortDir]       = useState('asc');
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   const handleSort = (col) => {
     if (sortColumn === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortColumn(col); setSortDir('asc'); }
@@ -1413,6 +1417,15 @@ export default function ApplicationsPage() {
     }
     return result;
   }, [filtered, selectedIds, sortColumn, sortDir]);
+
+  // Reset to page 1 whenever filters, search, sort, or BG selection change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterEnv, filterStatus, filterType, selectedBg, sortColumn, sortDir, filtered.length]);
+
+  // Paginated slice of the display list
+  const totalPages = Math.max(1, Math.ceil(displayFiltered.length / pageSize));
+  const paginatedItems = displayFiltered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const toggleRow = (e, appId) => {
     e.stopPropagation();
@@ -1922,7 +1935,7 @@ export default function ApplicationsPage() {
               </tr>
             </thead>
             <tbody>
-              {displayFiltered.map((app, idx) => {
+              {paginatedItems.map((app, idx) => {
                 const actions = availableActions(app.status);
                 const isActing = !!actionLoading[app.id];
                 const isChecked = selectedIds.has(app.id);
@@ -2042,11 +2055,122 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {filtered.length > 0 && (
-        <p className="text-xs text-gray-600 text-right">
-          {selectedApps.length > 0 && <span className="text-blue-500 mr-2">{selectedApps.length} selected ·</span>}
-          Showing {filtered.length} of {apps.length}
-        </p>
+      {/* Pagination controls */}
+      {!loading && filtered.length > 0 && (
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          {/* Left: selected + total info */}
+          <div className="flex items-center gap-2 text-xs text-gray-600">
+            {selectedApps.length > 0 && (
+              <span className="text-blue-400 font-medium">{selectedApps.length} selected ·</span>
+            )}
+            <span>
+              {displayFiltered.length === apps.length
+                ? `${apps.length} application${apps.length !== 1 ? 's' : ''}`
+                : `${displayFiltered.length} of ${apps.length} applications`}
+            </span>
+          </div>
+
+          {/* Right: page-size picker + prev/next */}
+          <div className="flex items-center gap-3">
+            {/* Page size selector */}
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <span>Rows</span>
+              <div className="flex items-center gap-0.5 bg-gray-800/70 border border-gray-700/60 rounded-lg p-0.5">
+                {[25, 50, 100, 200].map(size => (
+                  <button
+                    key={size}
+                    onClick={() => { setPageSize(size); setCurrentPage(1); }}
+                    className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
+                      pageSize === size
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/60'
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Page navigation */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="px-2 py-1 text-[10px] text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="First page"
+                >
+                  «
+                </button>
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-2.5 py-1 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  ‹
+                </button>
+
+                {/* Page number pills */}
+                <div className="flex items-center gap-0.5">
+                  {(() => {
+                    const pages = [];
+                    const delta = 2;
+                    const left = Math.max(1, currentPage - delta);
+                    const right = Math.min(totalPages, currentPage + delta);
+                    if (left > 1) {
+                      pages.push(1);
+                      if (left > 2) pages.push('...');
+                    }
+                    for (let i = left; i <= right; i++) pages.push(i);
+                    if (right < totalPages) {
+                      if (right < totalPages - 1) pages.push('...');
+                      pages.push(totalPages);
+                    }
+                    return pages.map((p, i) =>
+                      p === '...' ? (
+                        <span key={`ellipsis-${i}`} className="px-1.5 text-[10px] text-gray-600">…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          onClick={() => setCurrentPage(p)}
+                          className={`min-w-[26px] h-[26px] text-[10px] font-medium rounded transition-all ${
+                            currentPage === p
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      )
+                    );
+                  })()}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-2.5 py-1 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  ›
+                </button>
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="px-2 py-1 text-[10px] text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Last page"
+                >
+                  »
+                </button>
+
+                {/* Compact page range label */}
+                <span className="text-[10px] text-gray-600 ml-1 tabular-nums whitespace-nowrap">
+                  {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, displayFiltered.length)} of {displayFiltered.length}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

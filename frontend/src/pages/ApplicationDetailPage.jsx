@@ -11,6 +11,136 @@ import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { availableActions, ACTION_CONFIG } from '../utils/appUtils';
 import cronstrue from 'cronstrue';
 
+/* ── Cron next-run calculator ──────────────────────────── */
+/**
+ * Computes the next scheduled run date from a cron expression.
+ * Supports:
+ *   5-field Unix cron  : min hr dom mon dow
+ *   6-field Quartz cron: sec min hr dom mon dow
+ *   7-field Quartz cron: sec min hr dom mon dow year
+ * Returns a Date object, or null if the expression cannot be parsed / matched.
+ */
+function getNextCronRun(cronExpr) {
+  if (!cronExpr || typeof cronExpr !== 'string') return null;
+  try {
+    const parts = cronExpr.trim().replace(/\s+/g, ' ').split(' ');
+    if (parts.length < 5 || parts.length > 7) return null;
+
+    // Parse one cron field into a Set of valid integer values.
+    // Returns null for wildcards (* or ?) meaning "any value matches".
+    const parseField = (field, min, max) => {
+      if (field === '*' || field === '?') return null;
+      const vals = new Set();
+      for (const seg of field.split(',')) {
+        if (seg.includes('/')) {
+          const [rangePart, stepStr] = seg.split('/');
+          const step = Math.max(1, parseInt(stepStr, 10));
+          let start = min, end = max;
+          if (rangePart !== '*' && rangePart !== '') {
+            if (rangePart.includes('-')) {
+              const [a, b] = rangePart.split('-').map(Number);
+              start = a; end = b;
+            } else {
+              start = parseInt(rangePart, 10);
+            }
+          }
+          for (let i = start; i <= end; i += step) vals.add(i);
+        } else if (seg.includes('-')) {
+          const [a, b] = seg.split('-').map(Number);
+          for (let i = a; i <= b; i++) vals.add(i);
+        } else {
+          const n = parseInt(seg, 10);
+          if (!isNaN(n)) vals.add(n);
+        }
+      }
+      return vals.size > 0 ? vals : null;
+    };
+
+    let secF, minF, hrF, domF, monF, dowF;
+    if (parts.length === 5) {
+      // Unix cron: min hr dom mon dow  (seconds fixed to 0)
+      secF = new Set([0]);
+      minF = parseField(parts[0], 0, 59);
+      hrF  = parseField(parts[1], 0, 23);
+      domF = parseField(parts[2], 1, 31);
+      monF = parseField(parts[3], 1, 12);
+      dowF = parseField(parts[4], 0, 6); // 0=Sun…6=Sat
+    } else {
+      // Quartz cron: sec min hr dom mon dow [year]
+      secF = parseField(parts[0], 0, 59);
+      minF = parseField(parts[1], 0, 59);
+      hrF  = parseField(parts[2], 0, 23);
+      domF = parseField(parts[3], 1, 31);
+      monF = parseField(parts[4], 1, 12);
+      // Quartz dow: 1=SUN…7=SAT  →  JS getDay(): 0=SUN…6=SAT
+      const rawDow = parseField(parts[5], 1, 7);
+      dowF = rawDow ? new Set([...rawDow].map(d => d - 1)) : null;
+    }
+
+    // hit(set, val) → true if set is null (wildcard) or contains val
+    const hit = (set, val) => set === null || set.has(val);
+    // nextHigher(set, cur) → lowest value in set that is > cur, or null if none
+    const nextHigher = (set, cur) => {
+      const arr = [...set].filter(v => v > cur).sort((a, b) => a - b);
+      return arr.length > 0 ? arr[0] : null;
+    };
+
+    // DOM/DOW OR-logic: when both are restricted (non-wildcard), Quartz says "either can trigger"
+    const domRaw = parts.length === 5 ? parts[2] : parts[3];
+    const dowRaw = parts.length === 5 ? parts[4] : parts[5];
+    const domWild = domRaw === '*' || domRaw === '?';
+    const dowWild = dowRaw === '*' || dowRaw === '?';
+
+    const d = new Date();
+    d.setMilliseconds(0);
+    d.setSeconds(d.getSeconds() + 1); // start searching from the next second
+
+    const limit = new Date(d.getTime() + 366 * 24 * 3600 * 1000); // search up to 1 year ahead
+
+    while (d <= limit) {
+      // ── Month (JS 0-indexed → cron 1-indexed) ────────────────────────────
+      if (!hit(monF, d.getMonth() + 1)) {
+        const nxt = nextHigher(monF, d.getMonth() + 1);
+        if (nxt === null) { d.setFullYear(d.getFullYear() + 1, 0, 1); d.setHours(0, 0, 0); }
+        else              { d.setMonth(nxt - 1, 1); d.setHours(0, 0, 0); }
+        continue;
+      }
+      // ── Day-of-month / Day-of-week ────────────────────────────────────────
+      const domOk = hit(domF, d.getDate());
+      const dowOk = hit(dowF, d.getDay());
+      const dayOk = (!domWild && !dowWild) ? (domOk || dowOk)  // both specified → OR
+                  : domWild                 ? dowOk              // only DOW matters
+                  :                          domOk;              // only DOM matters
+      if (!dayOk) { d.setDate(d.getDate() + 1); d.setHours(0, 0, 0); continue; }
+      // ── Hour ──────────────────────────────────────────────────────────────
+      if (!hit(hrF, d.getHours())) {
+        const nxt = nextHigher(hrF, d.getHours());
+        if (nxt === null) { d.setDate(d.getDate() + 1); d.setHours(0, 0, 0); }
+        else              { d.setHours(nxt, 0, 0); }
+        continue;
+      }
+      // ── Minute ────────────────────────────────────────────────────────────
+      if (!hit(minF, d.getMinutes())) {
+        const nxt = nextHigher(minF, d.getMinutes());
+        if (nxt === null) { d.setHours(d.getHours() + 1, 0, 0); }
+        else              { d.setMinutes(nxt, 0); }
+        continue;
+      }
+      // ── Second ────────────────────────────────────────────────────────────
+      if (!hit(secF, d.getSeconds())) {
+        const nxt = nextHigher(secF, d.getSeconds());
+        if (nxt === null) { d.setMinutes(d.getMinutes() + 1, 0); }
+        else              { d.setSeconds(nxt); }
+        continue;
+      }
+      return new Date(d); // all fields match → found next run
+    }
+    return null; // no match within 1 year
+  } catch {
+    return null;
+  }
+}
+
 /* ── Micro components ──────────────────────────────────── */
 
 // CopyBtn is imported from components/CopyBtn (hover-fade shared component).
@@ -361,7 +491,12 @@ export default function ApplicationDetailPage() {
     setSchedulersLoading(true);
     try {
       const res = await api.get(`/applications/cloudhub2/${orgId}/${envId}/${appId}/schedulers`);
-      const items = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+      const rawItems = Array.isArray(res.data) ? res.data
+        : (res.data?.schedulers || res.data?.items || []);
+      const items = rawItems;
+      if (items.length > 0) {
+        console.log('[Schedulers] raw sample item:', JSON.stringify(items[0], null, 2));
+      }
       setCh2Schedulers(items);
 
       // Auto-resolve CPS properties for ${...} placeholder expressions
@@ -1123,7 +1258,7 @@ export default function ApplicationDetailPage() {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-slate-800/50 border-b border-slate-700/40">
-                    {['Flow Name','Cron Expression','Last Run','State'].map(h=>(
+                    {['Flow Name','Cron Expression','Last Run','Next Run','State'].map(h=>(
                       <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -1155,6 +1290,10 @@ export default function ApplicationDetailPage() {
                         // ignore parsing errors (e.g. non-standard crons)
                       }
                     }
+                    // Compute next run from cron expression (works for both CH1 and CH2 since
+                    // the Anypoint Platform schedulers API does not return nextRun reliably).
+                    // Only compute for ENABLED schedulers — a disabled scheduler has no next run.
+                    const computedNextRun = (cron && !isUnresolvedPlaceholder && active) ? getNextCronRun(cron) : null;
                     // CH2 fixed-frequency: s.schedule.frequency; CH1: s.frequency or s.schedule.period
                     const freq = s.frequency ||
                                  s.schedule?.frequency ||
@@ -1189,7 +1328,48 @@ export default function ApplicationDetailPage() {
                             : <span className="text-slate-700 text-xs">—</span>}
                         </td>
                         <td className="px-5 py-4 align-top">
-                          <span className="text-slate-500 text-xs">{s.lastRun?new Date(s.lastRun).toLocaleString():'—'}</span>
+                          {(() => {
+                            // Check all known field paths; use != null so numeric 0 is also skipped
+                            const candidates = [
+                              s.lastRun, s.schedule?.lastRun, s.status?.lastRun,
+                              s.lastRunAt, s.schedule?.lastRunAt, s.status?.lastRunAt,
+                              s.lastFireAt, s.schedule?.lastFireAt, s.status?.lastFireAt,
+                              s.lastFiredAt, s.schedule?.lastFiredAt, s.status?.lastFiredAt,
+                              s.lastFired, s.schedule?.lastFired, s.status?.lastFired,
+                              s.lastRunTime, s.schedule?.lastRunTime, s.status?.lastRunTime,
+                              s.lastExecution, s.schedule?.lastExecution, s.status?.lastExecution,
+                              s.lastTriggerTime, s.schedule?.lastTriggerTime, s.stats?.lastRun,
+                              s.trigger?.lastFireTime, s.meta?.lastRun,
+                            ];
+                            const lastRunRaw = candidates.find(v => v != null && v !== 0 && v !== '');
+                            if (!lastRunRaw) {
+                              return isCH1
+                                ? <span className="text-slate-600 text-xs">—</span>
+                                : <span className="text-slate-600 text-xs" title="Last run not returned by CH2 schedulers API">—</span>;
+                            }
+                            const d = new Date(lastRunRaw);
+                            const valid = !isNaN(d.getTime()) && d.getFullYear() > 1970;
+                            return valid ? (
+                              <div className="space-y-0.5">
+                                <span className="text-slate-300 text-xs font-mono">{d.toLocaleDateString()}</span>
+                                <p className="text-slate-500 text-[10px] font-mono">{d.toLocaleTimeString()}</p>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500 text-xs font-mono">{String(lastRunRaw)}</span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-5 py-4 align-top">
+                          {computedNextRun ? (
+                            <div className="space-y-0.5">
+                              <span className="text-slate-300 text-xs font-mono">{computedNextRun.toLocaleDateString()}</span>
+                              <p className="text-slate-500 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
+                            </div>
+                          ) : freq ? (
+                            <span className="text-slate-600 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>
+                          ) : (
+                            <span className="text-slate-600 text-xs">—</span>
+                          )}
                         </td>
                         <td className="px-5 py-4 align-top">
                           <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${active?'bg-emerald-950/50 text-emerald-300 border-emerald-700/50':'bg-slate-800/60 text-slate-500 border-slate-700/50'}`}>
