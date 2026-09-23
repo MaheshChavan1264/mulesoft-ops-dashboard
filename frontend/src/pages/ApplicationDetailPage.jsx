@@ -1293,13 +1293,13 @@ export default function ApplicationDetailPage() {
                     // Compute next run from cron expression (works for both CH1 and CH2 since
                     // the Anypoint Platform schedulers API does not return nextRun reliably).
                     // Only compute for ENABLED schedulers — a disabled scheduler has no next run.
+                    const active = s.enabled!==false;
                     const computedNextRun = (cron && !isUnresolvedPlaceholder && active) ? getNextCronRun(cron) : null;
                     // CH2 fixed-frequency: s.schedule.frequency; CH1: s.frequency or s.schedule.period
                     const freq = s.frequency ||
                                  s.schedule?.frequency ||
                                  (s.schedule?.period > 0 ? s.schedule.period : null);
                     const timeUnit = s.timeUnit || s.schedule?.timeUnit;
-                    const active = s.enabled!==false;
                     return (
                       <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
                         <td className="px-5 py-4 align-top">
