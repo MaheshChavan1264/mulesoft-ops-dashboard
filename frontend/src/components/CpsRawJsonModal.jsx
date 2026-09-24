@@ -1,324 +1,623 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Code, AlertTriangle, Save, AlignLeft, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, AlertTriangle, Save, AlignLeft, ChevronUp, ChevronDown, Search, RefreshCw } from 'lucide-react';
 
-export default function CpsRawJsonModal({ 
-  isOpen, 
-  onClose, 
-  initialJson, 
-  onSave, 
-  title = "Edit Raw JSON", 
-  description = "Paste or edit your raw JSON payload here.",
-  readOnly = false
+/* ═══════════════════════════════════════════════════
+   Postman Light Palette
+═══════════════════════════════════════════════════ */
+const PM = {
+  bg:          '#ffffff',
+  panelBg:     '#f5f5f5',
+  toolbarBg:   '#efefef',
+  editorBg:    '#ffffff',
+  border:      '#e0e0e0',
+  borderFocus: '#ff6c37',
+  orange:      '#ff6c37',
+  orangeDim:   'rgba(255,108,55,0.12)',
+  orangeHover: '#e05a28',
+  text:        '#2d2d2d',
+  textMuted:   '#666666',
+  textDim:     '#bbbbbb',
+  inputBg:     '#ffffff',
+  // JSON syntax
+  jsonKey:     '#c41a16',
+  jsonString:  '#0451a5',
+  jsonNumber:  '#098658',
+  jsonKeyword: '#0000cc',
+  jsonPunct:   '#555555',
+  lineNum:     '#c0c0c0',
+  lineNumBg:   '#f8f8f8',
+  // Error
+  errBg:       'rgba(220,38,38,0.05)',
+  errBorder:   'rgba(220,38,38,0.25)',
+  errText:     '#dc2626',
+};
+
+/* ═══════════════════════════════════════════════════
+   JSON Tokenizer  (returns [{text, type, start, end}])
+═══════════════════════════════════════════════════ */
+function tokenizeJSON(text) {
+  if (!text) return [];
+  /* Groups:
+     1 key-string   2 colon-suffix
+     3 string-value
+     4 number
+     5 keyword (true/false/null)
+     6 punctuation  {}[],:
+     7 whitespace / plain
+  */
+  const RE = /("(?:[^"\\]|\\.)*")(\s*:)|("(?:[^"\\]|\\.)*")|(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)|(true|false|null)|([{}\[\],:])|([^"{\}\[\],:\d\-\ntruefals]+|\s+|.)/g;
+  const tokens = [];
+  let last = 0;
+  let m;
+  while ((m = RE.exec(text)) !== null) {
+    if (m.index > last) {
+      tokens.push({ text: text.slice(last, m.index), type: 'plain', start: last, end: m.index });
+    }
+    const s = m.index;
+    if (m[1] !== undefined) {
+      tokens.push({ text: m[1], type: 'key',        start: s,                   end: s + m[1].length });
+      tokens.push({ text: m[2], type: 'colon',      start: s + m[1].length,     end: s + m[0].length });
+    } else if (m[3] !== undefined) {
+      tokens.push({ text: m[3], type: 'string',     start: s, end: s + m[3].length });
+    } else if (m[4] !== undefined) {
+      tokens.push({ text: m[4], type: 'number',     start: s, end: s + m[4].length });
+    } else if (m[5] !== undefined) {
+      tokens.push({ text: m[5], type: 'keyword',    start: s, end: s + m[5].length });
+    } else if (m[6] !== undefined) {
+      tokens.push({ text: m[6], type: 'punctuation',start: s, end: s + m[6].length });
+    } else {
+      tokens.push({ text: m[7] ?? m[0], type: 'plain', start: s, end: s + (m[7] ?? m[0]).length });
+    }
+    last = RE.lastIndex;
+  }
+  if (last < text.length) {
+    tokens.push({ text: text.slice(last), type: 'plain', start: last, end: text.length });
+  }
+  return tokens;
+}
+
+function tokenColor(type) {
+  switch (type) {
+    case 'key':         return PM.jsonKey;
+    case 'string':      return PM.jsonString;
+    case 'number':      return PM.jsonNumber;
+    case 'keyword':     return PM.jsonKeyword;
+    case 'punctuation':
+    case 'colon':       return PM.jsonPunct;
+    default:            return PM.text;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   Component
+═══════════════════════════════════════════════════ */
+export default function CpsRawJsonModal({
+  isOpen,
+  onClose,
+  initialJson,
+  onSave,
+  title       = 'Edit Raw JSON',
+  description = 'Paste or edit your raw JSON payload here.',
+  readOnly    = false,
 }) {
-  const [jsonText, setJsonText] = useState('');
-  const [error, setError] = useState('');
-  const [findText, setFindText] = useState('');
-  const [replaceText, setReplaceText] = useState('');
-  
-  // New State for Advanced Find
-  const [useRegex, setUseRegex] = useState(false);
-  const [matchCase, setMatchCase] = useState(false);
-  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const [jsonText,        setJsonText]        = useState('');
+  const [error,           setError]           = useState('');
+  const [findText,        setFindText]        = useState('');
+  const [replaceText,     setReplaceText]     = useState('');
+  const [useRegex,        setUseRegex]        = useState(false);
+  const [matchCase,       setMatchCase]       = useState(false);
+  const [activeMatchIdx,  setActiveMatchIdx]  = useState(0);
+  const [showReplace,     setShowReplace]     = useState(false);
 
-  const backdropRef = useRef(null);
-  const textareaRef = useRef(null);
-  const activeMatchRef = useRef(null);
+  const backdropRef   = useRef(null);
+  const textareaRef   = useRef(null);
+  const activeMarkRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
       setJsonText(JSON.stringify(initialJson, null, 2));
-      setError('');
-      setFindText('');
-      setReplaceText('');
-      setActiveMatchIndex(0);
+      setError(''); setFindText(''); setReplaceText(''); setActiveMatchIdx(0);
     }
   }, [isOpen, initialJson]);
 
-  // Derived state for searching and highlighting
-  const { searchRegex, searchError, chunks, totalMatches } = useMemo(() => {
-    if (!findText) {
-      return { searchRegex: null, searchError: '', chunks: [{ text: jsonText, isMatch: false }], totalMatches: 0 };
-    }
-
-    let regex = null;
-    let err = '';
+  /* ── Build search regex ── */
+  const { searchRegex, searchError } = useMemo(() => {
+    if (!findText) return { searchRegex: null, searchError: '' };
     const flags = matchCase ? 'g' : 'gi';
-    
     try {
-      regex = useRegex 
-        ? new RegExp(findText, flags) 
+      const r = useRegex
+        ? new RegExp(findText, flags)
         : new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
-    } catch (e) {
-      err = 'Invalid Regex';
-      return { searchRegex: null, searchError: err, chunks: [{ text: jsonText, isMatch: false }], totalMatches: 0 };
+      return { searchRegex: r, searchError: '' };
+    } catch {
+      return { searchRegex: null, searchError: 'Invalid regex' };
     }
+  }, [findText, useRegex, matchCase]);
 
-    const newChunks = [];
-    let matchCounter = 0;
-    let lastIndex = 0;
-    let match;
-
-    // Execute regex
-    while ((match = regex.exec(jsonText)) !== null) {
-      if (match.index === regex.lastIndex) {
-        regex.lastIndex++; // prevent infinite loops for zero-length matches
-      }
-      newChunks.push({ text: jsonText.substring(lastIndex, match.index), isMatch: false });
-      newChunks.push({ text: match[0], isMatch: true, index: matchCounter++ });
-      lastIndex = match.index + match[0].length;
+  /* ── Build match ranges ── */
+  const matchRanges = useMemo(() => {
+    if (!searchRegex || !jsonText) return [];
+    searchRegex.lastIndex = 0;
+    const ranges = [];
+    let m, idx = 0;
+    while ((m = searchRegex.exec(jsonText)) !== null) {
+      ranges.push({ start: m.index, end: m.index + m[0].length, matchIndex: idx++ });
+      if (m[0].length === 0) searchRegex.lastIndex++;
     }
-    newChunks.push({ text: jsonText.substring(lastIndex), isMatch: false });
+    return ranges;
+  }, [searchRegex, jsonText]);
 
-    return { searchRegex: regex, searchError: '', chunks: newChunks, totalMatches: matchCounter };
-  }, [jsonText, findText, useRegex, matchCase]);
+  const totalMatches = matchRanges.length;
 
-  // Ensure activeMatchIndex remains in bounds
   useEffect(() => {
-    if (totalMatches > 0 && activeMatchIndex >= totalMatches) {
-      setActiveMatchIndex(totalMatches - 1);
-    } else if (totalMatches === 0) {
-      setActiveMatchIndex(0);
-    }
-  }, [totalMatches, activeMatchIndex]);
+    if (totalMatches > 0 && activeMatchIdx >= totalMatches) setActiveMatchIdx(totalMatches - 1);
+    else if (totalMatches === 0) setActiveMatchIdx(0);
+  }, [totalMatches, activeMatchIdx]);
 
-  // Auto-scroll to active match
   useEffect(() => {
-    if (totalMatches > 0 && activeMatchRef.current && textareaRef.current && backdropRef.current) {
-      // Scroll the active mark into view in the backdrop
-      activeMatchRef.current.scrollIntoView({ block: 'center', inline: 'nearest' });
-      // Sync the textarea's scroll position to match the backdrop
-      textareaRef.current.scrollTop = backdropRef.current.scrollTop;
+    if (totalMatches > 0 && activeMarkRef.current && textareaRef.current && backdropRef.current) {
+      activeMarkRef.current.scrollIntoView({ block: 'center', inline: 'nearest' });
+      textareaRef.current.scrollTop  = backdropRef.current.scrollTop;
       textareaRef.current.scrollLeft = backdropRef.current.scrollLeft;
     }
-  }, [activeMatchIndex, totalMatches]); // Re-run when match index changes or new search happens
+  }, [activeMatchIdx, totalMatches]);
 
-  const handleReplace = () => {
-    if (totalMatches === 0 || !searchRegex) return;
-    
-    let currentMatchIndex = 0;
-    searchRegex.lastIndex = 0; // reset regex
-    
-    const newJson = jsonText.replace(searchRegex, (match) => {
-      if (currentMatchIndex === activeMatchIndex) {
-        currentMatchIndex++;
-        return replaceText;
+  /* ── Render backdrop: syntax-highlight + search marks ── */
+  const backdropContent = useMemo(() => {
+    const syntaxTokens = tokenizeJSON(jsonText);
+    if (matchRanges.length === 0) {
+      return syntaxTokens.map((tok, i) => (
+        <span key={i} style={{ color: tokenColor(tok.type) }}>{tok.text}</span>
+      ));
+    }
+
+    const nodes = [];
+    for (const tok of syntaxTokens) {
+      const { start: tS, end: tE, text: tT, type: tType } = tok;
+      const color = tokenColor(tType);
+      const overlaps = matchRanges.filter(mr => mr.start < tE && mr.end > tS);
+
+      if (!overlaps.length) {
+        nodes.push(<span key={`p${tS}`} style={{ color }}>{tT}</span>);
+        continue;
       }
-      currentMatchIndex++;
-      return match;
-    });
 
-    setJsonText(newJson);
-    // The activeMatchIndex will naturally point to the NEXT match because the current one is gone
+      let cur = tS;
+      for (const mr of overlaps.sort((a, b) => a.start - b.start)) {
+        const mS = Math.max(mr.start, tS);
+        const mE = Math.min(mr.end, tE);
+        if (cur < mS)
+          nodes.push(<span key={`pre${cur}`} style={{ color }}>{tT.slice(cur - tS, mS - tS)}</span>);
+        const isActive = mr.matchIndex === activeMatchIdx;
+        nodes.push(
+          <mark
+            key={`m${mS}`}
+            ref={isActive ? activeMarkRef : null}
+            style={{
+              background: isActive ? 'rgba(255,108,55,0.30)' : 'rgba(255,200,0,0.38)',
+              color,
+              borderRadius: '2px',
+            }}
+          >
+            {tT.slice(mS - tS, mE - tS)}
+          </mark>
+        );
+        cur = mE;
+      }
+      if (cur < tE)
+        nodes.push(<span key={`post${cur}`} style={{ color }}>{tT.slice(cur - tS)}</span>);
+    }
+    return nodes;
+  }, [jsonText, matchRanges, activeMatchIdx]);
+
+  /* ── Line numbers ── */
+  const lineCount = useMemo(() => jsonText.split('\n').length || 1, [jsonText]);
+
+  /* ── Handlers ── */
+  const handleReplace = () => {
+    if (!totalMatches || !searchRegex) return;
+    let ci = 0;
+    searchRegex.lastIndex = 0;
+    setJsonText(jsonText.replace(searchRegex, match => ci++ === activeMatchIdx ? replaceText : match));
   };
-
-  const handleReplaceAll = () => {
-    if (!searchRegex) return;
-    setJsonText(jsonText.replace(searchRegex, replaceText));
-  };
-
+  const handleReplaceAll = () => { if (searchRegex) setJsonText(jsonText.replace(searchRegex, replaceText)); };
   const handleSave = () => {
-    try {
-      const parsed = JSON.parse(jsonText);
-      onSave(parsed);
-      onClose();
-    } catch (err) {
-      setError(`Invalid JSON: ${err.message}`);
-    }
+    try { const p = JSON.parse(jsonText); onSave(p); onClose(); }
+    catch (e) { setError(`Invalid JSON: ${e.message}`); }
   };
-
   const handleFormat = () => {
-    try {
-      const parsed = JSON.parse(jsonText);
-      setJsonText(JSON.stringify(parsed, null, 2));
-      setError('');
-    } catch (err) {
-      setError(`Cannot format invalid JSON: ${err.message}`);
-    }
+    try { setJsonText(JSON.stringify(JSON.parse(jsonText), null, 2)); setError(''); }
+    catch (e) { setError(`Cannot format: ${e.message}`); }
   };
 
   if (!isOpen) return null;
 
+  /* ── Shared micro-styles ── */
+  const btnBase = {
+    display: 'flex', alignItems: 'center', gap: '5px',
+    borderRadius: '4px', fontSize: '12px', fontWeight: 500,
+    cursor: 'pointer', transition: 'all 0.15s', padding: '5px 11px',
+    whiteSpace: 'nowrap',
+  };
+  const ghostBtn = {
+    ...btnBase,
+    background: 'transparent',
+    border: `1px solid ${PM.border}`,
+    color: PM.textMuted,
+  };
+  const iconToggle = (active) => ({
+    padding: '2px 6px', borderRadius: '3px',
+    fontSize: '10px', fontFamily: 'monospace', fontWeight: 700,
+    background: active ? PM.orangeDim : 'transparent',
+    color: active ? PM.orange : PM.textMuted,
+    border: `1px solid ${active ? PM.orange : 'transparent'}`,
+    cursor: 'pointer', transition: 'all 0.15s',
+  });
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-6xl shadow-2xl flex flex-col max-h-[95vh] h-[85vh]">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
-          <div>
-            <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-              <Code size={16} className="text-cyan-400" />
-              {title}
-            </h3>
-            <p className="text-gray-500 text-xs mt-1">{description}</p>
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 100,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.55)',
+      padding: '16px',
+    }}>
+      <div style={{
+        background: PM.bg,
+        border: `1px solid ${PM.border}`,
+        borderRadius: '8px',
+        width: '100%', maxWidth: '920px',
+        maxHeight: '92vh', height: '84vh',
+        display: 'flex', flexDirection: 'column',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.12)',
+        overflow: 'hidden',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      }}>
+
+        {/* ══ Postman-style Header / Tab bar ══ */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0 14px', height: '40px',
+          background: PM.toolbarBg,
+          borderBottom: `1px solid ${PM.border}`,
+          flexShrink: 0,
+        }}>
+          {/* Left: tabs */}
+          <div style={{ display: 'flex', alignItems: 'stretch', height: '100%', gap: '0' }}>
+            {/* Active tab */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '0 14px', height: '100%',
+              background: PM.bg,
+              borderRight: `1px solid ${PM.border}`,
+              borderLeft: `1px solid ${PM.border}`,
+              borderTop: `2px solid ${PM.orange}`,
+              fontSize: '12px', fontWeight: 600, color: PM.text,
+              cursor: 'default',
+            }}>
+              <span style={{
+                fontSize: '11px', fontFamily: 'monospace', fontWeight: 700,
+                color: PM.orange,
+              }}>{'{}'}</span>
+              JSON
+              {readOnly && (
+                <span style={{
+                  fontSize: '9px', padding: '1px 5px', borderRadius: '2px',
+                  background: PM.orangeDim, color: PM.orange,
+                  border: `1px solid rgba(255,108,55,0.3)`, fontWeight: 700, letterSpacing: '0.04em',
+                }}>READ ONLY</span>
+              )}
+            </div>
           </div>
-          <button onClick={onClose} className="text-gray-600 hover:text-gray-300 transition-colors">
-            <X size={16} />
-          </button>
+
+          {/* Right: title + close */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '11px', color: PM.textMuted }}>{title}</span>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: PM.textMuted, padding: '3px', borderRadius: '3px',
+                display: 'flex', alignItems: 'center', transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = PM.text; e.currentTarget.style.background = PM.border; }}
+              onMouseLeave={e => { e.currentTarget.style.color = PM.textMuted; e.currentTarget.style.background = 'transparent'; }}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
-        {/* Editor & Find/Replace */}
-        <div className="flex-1 p-4 overflow-hidden flex flex-col gap-3">
-          
-          <div className="flex flex-wrap items-center gap-2 bg-gray-800/50 p-2 rounded-lg border border-gray-700/50">
-            {/* Search Input with Toggles */}
-            <div className={`flex items-center gap-1 bg-gray-900 border ${searchError ? 'border-red-500' : 'border-gray-700'} rounded-md px-2 py-1.5 focus-within:border-cyan-600`}>
+        {/* ══ Find / Replace toolbar ══ */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap',
+          padding: '6px 12px',
+          borderBottom: `1px solid ${PM.border}`,
+          background: PM.panelBg,
+          flexShrink: 0,
+        }}>
+          {/* Find input */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Search size={12} style={{ color: PM.textMuted, flexShrink: 0 }} />
+            <div style={{
+              display: 'flex', alignItems: 'center',
+              background: PM.inputBg,
+              border: `1px solid ${searchError ? '#ef4444' : PM.border}`,
+              borderRadius: '3px', padding: '0 4px 0 8px', gap: '3px',
+            }}>
               <input
                 type="text"
-                placeholder="Find..."
+                placeholder="Find…"
                 value={findText}
                 onChange={e => setFindText(e.target.value)}
-                className="bg-transparent text-xs text-white placeholder-gray-500 focus:outline-none min-w-[180px]"
+                onKeyDown={e => {
+                  if (e.key === 'Enter') setActiveMatchIdx(p => p < totalMatches - 1 ? p + 1 : 0);
+                }}
+                style={{
+                  background: 'transparent', border: 'none', outline: 'none',
+                  fontSize: '12px', color: PM.text, minWidth: '150px', padding: '4px 0',
+                }}
               />
-              <button 
-                onClick={() => setMatchCase(!matchCase)} 
-                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-colors ${matchCase ? 'bg-cyan-900/50 text-cyan-300' : 'text-gray-500 hover:text-gray-300'}`} 
-                title="Match Case"
-              >
-                Aa
-              </button>
-              <button 
-                onClick={() => setUseRegex(!useRegex)} 
-                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-colors ${useRegex ? 'bg-cyan-900/50 text-cyan-300' : 'text-gray-500 hover:text-gray-300'}`} 
-                title="Regular Expression"
-              >
-                .*
-              </button>
+              <button onClick={() => setMatchCase(!matchCase)} style={iconToggle(matchCase)} title="Match Case">Aa</button>
+              <button onClick={() => setUseRegex(!useRegex)}   style={iconToggle(useRegex)}  title="Regex">.*</button>
             </div>
-
-            {/* Match Navigation */}
-            <div className="flex items-center gap-2 mr-2">
-              <span className="text-[10px] text-gray-400 min-w-[45px] text-center">
-                {totalMatches > 0 ? `${activeMatchIndex + 1} of ${totalMatches}` : '0 of 0'}
-              </span>
-              <div className="flex">
-                <button 
-                  onClick={() => setActiveMatchIndex(prev => (prev > 0 ? prev - 1 : totalMatches - 1))} 
-                  disabled={totalMatches === 0} 
-                  className="p-1 text-gray-400 hover:text-white disabled:opacity-30 border border-gray-700 rounded-l-md bg-gray-800 transition-colors"
-                >
-                  <ChevronUp size={14}/>
-                </button>
-                <button 
-                  onClick={() => setActiveMatchIndex(prev => (prev < totalMatches - 1 ? prev + 1 : 0))} 
-                  disabled={totalMatches === 0} 
-                  className="p-1 text-gray-400 hover:text-white disabled:opacity-30 border border-gray-700 border-l-0 rounded-r-md bg-gray-800 transition-colors"
-                >
-                  <ChevronDown size={14}/>
-                </button>
-              </div>
-            </div>
-
-            {/* Replace Input and Actions */}
-            {!readOnly && (
-              <>
-                <input
-                  type="text"
-                  placeholder="Replace with..."
-                  value={replaceText}
-                  onChange={e => setReplaceText(e.target.value)}
-                  className="w-48 bg-gray-900 border border-gray-700 rounded-md px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600"
-                />
-                <button
-                  onClick={handleReplace}
-                  disabled={totalMatches === 0}
-                  className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-md transition-colors disabled:opacity-50"
-                >
-                  Replace
-                </button>
-                <button
-                  onClick={handleReplaceAll}
-                  disabled={totalMatches === 0}
-                  className="px-3 py-1.5 bg-blue-900/50 hover:bg-blue-800/60 border border-blue-700/50 text-blue-300 text-xs rounded-md transition-colors disabled:opacity-50"
-                >
-                  Replace All
-                </button>
-              </>
-            )}
-            
-            {searchError && (
-              <span className="text-[10px] text-red-400 ml-2">{searchError}</span>
-            )}
           </div>
 
-          <div className="relative flex-1 w-full bg-[#0d1117] border border-gray-800 rounded-xl overflow-hidden focus-within:border-cyan-700/50 transition-colors">
-            {/* Backdrop */}
+          {/* Match counter + nav */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{ fontSize: '11px', color: PM.textMuted, minWidth: '48px', textAlign: 'center', tabularNums: true }}>
+              {totalMatches > 0 ? `${activeMatchIdx + 1} / ${totalMatches}` : '0 / 0'}
+            </span>
+            <button
+              onClick={() => setActiveMatchIdx(p => p > 0 ? p - 1 : totalMatches - 1)}
+              disabled={totalMatches === 0}
+              style={{
+                background: PM.inputBg, border: `1px solid ${PM.border}`,
+                borderRadius: '3px 0 0 3px', padding: '3px 5px', cursor: totalMatches > 0 ? 'pointer' : 'default',
+                color: totalMatches === 0 ? PM.textDim : PM.textMuted,
+                display: 'flex', alignItems: 'center',
+              }}
+            >
+              <ChevronUp size={12} />
+            </button>
+            <button
+              onClick={() => setActiveMatchIdx(p => p < totalMatches - 1 ? p + 1 : 0)}
+              disabled={totalMatches === 0}
+              style={{
+                background: PM.inputBg, border: `1px solid ${PM.border}`, borderLeft: 'none',
+                borderRadius: '0 3px 3px 0', padding: '3px 5px', cursor: totalMatches > 0 ? 'pointer' : 'default',
+                color: totalMatches === 0 ? PM.textDim : PM.textMuted,
+                display: 'flex', alignItems: 'center',
+              }}
+            >
+              <ChevronDown size={12} />
+            </button>
+          </div>
+
+          {/* Replace toggle (only in edit mode) */}
+          {!readOnly && (
+            <button
+              onClick={() => setShowReplace(!showReplace)}
+              style={iconToggle(showReplace)}
+            >
+              <RefreshCw size={10} style={{ display: 'inline', marginRight: '3px', verticalAlign: 'middle' }} />
+              Replace
+            </button>
+          )}
+
+          {searchError && <span style={{ fontSize: '11px', color: '#ef4444' }}>{searchError}</span>}
+        </div>
+
+        {/* ══ Replace bar (collapsible) ══ */}
+        {showReplace && !readOnly && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '5px 12px',
+            borderBottom: `1px solid ${PM.border}`,
+            background: PM.panelBg,
+            flexShrink: 0,
+          }}>
+            <RefreshCw size={12} style={{ color: PM.textMuted, flexShrink: 0 }} />
+            <input
+              type="text"
+              placeholder="Replace with…"
+              value={replaceText}
+              onChange={e => setReplaceText(e.target.value)}
+              style={{
+                background: PM.inputBg, border: `1px solid ${PM.border}`,
+                borderRadius: '3px', padding: '4px 8px',
+                fontSize: '12px', color: PM.text, outline: 'none', minWidth: '170px',
+              }}
+            />
+            <button
+              onClick={handleReplace}
+              disabled={totalMatches === 0}
+              style={{ ...ghostBtn, opacity: totalMatches === 0 ? 0.45 : 1 }}
+              onMouseEnter={e => totalMatches > 0 && (e.currentTarget.style.color = PM.text)}
+              onMouseLeave={e => (e.currentTarget.style.color = PM.textMuted)}
+            >
+              Replace
+            </button>
+            <button
+              onClick={handleReplaceAll}
+              disabled={totalMatches === 0}
+              style={{
+                ...btnBase,
+                background: totalMatches === 0 ? 'transparent' : PM.orangeDim,
+                border: `1px solid ${totalMatches === 0 ? PM.border : 'rgba(255,108,55,0.4)'}`,
+                color: totalMatches === 0 ? PM.textDim : PM.orange,
+                opacity: totalMatches === 0 ? 0.45 : 1,
+              }}
+            >
+              Replace All
+            </button>
+          </div>
+        )}
+
+        {/* ══ Editor ══ */}
+        <div style={{
+          flex: 1, overflow: 'hidden',
+          display: 'flex', flexDirection: 'row',
+          borderBottom: `1px solid ${PM.border}`,
+        }}>
+
+          {/* Line numbers gutter */}
+          <div style={{
+            flexShrink: 0, width: '44px',
+            background: PM.lineNumBg,
+            borderRight: `1px solid ${PM.border}`,
+            padding: '12px 0',
+            overflowY: 'hidden',
+            userSelect: 'none',
+          }}
+            onScroll={e => { if (textareaRef.current) textareaRef.current.scrollTop = e.currentTarget.scrollTop; }}
+          >
+            {Array.from({ length: lineCount }, (_, i) => (
+              <div key={i} style={{
+                height: '21.45px',  // matches lineHeight 1.65 × 13px
+                display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                paddingRight: '10px',
+                fontSize: '11px',
+                fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
+                color: PM.lineNum,
+                lineHeight: '1.65',
+              }}>
+                {i + 1}
+              </div>
+            ))}
+          </div>
+
+          {/* Editor canvas (backdrop + textarea) */}
+          <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+
+            {/* Syntax + search highlight backdrop */}
             <div
               ref={backdropRef}
-              className="absolute inset-0 p-4 text-[13px] leading-relaxed font-mono whitespace-pre-wrap break-words pointer-events-none text-transparent overflow-hidden"
+              style={{
+                position: 'absolute', inset: 0,
+                padding: '12px 16px',
+                fontSize: '13px', lineHeight: '21.45px',
+                fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace',
+                whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
+                pointerEvents: 'none',
+                overflow: 'hidden',
+                color: 'transparent',
+                WebkitFontSmoothing: 'antialiased',
+                MozOsxFontSmoothing: 'grayscale',
+                transform: 'translateZ(0)',
+                letterSpacing: 'normal',
+                wordSpacing: 'normal',
+                textRendering: 'optimizeSpeed',
+              }}
               aria-hidden="true"
             >
-              {chunks.map((chunk, i) => {
-                if (!chunk.isMatch) return <React.Fragment key={i}>{chunk.text}</React.Fragment>;
-                
-                const isActive = chunk.index === activeMatchIndex;
-                return (
-                  <mark 
-                    key={i}
-                    ref={isActive ? activeMatchRef : null}
-                    className={`${isActive ? 'bg-orange-500/80' : 'bg-yellow-500/50'} text-transparent rounded-[2px]`}
-                  >
-                    {chunk.text}
-                  </mark>
-                );
-              })}
+              {backdropContent}
             </div>
-            
+
             {/* Textarea */}
             <textarea
               ref={textareaRef}
               value={jsonText}
               readOnly={readOnly}
-              onChange={(e) => {
-                if (!readOnly) {
-                  setJsonText(e.target.value);
-                  setError('');
-                }
-              }}
-              onScroll={(e) => {
+              onChange={e => { if (!readOnly) { setJsonText(e.target.value); setError(''); } }}
+              onScroll={e => {
                 if (backdropRef.current) {
-                  backdropRef.current.scrollTop = e.target.scrollTop;
+                  backdropRef.current.scrollTop  = e.target.scrollTop;
                   backdropRef.current.scrollLeft = e.target.scrollLeft;
                 }
               }}
-              className="absolute inset-0 w-full h-full p-4 text-[13px] leading-relaxed text-emerald-400 font-mono bg-transparent focus:outline-none resize-none overflow-auto whitespace-pre-wrap break-words"
-              spellCheck="false"
+              spellCheck={false}
+              style={{
+                position: 'absolute', inset: 0,
+                width: '100%', height: '100%',
+                padding: '12px 16px',
+                fontSize: '13px', lineHeight: '21.45px',
+                fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace',
+                color: 'transparent',
+                caretColor: PM.orange,
+                background: 'transparent',
+                border: 'none', outline: 'none',
+                resize: 'none',
+                overflowY: 'auto', overflowX: 'hidden',
+                whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
+                WebkitFontSmoothing: 'antialiased',
+                MozOsxFontSmoothing: 'grayscale',
+                transform: 'translateZ(0)',
+                letterSpacing: 'normal',
+                wordSpacing: 'normal',
+                textRendering: 'optimizeSpeed',
+              }}
             />
+
+            {/* Placeholder */}
+            {!jsonText && (
+              <div style={{
+                position: 'absolute', top: '14px', left: '18px',
+                color: PM.textDim, fontSize: '12px',
+                fontFamily: '"JetBrains Mono", monospace', pointerEvents: 'none',
+              }}>
+                {'// Paste or type your JSON here…'}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Error message */}
+        {/* ══ Error banner ══ */}
         {error && (
-          <div className="px-5 pb-2">
-            <div className="flex items-center gap-2 text-xs text-red-400 bg-red-950/30 border border-red-900/50 rounded-lg px-3 py-2">
-              <AlertTriangle size={14} className="flex-shrink-0" />
-              <span className="truncate">{error}</span>
+          <div style={{ padding: '6px 12px', flexShrink: 0 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '7px',
+              background: PM.errBg, border: `1px solid ${PM.errBorder}`,
+              borderRadius: '4px', padding: '6px 10px',
+              color: PM.errText, fontSize: '12px',
+            }}>
+              <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{error}</span>
             </div>
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-800 flex-shrink-0">
-          <button 
+        {/* ══ Footer ══ */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 12px',
+          background: PM.panelBg,
+          flexShrink: 0,
+        }}>
+          <button
             onClick={handleFormat}
-            className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-300 hover:text-white bg-gray-800 border border-gray-700 hover:border-gray-600 rounded-lg transition-colors"
+            style={ghostBtn}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#c0c0c0'; e.currentTarget.style.color = PM.text; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = PM.border; e.currentTarget.style.color = PM.textMuted; }}
           >
-            <AlignLeft size={14} /> Format JSON
+            <AlignLeft size={12} /> Format JSON
           </button>
-          
-          <div className="flex items-center gap-3">
-            <button 
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
               onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 border border-gray-700 rounded-lg transition-colors"
+              style={ghostBtn}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#c0c0c0'; e.currentTarget.style.color = PM.text; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = PM.border; e.currentTarget.style.color = PM.textMuted; }}
             >
               {readOnly ? 'Close' : 'Cancel'}
             </button>
+
             {!readOnly && (
-              <button 
+              <button
                 onClick={handleSave}
                 disabled={!!error}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg disabled:opacity-50 transition-colors"
+                style={{
+                  ...btnBase,
+                  background: error ? 'rgba(255,108,55,0.15)' : PM.orange,
+                  border: `1px solid ${error ? 'rgba(255,108,55,0.3)' : PM.orange}`,
+                  color: error ? 'rgba(180,80,30,0.6)' : '#ffffff',
+                  cursor: error ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                }}
+                onMouseEnter={e => !error && (e.currentTarget.style.background = PM.orangeHover)}
+                onMouseLeave={e => !error && (e.currentTarget.style.background = PM.orange)}
               >
-                <Save size={14} /> Update JSON
+                <Save size={12} /> Save JSON
               </button>
             )}
           </div>
