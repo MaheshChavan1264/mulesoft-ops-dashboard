@@ -257,6 +257,43 @@ function AppConfirmModal({ state, onConfirm, onCancel, loading }) {
   );
 }
 
+function SchedulerConfirmModal({ schedulerKey, onConfirm, onCancel, loading }) {
+  if (!schedulerKey) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+        <div className="flex items-start gap-4">
+          <div className="p-2.5 rounded-xl flex-shrink-0 border bg-purple-950/60 border-purple-800/40">
+            <Zap size={18} className="text-purple-400" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-white font-semibold text-base mb-1">Run Scheduler Now?</h3>
+            <p className="text-slate-400 text-sm">
+              Are you sure you want to trigger{' '}
+              <span className="font-mono text-purple-300 text-xs bg-purple-950/40 px-1.5 py-0.5 rounded">{schedulerKey}</span>{' '}
+              immediately?
+            </p>
+            <p className="text-yellow-400/70 text-xs mt-2">⚠ This will execute the scheduler flow outside its normal schedule.</p>
+          </div>
+          <button onClick={onCancel} className="text-slate-600 hover:text-slate-300"><X size={16} /></button>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={onCancel} disabled={loading}
+            className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg disabled:opacity-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors bg-purple-600 hover:bg-purple-500 text-white">
+            {loading
+              ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Running…</>
+              : <><Zap size={13} /> Run Now</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main component ────────────────────────────────────── */
 
 export default function ApplicationDetailPage() {
@@ -302,6 +339,10 @@ export default function ApplicationDetailPage() {
   // CPS properties fetched specifically to resolve ${...} placeholders in scheduler expressions
   const [cpsSchedulerProps, setCpsSchedulerProps] = useState({});
   const [cpsSecureSchedulerLoading, setCpsSecureSchedulerLoading] = useState(false);
+  // Scheduler trigger state
+  const [triggerLoadingSet, setTriggerLoadingSet] = useState(new Set());
+  const [triggerResult, setTriggerResult] = useState(null);
+  const [schedulerConfirmKey, setSchedulerConfirmKey] = useState(null);
 
   // Ping spec from Exchange (auto-fetched when app has application.ref)
   const [pingSpec, setPingSpec] = useState(null);
@@ -606,6 +647,32 @@ export default function ApplicationDetailPage() {
   // Don't auto-fetch — load only when user clicks the API Spec tab
   // (avoids slow Exchange searches on every app detail page open)
 
+  // Trigger a scheduler to run immediately (Run Now)
+  const triggerScheduler = useCallback(async (schedulerKey) => {
+    if (!schedulerKey) return;
+    setTriggerLoadingSet(prev => new Set([...prev, schedulerKey]));
+    setTriggerResult(null);
+    try {
+      if (app?._type === 'ch1') {
+        await api.post(
+          `/applications/cloudhub1/${envId}/${appId}/schedules/${encodeURIComponent(schedulerKey)}/run`,
+          {},
+          { params: { orgId } }
+        );
+      } else {
+        await api.post(
+          `/applications/cloudhub2/${orgId}/${envId}/${appId}/schedulers/${encodeURIComponent(schedulerKey)}/run`
+        );
+      }
+      setTriggerResult({ success: true, message: `✓ Scheduler "${schedulerKey}" triggered successfully` });
+    } catch (e) {
+      setTriggerResult({ success: false, message: `✗ Failed to trigger "${schedulerKey}": ${e.response?.data?.error || e.message}` });
+    } finally {
+      setTriggerLoadingSet(prev => { const next = new Set(prev); next.delete(schedulerKey); return next; });
+      setTimeout(() => setTriggerResult(null), 5000);
+    }
+  }, [app, orgId, envId, appId]);
+
   const isCH1 = app?._type === 'ch1';
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"/></div>;
@@ -795,7 +862,7 @@ export default function ApplicationDetailPage() {
     STARTED:'text-emerald-300 bg-emerald-950/50 border-emerald-700/50 shadow-emerald-900/30',
     FAILED:'text-red-300 bg-red-950/50 border-red-700/50 shadow-red-900/30',
     STOPPED:'text-slate-400 bg-slate-800/50 border-slate-700/50',
-    DEPLOYING:'text-blue-300 bg-blue-950/50 border-blue-700/50 shadow-blue-900/30',
+    DEPLOYING:' text-blue-300 bg-blue-950/50 border-blue-700/50 shadow-blue-900/30',
     APPLIED:'text-cyan-300 bg-cyan-950/50 border-cyan-700/50' }[rStatus] || 'text-slate-400 bg-slate-800/50 border-slate-700/50';
 
   // Feature 14: tab badges with live counts
@@ -854,6 +921,12 @@ export default function ApplicationDetailPage() {
         onConfirm={executeAction}
         onCancel={() => setConfirmState(null)}
         loading={!!actionLoading}
+      />
+      <SchedulerConfirmModal
+        schedulerKey={schedulerConfirmKey}
+        onConfirm={() => { triggerScheduler(schedulerConfirmKey); setSchedulerConfirmKey(null); }}
+        onCancel={() => setSchedulerConfirmKey(null)}
+        loading={triggerLoadingSet.has(schedulerConfirmKey)}
       />
 
       {/* Action toast */}
@@ -1233,6 +1306,17 @@ export default function ApplicationDetailPage() {
                 </div>
               );
             })()}
+            {/* Trigger result toast inside the scheduler card */}
+            {triggerResult && (
+              <div className={`mx-5 mt-3 flex items-center justify-between px-4 py-2.5 rounded-xl border text-xs ${
+                triggerResult.success
+                  ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
+                  : 'bg-red-950/40 border-red-800/50 text-red-300'
+              }`}>
+                <span>{triggerResult.message}</span>
+                <button onClick={() => setTriggerResult(null)} className="ml-3 opacity-60 hover:opacity-100 flex-shrink-0"><X size={12} /></button>
+              </div>
+            )}
             {allSchedulers.length>0 && (
               <div className="px-5 pt-4 pb-3 border-b border-slate-800/40">
                 <div className="relative">
@@ -1258,7 +1342,7 @@ export default function ApplicationDetailPage() {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-slate-800/50 border-b border-slate-700/40">
-                    {['Flow Name','Cron Expression','Last Run','Next Run','State'].map(h=>(
+                    {['Flow Name','Cron Expression','Last Run','Next Run','State','Actions'].map(h=>(
                       <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -1375,6 +1459,23 @@ export default function ApplicationDetailPage() {
                           <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${active?'bg-emerald-950/50 text-emerald-300 border-emerald-700/50':'bg-slate-800/60 text-slate-500 border-slate-700/50'}`}>
                             {active?'Enabled':'Disabled'}
                           </span>
+                        </td>
+                        <td className="px-5 py-4 align-top">
+                          {(() => {
+                            const schedulerKey = s.name || s.schedulerName || s.flow || s.flowName || `scheduler-${i}`;
+                            const isTriggering = triggerLoadingSet.has(schedulerKey);
+                            return (
+                              <button
+                                onClick={() => setSchedulerConfirmKey(schedulerKey)}
+                                disabled={isTriggering || !isRunning}
+                                title={!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-purple-950/30 text-purple-300 border-purple-700/40 hover:bg-purple-600/20 hover:text-purple-200 hover:border-purple-600/60">
+                                {isTriggering
+                                  ? <><RefreshCw size={9} className="animate-spin" /> Running…</>
+                                  : <><Zap size={9} /> Run Now</>}
+                              </button>
+                            );
+                          })()}
                         </td>
                       </tr>
                     );

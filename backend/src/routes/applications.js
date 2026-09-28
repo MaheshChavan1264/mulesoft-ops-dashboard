@@ -113,6 +113,20 @@ router.get('/cloudhub2/:orgId/:envId/:deploymentId/schedulers', authMiddleware, 
   }
 });
 
+// Trigger a CloudHub 2.0 scheduler to run immediately (Run Now)
+router.post('/cloudhub2/:orgId/:envId/:deploymentId/schedulers/:schedulerName/run', authMiddleware, async (req, res) => {
+  const { orgId, envId, deploymentId, schedulerName } = req.params;
+  const client = createClient(req.anypointToken);
+  try {
+    const response = await client.post(
+      `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/schedulers/${encodeURIComponent(schedulerName)}/run`
+    );
+    return res.json({ success: true, schedulerName, data: response.data });
+  } catch (error) {
+    sendProxyError(res, error, `Failed to trigger scheduler "${schedulerName}"`);
+  }
+});
+
 // Get all CloudHub 1.0 applications
 router.get('/cloudhub1/:envId', authMiddleware, async (req, res) => {
   try {
@@ -177,6 +191,38 @@ router.get('/cloudhub1/:envId/:appName/schedules', authMiddleware, async (req, r
     res.json(response.data);
   } catch (error) {
     sendProxyError(res, error, 'Failed to fetch schedules');
+  }
+});
+
+// Trigger a CloudHub 1.0 scheduler to run immediately (Run Now)
+// Strategy 1: POST /cloudhub/api/applications/{appName}/schedules/{scheduleName}/run
+// Strategy 2: POST /cloudhub/api/v2/applications/{appName}/schedules/{scheduleName}/run
+router.post('/cloudhub1/:envId/:appName/schedules/:scheduleName/run', authMiddleware, async (req, res) => {
+  const { envId, appName, scheduleName } = req.params;
+  const orgId = req.query.orgId || req.orgId;
+  const client = createClient(req.anypointToken);
+  const headers = makeCh1Headers(envId, orgId);
+  try {
+    const response = await client.post(
+      `/cloudhub/api/applications/${appName}/schedules/${encodeURIComponent(scheduleName)}/run`,
+      {},
+      { headers }
+    );
+    return res.json({ success: true, scheduleName, data: response.data });
+  } catch (e1) {
+    try {
+      const response = await client.post(
+        `/cloudhub/api/v2/applications/${appName}/schedules/${encodeURIComponent(scheduleName)}/run`,
+        {},
+        { headers }
+      );
+      return res.json({ success: true, scheduleName, data: response.data });
+    } catch (e2) {
+      console.error(`CH1 schedule trigger failed for ${appName}/${scheduleName}:`, e2.response?.data || e2.message);
+      return res.status(e2.response?.status || 500).json({
+        error: e2.response?.data?.message || `Failed to trigger scheduler "${scheduleName}"`
+      });
+    }
   }
 });
 
