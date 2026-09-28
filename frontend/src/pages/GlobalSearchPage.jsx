@@ -833,7 +833,7 @@ export default function GlobalSearchPage() {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'global-search-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.href = url; a.download = 'global-search-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.csv';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
@@ -879,9 +879,9 @@ export default function GlobalSearchPage() {
       const entry = userMap.get(user);
       const bg = row.bgName || '—';
 
-      // Passwords — collect unique non-blank passwords per BG
+      // Passwords — collect unique non-blank, non-masked passwords per BG
       const pw = row.password;
-      if (pw && pw !== '—' && pw !== '') {
+      if (pw && pw !== '—' && pw !== '' && !/^\*+$/.test(pw)) {
         if (!entry.passwords.has(bg)) entry.passwords.set(bg, new Set());
         entry.passwords.get(bg).add(pw);
       }
@@ -934,7 +934,7 @@ export default function GlobalSearchPage() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'User Summary');
-    XLSX.writeFile(wb, `user-summary-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `user-summary-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.xlsx`);
   };
 
   const exportGroupedXlsx = (termGroupsMap, getMatchedTermFn, activeTermsList, searchModeCurrent) => {
@@ -1027,7 +1027,7 @@ export default function GlobalSearchPage() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Search Results');
-    XLSX.writeFile(wb, `grouped-search-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `grouped-search-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.xlsx`);
   };
 
   const selCount = bgEnvSelections.length;
@@ -1568,8 +1568,8 @@ export default function GlobalSearchPage() {
                                                                   </td>
                                                                   <td className="px-2 py-1.5 whitespace-nowrap">
                                                                     <div className="flex items-center gap-1 group/cell">
-                                                                      <span className={`text-[10px] font-mono ${row.password && row.password !== '—' ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
-                                                                      {row.password && row.password !== '—' && <CopyBtn text={row.password} />}
+                                                                      <span className={`text-[10px] font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
+                                                                      {row.password && row.password !== '—' && !/^\*+$/.test(row.password) && <CopyBtn text={row.password} />}
                                                                     </div>
                                                                   </td>
                                                                 </tr>
@@ -1640,8 +1640,8 @@ export default function GlobalSearchPage() {
                                 <span className="font-mono text-emerald-300 break-all max-w-xs"><Highlight text={row.apiUser} terms={activeTerms} /></span>
                                 <CopyBtn text={row.apiUser} />
                                 <div className="flex items-center gap-1 group/cell">
-                                  <span className={`font-mono ${row.password && row.password !== '—' ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
-                                  {row.password && row.password !== '—' && <CopyBtn text={row.password} />}
+                                  <span className={`font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
+                                  {row.password && row.password !== '—' && !/^\*+$/.test(row.password) && <CopyBtn text={row.password} />}
                                 </div>
                               </div>
                             ))}
@@ -1706,8 +1706,8 @@ export default function GlobalSearchPage() {
                           <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-emerald-300 break-all"><Highlight text={row.apiUser} terms={activeTerms} /></span><CopyBtn text={row.apiUser} /></div></td>
                           <td className="px-3 py-3 text-xs">
                             <div className="flex items-center gap-1 group/cell">
-                              <span className={`font-mono ${row.password && row.password !== '—' ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
-                              {row.password && row.password !== '—' && <CopyBtn text={row.password} />}
+                              <span className={`font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
+                              {row.password && row.password !== '—' && !/^\*+$/.test(row.password) && <CopyBtn text={row.password} />}
                             </div>
                           </td>
                         </tr>

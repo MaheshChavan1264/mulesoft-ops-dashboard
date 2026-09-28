@@ -500,15 +500,39 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     return hits;
   }
 
-  /** Find a related password property in the same namespace as matchedKey */
+  /** Find a related password property in the same namespace as matchedKey.
+   *
+   * Pass 1 (preferred): prefix-restricted match — same top-level namespace as
+   *   the matched key (e.g., matchedKey="db.username" → looks for "db.*password*").
+   *   Skips values that are themselves masked (all-asterisk placeholders).
+   *
+   * Pass 2 (fallback): no prefix restriction — returns the first non-masked
+   *   password-like value found anywhere in props.  Used when the secure group
+   *   stores credentials under a different namespace (e.g., non-secure key uses
+   *   "anypoint.mq.*" prefix but the secure group just has "password").
+   */
   function findPassword(props, matchedKey) {
     const PWD_PATTERN = /password|passwd|\.secret$|_secret$|\.pwd$|_pwd$/i;
     const prefix = matchedKey.includes('.') ? matchedKey.split('.')[0] : '';
+
+    // Pass 1: prefix-restricted, skip masked (***) values
     for (const [k, v] of Object.entries(props || {})) {
       if (!PWD_PATTERN.test(k)) continue;
       if (prefix && !k.startsWith(prefix)) continue;
-      return v != null ? String(v) : '';
+      const val = v != null ? String(v) : '';
+      if (val && !/^\*+$/.test(val)) return val;   // real value found ✅
     }
+
+    // Pass 2: cross-namespace fallback — any password-like key with a real value
+    // Only run when a prefix was in play (no-prefix keys already searched above exhaustively)
+    if (prefix) {
+      for (const [k, v] of Object.entries(props || {})) {
+        if (!PWD_PATTERN.test(k)) continue;
+        const val = v != null ? String(v) : '';
+        if (val && !/^\*+$/.test(val)) return val;  // cross-namespace real value ✅
+      }
+    }
+
     return '';
   }
 
