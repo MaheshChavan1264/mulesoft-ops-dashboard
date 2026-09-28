@@ -13,7 +13,7 @@ import ApiManagerPage from './pages/ApiManagerPage';
 import ExchangePage from './pages/ExchangePage';
 import PingTestPage from './pages/PingTestPage';
 import CpsComparisonPage from './pages/CpsComparisonPage';
-import UserSearchPage from './pages/UserSearchPage';
+import GlobalSearchPage from './pages/GlobalSearchPage';
 import CpsManagerPage from './pages/CpsManagerPage';
 import GlobalCpsManagerPage from './pages/GlobalCpsManagerPage';
 
@@ -54,7 +54,7 @@ export default function App() {
             <Route path="exchange" element={<ExchangePage />} />
             <Route path="ping-test" element={<PingTestPage />} />
             <Route path="cps-compare" element={<CpsComparisonPage />} />
-            <Route path="user-search" element={<UserSearchPage />} />
+            <Route path="user-search" element={<GlobalSearchPage />} />
             <Route path="cps-manager" element={<CpsManagerPage />} />
             <Route path="global-cps-manager" element={<GlobalCpsManagerPage />} />
           </Route>

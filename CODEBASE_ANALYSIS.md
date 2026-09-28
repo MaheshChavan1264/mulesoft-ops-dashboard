@@ -196,7 +196,7 @@ mulesoft-dashboard/
         │   ├── CpsComparisonPage.jsx
         │   ├── GlobalCpsManagerPage.jsx
         │   ├── TopologyPage.jsx
-        │   └── UserSearchPage.jsx
+        │   └── GlobalSearchPage.jsx
         │
         ├── components/             ← 27 reusable components
         │   ├── Layout.jsx          ← App shell (sidebar + content)
@@ -470,7 +470,7 @@ ToastProvider
 | `/exchange` | `ExchangePage` | Yes |
 | `/ping-test` | `PingTestPage` | Yes |
 | `/cps-compare` | `CpsComparisonPage` | Yes |
-| `/user-search` | `UserSearchPage` | Yes |
+| `/user-search` | `GlobalSearchPage` | Yes |
 | `/cps-manager` | `CpsManagerPage` | Yes |
 | `/global-cps-manager` | `GlobalCpsManagerPage` | Yes |
 | `/topology` | `TopologyPage` | Yes |
@@ -567,7 +567,7 @@ Cross-BG, cross-environment CPS manager. Allows managing CPS properties for apps
 #### `TopologyPage.jsx`
 Visual dependency graph powered by `@xyflow/react`. Nodes colored by API-led layer (XAPI/PAPI/SAPI/EXTERNAL). Edges labeled with the CPS property key that references the dependency. Supports forward and backward tree filtering for impact analysis.
 
-#### `UserSearchPage.jsx`
+#### `GlobalSearchPage.jsx`
 Search Anypoint Platform users by name or email. Fans out across all BGs. Shows user details, roles, and BG membership. Copy user ID and email buttons.
 
 ### 6.4 Components

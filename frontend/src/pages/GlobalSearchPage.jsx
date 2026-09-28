@@ -369,7 +369,7 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
   );
 }
 
-export default function UserSearchPage() {
+export default function GlobalSearchPage() {
   const { orgId: authOrgId } = useAuth();
   const navigate = useNavigate();
   const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();

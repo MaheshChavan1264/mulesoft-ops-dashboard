@@ -8,7 +8,7 @@ import { Copy, Check } from 'lucide-react';
  * shows a green check-mark confirmation.
  *
  * This component was independently re-implemented in ApplicationsPage,
- * ApplicationDetailPage, CpsComparisonPage, and UserSearchPage — all with
+ * ApplicationDetailPage, CpsComparisonPage, and GlobalSearchPage — all with
  * the same behaviour but slightly different styling.  This canonical version
  * supports both common visual variants through props.
  *
