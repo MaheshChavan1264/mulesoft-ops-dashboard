@@ -507,7 +507,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     for (const [k, v] of Object.entries(props || {})) {
       if (!PWD_PATTERN.test(k)) continue;
       if (prefix && !k.startsWith(prefix)) continue;
-      return v ? '****' : '';
+      return v != null ? String(v) : '';
     }
     return '';
   }
@@ -646,6 +646,18 @@ router.post('/search-user', authMiddleware, async (req, res) => {
               ...h, secureGroupKey: gKey, password: findPassword(gProps, h.key),
             }));
             matchedProps = matchedProps.concat(sHits);
+            // ── Unmask non-secure passwords ─────────────────────────────────
+            // Non-secure props often store *** as a placeholder for passwords
+            // whose real value lives in the secure group. Now that we have the
+            // secure group props, update any non-secure hit whose password is
+            // still masked/empty with the actual value from this secure group.
+            matchedProps.forEach(hit => {
+              if (hit.source === 'non-secure' &&
+                  (!hit.password || /^\*+$/.test(String(hit.password)))) {
+                const pw = findPassword(gProps, hit.key);
+                if (pw && !/^\*+$/.test(pw)) hit.password = pw;
+              }
+            });
           }
         } catch (sErr) {
           //console.log(`[search-user] "${appName}" secure fetch FAILED: ${sErr.code || sErr.message}`);
@@ -664,6 +676,16 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             const s2Flat = flattenProps(sRes2.data);
             const s2Hits = scanProps(s2Flat, 'secure').map(h => ({ ...h, secureGroupKey: cpsKey, password: findPassword(s2Flat, h.key) }));
             if (s2Hits.length > 0) matchedProps = matchedProps.concat(s2Hits);
+            // ── Unmask non-secure passwords (fallback path) ─────────────────
+            // Same logic as above: replace *** placeholders in non-secure hits
+            // with the actual value found in the fallback secure group.
+            matchedProps.forEach(hit => {
+              if (hit.source === 'non-secure' &&
+                  (!hit.password || /^\*+$/.test(String(hit.password)))) {
+                const pw = findPassword(s2Flat, hit.key);
+                if (pw && !/^\*+$/.test(pw)) hit.password = pw;
+              }
+            });
           }
         } catch { /* skip — secure properties optional */ }
       }

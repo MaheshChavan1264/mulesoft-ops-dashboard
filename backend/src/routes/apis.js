@@ -101,6 +101,25 @@ router.get('/:orgId/:envId/:apiId/contracts', authMiddleware, async (req, res) =
   }
 });
 
+// Delete a contract permanently
+router.delete('/:orgId/:envId/:apiId/contracts/:contractId', authMiddleware, async (req, res) => {
+  const { orgId, envId, apiId, contractId } = req.params;
+  const url = `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts/${contractId}`;
+  console.log('[APIs] DELETE contract →', url);
+  try {
+    const client = createClient(req.anypointToken);
+    const response = await client.delete(url);
+    // Anypoint returns 204 No Content on success
+    res.status(response.status === 204 ? 204 : 200).json(response.data ?? { success: true });
+  } catch (error) {
+    console.error('[APIs] delete contract error:', error.response?.status, error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data?.message || 'Failed to delete contract',
+      _debug: { orgId, envId, apiId, contractId, url }
+    });
+  }
+});
+
 // Update a contract status (Approve / Revoke)
 router.patch('/:orgId/:envId/:apiId/contracts/:contractId', authMiddleware, async (req, res) => {
   const { orgId, envId, apiId, contractId } = req.params;

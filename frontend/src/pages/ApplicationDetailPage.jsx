@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity, Share2 } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity, Share2, ShieldCheck, Trash2 } from 'lucide-react';
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 import CpsRawJsonModal from '../components/CpsRawJsonModal';
@@ -294,6 +294,70 @@ function SchedulerConfirmModal({ schedulerKey, onConfirm, onCancel, loading }) {
   );
 }
 
+function ContractConfirmModal({ state, onConfirm, onCancel, loading }) {
+  if (!state) return null;
+  const { action, appName } = state;
+  const isRevoke = action === 'revoke';
+  const isDelete = action === 'delete';
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+        <div className="flex items-start gap-4">
+          <div className={`p-2.5 rounded-xl flex-shrink-0 border ${
+            isDelete ? 'bg-red-950/60 border-red-800/40'
+            : isRevoke ? 'bg-red-950/60 border-red-800/40'
+            : 'bg-emerald-950/60 border-emerald-800/40'
+          }`}>
+            {isDelete ? <Trash2 size={18} className="text-red-400" />
+              : isRevoke ? <X size={18} className="text-red-400" />
+              : <Check size={18} className="text-emerald-400" />}
+          </div>
+          <div className="flex-1">
+            <h3 className="text-white font-semibold text-base mb-1">
+              {isDelete ? 'Delete Contract?' : isRevoke ? 'Revoke Contract?' : 'Approve Contract?'}
+            </h3>
+            <p className="text-slate-400 text-sm">
+              Are you sure you want to{' '}
+              <span className={`font-semibold ${isDelete || isRevoke ? 'text-red-300' : 'text-emerald-300'}`}>
+                {isDelete ? 'permanently delete' : isRevoke ? 'revoke' : 'approve'}
+              </span>{' '}
+              the contract for{' '}
+              <span className="font-mono text-blue-300 text-xs bg-blue-950/40 px-1.5 py-0.5 rounded">{appName}</span>?
+            </p>
+            {isDelete && (
+              <p className="text-red-400/80 text-xs mt-2">⚠ This action is irreversible. The contract will be permanently removed.</p>
+            )}
+            {isRevoke && !isDelete && (
+              <p className="text-red-400/80 text-xs mt-2">⚠ The client application will immediately lose access to this API.</p>
+            )}
+          </div>
+          <button onClick={onCancel} className="text-slate-600 hover:text-slate-300"><X size={16} /></button>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={onCancel} disabled={loading}
+            className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg disabled:opacity-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={loading}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${
+              isDelete ? 'bg-red-700 hover:bg-red-600 text-white'
+              : isRevoke ? 'bg-red-600 hover:bg-red-500 text-white'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+            }`}>
+            {loading
+              ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
+              : isDelete
+                ? <><Trash2 size={13} /> Delete</>
+                : isRevoke
+                  ? <><X size={13} /> Revoke</>
+                  : <><Check size={13} /> Approve</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main component ────────────────────────────────────── */
 
 export default function ApplicationDetailPage() {
@@ -353,6 +417,9 @@ export default function ApplicationDetailPage() {
   const [contracts, setContracts] = useState(null);
   const [contractsError, setContractsError] = useState('');
   const [contractApiInstanceId, setContractApiInstanceId] = useState(null);
+  const [contractActionLoading, setContractActionLoading] = useState(null); // contractId being actioned
+  const [contractActionResult, setContractActionResult] = useState(null);   // { success, message }
+  const [contractConfirmState, setContractConfirmState] = useState(null);   // { contractId, action, appName }
 
   // Feature 4: load contracts — defined here (before early returns) to satisfy Rules of Hooks.
   // Resolves the API Manager instance the same way PingTestPanel does:
@@ -447,6 +514,46 @@ export default function ApplicationDetailPage() {
     }
     setContractsLoading(false);
   }, [orgId, envId, app, hasCpsCsvCredentials, getSecret]);
+
+  // Contract action handler (approve / revoke / delete)
+  const handleContractAction = useCallback(async () => {
+    if (!contractConfirmState || !contractApiInstanceId) return;
+    const { contractId, action, appName } = contractConfirmState;
+    setContractActionLoading(contractId);
+    try {
+      if (action === 'delete') {
+        await api.delete(`/apis/${orgId}/${envId}/${contractApiInstanceId}/contracts/${contractId}`);
+        setContracts(prev => Array.isArray(prev)
+          ? prev.filter(c => c.id !== contractId)
+          : prev
+        );
+        setContractActionResult({
+          success: true,
+          message: `✓ Contract for "${appName}" deleted successfully`,
+        });
+      } else {
+        const newStatus = action === 'approve' ? 'APPROVED' : 'REVOKED';
+        await api.patch(`/apis/${orgId}/${envId}/${contractApiInstanceId}/contracts/${contractId}`, { status: newStatus });
+        setContracts(prev => Array.isArray(prev)
+          ? prev.map(c => (c.id === contractId ? { ...c, status: newStatus } : c))
+          : prev
+        );
+        setContractActionResult({
+          success: true,
+          message: `✓ Contract for "${appName}" ${action === 'approve' ? 'approved' : 'revoked'} successfully`,
+        });
+      }
+    } catch (e) {
+      setContractActionResult({
+        success: false,
+        message: `✗ Failed to ${action} contract: ${e.response?.data?.error || e.message}`,
+      });
+    } finally {
+      setContractActionLoading(null);
+      setContractConfirmState(null);
+      setTimeout(() => setContractActionResult(null), 6000);
+    }
+  }, [contractConfirmState, contractApiInstanceId, orgId, envId]);
 
   // CPS state
   const [copiedCpsNs, setCopiedCpsNs] = useState(false);
@@ -585,6 +692,29 @@ export default function ApplicationDetailPage() {
   }, [orgId, envId, appId, ch2Schedulers, app]);
 
   useEffect(() => { if (orgId && envId && appId) load(); }, [load]);
+
+  // ── CPS auto-load on page open ───────────────────────────────────────────
+  // `loadCpsData` is defined after the early-return guards (it closes over
+  // render-time derived values). We keep a ref to its latest version so this
+  // effect can call it safely once the app data arrives.
+  const loadCpsDataRef = useRef(null);
+
+  useEffect(() => {
+    if (!app) return;
+    // Derive cpsBaseUrl from raw app data so we know whether CPS is configured
+    const _ds  = app.target?.deploymentSettings || {};
+    const _cfg = app.application?.configuration || {};
+    const _ps  = _cfg['mule.agent.application.properties.service'] || {};
+    const _allP = {
+      ...(_ps.properties || {}),
+      ...(_ds.properties || {}),
+      ...(_ds.environmentVariables || _ds.environmentVars || {}),
+      ...(app.properties || {}),
+    };
+    const _url = _allP['cps.configServerBaseUrl'] || _allP['config.server.base.url'] || '';
+    // Only auto-load when CPS is configured and data isn't already present
+    if (_url && loadCpsDataRef.current) loadCpsDataRef.current();
+  }, [app]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const requestAction = (action) => {
     setActionResult(null);
@@ -733,6 +863,10 @@ export default function ApplicationDetailPage() {
 
   const loadCpsData = async (keyOverride, envOverride) => {
     if (!cpsBaseUrl) return;
+    // Guard: skip the silent auto-trigger when data is already loaded/loading.
+    // A manual call (Refresh button / key-override change) always passes args so
+    // it bypasses this guard and forces a fresh fetch.
+    if (!keyOverride && !envOverride && (cpsData || cpsLoading)) return;
     const useKey = keyOverride || effectiveCpsKey;
     const useEnv = envOverride || effectiveCpsEnv;
     setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null); setCpsAttemptedUrl('');
@@ -840,7 +974,7 @@ export default function ApplicationDetailPage() {
         rawNsResponse: nsRaw,   // original CPS API response (unmodified)
         secureGroups: [],
         rawSecureResponse: null,
-        binaryList: [],
+        binaryList: [], 
         secureKeys: flatNs['cps.secure.properties'] || '',
         binaryKeys: flatNs['cps.secure.binaries'] || '',
         useEnv,  // store for later fetches
@@ -855,6 +989,10 @@ export default function ApplicationDetailPage() {
     }
     setCpsLoading(false);
   };
+  // Keep the ref in sync with the latest closure so the auto-load useEffect
+  // always calls the version that closes over the current derived values.
+  loadCpsDataRef.current = loadCpsData;
+
   const rStatus = (app.application?.status || app.status || '').toUpperCase();
   const isRunning = rStatus === 'RUNNING' || rStatus === 'STARTED';
 
@@ -869,8 +1007,8 @@ export default function ApplicationDetailPage() {
   const tabs = [
     { id:'overview', label:'Overview' },
     { id:'properties', label:'Properties', badge: Object.keys(allProps).length },
-    { id:'infrastructure', label:'Schedulers', badge: allSchedulers.length > 0 ? allSchedulers.length : undefined },
     ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config', badge: cpsData ? (cpsError ? '⚠' : '✓') : undefined, badgeErr: !!cpsError }] : []),
+    { id:'infrastructure', label:'Schedulers', badge: allSchedulers.length > 0 ? allSchedulers.length : undefined },
     { id:'dependencies', label:'Dependencies' },
     { id:'contracts', label:'Contracts', badge: contracts !== null && !contractsError ? contracts.length : undefined },
     { id:'apispec', label:'API Spec', badge: pingSpec?.allEndpoints?.length > 0 ? pingSpec.allEndpoints.length : undefined },
@@ -927,6 +1065,12 @@ export default function ApplicationDetailPage() {
         onConfirm={() => { triggerScheduler(schedulerConfirmKey); setSchedulerConfirmKey(null); }}
         onCancel={() => setSchedulerConfirmKey(null)}
         loading={triggerLoadingSet.has(schedulerConfirmKey)}
+      />
+      <ContractConfirmModal
+        state={contractConfirmState}
+        onConfirm={handleContractAction}
+        onCancel={() => setContractConfirmState(null)}
+        loading={!!contractActionLoading}
       />
 
       {/* Action toast */}
@@ -1003,6 +1147,24 @@ export default function ApplicationDetailPage() {
                 })}
               </div>
             )}
+            {/* API Manager shortcut — pre-selects the current BG + env (+ API instance if known) */}
+            <button
+              onClick={() => {
+                localStorage.setItem('mule_apimgr_bg', orgId);
+                if (envId) localStorage.setItem('mule_apimgr_env', envId);
+                if (contractApiInstanceId) {
+                  localStorage.setItem('mule_apimgr_instance', String(contractApiInstanceId));
+                } else if (app?.name) {
+                  // No instance ID yet (contracts not loaded) — pre-fill search with app name
+                  // so the API Manager page auto-filters to likely matching instances.
+                  localStorage.setItem('mule_apimgr_search', app.name);
+                }
+                navigate('/api-manager');
+              }}
+              title="Open API Manager filtered to this environment"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 text-slate-400 hover:text-blue-300 border-slate-700/40 hover:border-blue-700/50 hover:bg-blue-950/30 transition-all">
+              <ShieldCheck size={13} /> API Manager
+            </button>
             {/* CPS Manager shortcut — navigates with pre-selected BG+Env+App */}
             <button
               onClick={() => navigate('/cps-manager', {
@@ -2111,7 +2273,7 @@ export default function ApplicationDetailPage() {
       {/* ── CONTRACTS ───────────────────────────────── */}
       {tab==='contracts' && (
         <div className="space-y-5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-white font-semibold text-sm">API Consumer Contracts</h2>
               <p className="text-slate-500 text-xs mt-0.5">
@@ -2119,12 +2281,37 @@ export default function ApplicationDetailPage() {
                 {contractApiInstanceId && <span className="ml-2 font-mono text-slate-600">API ID: {contractApiInstanceId}</span>}
               </p>
             </div>
-            <button onClick={loadContracts} disabled={contractsLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors">
-              <RefreshCw size={11} className={contractsLoading ? 'animate-spin' : ''} />
-              {contracts ? 'Refresh' : 'Load'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  localStorage.setItem('mule_apimgr_bg', orgId);
+                  if (envId) localStorage.setItem('mule_apimgr_env', envId);
+                  if (contractApiInstanceId) localStorage.setItem('mule_apimgr_instance', String(contractApiInstanceId));
+                  navigate('/api-manager');
+                }}
+                title="Open API Manager for this environment"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 hover:border-blue-600/50 rounded-lg transition-colors">
+                <ShieldCheck size={11} /> Open in API Manager
+              </button>
+              <button onClick={loadContracts} disabled={contractsLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors">
+                <RefreshCw size={11} className={contractsLoading ? 'animate-spin' : ''} />
+                {contracts ? 'Refresh' : 'Load'}
+              </button>
+            </div>
           </div>
+
+          {/* Contract action result toast */}
+          {contractActionResult && (
+            <div className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm ${
+              contractActionResult.success
+                ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
+                : 'bg-red-950/40 border-red-800/50 text-red-300'
+            }`}>
+              <span>{contractActionResult.message}</span>
+              <button onClick={() => setContractActionResult(null)} className="ml-4 opacity-60 hover:opacity-100"><X size={14} /></button>
+            </div>
+          )}
 
           {contractsLoading && (
             <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
@@ -2155,7 +2342,7 @@ export default function ApplicationDetailPage() {
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-slate-800/50 border-b border-slate-700/40">
-                        {['Client App', 'Client ID', 'Status', 'SLA Tier', 'Requested'].map(h => (
+                        {['Client App', 'Client ID', 'Status', 'SLA Tier', 'Requested', 'Actions'].map(h => (
                           <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
                         ))}
                       </tr>
@@ -2177,10 +2364,16 @@ export default function ApplicationDetailPage() {
                         const reqDate = c.requestedAt || c.createdDate
                           ? new Date(c.requestedAt || c.createdDate).toLocaleDateString()
                           : '—';
+                        const appName = c.application?.name || c.clientApplication?.name || '—';
+                        const contractId = c.id;
+                        const isActioning = contractActionLoading === contractId;
+                        // Determine which action buttons to show based on current status
+                        const canApprove = status === 'PENDING' || status === 'REVOKED';
+                        const canRevoke  = status === 'APPROVED' || status === 'PENDING';
                         return (
                           <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
                             <td className="px-5 py-3">
-                              <p className="text-slate-200 text-xs font-medium">{c.application?.name || c.clientApplication?.name || '—'}</p>
+                              <p className="text-slate-200 text-xs font-medium">{appName}</p>
                               {c.application?.description && (
                                 <p className="text-slate-600 text-[10px] mt-0.5 truncate max-w-xs">{c.application.description}</p>
                               )}
@@ -2196,6 +2389,44 @@ export default function ApplicationDetailPage() {
                             </td>
                             <td className="px-5 py-3 text-slate-400 text-xs">{slaTier}</td>
                             <td className="px-5 py-3 text-slate-500 text-xs">{reqDate}</td>
+                            <td className="px-5 py-3">
+                              {contractId ? (
+                                <div className="flex items-center gap-1.5">
+                                  {isActioning ? (
+                                    <span className="flex items-center gap-1.5 text-[10px] text-slate-400 px-2 py-1">
+                                      <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-slate-400" /> Working…
+                                    </span>
+                                  ) : (
+                                    <>
+                                      {canApprove && (
+                                        <button
+                                          onClick={() => setContractConfirmState({ contractId, action: 'approve', appName })}
+                                          title={`Approve contract for ${appName}`}
+                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-emerald-950/30 text-emerald-300 border-emerald-700/40 hover:bg-emerald-600/20 hover:text-emerald-200 hover:border-emerald-600/60">
+                                          <Check size={9} /> Approve
+                                        </button>
+                                      )}
+                                      {canRevoke && (
+                                        <button
+                                          onClick={() => setContractConfirmState({ contractId, action: 'revoke', appName })}
+                                          title={`Revoke contract for ${appName}`}
+                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-red-950/30 text-red-300 border-red-700/40 hover:bg-red-600/20 hover:text-red-200 hover:border-red-600/60">
+                                          <X size={9} /> Revoke
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => setContractConfirmState({ contractId, action: 'delete', appName })}
+                                        title={`Permanently delete contract for ${appName}`}
+                                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-red-950/40 text-red-400 border-red-800/50 hover:bg-red-700/30 hover:text-red-300 hover:border-red-600/60">
+                                        <Trash2 size={9} /> Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-700 text-xs">—</span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}

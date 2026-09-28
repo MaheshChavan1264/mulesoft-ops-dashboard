@@ -56,16 +56,21 @@ function ContractCard({ c, i, onUpdateContract }) {
   const tierName = c.tier?.name || c.requestedTier?.name || null;
   const created = c.createdDate ? new Date(c.createdDate).toLocaleDateString() : null;
 
+  // Anypoint API can return 'PENDING_APPROVAL' or just 'PENDING' for awaiting-approval contracts,
+  // and 'ACTIVE' or 'APPROVED' for approved ones — normalise both variants.
+  const isPending  = status === 'PENDING_APPROVAL' || status === 'PENDING';
+  const isApproved = status === 'ACTIVE' || status === 'APPROVED';
+
   const statusIcon =
-    status === 'ACTIVE' ? <CheckCircle size={12} className="text-green-400 flex-shrink-0" /> :
+    isApproved ? <CheckCircle size={12} className="text-green-400 flex-shrink-0" /> :
     status === 'REVOKED' ? <XCircle size={12} className="text-red-400 flex-shrink-0" /> :
-    status === 'PENDING_APPROVAL' ? <Clock size={12} className="text-yellow-400 flex-shrink-0" /> :
+    isPending ? <Clock size={12} className="text-yellow-400 flex-shrink-0" /> :
     <AlertCircle size={12} className="text-gray-400 flex-shrink-0" />;
 
   const statusColor =
-    status === 'ACTIVE' ? 'text-green-400 bg-green-500/10 border-green-700/40' :
+    isApproved ? 'text-green-400 bg-green-500/10 border-green-700/40' :
     status === 'REVOKED' ? 'text-red-400 bg-red-500/10 border-red-700/40' :
-    status === 'PENDING_APPROVAL' ? 'text-yellow-400 bg-yellow-500/10 border-yellow-700/40' :
+    isPending ? 'text-yellow-400 bg-yellow-500/10 border-yellow-700/40' :
     'text-gray-400 bg-gray-700/30 border-gray-600/40';
 
   return (
@@ -101,14 +106,14 @@ function ContractCard({ c, i, onUpdateContract }) {
         <div className="flex gap-2 min-h-[24px] items-center">
           {loading && <RefreshCw size={12} className="animate-spin text-gray-500" />}
 
-          {!loading && status === 'PENDING_APPROVAL' && (
+          {!loading && isPending && (
             <>
               <button onClick={() => handleUpdate('APPROVED')} className="text-[10px] uppercase font-bold tracking-wider bg-green-900/40 text-green-400 border border-green-700/50 hover:bg-green-800/60 px-3 py-1 rounded transition-colors">Approve</button>
               <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-900/40 text-red-400 border border-red-700/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Reject</button>
             </>
           )}
 
-          {!loading && (status === 'ACTIVE' || status === 'APPROVED') && !confirmRevoke && (
+          {!loading && isApproved && !confirmRevoke && (
             <button onClick={() => setConfirmRevoke(true)} className="text-[10px] uppercase font-bold tracking-wider bg-red-900/40 text-red-400 border border-red-700/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Revoke</button>
           )}
 
@@ -123,7 +128,7 @@ function ContractCard({ c, i, onUpdateContract }) {
           )}
 
           {!loading && status === 'REVOKED' && (
-            <button onClick={() => handleUpdate('APPROVED')} className="text-[10px] uppercase font-bold tracking-wider bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700 px-3 py-1 rounded transition-colors">Restore</button>
+            <button onClick={() => handleUpdate('ACTIVE')} className="text-[10px] uppercase font-bold tracking-wider bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700 px-3 py-1 rounded transition-colors">Restore</button>
           )}
         </div>
       </div>
@@ -196,6 +201,11 @@ export default function ApiManagerPage() {
   // loadEnvs already calls loadApisInternal directly with fresh data.
   const skipEnvEffectRef = useRef(true);
 
+  // Auto-select instance navigated from ApplicationDetailPage (stored in localStorage)
+  const pendingInstanceIdRef = useRef(
+    localStorage.getItem('mule_apimgr_instance') || ''
+  );
+
   // ── Listen for global filter changes ───────────────────────────────────────
   // BG filter changes — causes re-render for filter count badges
   useEffect(() => {
@@ -211,10 +221,29 @@ export default function ApiManagerPage() {
     return () => window.removeEventListener('envFilterChanged', h);
   }, []);
 
+  // Clear the pending instance key from localStorage as soon as the page mounts
+  // (we've already captured it in the ref above)
+  useEffect(() => {
+    if (pendingInstanceIdRef.current) {
+      localStorage.removeItem('mule_apimgr_instance');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // On auth ready, load business groups
   useEffect(() => {
     if (authOrgId) loadBusinessGroups();
   }, [authOrgId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-select pending API instance once the list finishes loading
+  useEffect(() => {
+    const targetId = pendingInstanceIdRef.current;
+    if (!targetId || apis.length === 0 || selectedApi) return;
+    const match = apis.find(a => String(a.id) === String(targetId));
+    if (match) {
+      pendingInstanceIdRef.current = ''; // consume — only fire once
+      selectApi(match);
+    }
+  }, [apis]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When BG selection changes, groups first load, OR global env filter changes →
   // reload envs + APIs.  envFilterVersion bump triggers this without a new API

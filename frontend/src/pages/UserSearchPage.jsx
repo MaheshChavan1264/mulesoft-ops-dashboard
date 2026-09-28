@@ -871,13 +871,20 @@ export default function UserSearchPage() {
     if (!results || !results.length) return;
 
     // Group by unique apiUser value
-    // userMap: apiUser → { secureKeys: Map<bgName, Set<skName>>, apps: Map<bgName, Set<appName>> }
+    // userMap: apiUser → { passwords: Map<bgName, Set<pw>>, secureKeys: Map<bgName, Set<skName>>, apps: Map<bgName, Set<appName>> }
     const userMap = new Map();
     results.forEach(row => {
       const user = row.apiUser || '—';
-      if (!userMap.has(user)) userMap.set(user, { secureKeys: new Map(), apps: new Map() });
+      if (!userMap.has(user)) userMap.set(user, { passwords: new Map(), secureKeys: new Map(), apps: new Map() });
       const entry = userMap.get(user);
       const bg = row.bgName || '—';
+
+      // Passwords — collect unique non-blank passwords per BG
+      const pw = row.password;
+      if (pw && pw !== '—' && pw !== '') {
+        if (!entry.passwords.has(bg)) entry.passwords.set(bg, new Set());
+        entry.passwords.get(bg).add(pw);
+      }
 
       // Secure keys — only when row has an actual secure group key
       if (row.secureKey) {
@@ -891,34 +898,39 @@ export default function UserSearchPage() {
       entry.apps.get(bg).add(appDisplay);
     });
 
-    const headers = ['Username', 'Secure Keys', 'Directly connected APIs'];
+    const headers = ['Username', 'Password', 'Secure Keys', 'Directly connected APIs'];
     const aoa = [headers];
 
-    for (const [username, { secureKeys, apps }] of userMap.entries()) {
+    for (const [username, { passwords, secureKeys, apps }] of userMap.entries()) {
+      // Password cell: "BG\npw1\npw2\n\nBG2\npw3\n"
+      const pwLines = [];
+      [...passwords.entries()].forEach(([bg, pws]) => {
+        pwLines.push(bg);
+        [...pws].forEach(pw => pwLines.push(pw));
+        pwLines.push(''); // blank line after each BG
+      });
+
       // Secure Keys cell: "BG\nkey1\nkey2\n\nBG2\nkey3\n"
-      // — no indent before keys, blank line after each BG's items
       const skLines = [];
-      const skEntries = [...secureKeys.entries()];
-      skEntries.forEach(([bg, keys], idx) => {
+      [...secureKeys.entries()].forEach(([bg, keys]) => {
         skLines.push(bg);
-        [...keys].forEach(k => skLines.push(k));          // no leading spaces
-        skLines.push('');                                  // blank line after each BG
+        [...keys].forEach(k => skLines.push(k));
+        skLines.push('');
       });
 
       // Directly connected APIs cell: "BG\napp1\napp2\n\nBG2\napp3\n"
       const appLines = [];
-      const appEntries = [...apps.entries()];
-      appEntries.forEach(([bg, appNames]) => {
+      [...apps.entries()].forEach(([bg, appNames]) => {
         appLines.push(bg);
-        [...appNames].forEach(a => appLines.push(a));     // no leading spaces
-        appLines.push('');                                 // blank line after each BG
+        [...appNames].forEach(a => appLines.push(a));
+        appLines.push('');
       });
 
-      aoa.push([username, skLines.join('\n'), appLines.join('\n')]);
+      aoa.push([username, pwLines.join('\n'), skLines.join('\n'), appLines.join('\n')]);
     }
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [{ wch: 42 }, { wch: 45 }, { wch: 55 }];
+    ws['!cols'] = [{ wch: 42 }, { wch: 35 }, { wch: 45 }, { wch: 55 }];
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'User Summary');
@@ -1178,7 +1190,7 @@ export default function UserSearchPage() {
               {
                 icon: '📋',
                 title: 'What you get back',
-                items: ['App name + environment + status', 'The exact property key containing the match', 'CPS secure group name (if secure)', 'Associated password key (masked)'],
+                items: ['App name + environment + status', 'The exact property key containing the match', 'CPS secure group name (if secure)', 'Associated password value (plain text)'],
               },
             ].map(({ icon, title, items }) => (
               <div key={title} className="bg-slate-800/30 border border-slate-700/40 rounded-xl p-4 space-y-2">
@@ -1554,7 +1566,12 @@ export default function UserSearchPage() {
                                                                       <CopyBtn text={row.apiUser} />
                                                                     </div>
                                                                   </td>
-                                                                  <td className="px-2 py-1.5 text-[10px] font-mono text-slate-600 whitespace-nowrap">{row.password}</td>
+                                                                  <td className="px-2 py-1.5 whitespace-nowrap">
+                                                                    <div className="flex items-center gap-1 group/cell">
+                                                                      <span className={`text-[10px] font-mono ${row.password && row.password !== '—' ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
+                                                                      {row.password && row.password !== '—' && <CopyBtn text={row.password} />}
+                                                                    </div>
+                                                                  </td>
                                                                 </tr>
                                                               ))}
                                                             </tbody>
@@ -1622,7 +1639,10 @@ export default function UserSearchPage() {
                                 </div>
                                 <span className="font-mono text-emerald-300 break-all max-w-xs"><Highlight text={row.apiUser} terms={activeTerms} /></span>
                                 <CopyBtn text={row.apiUser} />
-                                <span className="font-mono text-slate-600">{row.password}</span>
+                                <div className="flex items-center gap-1 group/cell">
+                                  <span className={`font-mono ${row.password && row.password !== '—' ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
+                                  {row.password && row.password !== '—' && <CopyBtn text={row.password} />}
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -1684,7 +1704,12 @@ export default function UserSearchPage() {
                           <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-cyan-300"><Highlight text={row.propKey} terms={activeTerms} /></span><CopyBtn text={row.propKey} /></div></td>
                           {/* Feature 1: highlight apiUser */}
                           <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-emerald-300 break-all"><Highlight text={row.apiUser} terms={activeTerms} /></span><CopyBtn text={row.apiUser} /></div></td>
-                          <td className="px-3 py-3 text-xs font-mono text-slate-500">{row.password}</td>
+                          <td className="px-3 py-3 text-xs">
+                            <div className="flex items-center gap-1 group/cell">
+                              <span className={`font-mono ${row.password && row.password !== '—' ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
+                              {row.password && row.password !== '—' && <CopyBtn text={row.password} />}
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
