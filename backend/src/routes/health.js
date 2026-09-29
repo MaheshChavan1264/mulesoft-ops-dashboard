@@ -831,15 +831,17 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       );
       const otherApps2 = userApps.filter(a => !nameLo(a).includes('ping'));
 
+      // Always include the full fallback pool — envType apps are tried first,
+      // but if they all fail with IDP conflicts we fall through to ping-only
+      // apps and then the rest. Previously the fallback was gated on
+      // envTypeApps.length === 0, which meant IDP failures on envType apps
+      // caused the contract creation to abort prematurely.
       const seen = new Set([String(targetApp.id)]);
       const candidateApps = [
         targetApp,
         ...envTypeApps.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
-        ...(envTypeApps.length === 0
-          ? [...pingOnlyApps.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
-             ...otherApps2.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id)))]
-          : []
-        ),
+        ...pingOnlyApps.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
+        ...otherApps2.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
       ];
       console.log(`[auto-contract-creds] Candidate apps (${isProd ? 'PROD' : 'UAT'}): ${candidateApps.map(a => a.name).join(', ')}`);
       let created = false;

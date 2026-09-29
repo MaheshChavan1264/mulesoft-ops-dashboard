@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { RefreshCw, ShieldCheck, Search, SlidersHorizontal, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Globe } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Search, SlidersHorizontal, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Globe, Trash2 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
@@ -16,15 +16,24 @@ const ENV_CACHE_MS  = 10 * 60 * 1000;  // 10 min — env lists are stable
 const APIS_CACHE_MS =  5 * 60 * 1000;  //  5 min — API instances change more often
 
 // ── Contract Card ─────────────────────────────────────────────────────────────
-function ContractCard({ c, i, onUpdateContract }) {
+function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const handleUpdate = async (newStatus) => {
     setLoading(true);
     await onUpdateContract(c.id, newStatus);
     setLoading(false);
     setConfirmRevoke(false);
+  };
+
+  const handleDelete = async () => {
+    setDeleteLoading(true);
+    await onDeleteContract(c.id);
+    setDeleteLoading(false);
+    setConfirmDelete(false);
   };
 
   const appName =
@@ -103,6 +112,7 @@ function ContractCard({ c, i, onUpdateContract }) {
       </div>
 
       <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-800/60">
+        {/* ── Status action buttons (left) ─────────────────────────── */}
         <div className="flex gap-2 min-h-[24px] items-center">
           {loading && <RefreshCw size={12} className="animate-spin text-gray-500" />}
 
@@ -129,6 +139,39 @@ function ContractCard({ c, i, onUpdateContract }) {
 
           {!loading && status === 'REVOKED' && (
             <button onClick={() => handleUpdate('ACTIVE')} className="text-[10px] uppercase font-bold tracking-wider bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700 px-3 py-1 rounded transition-colors">Restore</button>
+          )}
+        </div>
+
+        {/* ── Delete button (right) ─────────────────────────────────── */}
+        <div className="flex gap-2 items-center flex-shrink-0">
+          {deleteLoading ? (
+            <RefreshCw size={12} className="animate-spin text-gray-500" />
+          ) : confirmDelete ? (
+            <div className="flex gap-1.5 items-center">
+              <span className="text-[10px] font-bold text-red-400 flex items-center gap-1">
+                <Trash2 size={10} /> Delete permanently?
+              </span>
+              <button
+                onClick={handleDelete}
+                className="text-[10px] uppercase font-bold tracking-wider bg-red-700 text-white hover:bg-red-600 px-2 py-0.5 rounded transition-colors"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-[10px] uppercase font-bold tracking-wider text-gray-400 hover:text-white px-2 py-0.5 rounded transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setConfirmRevoke(false); setConfirmDelete(true); }}
+              title="Delete contract permanently"
+              className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-gray-800 text-gray-400 border border-gray-700 hover:bg-red-900/40 hover:text-red-400 hover:border-red-700/50 px-2 py-1 rounded transition-colors"
+            >
+              <Trash2 size={11} /> Delete
+            </button>
           )}
         </div>
       </div>
@@ -502,6 +545,22 @@ export default function ApiManagerPage() {
     }
   };
 
+  const deleteContract = async (contractId) => {
+    const bgId = selectedBg === '__all__'
+      ? (selectedApi?.organizationId || authOrgId)
+      : selectedBg;
+    const envId = selectedApi?.environmentId || selectedEnv;
+    try {
+      await api.delete(
+        `/apis/${bgId}/${envId}/${selectedApi.id}/contracts/${contractId}`
+      );
+      // Remove deleted contract from local state immediately — no re-fetch needed
+      setContracts(prev => prev.filter(c => c.id !== contractId));
+    } catch (e) {
+      alert(`Failed to delete contract: ${e.response?.data?.error || e.message}`);
+    }
+  };
+
   // ── Derived values ──────────────────────────────────────────────────────────
   const visibleGroups = applyBgFilter(allBusinessGroups);
   const filterActive = visibleGroups.length < allBusinessGroups.length;
@@ -827,6 +886,7 @@ export default function ApiManagerPage() {
                         c={c}
                         i={i}
                         onUpdateContract={updateContractStatus}
+                        onDeleteContract={deleteContract}
                       />
                     ))}
                   </div>

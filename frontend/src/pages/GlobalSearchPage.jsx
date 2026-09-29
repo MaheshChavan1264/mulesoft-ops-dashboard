@@ -383,6 +383,7 @@ export default function GlobalSearchPage() {
   });
   const [error, setError] = useState('');
   const [credentialErrors, setCredentialErrors] = useState(0);
+  const [circuitBrokenUrls, setCircuitBrokenUrls] = useState([]);
   const [progress, setProgress] = useState({ envsDone: 0, envsTotal: 0, appsT: 0, appsN: 0, phase: 1, batchDone: 0, batchTotal: 0 });
   const [envStats, setEnvStats] = useState([]);
   // Feature 3: cancel
@@ -597,7 +598,9 @@ export default function GlobalSearchPage() {
     setEnvStats([]);
     setExpandedApps(new Set());
     setExpandedTerms(new Set());
+    setCircuitBrokenUrls([]);
     setSelectorCollapsed(false);
+    try { sessionStorage.removeItem('cpsUnreachableUrls'); } catch {}
     // Note: bgEnvSelections are managed by BgEnvSelector and not cleared by default
     // to preserve UX, but we clear the results and query to reset the view.
   };
@@ -623,7 +626,7 @@ export default function GlobalSearchPage() {
 
       // Auto-collapse the selector panel when search starts to give results more space
       setSelectorCollapsed(true);
-      setLoading(true); setError(''); setResults(null); setCredentialErrors(0); setEnvStats([]);
+      setLoading(true); setError(''); setResults(null); setCredentialErrors(0); setCircuitBrokenUrls([]); setEnvStats([]);
     setProgress({ envsDone: 0, envsTotal: bgEnvSelections.length, appsT: 0, appsN: 0, phase: 1, batchDone: 0, batchTotal: 0 });
 
     // Feature 9: multi-term — split by comma
@@ -735,10 +738,26 @@ export default function GlobalSearchPage() {
           return true;
         });
 
-    setProgress(p => ({ ...p, appsN: allEntries.length }));
+    // ── Pre-filter: skip apps whose CPS URL was previously confirmed unreachable ──
+    // The backend circuit breaker reports unreachable CPS URLs per search and we
+    // cache them in sessionStorage so repeat searches skip them instantly instead
+    // of waiting for timeouts again.
+    const normCpsUrl = (url) => (url || '').trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+    const cachedUnreachable = (() => {
+      try { return new Set(JSON.parse(sessionStorage.getItem('cpsUnreachableUrls') || '[]')); } catch { return new Set(); }
+    })();
+    const entriesToSearch = cachedUnreachable.size > 0
+      ? allEntries.filter(e => !cachedUnreachable.has(normCpsUrl(e.cpsBaseUrl)))
+      : allEntries;
+    const preFilteredCount = allEntries.length - entriesToSearch.length;
 
-    if (!allEntries.length) {
-      setError('No apps with CPS config found — check that apps have cps.configServerBaseUrl set');
+    setProgress(p => ({ ...p, appsN: entriesToSearch.length }));
+
+    if (!entriesToSearch.length) {
+      const msg = preFilteredCount > 0
+        ? `All ${allEntries.length} CPS-configured app(s) skipped — their CPS server(s) were unreachable in a previous search. Clear browser sessionStorage or restart to retry.`
+        : 'No apps with CPS config found — check that apps have cps.configServerBaseUrl set';
+      setError(msg);
       setResults([]); setLoading(false); return;
     }
 
@@ -747,15 +766,15 @@ export default function GlobalSearchPage() {
     // ── Phase 3: Backend CPS fan-out search ───────────────────────────────
     // Feature 4: show incremental results as each batch arrives
     const BACKEND_BATCH = 100;
-    const totalBatches = Math.ceil(allEntries.length / BACKEND_BATCH);
+    const totalBatches = Math.ceil(entriesToSearch.length / BACKEND_BATCH);
     setProgress(p => ({ ...p, phase: 2, batchDone: 0, batchTotal: totalBatches }));
 
     let totalCredErrors = 0;
     let batchFailed = 0;
 
-    for (let bi = 0; bi < allEntries.length; bi += BACKEND_BATCH) {
+    for (let bi = 0; bi < entriesToSearch.length; bi += BACKEND_BATCH) {
       if (ctl.signal.aborted) break;
-      const batch = allEntries.slice(bi, bi + BACKEND_BATCH);
+      const batch = entriesToSearch.slice(bi, bi + BACKEND_BATCH);
       const batchNum = Math.floor(bi / BACKEND_BATCH) + 1;
       try {
         // Feature 8: pass searchMode to backend (value search = username, key search = different param)
@@ -767,6 +786,18 @@ export default function GlobalSearchPage() {
         };
         const r = await api.post('/cps/search-user', payload, { timeout: 120000 });
         totalCredErrors += r.data?.credentialErrors || 0;
+
+        // Collect circuit-broken URLs reported by the backend circuit breaker.
+        // Also persist to sessionStorage so the pre-filter above skips them on
+        // the next search without waiting for another round of timeouts.
+        if (r.data?.circuitBrokenUrls?.length > 0) {
+          setCircuitBrokenUrls(prev => [...new Set([...prev, ...r.data.circuitBrokenUrls])]);
+          try {
+            const existing = new Set(JSON.parse(sessionStorage.getItem('cpsUnreachableUrls') || '[]'));
+            r.data.circuitBrokenUrls.forEach(u => existing.add(u));
+            sessionStorage.setItem('cpsUnreachableUrls', JSON.stringify([...existing]));
+          } catch {}
+        }
 
         // Feature 4: incrementally build and display results after each batch
         const batchRows = [];
@@ -1329,6 +1360,26 @@ export default function GlobalSearchPage() {
                 <p className="text-yellow-500/80 text-[10px] mt-0.5">
                   These apps use a CPS server not covered by your uploaded credentials CSV. Upload a broader CSV via the <strong className="text-yellow-400">CPS CSV import</strong> button in the header to include them.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {circuitBrokenUrls.length > 0 && (
+            <div className="flex items-start gap-3 bg-orange-950/20 border border-orange-800/40 rounded-xl px-4 py-3">
+              <AlertTriangle size={13} className="text-orange-400 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-orange-300 text-xs font-semibold">
+                  {circuitBrokenUrls.length} CPS server{circuitBrokenUrls.length !== 1 ? 's' : ''} unreachable — apps on those servers were skipped (circuit breaker)
+                </p>
+                <p className="text-orange-500/80 text-[10px] mt-1">
+                  After 3 consecutive timeouts the circuit breaker opened and remaining apps on these servers were skipped instantly.
+                  These URLs are cached in this browser session — press <strong className="text-orange-400">Clear</strong> to reset and retry them.
+                </p>
+                <ul className="mt-1.5 space-y-0.5">
+                  {circuitBrokenUrls.map(url => (
+                    <li key={url} className="text-[10px] font-mono text-orange-400/70 truncate">● {url}</li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}

@@ -448,6 +448,14 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     .split(',').map(t => t.trim()).filter(Boolean);
   const CONCURRENCY = 30; // increased from 15 for faster fan-out
 
+  // ── Circuit breaker: per-URL connection-failure tracking ─────────────────
+  // After CIRCUIT_OPEN_THRESHOLD consecutive ECONNABORTED/ETIMEDOUT failures
+  // for the same CPS base URL, all remaining apps on that server are skipped
+  // immediately without waiting for another timeout.  This prevents a slow or
+  // unreachable CPS server from blocking the entire search for 15s × N apps.
+  const failedUrls = new Map(); // normalisedUrl → failure count
+  const CIRCUIT_OPEN_THRESHOLD = 3;
+
   /** Flatten CPS response (all formats) into a flat {key:value} map */
   function flattenProps(data) {
     if (!data) return {};
@@ -558,12 +566,20 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     const { appName, appId, cpsBaseUrl, cpsKey, cpsEnv, deploymentType, envName, bgOrgId, status } = appEntry;
     if (!cpsBaseUrl || !cpsKey) return null; // no CPS config
 
+    // Normalise URL early so both the circuit-breaker check and the catch
+    // block (ECONNABORTED handler) always reference the same canonical key.
+    const cleanBase = normaliseUrl(cpsBaseUrl);
+
+    // Circuit breaker: skip immediately if this server already timed out N times
+    if ((failedUrls.get(cleanBase) || 0) >= CIRCUIT_OPEN_THRESHOLD) {
+      return { _circuitBroken: true, appName, cpsUrl: cleanBase };
+    }
+
     const envType = detectEnvType(cpsBaseUrl, cpsEnv, envName);
     const chType = detectChType(deploymentType || '');
     let creds = getCredentials(req, cpsBaseUrl, bgOrgId, envType, chType);
     if (!creds) return null; // no credentials configured — skip silently
 
-    const cleanBase = normaliseUrl(cpsBaseUrl);
     const params = { environment: cpsEnv, keys: cpsKey };
     const nsUrl = `${cleanBase}/api/v2/properties/non-secure`;
 
@@ -575,7 +591,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
       nsRes = await axios.get(nsUrl, {
         headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
         params,
-        timeout: 15000,
+        timeout: 8000,       // reduced from 15 s — fast enough for a healthy CPS server
         httpsAgent,          // tolerates internal CA certs (prevents UNABLE_TO_GET_ISSUER_CERT_LOCALLY)
         validateStatus: () => true,
       });
@@ -589,29 +605,41 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           .filter(([k, v]) => k.startsWith(`${cleanBase}::`) && v?.clientId && v?.clientId !== creds.clientId && v?.clientSecret);
         if (altEntries.length > 0) {
           console.log(`[search-user] "${appName}" — ${reason}, trying ${altEntries.length} alt credential(s)`);
-          for (const [, altCred] of altEntries) {
-            try {
-              const retry = await axios.get(nsUrl, {
-                headers: { client_id: altCred.clientId, client_secret: altCred.clientSecret, 'Content-Type': 'application/json' },
-                params,
-                timeout: 8000,
-                httpsAgent,
-                validateStatus: () => true,
-              });
-              if (retry.status !== 401 && !(retry.status === 200 && isEmptyNsResponse(retry.data))) {
-                nsRes = retry;
-                creds = altCred; // use this cred for secure fetch too
-
-                // ── KEY FIX: promote working credential to session ──────────
-                // This means subsequent apps on the SAME CPS server will use
-                // getCredentials() directly (priority 1 or 2) instead of
-                // iterating through all 71 alt entries again.
-                req.session.cpsCreds[`${cleanBase}::${bgOrgId}`] = { clientId: altCred.clientId, clientSecret: altCred.clientSecret };
-                req.session.cpsCreds[cleanBase] = { clientId: altCred.clientId, clientSecret: altCred.clientSecret };
-                console.log(`[search-user] "${appName}" — alt credential resolved ✅ (promoted to session for ${cleanBase})`);
-                break;
+          // Parallel batches of 5 — same pattern as /fetch route.
+          // Serial retries were O(N × timeout) when the CPS server is slow;
+          // batching reduces that to O(ceil(N/5) × timeout).
+          const RETRY_BATCH = 5;
+          let resolvedAlt = null;
+          for (let ri = 0; ri < altEntries.length && !resolvedAlt; ri += RETRY_BATCH) {
+            const retryBatch = altEntries.slice(ri, ri + RETRY_BATCH);
+            const retrySettled = await Promise.allSettled(
+              retryBatch.map(([, altCred]) =>
+                axios.get(nsUrl, {
+                  headers: { client_id: altCred.clientId, client_secret: altCred.clientSecret, 'Content-Type': 'application/json' },
+                  params,
+                  timeout: 5000,
+                  httpsAgent,
+                  validateStatus: () => true,
+                }).then(r => ({ altCred, r }))
+              )
+            );
+            for (const s of retrySettled) {
+              if (s.status === 'fulfilled') {
+                const { altCred, r } = s.value;
+                if (r.status !== 401 && !(r.status === 200 && isEmptyNsResponse(r.data))) {
+                  resolvedAlt = { altCred, r };
+                  break;
+                }
               }
-            } catch { /* try next */ }
+            }
+          }
+          if (resolvedAlt) {
+            nsRes = resolvedAlt.r;
+            creds = resolvedAlt.altCred;
+            // Promote working credential so subsequent apps on this server skip the retry loop
+            req.session.cpsCreds[`${cleanBase}::${bgOrgId}`] = { clientId: resolvedAlt.altCred.clientId, clientSecret: resolvedAlt.altCred.clientSecret };
+            req.session.cpsCreds[cleanBase] = { clientId: resolvedAlt.altCred.clientId, clientSecret: resolvedAlt.altCred.clientSecret };
+            console.log(`[search-user] "${appName}" — alt credential resolved ✅ (promoted to session for ${cleanBase})`);
           }
         }
       }
@@ -647,7 +675,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           const sRes = await axios.get(sUrl, {
             headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
             params: { environment: cpsEnv, keys: secureKeyStr },
-            timeout: 15000,
+            timeout: 8000,   // reduced from 15 s
             validateStatus: () => true,
           });
           // Parse per-group to track which secure group each match came from
@@ -717,6 +745,17 @@ router.post('/search-user', authMiddleware, async (req, res) => {
       // Log the error type so logs distinguish timeout/network from no-match
       const code = err.code || (err.response?.status ? `HTTP ${err.response.status}` : 'ERR');
       console.warn(`[search-user] processApp failed for "${appName}" [${code}]: ${err.message}`);
+      // Circuit breaker: count connection-level failures per CPS URL.
+      // ECONNABORTED = axios timeout, ETIMEDOUT = OS-level timeout,
+      // ECONNREFUSED / ENOTFOUND = server unreachable / DNS failure.
+      if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' ||
+          err.code === 'ECONNREFUSED'  || err.code === 'ENOTFOUND') {
+        const count = (failedUrls.get(cleanBase) || 0) + 1;
+        failedUrls.set(cleanBase, count);
+        if (count === CIRCUIT_OPEN_THRESHOLD) {
+          console.warn(`[search-user] Circuit breaker OPEN for "${cleanBase}" — remaining apps on this CPS server will be skipped instantly`);
+        }
+      }
       return null;
     }
 
@@ -740,17 +779,21 @@ router.post('/search-user', authMiddleware, async (req, res) => {
 
   // ── Concurrency-limited fan-out ──────────────────────────────────────────
   const results = [];
-  let skipped = 0;          // apps with no CPS config or no credentials
-  let scanned = 0;          // apps successfully queried (with or without matches)
-  let matched = 0;          // apps with at least one matching property
-  let credentialErrors = 0; // apps skipped due to 401 (missing / invalid CPS credentials)
+  let skipped = 0;            // apps with no CPS config or no credentials
+  let scanned = 0;            // apps successfully queried (with or without matches)
+  let matched = 0;            // apps with at least one matching property
+  let credentialErrors = 0;   // apps skipped due to 401 (missing / invalid CPS credentials)
+  let circuitBrokenCount = 0; // apps skipped instantly because their CPS URL hit the circuit breaker
 
   for (let i = 0; i < apps.length; i += CONCURRENCY) {
     const batch = apps.slice(i, i + CONCURRENCY);
     const settled = await Promise.allSettled(batch.map(a => processApp(a)));
     for (const outcome of settled) {
       if (outcome.status === 'fulfilled') {
-        if (outcome.value === null) {
+        if (outcome.value?._circuitBroken) {
+          circuitBrokenCount++;
+          skipped++;
+        } else if (outcome.value === null) {
           skipped++;
         } else if (outcome.value?._authError) {
           // 401 after exhausting all credentials — count separately
@@ -770,8 +813,18 @@ router.post('/search-user', authMiddleware, async (req, res) => {
   if (credentialErrors > 0) {
     console.warn(`[search-user] "${username}" — ${credentialErrors} app(s) returned HTTP 401 for all credentials; upload a CPS CSV with broader credentials to include those apps`);
   }
-  console.log(`[search-user] terms=[${searchTerms.join(' | ')}] — total: ${apps.length}, matched: ${matched}, credentialErrors: ${credentialErrors}, skipped/no-match: ${skipped - credentialErrors}`);
+
+  // Collect circuit-broken URLs for the response so the frontend can surface them
+  const circuitBrokenUrls = [...failedUrls.entries()]
+    .filter(([, count]) => count >= CIRCUIT_OPEN_THRESHOLD)
+    .map(([url]) => url);
+  if (circuitBrokenUrls.length > 0) {
+    console.warn(`[search-user] Unreachable CPS servers (circuit open): [${circuitBrokenUrls.join(', ')}] — ${circuitBrokenCount} app(s) skipped without timeout`);
+  }
+
+  console.log(`[search-user] terms=[${searchTerms.join(' | ')}] — total: ${apps.length}, matched: ${matched}, credentialErrors: ${credentialErrors}, circuitBroken: ${circuitBrokenCount}, skipped/no-match: ${skipped - credentialErrors - circuitBrokenCount}`);
   res.json({ results, scanned: apps.length, matched, skipped, credentialErrors,
+    circuitBrokenUrls, circuitBrokenCount,
     searchStats: { nonSecureSearched: nsSearched, secureRefSearched, secureFallbackSearched } });
 });
 
