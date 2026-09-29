@@ -41,12 +41,22 @@ function getDomainQualifier(normalizedEnvName) {
 /**
  * Build the base URL for a CH1 or CH2 ping.
  *
+ * CH1 URL patterns:
+ *   Production:     {appName}.internalapi.sfdcbt.net
+ *   Non-production: {appName}.stage.internalapi.sfdcbt.net
+ *
+ * With domain qualifier (e.g. EI-FI-FINANCIALS-* → "fin"):
+ *   Production:     {appName}.fin.internalapi.sfdcbt.net
+ *   Non-production: {appName}.stage.fin.internalapi.sfdcbt.net
+ *
+ * isProd is true when envType === 'production' OR envName ends with
+ * -PROD / _PROD (orgs whose prod envs are not typed as 'production').
+ *
  * @param {string} targetType      'CH1' | 'CH2'
  * @param {string} appName         Application name
  * @param {string} ch2IngressUrl   CH2 ingress URL (may be comma-separated)
- * @param {string} envType         'production' | 'sandbox' | 'design' (not used for CH1 domain)
+ * @param {string} envType         'production' | 'sandbox' | 'design'
  * @param {string} [envName]       Full environment display name e.g. "EI-FI-FINANCIALS-STAGING"
- *                                 Used to detect domain families that need a qualifier segment.
  */
 function buildBaseUrl(targetType, appName, ch2IngressUrl, envType, envName) {
   const safe = (appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
@@ -63,15 +73,28 @@ function buildBaseUrl(targetType, appName, ch2IngressUrl, envType, envName) {
     }
   }
 
-  // CH1: URL is {appName}.internalapi.sfdcbt.net — no environment subdomain.
-  // For special environment families (e.g. EI-FI-FINANCIALS), a domain qualifier
-  // is inserted: {appName}.fin.internalapi.sfdcbt.net
-  const qualifier = getDomainQualifier((envName || '').toUpperCase());
-  const domain = qualifier
-    ? `${qualifier}.internalapi.sfdcbt.net`
-    : `internalapi.sfdcbt.net`;
+  // Determine production vs non-production for the CH1 subdomain
+  const isProd =
+    (envType || '').toLowerCase() === 'production' ||
+    /(?:^|[-_ ])prod$/i.test((envName || '').trim());
 
-  return `https://${safe}.${domain}`;
+  // Domain qualifier for special env families (e.g. EI-FI-FINANCIALS-* → "fin")
+  const qualifier = getDomainQualifier((envName || '').toUpperCase());
+
+  // CH1 URL structure:
+  //   prod, no qualifier:     app.internalapi.sfdcbt.net
+  //   prod, with qualifier:   app.fin.internalapi.sfdcbt.net
+  //   non-prod, no qualifier: app.stage.internalapi.sfdcbt.net
+  //   non-prod, with qual:    app.stage.fin.internalapi.sfdcbt.net
+  if (qualifier) {
+    return isProd
+      ? `https://${safe}.${qualifier}.internalapi.sfdcbt.net`
+      : `https://${safe}.stage.${qualifier}.internalapi.sfdcbt.net`;
+  }
+
+  return isProd
+    ? `https://${safe}.internalapi.sfdcbt.net`
+    : `https://${safe}.stage.internalapi.sfdcbt.net`;
 }
 
 // ─── POST /api/health/oauth2-token ───────────────────────────────────────────
@@ -138,13 +161,30 @@ router.post('/ping', authMiddleware, async (req, res) => {
 
   const base = buildBaseUrl(targetType, appName, ch2IngressUrl, envType, envName);
 
-  // For domain-qualified environments (e.g. EI-FI-* → .fin.), also build a standard
-  // fallback base without the qualifier. We try qualified paths first; if all fail/timeout
-  // we fall back to the standard URL so the test can still succeed if the detection was wrong.
+  // Determine prod/non-prod for fallback decisions
+  const isProdPing =
+    (envType || '').toLowerCase() === 'production' ||
+    /(?:^|[-_ ])prod$/i.test((envName || '').trim());
+
   const qualifier = getDomainQualifier((envName || '').toUpperCase());
-  const standardBase = (qualifier && targetType !== 'CH2')
-    ? buildBaseUrl(targetType, appName, ch2IngressUrl, envType, '') // pass empty envName → no qualifier
-    : null;
+
+  // standardBase fallback strategy:
+  //   1. Qualified envs (e.g. .fin.): always add plain internalapi.sfdcbt.net as final fallback
+  //   2. Non-prod, no qualifier: add plain internalapi.sfdcbt.net as fallback
+  //      (catches edge cases where the env is non-prod but the app lives on the prod domain)
+  //   3. Prod, no qualifier: no fallback needed (already using the root domain)
+  const standardBase = (() => {
+    if (targetType === 'CH2') return null;
+    if (qualifier) {
+      // e.g. qualified → try both .stage.fin. (primary) and .internalapi. (final fallback)
+      return `https://${(appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-')}.internalapi.sfdcbt.net`;
+    }
+    if (!isProdPing) {
+      // Non-prod primary is .stage.internalapi. — fallback to plain .internalapi.
+      return `https://${(appName || '').toLowerCase().replace(/[^a-z0-9-]/g, '-')}.internalapi.sfdcbt.net`;
+    }
+    return null;
+  })();
 
   // HTTP variant of the qualified base (tried if HTTPS TLS fails on .fin. servers)
   const httpBase = qualifier ? base.replace(/^https:\/\//, 'http://') : null;
@@ -769,7 +809,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       }
     }
 
-    // Check for PENDING contracts from any of the user's apps
+    // Check for PENDING contracts from any of the user's apps from exchange
     const existingPendingAny = existingContracts.find(c =>
       (c.status || '').toUpperCase() !== 'APPROVED' &&
       userAppIds.has(String(c.application?.id || c.applicationId || ''))
@@ -797,7 +837,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
     const targetApp =
       (isProd
         ? userApps.find(a => nameLo(a).includes('prod') && nameLo(a).includes('ping'))
-        : userApps.find(a => nameLo(a).includes('uat') && nameLo(a).includes('ping'))
+        : userApps.find(a => nameLo(a).includes('stage') && nameLo(a).includes('ping'))
       ) ||
       userApps.find(a => nameLo(a).includes('ping')) ||
       userApps[0];
@@ -826,13 +866,13 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       // Build candidate app list: env-type apps first, then ping-only, then rest
       const envTypeApps = userApps.filter(a => isProd
         ? (nameLo(a).includes('prod') && nameLo(a).includes('ping'))
-        : (nameLo(a).includes('uat') && nameLo(a).includes('ping'))
+        : (nameLo(a).includes('stage') && nameLo(a).includes('ping'))
       );
       const pingOnlyApps = userApps.filter(a =>
         nameLo(a).includes('ping') &&
         !(isProd
           ? (nameLo(a).includes('prod') && nameLo(a).includes('ping'))
-          : (nameLo(a).includes('uat') && nameLo(a).includes('ping'))
+          : (nameLo(a).includes('stage') && nameLo(a).includes('ping'))
         )
       );
       const otherApps2 = userApps.filter(a => !nameLo(a).includes('ping'));
@@ -849,7 +889,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
         ...pingOnlyApps.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
         ...otherApps2.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
       ];
-      console.log(`[auto-contract-creds] Candidate apps (${isProd ? 'PROD' : 'UAT'}): ${candidateApps.map(a => a.name).join(', ')}`);
+      console.log(`[auto-contract-creds] Candidate apps (${isProd ? 'PROD' : 'stage'}): ${candidateApps.map(a => a.name).join(', ')}`);
       let created = false;
       let lastErr = null;
 

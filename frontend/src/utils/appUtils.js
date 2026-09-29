@@ -238,11 +238,11 @@ export function buildPingUrl(appName, envName) {
   let envSlug;
   if (n.includes('PROD'))                                   envSlug = 'prod';
   else if (n.includes('STAG') || /\bSTG\b/.test(n))        envSlug = 'stage';
-  else if (n.includes('UAT'))                               envSlug = 'uat';
-  else if (n.includes('DEV'))                      envSlug = 'dev';
-  else if (n.includes('QA'))                       envSlug = 'qa';
-  else if (n.includes('SAND') || n.includes('SB')) envSlug = 'sb';
-  else                                             envSlug = (envName || '').toLowerCase();
+  else if (n.includes('UAT'))                               envSlug = 'stage'; // UAT envs use .stage. subdomain
+  else if (n.includes('DEV'))                               envSlug = 'stage'; // DEV envs also use .stage.
+  else if (n.includes('QA'))                                envSlug = 'stage'; // QA envs also use .stage.
+  else if (n.includes('SAND') || n.includes('SB'))          envSlug = 'stage'; // Sandbox envs also use .stage.
+  else                                                      envSlug = 'stage'; // All non-PROD environments use .stage.
 
   if (!name || !envSlug) return '';
 
