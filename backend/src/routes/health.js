@@ -710,7 +710,7 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
  * Response: { clientId, clientSecret, contractStatus, appName, appId }
  */
 router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
-  const { orgId, envId, apiId, envType } = req.body || {};
+  const { orgId, envId, apiId, envType, envName } = req.body || {};
   if (!orgId || !envId || !apiId) {
     return res.status(400).json({ error: 'orgId, envId, and apiId are required' });
   }
@@ -785,7 +785,13 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
     }
 
     // 3. No existing contract — create one using the most appropriate user app
-    const isProd = (envType || '').toLowerCase() === 'production';
+    // isProd: true when envType is explicitly 'production' OR when the environment
+    // NAME ends with -PROD / _PROD (e.g. "MY-ORG-PROD", "COMPANY_PROD").
+    // This handles orgs whose prod envs are not typed as 'production' in Anypoint.
+    const isProd =
+      (envType || '').toLowerCase() === 'production' ||
+      /(?:^|[-_ ])prod$/i.test((envName || '').trim());
+    console.log(`[auto-contract-creds] isProd=${isProd} (envType="${envType || ''}", envName="${envName || ''}")`);
     const nameLo = (a) => (a.name || '').toLowerCase();
 
     const targetApp =

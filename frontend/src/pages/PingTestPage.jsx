@@ -641,6 +641,7 @@ export default function PingTestPage() {
       const contractRes = await api.post('/health/auto-contract-creds', {
         orgId: bgId, envId, apiId: prevResult.apiInstanceId,
         envType: app.environment?.type || '',
+        envName: app.environment?.name || '',
       });
       const cd = contractRes.data;
       if (cd.contractStatus === 'approved' && cd.clientId && cd.clientSecret) {
@@ -801,6 +802,8 @@ export default function PingTestPage() {
           if (apiInstanceId) {
             const cd = (await api.post('/health/auto-contract-creds', {
               orgId, envId: app.environment?.id, apiId: apiInstanceId,
+              envType: app.environment?.type || '',
+              envName: app.environment?.name || '',
             })).data;
             if (cd.clientId && cd.clientSecret) {
               auto = { clientId: cd.clientId, clientSecret: cd.clientSecret };
@@ -1056,6 +1059,7 @@ export default function PingTestPage() {
                 const cd = (await api.post('/health/auto-contract-creds', {
                   orgId: bgId, envId, apiId: apiInstanceId,
                   envType: app.environment?.type || '',
+                  envName: app.environment?.name || '',
                 })).data;
                 if (cd.clientId && cd.clientSecret && cd.contractStatus === 'approved') {
                   return {

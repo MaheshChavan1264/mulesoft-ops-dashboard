@@ -136,7 +136,7 @@ export default function PingTestPanel({
         const apiInstanceId = data.matchedApis?.[0]?.id;
         if (apiInstanceId) {
           try {
-            const cd = (await api.post('/health/auto-contract-creds', { orgId, envId, apiId: apiInstanceId })).data;
+            const cd = (await api.post('/health/auto-contract-creds', { orgId, envId, apiId: apiInstanceId, envType: envType || '', envName: envName || '' })).data;
             if (cd.clientId && cd.clientSecret) {
               setClientId(cd.clientId); setClientSecret(cd.clientSecret);
               setAutoResolved({ clientId: cd.clientId, apiInstanceName: data.matchedApis[0]?.label || '—', contractApp: cd.appName || '—', source: cd.contractStatus === 'approved' ? 'contract' : 'contract-pending', contractStatus: cd.contractStatus });
