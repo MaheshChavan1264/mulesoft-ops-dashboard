@@ -19,9 +19,6 @@
     "js-yaml": "^5.2.3",
     "node-cache": "^5.1.2"
   },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
-  },
   "allowScripts": {
     "sqlite3@5.1.7": true
   }
