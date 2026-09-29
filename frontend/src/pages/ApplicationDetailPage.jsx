@@ -1516,6 +1516,10 @@ export default function ApplicationDetailPage() {
                                     s.schedule?.expression ||
                                     s.expression ||
                                     s.cronExpression;
+                    // Scheduler-configured timezone (CH2 returns this in schedule.timeZone)
+                    const schedulerTz = s.schedule?.timeZone || s.schedule?.timezone || s.timeZone || s.timezone || null;
+                    // Browser local timezone — Next Run is computed in this zone
+                    const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
                     // Resolve ${propName} placeholders: check runtime props first, then CPS props
                     const resolvedCron = rawCron?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
                       allProps[propName] ||
@@ -1569,8 +1573,14 @@ export default function ApplicationDetailPage() {
                             <div className="space-y-1">
                               <MetaTag color="gray">{rawCron}</MetaTag>
                               <p className="text-[10px] text-yellow-600/80">⚠ property not in runtime props — check CPS</p>
+                              {schedulerTz && <p className="text-[10px] text-slate-500">🕐 {schedulerTz}</p>}
                             </div>
-                          ) : freq ? <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
+                          ) : freq ? (
+                            <div className="space-y-1">
+                              <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
+                              {schedulerTz && <p className="text-[10px] text-slate-500">🕐 {schedulerTz}</p>}
+                            </div>
+                          ) || <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
                             : <span className="text-slate-700 text-xs">—</span>}
                         </td>
                         <td className="px-5 py-4 align-top">
@@ -1599,6 +1609,7 @@ export default function ApplicationDetailPage() {
                               <div className="space-y-0.5">
                                 <span className="text-slate-300 text-xs font-mono">{d.toLocaleDateString()}</span>
                                 <p className="text-slate-500 text-[10px] font-mono">{d.toLocaleTimeString()}</p>
+                                <p className="text-slate-600 text-[9px]">{localTz}</p>
                               </div>
                             ) : (
                               <span className="text-slate-500 text-xs font-mono">{String(lastRunRaw)}</span>
@@ -1610,6 +1621,7 @@ export default function ApplicationDetailPage() {
                             <div className="space-y-0.5">
                               <span className="text-slate-300 text-xs font-mono">{computedNextRun.toLocaleDateString()}</span>
                               <p className="text-slate-500 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
+                              <p className="text-slate-600 text-[9px]">{localTz}</p>
                             </div>
                           ) : freq ? (
                             <span className="text-slate-600 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>

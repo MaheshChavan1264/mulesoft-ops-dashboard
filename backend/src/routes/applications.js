@@ -523,8 +523,7 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
       // Only start a background refresh if one isn't already running for this org
       if (!inflightSummary.has(targetOrgId)) {
         const p = _fetchSummary(client, targetOrgId)
-          .then(() => console.log(`[Summary] ${new Date().toISOString()} BG refresh done for org ${targetOrgId}`))
-          .catch((err) => console.warn(`[Summary] ${new Date().toISOString()} BG refresh failed for org ${targetOrgId}:`, err.message))
+          .catch((err) => console.warn(`[Summary] BG refresh failed for org ${targetOrgId}:`, err.message))
           .finally(() => inflightSummary.delete(targetOrgId));
         inflightSummary.set(targetOrgId, p);
       }
