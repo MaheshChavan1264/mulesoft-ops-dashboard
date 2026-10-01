@@ -321,36 +321,39 @@ export default function PingTestPanel({
   };
 
   const badgeConfig = {
-    SUCCESS: { icon: <CheckCircle2 size={15} className="text-emerald-600" />, label: 'Healthy / Reachable', cls: 'bg-emerald-50/50 border-emerald-300/50 text-emerald-700', dot: 'bg-emerald-400', ping: true },
-    PARTIAL: { icon: <AlertCircle  size={15} className="text-yellow-600"  />, label: 'Reachable (non-2xx)', cls: 'bg-yellow-50/50 border-yellow-300/50 text-yellow-700',  dot: 'bg-yellow-400', ping: false },
-    FAILED:  { icon: <XCircle      size={15} className="text-red-600"     />, label: 'Unreachable',         cls: 'bg-red-50/50 border-red-300/50 text-red-700',           dot: 'bg-red-500',    ping: false },
+    SUCCESS: { icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />, label: 'Healthy / Reachable', cls: 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-400', ping: true },
+    PARTIAL: { icon: <AlertCircle  size={15} className="text-amber-600 dark:text-amber-400"  />, label: 'Reachable (non-2xx)', cls: 'bg-amber-50 dark:bg-amber-500/10 border-amber-200/60 dark:border-amber-400/20 text-amber-700 dark:text-amber-300',  dot: 'bg-amber-400', ping: false },
+    FAILED:  { icon: <XCircle      size={15} className="text-red-600 dark:text-red-400"     />, label: 'Unreachable',         cls: 'bg-red-50 dark:bg-red-500/10 border-red-200/60 dark:border-red-400/20 text-red-700 dark:text-red-300',           dot: 'bg-red-500',    ping: false },
   };
   const badge = result ? badgeConfig[result.status] || badgeConfig.FAILED : null;
-  const latencyColor = (ms) => !ms ? 'text-gray-500' : ms < 300 ? 'text-emerald-600' : ms < 1000 ? 'text-yellow-600' : 'text-red-600';
+  const latencyColor = (ms) => !ms ? 'text-gray-500 dark:text-gray-400' : ms < 300 ? 'text-emerald-600 dark:text-emerald-400' : ms < 1000 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
 
-  const inputCls = 'w-full bg-gray-100/60 border border-gray-300/50 rounded-lg px-3 py-1.5 text-xs text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-cyan-300/50';
-  const blueInputCls = 'w-full bg-gray-100/60 border border-gray-300/50 rounded-lg px-3 py-1.5 text-xs text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-blue-300/50';
+  const inputCls = 'w-full bg-gray-50/80 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 rounded-lg px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfteal-400 dark:focus:border-sfteal-500 focus:ring-2 focus:ring-sfteal-500/10 transition-all';
+  const blueInputCls = 'w-full bg-gray-50/80 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 rounded-lg px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10 transition-all';
 
   return (
     <div className="space-y-5">
-      <div className="bg-white/60 border border-gray-200/60 rounded-2xl overflow-hidden">
+      <div className="relative rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/50 backdrop-blur-md shadow-sm overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-sfteal-500 via-sf-400 to-sfteal-500"/>
 
         {/* ── Header bar — always visible ── */}
-        <div className="flex items-center justify-between gap-3 px-5 py-3 flex-wrap">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
-            <Activity size={13} className="text-cyan-600 flex-shrink-0" />
-            <span className="text-gray-900 text-sm font-semibold">Ping / Health Check</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border flex-shrink-0 ${isCH1 ? 'bg-purple-50/50 text-purple-700 border-purple-300/50' : 'bg-blue-50/50 text-blue-700 border-blue-300/50'}`}>
+            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-sfteal-500 to-sfteal-600 shadow-sm shadow-sfteal-500/30 flex-shrink-0">
+              <Activity size={13} className="text-white" />
+            </div>
+            <span className="text-gray-900 dark:text-gray-100 text-sm font-semibold">Ping / Health Check</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border flex-shrink-0 ${isCH1 ? 'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20' : 'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20'}`}>
               {isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'}
             </span>
             {authMode === 'bearer-token' && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border bg-indigo-50/50 text-indigo-700 border-indigo-300/50 flex items-center gap-1 flex-shrink-0">
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold border bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200/60 dark:border-indigo-400/20 flex items-center gap-1 flex-shrink-0">
                 <Lock size={8} /> JWT Auth
               </span>
             )}
             {/* Compact credential summary when collapsed */}
             {!configOpen && (
-              <span className="text-[10px] text-slate-500 font-mono truncate max-w-xs hidden sm:block">
+              <span className="text-[10px] text-gray-400 dark:text-gray-500 font-mono truncate max-w-xs hidden sm:block">
                 {authMode === 'bearer-token' && bearerToken
                   ? `🔒 Bearer …${bearerToken.slice(-10)}`
                   : clientId ? `🔑 ${clientId.slice(0, 8)}…` : '(no credentials)'}
@@ -368,18 +371,18 @@ export default function PingTestPanel({
                   setTimeout(() => setCopiedCurl(false), 2000);
                 }}
                 title="Copy cURL"
-                className="flex items-center gap-1.5 px-3 py-2 bg-gray-100/60 hover:bg-gray-200 border border-gray-300/40 text-gray-500 hover:text-gray-900 text-xs font-medium rounded-xl transition-colors">
-                {copiedCurl ? <><Check size={12} className="text-emerald-600" /> Copied!</> : <><Terminal size={12} /> Copy cURL</>}
+                className="flex items-center gap-1.5 px-3 py-2 bg-gray-50/80 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200/70 dark:border-gray-700/60 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-xs font-semibold rounded-xl transition-all">
+                {copiedCurl ? <><Check size={12} className="text-emerald-600 dark:text-emerald-400" /> Copied!</> : <><Terminal size={12} /> Copy cURL</>}
               </button>
             )}
             <button onClick={runPing} disabled={loading || (!isCH1 && !ch2IngressUrl)}
-              className="flex items-center gap-2 px-4 py-2 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors">
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-b from-sfteal-500 to-sfteal-600 hover:from-sfteal-400 hover:to-sfteal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl shadow-md shadow-sfteal-500/30 hover:shadow-lg hover:shadow-sfteal-500/40 ring-1 ring-inset ring-white/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
               {loading ? <><RefreshCw size={14} className="animate-spin" /> Pinging…</> : <><Wifi size={14} /> Run Ping Test</>}
             </button>
             {/* Expand / collapse config */}
             <button onClick={() => setConfigOpen(v => !v)}
               title={configOpen ? 'Collapse config' : 'Expand config'}
-              className="p-2 rounded-xl text-slate-500 hover:text-gray-900 hover:bg-gray-100/60 border border-transparent hover:border-gray-300/40 transition-all">
+              className="p-2 rounded-xl text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100/70 dark:hover:bg-gray-800/60 border border-transparent hover:border-gray-200/60 dark:hover:border-gray-700/60 transition-all">
               {configOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
             </button>
           </div>
@@ -387,24 +390,24 @@ export default function PingTestPanel({
 
         {/* ── Collapsible config body ── */}
         {configOpen && (
-        <div className="px-5 pb-4 space-y-4 border-t border-gray-200/60 pt-4">
+        <div className="px-5 pb-4 space-y-4 border-t border-gray-100 dark:border-gray-800 pt-4">
           {/* Base URL + tries hint */}
           <div className="space-y-1">
             <div className="flex items-center gap-1.5">
-              <Globe size={11} className="text-slate-500" />
-              <span className="text-gray-500 text-xs font-mono break-all">{displayBase}</span>
+              <Globe size={11} className="text-gray-400 dark:text-gray-500" />
+              <span className="text-gray-500 dark:text-gray-400 text-xs font-mono break-all">{displayBase}</span>
             </div>
-            <p className="text-gray-400 text-[11px]">Tries: <span className="text-slate-500">/api/v1/ping → /api/v2/ping → /api/ping → /ping</span></p>
+            <p className="text-gray-400 dark:text-gray-500 text-[11px]">Tries: <span className="text-gray-500 dark:text-gray-400">/api/v1/ping → /api/v2/ping → /api/ping → /ping</span></p>
           </div>
 
         {/* Exchange spec hint */}
         {(pingSpecLoading || pingSpec) && (
-          <div className="pt-1 border-t border-gray-200/60">
+          <div className="pt-1 border-t border-gray-100 dark:border-gray-800">
             {pingSpecLoading ? (
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-500"><RefreshCw size={9} className="animate-spin" /> Fetching API spec from Exchange…</div>
+              <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400"><RefreshCw size={9} className="animate-spin" /> Fetching API spec from Exchange…</div>
             ) : pingSpec?.pingEndpoints?.length > 0 ? (
-              <div className="bg-blue-50/20 border border-blue-200/40 rounded-lg px-3 py-2 space-y-1.5">
-                <p className="text-[10px] text-blue-700 font-medium flex items-center gap-1"><Globe size={9} /> Spec-detected ping endpoint{pingSpec.pingEndpoints.length > 1 ? 's' : ''}</p>
+              <div className="bg-sf-50/60 dark:bg-sf-500/5 border border-sf-200/50 dark:border-sf-400/15 rounded-lg px-3 py-2 space-y-1.5">
+                <p className="text-[10px] text-sf-700 dark:text-sf-300 font-semibold flex items-center gap-1"><Globe size={9} /> Spec-detected ping endpoint{pingSpec.pingEndpoints.length > 1 ? 's' : ''}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {pingSpec.pingEndpoints.map((ep, i) => {
                     const requiredQp = (ep.queryParams || []).filter(p => p.required);
@@ -412,23 +415,23 @@ export default function PingTestPanel({
                     return (
                       <button key={i} onClick={() => { if (qpString) setQueryParams(qpString); }}
                         title={qpString ? `Click to auto-fill: ${qpString}` : ep.path}
-                        className="flex items-center gap-1 text-[10px] px-2 py-1 bg-blue-100/30 border border-blue-300/40 rounded text-blue-700 hover:bg-blue-100/50 transition-colors font-mono">
-                        <span className="text-blue-500">{ep.method}</span>
+                        className="flex items-center gap-1 text-[10px] px-2 py-1 bg-white dark:bg-gray-800 border border-sf-200/60 dark:border-sf-400/20 rounded text-sf-700 dark:text-sf-300 hover:bg-sf-600 hover:text-white hover:border-sf-600 transition-all font-mono">
+                        <span className="opacity-70">{ep.method}</span>
                         <span>{ep.path}</span>
-                        {requiredQp.length > 0 && <span className="text-orange-600 ml-0.5">+{requiredQp.length}p</span>}
+                        {requiredQp.length > 0 && <span className="text-sforange-600 dark:text-sforange-400 ml-0.5">+{requiredQp.length}p</span>}
                       </button>
                     );
                   })}
                 </div>
               </div>
-            ) : pingSpec ? <p className="text-[10px] text-gray-400">No ping/health endpoint in spec — using standard paths</p> : null}
+            ) : pingSpec ? <p className="text-[10px] text-gray-400 dark:text-gray-500">No ping/health endpoint in spec — using standard paths</p> : null}
           </div>
         )}
 
         {/* Query params */}
-        <div className={pingSpec || pingSpecLoading ? '' : 'pt-1 border-t border-gray-200/60'}>
-          <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1 mb-1">
-            <Globe size={9} /> Query Parameters <span className="normal-case text-gray-400 font-normal">(optional)</span>
+        <div className={pingSpec || pingSpecLoading ? '' : 'pt-1 border-t border-gray-100 dark:border-gray-800'}>
+          <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold flex items-center gap-1 mb-1">
+            <Globe size={9} /> Query Parameters <span className="normal-case text-gray-400 dark:text-gray-500 font-normal">(optional)</span>
           </label>
           <input value={queryParams} onChange={e => setQueryParams(e.target.value)} placeholder="e.g. checkDb=true&type=health" className={inputCls} />
         </div>
@@ -436,13 +439,13 @@ export default function PingTestPanel({
         {/* Auth Mode + Credentials */}
         <div className="space-y-3">
           {/* Mode toggle */}
-          <div className="flex items-center gap-0.5 bg-gray-100/60 rounded-lg p-0.5 w-fit border border-gray-300/40">
+          <div className="flex items-center gap-0.5 bg-gray-100/70 dark:bg-gray-800/60 rounded-lg p-0.5 w-fit border border-gray-200/70 dark:border-gray-700/60">
             <button onClick={() => setAuthMode('client-credentials')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${authMode === 'client-credentials' ? 'bg-gray-200 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${authMode === 'client-credentials' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
               <Key size={10} /> Client ID / Secret
             </button>
             <button onClick={() => setAuthMode('bearer-token')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${authMode === 'bearer-token' ? 'bg-blue-700/80 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${authMode === 'bearer-token' ? 'bg-gradient-to-b from-sf-500 to-sf-600 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
               <Lock size={10} /> Bearer Token (JWT)
             </button>
           </div>
@@ -450,21 +453,21 @@ export default function PingTestPanel({
           {authMode === 'client-credentials' ? (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1"><Key size={9} /> client_id</label>
+                <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold flex items-center gap-1"><Key size={9} /> client_id</label>
                 <input value={clientId} onChange={e => { setClientId(e.target.value); setAutoResolved(null); }} placeholder="optional" className={inputCls} />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1"><Key size={9} /> client_secret</label>
+                <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold flex items-center gap-1"><Key size={9} /> client_secret</label>
                 <div className="relative">
                   <input value={clientSecret} onChange={e => setClientSecret(e.target.value)} type={showSecret ? 'text' : 'password'} placeholder="optional"
-                    className="w-full bg-gray-100/60 border border-gray-300/50 rounded-lg px-3 py-1.5 pr-8 text-xs text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-cyan-300/50" />
-                  <button onClick={() => setShowSecret(!showSecret)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-gray-600">
+                    className="w-full bg-gray-50/80 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 rounded-lg px-3 py-1.5 pr-8 text-xs text-gray-700 dark:text-gray-200 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfteal-400 dark:focus:border-sfteal-500 focus:ring-2 focus:ring-sfteal-500/10 transition-all" />
+                  <button onClick={() => setShowSecret(!showSecret)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
                     {showSecret ? <EyeOff size={12} /> : <Eye size={12} />}
                   </button>
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1"><Terminal size={9} /> x-transaction-id</label>
+                <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold flex items-center gap-1"><Terminal size={9} /> x-transaction-id</label>
                 <input value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="smokeTest" className={inputCls} />
               </div>
             </div>
@@ -472,49 +475,49 @@ export default function PingTestPanel({
             /* ── Bearer Token (JWT) mode ── */
             <div className="space-y-3">
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1"><Lock size={9} /> Bearer Token (JWT / OAuth2)</label>
+                <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold flex items-center gap-1"><Lock size={9} /> Bearer Token (JWT / OAuth2)</label>
                 <div className="relative">
                   <textarea value={bearerToken} onChange={e => setBearerToken(e.target.value)} rows={3}
                     placeholder="Paste your JWT or access_token here, or use the OAuth2 helper below to fetch one automatically…"
-                    className="w-full bg-gray-100/60 border border-gray-300/50 rounded-lg px-3 py-2 text-xs text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-blue-300/50 resize-y pr-8" />
+                    className="w-full bg-gray-50/80 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 rounded-lg px-3 py-2 text-xs text-gray-700 dark:text-gray-200 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10 resize-y pr-8 transition-all" />
                   {bearerToken && (
                     <button onClick={() => { setBearerToken(''); setTokenExpiresIn(null); }} title="Clear"
-                      className="absolute top-2 right-2 text-slate-500 hover:text-gray-600 bg-gray-100/80 rounded p-0.5"><X size={11} /></button>
+                      className="absolute top-2 right-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-100/80 dark:bg-gray-700/80 rounded p-0.5"><X size={11} /></button>
                   )}
                 </div>
-                {tokenExpiresIn && <p className="text-[10px] text-emerald-500">✓ Token fetched — expires in {tokenExpiresIn}s</p>}
-                {bearerToken && !tokenExpiresIn && <p className="text-[10px] text-blue-600/70">🎟 Will send as <code className="text-blue-700">Authorization: Bearer …</code></p>}
+                {tokenExpiresIn && <p className="text-[10px] text-emerald-600 dark:text-emerald-400">✓ Token fetched — expires in {tokenExpiresIn}s</p>}
+                {bearerToken && !tokenExpiresIn && <p className="text-[10px] text-sf-600 dark:text-sf-400">🎟 Will send as <code className="text-sf-700 dark:text-sf-300">Authorization: Bearer …</code></p>}
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium flex items-center gap-1"><Terminal size={9} /> x-transaction-id</label>
+                <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold flex items-center gap-1"><Terminal size={9} /> x-transaction-id</label>
                 <input value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="smokeTest" className={inputCls} />
               </div>
               {/* OAuth2 helper */}
-              <div className="border border-gray-300/40 rounded-xl overflow-hidden">
+              <div className="border border-gray-200/70 dark:border-gray-700/60 rounded-xl overflow-hidden">
                 <button onClick={() => setShowTokenHelper(!showTokenHelper)}
-                  className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-100/40 hover:bg-gray-100/70 text-gray-500 hover:text-gray-900 text-xs font-medium transition-colors">
-                  <div className="flex items-center gap-1.5"><Zap size={10} className="text-blue-600" /><span>Get token from OAuth2 endpoint</span><span className="text-gray-400 font-normal">(client_credentials)</span></div>
+                  className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50/70 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/60 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-xs font-semibold transition-all">
+                  <div className="flex items-center gap-1.5"><Zap size={10} className="text-sf-600 dark:text-sf-400" /><span>Get token from OAuth2 endpoint</span><span className="text-gray-400 dark:text-gray-500 font-normal">(client_credentials)</span></div>
                   {showTokenHelper ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 </button>
                 {showTokenHelper && (
-                  <div className="px-4 py-3 space-y-3 bg-gray-100/20 border-t border-gray-300/40">
+                  <div className="px-4 py-3 space-y-3 bg-gray-50/40 dark:bg-gray-800/30 border-t border-gray-200/70 dark:border-gray-700/60">
                     <div className="space-y-1">
-                      <label className="text-[10px] text-slate-500 uppercase tracking-wider">Token URL</label>
+                      <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">Token URL</label>
                       <input value={tokenUrl} onChange={e => setTokenUrl(e.target.value)} placeholder="https://auth.example.com/oauth/token" className={blueInputCls} />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
-                        <label className="text-[10px] text-slate-500 uppercase tracking-wider">Client ID</label>
+                        <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">Client ID</label>
                         <input value={tokenClientId} onChange={e => setTokenClientId(e.target.value)} placeholder="client_id" className={blueInputCls} />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] text-slate-500 uppercase tracking-wider">Client Secret</label>
+                        <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">Client Secret</label>
                         <input type="password" value={tokenClientSecret} onChange={e => setTokenClientSecret(e.target.value)} placeholder="client_secret" className={blueInputCls} />
                       </div>
                     </div>
-                    {tokenError && <p className="text-[10px] text-red-600 flex items-center gap-1"><XCircle size={10} /> {tokenError}</p>}
+                    {tokenError && <p className="text-[10px] text-red-600 dark:text-red-400 flex items-center gap-1"><XCircle size={10} /> {tokenError}</p>}
                     <button onClick={fetchOAuth2Token} disabled={fetchingToken || !tokenUrl || !tokenClientId || !tokenClientSecret}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors">
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-b from-sf-500 to-sf-600 hover:from-sf-400 hover:to-sf-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm shadow-sf-500/30 transition-all">
                       {fetchingToken ? <><RefreshCw size={10} className="animate-spin" /> Fetching…</> : <><Zap size={10} /> Fetch Token → fill above</>}
                     </button>
                   </div>
@@ -528,14 +531,14 @@ export default function PingTestPanel({
 
         {/* CSV import + auto-fill (client-credentials mode only) — always visible */}
         {authMode === 'client-credentials' && (
-          <div className="space-y-2 pt-1 border-t border-gray-200/40">
+          <div className="space-y-2 pt-1 border-t border-gray-100 dark:border-gray-800 px-5 pb-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2 flex-wrap">
                 {hasCredentials && (
                   <>
                     <button onClick={autoFillCredentials} disabled={autoResolving || !orgId || !envId}
                       title="Auto-fill credentials from API Manager contracts + your loaded CSV"
-                      className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-emerald-50 border border-emerald-300/40 text-emerald-600 hover:bg-emerald-100 rounded-lg transition-colors disabled:opacity-50 font-medium">
+                      className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 rounded-lg transition-all disabled:opacity-50 font-semibold">
                       {autoResolving ? <><RefreshCw size={9} className="animate-spin" /> Resolving…</> : <><Wand2 size={9} /> Auto-fill from API Manager</>}
                     </button>
                   </>
@@ -545,13 +548,13 @@ export default function PingTestPanel({
                   <button onClick={getJwtToken}
                     disabled={gettingJwt || !clientId || !clientSecret}
                     title={!clientId || !clientSecret ? 'Auto-fill credentials first, then click to get JWT' : 'Scan CPS for OAuth2 token URL and fetch JWT Bearer token'}
-                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-indigo-50 border border-indigo-300/40 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors disabled:opacity-50 font-medium">
+                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200/60 dark:border-indigo-400/20 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 rounded-lg transition-all disabled:opacity-50 font-semibold">
                     {gettingJwt ? <><RefreshCw size={9} className="animate-spin" /> Getting JWT…</> : <><Lock size={9} /> Get JWT Token</>}
                   </button>
                 )}
               </div>
               {autoResolved && !autoResolved.error && (
-                <span className={`flex items-center gap-1 text-[10px] ${autoResolved.source === 'contract-pending' ? 'text-yellow-600/80' : 'text-emerald-600/80'}`}>
+                <span className={`flex items-center gap-1 text-[10px] font-medium ${autoResolved.source === 'contract-pending' ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                   <ShieldCheck size={9} />
                   {autoResolved.source === 'contract' ? '🔑 contract: ' : autoResolved.source === 'contract-pending' ? '⏳ pending: ' : ''}
                   {autoResolved.apiInstanceName} → {autoResolved.contractApp}
@@ -559,24 +562,24 @@ export default function PingTestPanel({
               )}
               {autoResolved?.source === 'contract-pending' && (
                 <button onClick={autoFillCredentials} disabled={autoResolving}
-                  className="flex items-center gap-1 text-[10px] px-2 py-1 bg-yellow-100/30 border border-yellow-300/40 text-yellow-700 hover:bg-yellow-100/50 rounded transition-colors">
+                  className="flex items-center gap-1 text-[10px] px-2 py-1 bg-amber-50 dark:bg-amber-500/10 border border-amber-200/60 dark:border-amber-400/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20 rounded transition-colors font-medium">
                   {autoResolving ? <RefreshCw size={9} className="animate-spin" /> : <RefreshCw size={9} />} Re-check Approval
                 </button>
               )}
-              {autoResolved?.error && <span className="text-[10px] text-yellow-500/80">{autoResolved.error}</span>}
-              {jwtError && <span className="text-[10px] text-red-600/80 flex items-center gap-1"><XCircle size={9} /> {jwtError}</span>}
+              {autoResolved?.error && <span className="text-[10px] text-amber-600 dark:text-amber-400">{autoResolved.error}</span>}
+              {jwtError && <span className="text-[10px] text-red-600 dark:text-red-400 flex items-center gap-1"><XCircle size={9} /> {jwtError}</span>}
             </div>
           </div>
         )}
       </div>
 
       {!isCH1 && !ch2IngressUrl && (
-        <div className="flex items-center gap-3 bg-yellow-50/30 border border-yellow-200/50 rounded-xl px-4 py-3 text-yellow-600 text-sm">
+        <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-500/5 border border-amber-200/60 dark:border-amber-400/15 rounded-xl px-4 py-3 text-amber-700 dark:text-amber-300 text-sm">
           <AlertCircle size={15} className="flex-shrink-0" /><span>No public ingress URL found for this CH2 app. Check the <strong>Infra & Config</strong> tab.</span>
         </div>
       )}
       {error && (
-        <div className="flex items-center gap-3 bg-red-50/30 border border-red-200/50 rounded-xl px-4 py-3 text-red-600 text-sm">
+        <div className="flex items-center gap-3 bg-red-50 dark:bg-red-500/5 border border-red-200/60 dark:border-red-400/15 rounded-xl px-4 py-3 text-red-700 dark:text-red-300 text-sm">
           <WifiOff size={15} className="flex-shrink-0" /><span>{error}</span>
         </div>
       )}
@@ -594,17 +597,17 @@ export default function PingTestPanel({
             {result.responseTimeMs != null && <span className={`font-mono text-sm font-bold ${latencyColor(result.responseTimeMs)}`}>{result.responseTimeMs}ms</span>}
           </div>
 
-          <div className="bg-white/60 border border-gray-200/60 rounded-2xl overflow-hidden">
+          <div className="bg-white/70 dark:bg-gray-900/50 border border-gray-200/70 dark:border-gray-700/60 rounded-2xl overflow-hidden shadow-sm">
             <table className="w-full text-sm">
               <tbody>
                 {[
-                  ['Active Endpoint', result.activeEndpoint ? <span className="font-mono text-xs text-cyan-700 break-all">{result.activeEndpoint}</span> : <span className="text-gray-400">—</span>],
-                  ['HTTP Status', result.httpStatus != null ? <span className={`font-mono text-sm font-bold ${result.httpStatus < 300 ? 'text-emerald-600' : result.httpStatus < 500 ? 'text-yellow-600' : 'text-red-600'}`}>{result.httpStatus}</span> : <span className="text-gray-400">—</span>],
-                  ['Response Time', result.responseTimeMs != null ? <span className={`font-mono font-bold ${latencyColor(result.responseTimeMs)}`}>{result.responseTimeMs}ms</span> : <span className="text-gray-400">—</span>],
-                  ['Target Type', <span className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${isCH1 ? 'bg-purple-50/50 text-purple-700 border-purple-300/50' : 'bg-blue-50/50 text-blue-700 border-blue-300/50'}`}>{isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'}</span>],
+                  ['Active Endpoint', result.activeEndpoint ? <span className="font-mono text-xs text-sfteal-700 dark:text-sfteal-300 break-all">{result.activeEndpoint}</span> : <span className="text-gray-400 dark:text-gray-600">—</span>],
+                  ['HTTP Status', result.httpStatus != null ? <span className={`font-mono text-sm font-bold ${result.httpStatus < 300 ? 'text-emerald-600 dark:text-emerald-400' : result.httpStatus < 500 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>{result.httpStatus}</span> : <span className="text-gray-400 dark:text-gray-600">—</span>],
+                  ['Response Time', result.responseTimeMs != null ? <span className={`font-mono font-bold ${latencyColor(result.responseTimeMs)}`}>{result.responseTimeMs}ms</span> : <span className="text-gray-400 dark:text-gray-600">—</span>],
+                  ['Target Type', <span className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${isCH1 ? 'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20' : 'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20'}`}>{isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'}</span>],
                 ].map(([label, value]) => (
-                  <tr key={label} className="border-b border-gray-200/40 last:border-0">
-                    <td className="px-5 py-3 w-40 text-[10px] font-bold tracking-wider text-slate-500 uppercase">{label}</td>
+                  <tr key={label} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
+                    <td className="px-5 py-3 w-40 text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase">{label}</td>
                     <td className="px-5 py-3">{value}</td>
                   </tr>
                 ))}
@@ -614,21 +617,21 @@ export default function PingTestPanel({
               const endpoints = result.payload?.pingResponse?.endpoints;
               const summary = result.payload?.pingResponse?.summary;
               return (
-                <div className="border-t border-gray-200/40 space-y-0">
+                <div className="border-t border-gray-100 dark:border-gray-800 space-y-0">
                   {/* Structured endpoint health table when pingResponse.endpoints exists */}
                   {Array.isArray(endpoints) && endpoints.length > 0 && (() => {
                     const ok = endpoints.filter(e => e && (e.status || '').toLowerCase() === 'success').length;
                     const fail = endpoints.length - ok;
                     return (
-                      <div className="px-5 py-4 space-y-3 border-b border-gray-200/40">
+                      <div className="px-5 py-4 space-y-3 border-b border-gray-100 dark:border-gray-800">
                         <div className="flex items-center justify-between">
-                          <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase flex items-center gap-1.5">
+                          <p className="text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase flex items-center gap-1.5">
                             <Activity size={9} /> Endpoint Health ({endpoints.length})
                           </p>
                           <div className="flex items-center gap-2 text-[10px]">
-                            <span className="text-emerald-600 font-semibold">✓ {ok} ok</span>
-                            {fail > 0 && <span className="text-red-600 font-semibold">✗ {fail} failed</span>}
-                            {summary?.serviceName && <span className="text-gray-400 font-mono">{summary.serviceName}</span>}
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">✓ {ok} ok</span>
+                            {fail > 0 && <span className="text-red-600 dark:text-red-400 font-semibold">✗ {fail} failed</span>}
+                            {summary?.serviceName && <span className="text-gray-400 dark:text-gray-500 font-mono">{summary.serviceName}</span>}
                           </div>
                         </div>
                         <div className="space-y-1.5">
@@ -636,15 +639,15 @@ export default function PingTestPanel({
                             if (!ep) return null;
                             const isOk = (ep.status || '').toLowerCase() === 'success';
                             return (
-                              <div key={i} className={`flex items-start gap-2.5 rounded-lg px-3 py-2 border ${isOk ? 'bg-emerald-50/20 border-emerald-200/30' : 'bg-red-50/20 border-red-200/30'}`}>
+                              <div key={i} className={`flex items-start gap-2.5 rounded-lg px-3 py-2 border ${isOk ? 'bg-emerald-50/60 dark:bg-emerald-500/5 border-emerald-200/50 dark:border-emerald-400/15' : 'bg-red-50/60 dark:bg-red-500/5 border-red-200/50 dark:border-red-400/15'}`}>
                                 <span className="text-[11px] mt-0.5 flex-shrink-0">{isOk ? '✅' : '❌'}</span>
                                 <div className="flex-1 min-w-0 space-y-0.5">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-xs font-medium text-gray-700">{ep.serviceName}</span>
-                                    {ep.endpointName && <span className="text-[10px] text-slate-500">· {ep.endpointName}</span>}
+                                    <span className="text-xs font-medium text-gray-700 dark:text-gray-200">{ep.serviceName}</span>
+                                    {ep.endpointName && <span className="text-[10px] text-gray-400 dark:text-gray-500">· {ep.endpointName}</span>}
                                   </div>
-                                  {ep.apiUser && <p className="text-[10px] text-gray-400 font-mono">{ep.apiUser}</p>}
-                                  <p className={`text-[10px] ${isOk ? 'text-emerald-600/70' : 'text-red-600/70'}`}>
+                                  {ep.apiUser && <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">{ep.apiUser}</p>}
+                                  <p className={`text-[10px] ${isOk ? 'text-emerald-600/80 dark:text-emerald-400/80' : 'text-red-600/80 dark:text-red-400/80'}`}>
                                     {ep.message}{ep.domain ? ` · ${ep.domain}` : ''}
                                   </p>
                                 </div>
@@ -657,49 +660,51 @@ export default function PingTestPanel({
                   })()}
                   {/* Full raw JSON — always visible */}
                   <div className="px-5 py-4">
-                    <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase mb-2">Response Body</p>
+                    <p className="text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-2">Response Body</p>
                     <PostmanJsonViewer data={result.payload} maxHeight="400px" />
                   </div>
                 </div>
               );
             })()}
-            {result.error && <div className="border-t border-gray-200/40 px-5 py-3 flex items-center gap-2 text-red-600 text-xs"><XCircle size={12} className="flex-shrink-0" />{result.error}</div>}
+            {result.error && <div className="border-t border-gray-100 dark:border-gray-800 px-5 py-3 flex items-center gap-2 text-red-600 dark:text-red-400 text-xs"><XCircle size={12} className="flex-shrink-0" />{result.error}</div>}
           </div>
           {Array.isArray(result.attempts) && result.attempts.length > 0 && (
             <AttemptLog
               attempts={result.attempts}
-              className="bg-white/40 border border-gray-200/60 rounded-2xl px-4 py-3"
+              className="bg-white/50 dark:bg-gray-900/40 border border-gray-200/60 dark:border-gray-700/60 rounded-2xl px-4 py-3"
             />
           )}
         </div>
       )}
 
       {!result && !loading && !error && (
-        <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <Activity size={36} className="text-gray-400" />
-          <p className="text-slate-500 text-sm">Click <strong>Run Ping Test</strong> to check if the app is reachable</p>
-          <p className="text-gray-400 text-xs">Will test: <span className="text-slate-500 font-mono">{displayBase}/api/v1/ping</span> and fallbacks</p>
+        <div className="flex flex-col items-center justify-center py-16 gap-4 bg-white/50 dark:bg-gray-900/30 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl">
+          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-sfteal-100 dark:bg-sfteal-500/10">
+            <Activity size={24} className="text-sfteal-500 dark:text-sfteal-400" />
+          </div>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">Click <strong className="text-gray-700 dark:text-gray-200">Run Ping Test</strong> to check if the app is reachable</p>
+          <p className="text-gray-400 dark:text-gray-500 text-xs">Will test: <span className="text-gray-500 dark:text-gray-400 font-mono">{displayBase}/api/v1/ping</span> and fallbacks</p>
         </div>
       )}
 
       {/* Ping History Section */}
-      <div className="mt-6 border-t border-gray-200/60 pt-6">
+      <div className="mt-6 border-t border-gray-100 dark:border-gray-800 pt-6">
         <div className="flex items-center justify-between mb-4">
-          <button 
+          <button
             onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+            className="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
           >
             <History size={16} />
             <span className="text-sm font-semibold">Ping History {pingHistory.length > 0 ? `(${pingHistory.length})` : ''}</span>
-            {historyLoading && <RefreshCw size={12} className="animate-spin text-slate-500" />}
-            {showHistory ? <ChevronDown size={16} className="text-slate-500" /> : <ChevronRight size={16} className="text-slate-500" />}
+            {historyLoading && <RefreshCw size={12} className="animate-spin text-gray-400 dark:text-gray-500" />}
+            {showHistory ? <ChevronDown size={16} className="text-gray-400 dark:text-gray-500" /> : <ChevronRight size={16} className="text-gray-400 dark:text-gray-500" />}
           </button>
-          
+
           {pingHistory.length > 0 && showHistory && (
-            <button 
+            <button
               onClick={clearHistory}
               disabled={historyLoading}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-50/30 text-red-600 hover:bg-red-100/50 border border-red-200/50 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 hover:bg-red-600 hover:text-white border border-red-200/60 dark:border-red-400/20 hover:border-red-600 transition-all disabled:opacity-50"
             >
               <Trash2 size={12} /> Clear History
             </button>
@@ -709,7 +714,7 @@ export default function PingTestPanel({
         {showHistory && (
           <div className="space-y-3">
             {pingHistory.length === 0 ? (
-              <p className="text-slate-500 text-xs text-center py-4">No ping history found for this app.</p>
+              <p className="text-gray-500 dark:text-gray-400 text-xs text-center py-4">No ping history found for this app.</p>
             ) : (
               pingHistory.map((entry, idx) => (
                 <PingHistoryItem key={entry.id || idx} entry={entry} />
@@ -724,47 +729,47 @@ export default function PingTestPanel({
 
 function PingHistoryItem({ entry }) {
   const [expanded, setExpanded] = useState(false);
-  
+
   const isOk = entry.status === 'SUCCESS';
   const isPartial = entry.status === 'PARTIAL';
 
-  const badgeCls = isOk ? 'bg-emerald-50/50 text-emerald-700 border-emerald-300/50' :
-                   isPartial ? 'bg-yellow-50/50 text-yellow-700 border-yellow-300/50' :
-                   'bg-red-50/50 text-red-700 border-red-300/50';
+  const badgeCls = isOk ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20' :
+                   isPartial ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-400/20' :
+                   'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20';
 
-  const icon = isOk ? <CheckCircle2 size={12} /> : 
-               isPartial ? <AlertCircle size={12} /> : 
+  const icon = isOk ? <CheckCircle2 size={12} /> :
+               isPartial ? <AlertCircle size={12} /> :
                <XCircle size={12} />;
 
   return (
-    <div className="bg-white/40 border border-gray-200/60 rounded-xl overflow-hidden">
-      <div 
-        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-100/40 transition-colors"
+    <div className="bg-white/50 dark:bg-gray-900/40 border border-gray-200/60 dark:border-gray-700/60 rounded-xl overflow-hidden">
+      <div
+        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center gap-4">
-          <span className="text-xs text-gray-500 font-mono">
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
             {new Date(entry.timestamp).toLocaleString()}
           </span>
           <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badgeCls}`}>
             {icon} {entry.status}
           </span>
           {entry.responseTimeMs != null && (
-            <span className="text-xs font-mono text-gray-600">{entry.responseTimeMs}ms</span>
+            <span className="text-xs font-mono text-gray-600 dark:text-gray-300">{entry.responseTimeMs}ms</span>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500 max-w-[200px] truncate font-mono" title={entry.endpoint}>{entry.endpoint || 'No Endpoint'}</span>
-          {expanded ? <ChevronDown size={14} className="text-slate-500"/> : <ChevronRight size={14} className="text-slate-500"/>}
+          <span className="text-xs text-gray-400 dark:text-gray-500 max-w-[200px] truncate font-mono" title={entry.endpoint}>{entry.endpoint || 'No Endpoint'}</span>
+          {expanded ? <ChevronDown size={14} className="text-gray-400 dark:text-gray-500"/> : <ChevronRight size={14} className="text-gray-400 dark:text-gray-500"/>}
         </div>
       </div>
-      
+
       {expanded && (
-        <div className="px-4 py-3 border-t border-gray-200/60 bg-gray-50">
-          {entry.error && <p className="text-xs text-red-600 mb-2">{entry.error}</p>}
+        <div className="px-4 py-3 border-t border-gray-200/60 dark:border-gray-700/60 bg-gray-50 dark:bg-gray-800/40">
+          {entry.error && <p className="text-xs text-red-600 dark:text-red-400 mb-2">{entry.error}</p>}
           {entry.payload && (
             <div>
-              <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase mb-2">Response Body</p>
+              <p className="text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-2">Response Body</p>
               <PostmanJsonViewer data={entry.payload} maxHeight="240px" />
             </div>
           )}

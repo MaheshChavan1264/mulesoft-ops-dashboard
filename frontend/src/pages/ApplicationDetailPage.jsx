@@ -1890,105 +1890,120 @@ export default function ApplicationDetailPage() {
       })()}
 
       {/* ── CPS CONFIG ──────────────────────────────── */}
-      {tab==='cps' && cpsBaseUrl && (
+      {tab==='cps' && cpsBaseUrl && (() => {
+        const nsCount = cpsData ? Object.keys(cpsData.nonSecure).length : 0;
+        const secCount = cpsData ? cpsData.secureGroups.reduce((sum, g) => sum + (g.properties && typeof g.properties === 'object' ? Object.keys(g.properties).length : 0), 0) : 0;
+        const binCount = cpsData?.binaryKeys ? cpsData.binaryKeys.split(',').map(f => f.trim()).filter(Boolean).length : 0;
+        return (
         <div className="space-y-5">
+          {/* Stat tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatTile icon={Settings} label="Non-Secure Properties" accent="blue" value={cpsData ? nsCount : '—'} />
+            <StatTile icon={Key} label="Secure Properties" accent="purple" value={cpsData ? secCount : '—'} sub={cpsData?.secureKeys && secCount===0 ? 'available to load' : undefined} />
+            <StatTile icon={Package} label="Binary Assets" accent="amber" value={cpsData ? binCount : '—'} />
+          </div>
+
           {/* Info bar */}
-          <div className="flex items-center justify-between flex-wrap gap-3 bg-white/60 border border-gray-200/60 rounded-2xl px-5 py-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Key size={13} className="text-blue-600" />
-                <span className="text-gray-900 text-sm font-semibold">Config Property Server</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${cpsEnv==='prod'?'bg-emerald-50/50 text-emerald-700 border-emerald-300/50':'bg-yellow-50/50 text-yellow-700 border-yellow-300/50'}`}>{cpsEnv.toUpperCase()}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${isCH1?'bg-purple-50/50 text-purple-700 border-purple-300/50':'bg-blue-50/50 text-blue-700 border-blue-300/50'}`}>{isCH1?'CH1':'CH2'}</span>
-                {cpsCredsResolved && (
-                  <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-300/40 px-1.5 py-0.5 rounded-full">
-                    <Key size={8} /> CPS creds auto-resolved
-                  </span>
+          <div className="relative rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/50 backdrop-blur-md shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between flex-wrap gap-4 px-5 py-4">
+              <div className="space-y-2 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-sf-500 to-sf-600 shadow-sm shadow-sf-500/30 flex-shrink-0">
+                    <Key size={13} className="text-white" />
+                  </div>
+                  <span className="text-gray-900 dark:text-gray-100 text-sm font-semibold">Config Property Server</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${cpsEnv==='prod'?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20':'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-400/20'}`}>{cpsEnv.toUpperCase()}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${isCH1?'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20':'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20'}`}>{isCH1?'CH1':'CH2'}</span>
+                  {cpsCredsResolved && (
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/60 dark:border-emerald-400/20 px-1.5 py-0.5 rounded-full">
+                      <Key size={8} /> Creds auto-resolved
+                    </span>
+                  )}
+                  {hasCpsCsvCredentials && !cpsCredsResolved && !cpsData && (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400">🔑 CSV loaded — will auto-resolve on load</span>
+                  )}
+                </div>
+                <p className="text-gray-400 dark:text-gray-500 text-xs font-mono break-all">{cpsBaseUrl}</p>
+                {/* Editable key + env overrides */}
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">Env</span>
+                    <input
+                      value={cpsEnvOverride || effectiveCpsEnv}
+                      onChange={(e) => { setCpsEnvOverride(e.target.value); setCpsData(null); setCpsError(''); }}
+                      className="bg-gray-50/80 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 rounded-lg px-2 py-1 text-xs text-gray-700 dark:text-gray-200 font-mono w-24 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">Key</span>
+                    <input
+                      value={cpsKeyOverride || effectiveCpsKey}
+                      onChange={(e) => { setCpsKeyOverride(e.target.value); setCpsData(null); setCpsError(''); }}
+                      className="bg-gray-50/80 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 rounded-lg px-2 py-1 text-xs text-gray-700 dark:text-gray-200 font-mono w-56 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {cpsData && Object.keys(cpsData.nonSecure).length > 0 && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const raw = cpsData.rawNsResponse;
+                        setRawJsonView({
+                          title: 'Non-Secure Properties (Raw JSON)',
+                          data: raw
+                        });
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sf-700 dark:text-sf-300 hover:text-white bg-sf-50 dark:bg-sf-500/10 hover:bg-sf-600 border border-sf-200/60 dark:border-sf-400/20 hover:border-sf-600 rounded-lg transition-all">
+                      <Database size={11} /> Raw JSON (NS)
+                    </button>
+                    <button
+                      onClick={() => {
+                        // Copy the original raw CPS API response (not the parsed flat object)
+                        const raw = cpsData.rawNsResponse;
+                        navigator.clipboard.writeText(
+                          typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
+                        );
+                        setCopiedCpsNs(true);
+                        setTimeout(() => setCopiedCpsNs(false), 2000);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:text-white bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-600 border border-emerald-200/60 dark:border-emerald-400/20 hover:border-emerald-600 rounded-lg transition-all">
+                      {copiedCpsNs ? <><Check size={11} /> Copied!</> : <><Copy size={11} /> Non-Secure</>}
+                    </button>
+                  </>
                 )}
-      {hasCpsCsvCredentials && !cpsCredsResolved && !cpsData && (
-        <span className="text-[10px] text-yellow-600/70">🔑 CSV loaded — will auto-resolve on load</span>
-      )}
+                {cpsData && cpsData.secureGroups.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const raw = cpsData.rawSecureResponse;
+                        setRawJsonView({
+                          title: 'Secure Properties (Raw JSON)',
+                          data: raw
+                        });
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sf-700 dark:text-sf-300 hover:text-white bg-sf-50 dark:bg-sf-500/10 hover:bg-sf-600 border border-sf-200/60 dark:border-sf-400/20 hover:border-sf-600 rounded-lg transition-all">
+                      <Database size={11} /> Raw JSON (Sec)
+                    </button>
+                    <button
+                      onClick={() => {
+                        // Copy the original raw secure CPS API response
+                        const raw = cpsData.rawSecureResponse;
+                        navigator.clipboard.writeText(
+                          typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
+                        );
+                        setCopiedCpsSec(true);
+                        setTimeout(() => setCopiedCpsSec(false), 2000);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sfpurple-700 dark:text-sfpurple-300 hover:text-white bg-sfpurple-50 dark:bg-sfpurple-500/10 hover:bg-sfpurple-600 border border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:border-sfpurple-600 rounded-lg transition-all">
+                      {copiedCpsSec ? <><Check size={11} /> Copied!</> : <><Copy size={11} /> Secure</>}
+                    </button>
+                  </>
+                )}
+                <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-50/80 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200/70 dark:border-gray-700/60 rounded-lg transition-all"><RefreshCw size={11}/> {cpsData ? 'Refresh' : 'Load'}</button>
+                <button onClick={() => setShowCpsSettings(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gradient-to-b from-sf-500 to-sf-600 hover:from-sf-400 hover:to-sf-500 text-white rounded-lg shadow-sm shadow-sf-500/30 hover:shadow-md transition-all"><Key size={11}/> Configure CPS</button>
               </div>
-              <p className="text-slate-500 text-xs font-mono break-all">{cpsBaseUrl}</p>
-              {/* Editable key + env overrides */}
-              <div className="flex flex-wrap gap-2 mt-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wider">Env:</span>
-                  <input
-                    value={cpsEnvOverride || effectiveCpsEnv}
-                    onChange={(e) => { setCpsEnvOverride(e.target.value); setCpsData(null); setCpsError(''); }}
-                    className="bg-gray-100/60 border border-gray-300/40 rounded-lg px-2 py-1 text-xs text-gray-700 font-mono w-24 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10"
-                  />
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wider">Key:</span>
-                  <input
-                    value={cpsKeyOverride || effectiveCpsKey}
-                    onChange={(e) => { setCpsKeyOverride(e.target.value); setCpsData(null); setCpsError(''); }}
-                    className="bg-gray-100/60 border border-gray-300/40 rounded-lg px-2 py-1 text-xs text-gray-700 font-mono w-56 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {cpsData && Object.keys(cpsData.nonSecure).length > 0 && (
-                <>
-                  <button
-                    onClick={() => {
-                      const raw = cpsData.rawNsResponse;
-                      setRawJsonView({
-                        title: 'Non-Secure Properties (Raw JSON)',
-                        data: raw
-                      });
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/40 rounded-lg transition-colors">
-                    <Database size={11} /> Raw JSON (NS)
-                  </button>
-                  <button
-                    onClick={() => {
-                      // Copy the original raw CPS API response (not the parsed flat object)
-                      const raw = cpsData.rawNsResponse;
-                      navigator.clipboard.writeText(
-                        typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
-                      );
-                      setCopiedCpsNs(true);
-                      setTimeout(() => setCopiedCpsNs(false), 2000);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 border border-emerald-200/40 rounded-lg transition-colors">
-                    {copiedCpsNs ? <><Check size={11} className="text-emerald-600" /> Copied!</> : <><Copy size={11} /> Non-Secure</>}
-                  </button>
-                </>
-              )}
-              {cpsData && cpsData.secureGroups.length > 0 && (
-                <>
-                  <button
-                    onClick={() => {
-                      const raw = cpsData.rawSecureResponse;
-                      setRawJsonView({
-                        title: 'Secure Properties (Raw JSON)',
-                        data: raw
-                      });
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/40 rounded-lg transition-colors">
-                    <Database size={11} /> Raw JSON (Sec)
-                  </button>
-                  <button
-                    onClick={() => {
-                      // Copy the original raw secure CPS API response
-                      const raw = cpsData.rawSecureResponse;
-                      navigator.clipboard.writeText(
-                        typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
-                      );
-                      setCopiedCpsSec(true);
-                      setTimeout(() => setCopiedCpsSec(false), 2000);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-600 hover:text-purple-700 bg-purple-50/40 border border-purple-200/40 rounded-lg transition-colors">
-                    {copiedCpsSec ? <><Check size={11} className="text-purple-600" /> Copied!</> : <><Copy size={11} /> Secure</>}
-                  </button>
-                </>
-              )}
-              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900 bg-gray-100/60 border border-gray-300/40 rounded-lg transition-colors"><RefreshCw size={11}/> {cpsData ? 'Refresh' : 'Load'}</button>
-              <button onClick={() => setShowCpsSettings(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/40 rounded-lg transition-colors"><Key size={11}/> Configure CPS</button>
             </div>
           </div>
 
@@ -2010,16 +2025,16 @@ export default function ApplicationDetailPage() {
 
           {/* Error */}
           {cpsError && (
-            <div className="bg-red-50/30 border border-red-200/50 rounded-xl px-5 py-4 space-y-2">
-              <div className="flex items-center gap-3 text-red-700 text-sm">
+            <div className="bg-red-50 dark:bg-red-500/5 border border-red-200/60 dark:border-red-400/15 rounded-2xl px-5 py-4 space-y-2">
+              <div className="flex items-center gap-3 text-red-700 dark:text-red-300 text-sm font-medium">
                 <AlertTriangle size={14} className="flex-shrink-0" /> {cpsError}
               </div>
               {cpsAttemptedUrl && (
-                <div className="text-[10px] text-red-500/80 font-mono break-all border-t border-red-200/30 pt-2">
+                <div className="text-[10px] text-red-500/80 dark:text-red-400/70 font-mono break-all border-t border-red-200/40 dark:border-red-400/15 pt-2">
                   Attempted: {cpsAttemptedUrl}
                 </div>
               )}
-              <div className="text-[10px] text-red-500/60 pt-0.5">
+              <div className="text-[10px] text-red-500/70 dark:text-red-400/60 pt-0.5">
                 💡 Check the <strong>Env</strong> and <strong>Key</strong> fields above — they must match exactly what's stored in CPS.
                 Check the backend console for the full URL that was called.
               </div>
@@ -2028,7 +2043,7 @@ export default function ApplicationDetailPage() {
 
           {/* Loading */}
           {cpsLoading && (
-            <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
+            <div className="flex items-center justify-center py-16 gap-3 text-gray-500 dark:text-gray-400">
               <RefreshCw size={18} className="animate-spin" />
               <span className="text-sm">Loading CPS properties…</span>
             </div>
@@ -2053,9 +2068,9 @@ export default function ApplicationDetailPage() {
             <div className="space-y-5">
               {/* Search */}
               <div className="relative">
-                <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
                 <input value={cpsSearch} onChange={(e) => setCpsSearch(e.target.value)} placeholder="Filter CPS properties by key or value…"
-                  className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10" />
+                  className="w-full bg-white/70 dark:bg-gray-900/50 border border-gray-200/70 dark:border-gray-700/60 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10 shadow-sm transition-all" />
               </div>
 
               {/* Non-secure properties — flat table from the properties object */}
@@ -2087,7 +2102,7 @@ export default function ApplicationDetailPage() {
                             <tr key={k} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                               <td className="px-5 py-3 align-top">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-gray-500 text-xs font-mono break-all">{k}</span>
+                                  <span className="text-gray-500 dark:text-gray-400 text-xs font-mono break-all">{k}</span>
                                   <CopyBtn text={k} />
                                 </div>
                               </td>
@@ -2097,15 +2112,15 @@ export default function ApplicationDetailPage() {
                                     {display.split(',').map((item) => item.trim()).filter(Boolean).map((item) => (
                                       <span key={item} className={`inline-flex text-[10px] px-2 py-0.5 rounded-md font-mono border ${
                                         k === 'cps.secure.binaries'
-                                          ? 'bg-orange-50/30 text-orange-700 border-orange-200/40'
-                                          : 'bg-purple-50/30 text-purple-700 border-purple-200/40'
+                                          ? 'bg-sforange-50 dark:bg-sforange-500/10 text-sforange-700 dark:text-sforange-300 border-sforange-200/60 dark:border-sforange-400/20'
+                                          : 'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20'
                                       }`}>{item}</span>
                                     ))}
                                     <CopyBtn text={display} />
                                   </div>
                                 ) : (
                                   <div className="flex items-start gap-1.5">
-                                    <span className={`text-xs font-mono break-all ${isNum ? 'text-cyan-700' : 'text-gray-700'}`}>{display}</span>
+                                    <span className={`text-xs font-mono break-all ${isNum ? 'text-sfteal-700 dark:text-sfteal-300' : 'text-gray-700 dark:text-gray-200'}`}>{display}</span>
                                     <CopyBtn text={display} />
                                   </div>
                                 )}
@@ -2178,12 +2193,12 @@ export default function ApplicationDetailPage() {
                 // Error group — show error message instead of a property card
                 if (group.key === '__error__' || group._error) {
                   return (
-                    <div key="__error__" className="flex items-start gap-3 bg-red-50/30 border border-red-200/50 rounded-xl px-5 py-4 text-red-600 text-sm">
+                    <div key="__error__" className="flex items-start gap-3 bg-red-50 dark:bg-red-500/5 border border-red-200/60 dark:border-red-400/15 rounded-xl px-5 py-4 text-red-700 dark:text-red-300 text-sm">
                       <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                       <div>
                         <p className="font-medium">Secure properties could not be loaded</p>
-                        <p className="text-xs text-red-500/80 mt-1">{group._error || 'Unknown error'}</p>
-                        <p className="text-xs text-red-600/60 mt-1">
+                        <p className="text-xs text-red-500/80 dark:text-red-400/70 mt-1">{group._error || 'Unknown error'}</p>
+                        <p className="text-xs text-red-600/60 dark:text-red-400/50 mt-1">
                           The credential may not have access to this project's secure properties. Try refreshing the page to retry with a different credential.
                         </p>
                       </div>
@@ -2194,7 +2209,7 @@ export default function ApplicationDetailPage() {
                 // Skip groups where properties is a "COULD NOT ACCESS" string
                 if (typeof groupProps === 'string') {
                   return (
-                    <div key={group.key} className="flex items-start gap-3 bg-yellow-50/30 border border-yellow-200/50 rounded-xl px-5 py-3 text-yellow-600 text-xs">
+                    <div key={group.key} className="flex items-start gap-3 bg-amber-50 dark:bg-amber-500/5 border border-amber-200/60 dark:border-amber-400/15 rounded-xl px-5 py-3 text-amber-700 dark:text-amber-300 text-xs">
                       <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
                       <span>🔒 <strong>{group.key}</strong>: {groupProps}</span>
                     </div>
@@ -2205,8 +2220,8 @@ export default function ApplicationDetailPage() {
                 if (filtered.length === 0 && cpsSearch) return null;
                 return (
                   <GlassCard key={group.key} icon={Key} title={`🔒 ${group.key}`} count={Object.keys(groupProps).length} accent="orange" noPad>
-                    <div className="px-5 py-2 bg-orange-50/20 border-b border-orange-200/20 flex items-center justify-between">
-                      <span className="text-[10px] text-orange-600/70">Secure property group — treat values as sensitive</span>
+                    <div className="px-5 py-2 bg-sforange-50/60 dark:bg-sforange-500/5 border-b border-sforange-200/40 dark:border-sforange-400/10 flex items-center justify-between">
+                      <span className="text-[10px] text-sforange-600 dark:text-sforange-400">Secure property group — treat values as sensitive</span>
                       <CopyGroupBtn text={JSON.stringify({
                         responses: [{
                           environment: group.environment || cpsData.useEnv || effectiveCpsEnv,
@@ -2220,7 +2235,7 @@ export default function ApplicationDetailPage() {
                       <tbody>
                         {(cpsSearch ? filtered : Object.entries(groupProps).sort(([a],[b])=>a.localeCompare(b))).map(([k, v]) => (
                           <tr key={k} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
-                            <td className="px-5 py-3 w-[42%]"><span className="text-gray-500 text-xs font-mono break-all">{k}</span></td>
+                            <td className="px-5 py-3 w-[42%]"><span className="text-gray-500 dark:text-gray-400 text-xs font-mono break-all">{k}</span></td>
                             <td className="px-5 py-3"><SecretVal value={String(v)} /></td>
                           </tr>
                         ))}
@@ -2238,8 +2253,8 @@ export default function ApplicationDetailPage() {
                 if (binaryFiles.length === 0) return null;
                 return (
                   <GlassCard icon={Package} title="Binary Assets" count={binaryFiles.length} accent="purple" noPad>
-                    <div className="px-5 py-2 bg-orange-50/20 border-b border-orange-200/20">
-                      <span className="text-[10px] text-orange-600/70">Binary files configured in <code className="text-orange-600">cps.secure.binaries</code></span>
+                    <div className="px-5 py-2 bg-sfpurple-50/60 dark:bg-sfpurple-500/5 border-b border-sfpurple-200/40 dark:border-sfpurple-400/10">
+                      <span className="text-[10px] text-sfpurple-600 dark:text-sfpurple-400">Binary files configured in <code className="text-sfpurple-700 dark:text-sfpurple-300">cps.secure.binaries</code></span>
                     </div>
                     <table className="w-full text-sm border-collapse">
                       <thead>
@@ -2251,16 +2266,16 @@ export default function ApplicationDetailPage() {
                       <tbody>
                         {binaryFiles.map((fileName, i) => {
                           const ext = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '—';
-                          const extColor = ext === 'jks' ? 'bg-blue-50/30 text-blue-700 border-blue-200/40'
-                            : ext === 'pem' ? 'bg-green-50/30 text-green-700 border-green-200/40'
-                            : ext === 'gpg' || ext === 'pgp' ? 'bg-purple-50/30 text-purple-700 border-purple-200/40'
-                            : ext === 'crt' || ext === 'cer' ? 'bg-cyan-50/30 text-cyan-700 border-cyan-200/40'
-                            : 'bg-gray-100/40 text-gray-500 border-gray-300/40';
+                          const extColor = ext === 'jks' ? 'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20'
+                            : ext === 'pem' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20'
+                            : ext === 'gpg' || ext === 'pgp' ? 'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20'
+                            : ext === 'crt' || ext === 'cer' ? 'bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-700 dark:text-sfteal-300 border-sfteal-200/60 dark:border-sfteal-400/20'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60';
                           return (
                             <tr key={i} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                               <td className="px-5 py-3">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-gray-700 text-xs font-mono">{fileName}</span>
+                                  <span className="text-gray-700 dark:text-gray-200 text-xs font-mono">{fileName}</span>
                                   <CopyBtn text={fileName} />
                                 </div>
                               </td>
@@ -2278,7 +2293,8 @@ export default function ApplicationDetailPage() {
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── DEPENDENCIES ────────────────────────────── */}
       {tab==='dependencies' && (() => {
@@ -2352,20 +2368,20 @@ export default function ApplicationDetailPage() {
 
         const srcBadge = (source) => {
           const s = {
-            'ARM': 'bg-blue-50/40 text-blue-700 border-blue-200/40',
-            'CPS (non-secure)': 'bg-gray-100/60 text-gray-500 border-gray-300/40',
-            'CPS (secure)': 'bg-orange-50/40 text-orange-700 border-orange-200/40',
-          }[source] || 'bg-gray-100/60 text-gray-500 border-gray-300/40';
+            'ARM': 'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20',
+            'CPS (non-secure)': 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60',
+            'CPS (secure)': 'bg-sforange-50 dark:bg-sforange-500/10 text-sforange-700 dark:text-sforange-300 border-sforange-200/60 dark:border-sforange-400/20',
+          }[source] || 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60';
           return <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${s}`}>{source}</span>;
         };
 
         const typeBadge = (dep) => {
           const cls = {
-            CH1:      'bg-purple-50/40 text-purple-700 border-purple-300/40',
-            CH2:      'bg-blue-50/40 text-blue-700 border-blue-300/40',
-            ANYPOINT: 'bg-cyan-50/40 text-cyan-700 border-cyan-300/40',
-            EXTERNAL: 'bg-gray-100/60 text-gray-500 border-gray-300/40',
-          }[dep.type] || 'bg-gray-100/60 text-gray-500 border-gray-300/40';
+            CH1:      'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20',
+            CH2:      'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20',
+            ANYPOINT: 'bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-700 dark:text-sfteal-300 border-sfteal-200/60 dark:border-sfteal-400/20',
+            EXTERNAL: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60',
+          }[dep.type] || 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60';
           return <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${cls}`}>{dep.label}</span>;
         };
 
@@ -2384,7 +2400,7 @@ export default function ApplicationDetailPage() {
                   <tr key={dep.host} className="border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors align-top">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-xs text-gray-700 break-all">{dep.host}</span>
+                        <span className="font-mono text-xs text-gray-700 dark:text-gray-200 break-all">{dep.host}</span>
                         <CopyBtn text={dep.host} />
                       </div>
                     </td>
@@ -2394,9 +2410,9 @@ export default function ApplicationDetailPage() {
                         {dep.refs.map((r, i) => (
                           <div key={i} className="flex flex-wrap items-start gap-1.5">
                             {srcBadge(r.source)}
-                            <span className="font-mono text-[10px] text-gray-500 break-all">{r.key}</span>
-                            <span className="text-gray-400 text-[10px]">→</span>
-                            <span className="font-mono text-[10px] text-gray-600 break-all">{r.value}</span>
+                            <span className="font-mono text-[10px] text-gray-500 dark:text-gray-400 break-all">{r.key}</span>
+                            <span className="text-gray-400 dark:text-gray-600 text-[10px]">→</span>
+                            <span className="font-mono text-[10px] text-gray-600 dark:text-gray-300 break-all">{r.value}</span>
                             <CopyBtn text={r.value} />
                           </div>
                         ))}
@@ -2411,48 +2427,50 @@ export default function ApplicationDetailPage() {
 
         return (
           <div className="space-y-5">
+            {/* Stat tiles */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <StatTile icon={Share2} label="Total Hosts" accent="teal" value={total} />
+              <StatTile icon={ShieldCheck} label="Internal Apps" accent="blue" value={internal.length} sub="CH1 / CH2 / Anypoint" />
+              <StatTile icon={Globe} label="External Hosts" accent="amber" value={external.length} />
+            </div>
+
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
-                <h2 className="text-gray-900 font-semibold text-sm flex items-center gap-2">
-                  <Share2 size={14} className="text-cyan-600" /> App Dependencies
+                <h2 className="text-gray-900 dark:text-gray-100 font-semibold text-sm flex items-center gap-2">
+                  <Share2 size={14} className="text-sfteal-600 dark:text-sfteal-400" /> App Dependencies
                 </h2>
-                <p className="text-slate-500 text-xs mt-0.5">
+                <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">
                   Upstream hosts and external services detected from ARM properties
                   {cpsData ? ' and CPS properties' : ''}.
                   {!cpsData && cpsBaseUrl && (
                     <button onClick={() => { setTab('cps'); loadCpsData(); }}
-                      className="ml-1.5 text-blue-600 hover:text-blue-700 underline underline-offset-2">
+                      className="ml-1.5 text-sf-600 dark:text-sf-400 hover:text-sf-700 dark:hover:text-sf-300 underline underline-offset-2 font-medium">
                       Load CPS to discover more
                     </button>
                   )}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-400 border border-gray-200 rounded-lg px-2 py-1">
-                  {total} unique host{total !== 1 ? 's' : ''} found
-                </span>
-              </div>
             </div>
 
             {/* Search */}
             <div className="relative">
-              <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
               <input
                 value={depSearch}
                 onChange={e => setDepSearch(e.target.value)}
                 placeholder="Filter by host, property key, or value…"
-                className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10"
+                className="w-full bg-white/70 dark:bg-gray-900/50 border border-gray-200/70 dark:border-gray-700/60 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10 shadow-sm transition-all"
               />
             </div>
 
             {/* Legend */}
-            <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-400">
-              <span className="font-medium text-slate-500">Sources:</span>
-              <span className="px-1.5 py-0.5 rounded border bg-blue-50/40 text-blue-700 border-blue-200/40 font-mono">ARM</span>
-              <span className="text-gray-400">= CloudHub deployment properties</span>
-              <span className="px-1.5 py-0.5 rounded border bg-gray-100/60 text-gray-500 border-gray-300/40 font-mono">CPS (non-secure)</span>
-              <span className="px-1.5 py-0.5 rounded border bg-orange-50/40 text-orange-700 border-orange-200/40 font-mono">CPS (secure)</span>
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-400 dark:text-gray-500">
+              <span className="font-semibold text-gray-500 dark:text-gray-400">Sources:</span>
+              <span className="px-1.5 py-0.5 rounded border bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20 font-mono">ARM</span>
+              <span className="text-gray-400 dark:text-gray-500">= CloudHub deployment properties</span>
+              <span className="px-1.5 py-0.5 rounded border bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60 font-mono">CPS (non-secure)</span>
+              <span className="px-1.5 py-0.5 rounded border bg-sforange-50 dark:bg-sforange-500/10 text-sforange-700 dark:text-sforange-300 border-sforange-200/60 dark:border-sforange-400/20 font-mono">CPS (secure)</span>
             </div>
 
             {deps.length === 0 && !searchLo && (
@@ -2460,10 +2478,10 @@ export default function ApplicationDetailPage() {
                 <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-sfteal-100 dark:bg-sfteal-500/10">
                   <Share2 size={24} className="text-sfteal-500 dark:text-sfteal-400" />
                 </div>
-                <p className="text-slate-500 text-sm">No upstream dependencies detected</p>
-                <p className="text-gray-400 text-xs text-center max-w-sm">
-                  No properties containing <code className="text-slate-500">host</code>, <code className="text-slate-500">url</code>,
-                  <code className="text-slate-500"> endpoint</code>, or <code className="text-slate-500">uri</code> patterns were found
+                <p className="text-gray-500 dark:text-gray-400 text-sm">No upstream dependencies detected</p>
+                <p className="text-gray-400 dark:text-gray-500 text-xs text-center max-w-sm">
+                  No properties containing <code className="text-gray-500 dark:text-gray-400">host</code>, <code className="text-gray-500 dark:text-gray-400">url</code>,
+                  <code className="text-gray-500 dark:text-gray-400"> endpoint</code>, or <code className="text-gray-500 dark:text-gray-400">uri</code> patterns were found
                   with URL-like values.
                   {!cpsData && cpsBaseUrl && ' Load CPS properties above to scan more sources.'}
                 </p>
@@ -2471,26 +2489,36 @@ export default function ApplicationDetailPage() {
             )}
 
             {deps.length === 0 && searchLo && (
-              <div className="flex items-center justify-center py-12 text-slate-500 text-sm">
-                No dependencies match <span className="ml-1 font-mono text-gray-500">"{depSearch}"</span>
+              <div className="flex items-center justify-center py-12 text-gray-500 dark:text-gray-400 text-sm">
+                No dependencies match <span className="ml-1 font-mono text-gray-700 dark:text-gray-300">"{depSearch}"</span>
               </div>
             )}
 
             {internal.length > 0 && <DepTable rows={internal} title="Internal MuleSoft Apps" accent="blue" />}
-            {external.length > 0 && <DepTable rows={external} title="External Hosts" />}
+            {external.length > 0 && <DepTable rows={external} title="External Hosts" accent="amber" />}
           </div>
         );
       })()}
 
       {/* ── CONTRACTS ───────────────────────────────── */}
-      {tab==='contracts' && (
+      {tab==='contracts' && (() => {
+        const approvedCount = contracts ? contracts.filter(c => (c.status || '').toUpperCase() === 'APPROVED').length : 0;
+        const pendingCount = contracts ? contracts.filter(c => !['APPROVED','REVOKED'].includes((c.status || '').toUpperCase())).length : 0;
+        return (
         <div className="space-y-5">
+          {/* Stat tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatTile icon={Key} label="Total Contracts" accent="emerald" value={contracts ? contracts.length : '—'} />
+            <StatTile icon={Check} label="Approved" accent="emerald" value={contracts ? approvedCount : '—'} />
+            <StatTile icon={AlertTriangle} label="Pending / Other" accent="amber" value={contracts ? pendingCount : '—'} />
+          </div>
+
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
-              <h2 className="text-gray-900 font-semibold text-sm">API Consumer Contracts</h2>
-              <p className="text-slate-500 text-xs mt-0.5">
+              <h2 className="text-gray-900 dark:text-gray-100 font-semibold text-sm">API Consumer Contracts</h2>
+              <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">
                 Client applications approved to consume this API instance
-                {contractApiInstanceId && <span className="ml-2 font-mono text-gray-400">API ID: {contractApiInstanceId}</span>}
+                {contractApiInstanceId && <span className="ml-2 font-mono text-gray-400 dark:text-gray-500">API ID: {contractApiInstanceId}</span>}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -2502,11 +2530,11 @@ export default function ApplicationDetailPage() {
                   navigate('/api-manager');
                 }}
                 title="Open API Manager for this environment"
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/40 hover:border-blue-300/50 rounded-lg transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sf-700 dark:text-sf-300 hover:text-white bg-sf-50 dark:bg-sf-500/10 hover:bg-sf-600 border border-sf-200/60 dark:border-sf-400/20 hover:border-sf-600 rounded-lg transition-all">
                 <ShieldCheck size={11} /> Open in API Manager
               </button>
               <button onClick={loadContracts} disabled={contractsLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900 bg-gray-100/60 border border-gray-300/40 rounded-lg transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-50/80 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200/70 dark:border-gray-700/60 rounded-lg transition-all">
                 <RefreshCw size={11} className={contractsLoading ? 'animate-spin' : ''} />
                 {contracts ? 'Refresh' : 'Load'}
               </button>
@@ -2517,8 +2545,8 @@ export default function ApplicationDetailPage() {
           {contractActionResult && (
             <div className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm ${
               contractActionResult.success
-                ? 'bg-emerald-50/40 border-emerald-200/50 text-emerald-700'
-                : 'bg-red-50/40 border-red-200/50 text-red-700'
+                ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300'
+                : 'bg-red-50 dark:bg-red-500/10 border-red-200/60 dark:border-red-400/20 text-red-700 dark:text-red-300'
             }`}>
               <span>{contractActionResult.message}</span>
               <button onClick={() => setContractActionResult(null)} className="ml-4 opacity-60 hover:opacity-100"><X size={14} /></button>
@@ -2526,18 +2554,20 @@ export default function ApplicationDetailPage() {
           )}
 
           {contractsLoading && (
-            <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
+            <div className="flex items-center justify-center py-16 gap-3 text-gray-500 dark:text-gray-400">
               <RefreshCw size={18} className="animate-spin" />
               <span className="text-sm">Loading contracts…</span>
             </div>
           )}
 
           {contractsError && !contractsLoading && (
-            <div className="flex items-start gap-3 bg-white/60 border border-gray-200/60 rounded-2xl px-5 py-4">
-              <AlertTriangle size={16} className="text-yellow-600 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-500/5 border border-amber-200/60 dark:border-amber-400/15 rounded-2xl px-5 py-4">
+              <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/15 flex-shrink-0">
+                <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400" />
+              </div>
               <div>
-                <p className="text-gray-600 text-sm font-medium">No contracts available</p>
-                <p className="text-slate-500 text-xs mt-1">{contractsError}</p>
+                <p className="text-amber-700 dark:text-amber-300 text-sm font-semibold">No contracts available</p>
+                <p className="text-amber-600/80 dark:text-amber-400/80 text-xs mt-1">{contractsError}</p>
               </div>
             </div>
           )}
@@ -2548,7 +2578,7 @@ export default function ApplicationDetailPage() {
                 <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-500/10">
                   <Key size={24} className="text-emerald-500 dark:text-emerald-400" />
                 </div>
-                <p className="text-slate-500 text-sm">No approved contracts for this API instance</p>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">No approved contracts for this API instance</p>
               </div>
             ) : (
               <GlassCard icon={Key} title="Consumer Contracts" count={contracts.length} accent="green" noPad>
@@ -2565,10 +2595,10 @@ export default function ApplicationDetailPage() {
                       {contracts.map((c, i) => {
                         const status = (c.status || 'UNKNOWN').toUpperCase();
                         const statusCls = status === 'APPROVED'
-                          ? 'bg-emerald-50/50 text-emerald-700 border-emerald-300/50'
+                          ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20'
                           : status === 'REVOKED'
-                          ? 'bg-red-50/50 text-red-700 border-red-300/50'
-                          : 'bg-yellow-50/50 text-yellow-700 border-yellow-300/50';
+                          ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20'
+                          : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-400/20';
                         const clientId =
                           c.application?.coreServicesId ||
                           c.application?.clientId ||
@@ -2587,28 +2617,28 @@ export default function ApplicationDetailPage() {
                         return (
                           <tr key={i} className="border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                             <td className="px-5 py-3">
-                              <p className="text-gray-700 text-xs font-medium">{appName}</p>
+                              <p className="text-gray-700 dark:text-gray-200 text-xs font-medium">{appName}</p>
                               {c.application?.description && (
-                                <p className="text-gray-400 text-[10px] mt-0.5 truncate max-w-xs">{c.application.description}</p>
+                                <p className="text-gray-400 dark:text-gray-500 text-[10px] mt-0.5 truncate max-w-xs">{c.application.description}</p>
                               )}
                             </td>
                             <td className="px-5 py-3">
                               <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-xs text-gray-600 break-all">{clientId}</span>
+                                <span className="font-mono text-xs text-gray-600 dark:text-gray-300 break-all">{clientId}</span>
                                 {clientId !== '—' && <CopyBtn text={String(clientId)} />}
                               </div>
                             </td>
                             <td className="px-5 py-3">
                               <span className={`inline-flex text-[10px] px-2 py-0.5 rounded-full border font-bold ${statusCls}`}>{status}</span>
                             </td>
-                            <td className="px-5 py-3 text-gray-500 text-xs">{slaTier}</td>
-                            <td className="px-5 py-3 text-slate-500 text-xs">{reqDate}</td>
+                            <td className="px-5 py-3 text-gray-500 dark:text-gray-400 text-xs">{slaTier}</td>
+                            <td className="px-5 py-3 text-gray-500 dark:text-gray-400 text-xs">{reqDate}</td>
                             <td className="px-5 py-3">
                               {contractId ? (
                                 <div className="flex items-center gap-1.5">
                                   {isActioning ? (
-                                    <span className="flex items-center gap-1.5 text-[10px] text-gray-500 px-2 py-1">
-                                      <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-slate-400" /> Working…
+                                    <span className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 px-2 py-1">
+                                      <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-400 dark:border-gray-500" /> Working…
                                     </span>
                                   ) : (
                                     <>
@@ -2638,7 +2668,7 @@ export default function ApplicationDetailPage() {
                                   )}
                                 </div>
                               ) : (
-                                <span className="text-gray-400 text-xs">—</span>
+                                <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>
                               )}
                             </td>
                           </tr>
@@ -2664,7 +2694,8 @@ export default function ApplicationDetailPage() {
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── PING TEST ───────────────────────────────── */}
       {tab==='ping' && (
@@ -2703,20 +2734,33 @@ export default function ApplicationDetailPage() {
       )}
 
       {/* ── API SPEC ────────────────────────────────── */}
-      {tab==='apispec' && (
+      {tab==='apispec' && (() => {
+        const methodCls = (m) => m === 'GET' ? 'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20'
+          : m === 'POST' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20'
+          : m === 'PUT' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-400/20'
+          : m === 'DELETE' ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20'
+          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200/60 dark:border-gray-700/60';
+        return (
         <div className="space-y-5">
-          <div className="flex items-center justify-between">
+          {/* Stat tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatTile icon={Globe} label="Total Endpoints" accent="blue" value={pingSpec?.allEndpoints?.length ?? '—'} sub={pingSpec?.specType ? pingSpec.specType.toUpperCase() : undefined} />
+            <StatTile icon={Activity} label="Ping / Health Paths" accent="emerald" value={pingSpec?.pingEndpoints?.length ?? '—'} />
+            <StatTile icon={Package} label="Exchange Asset" accent="purple" value={pingSpec?.assetName || '—'} />
+          </div>
+
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
-              <h2 className="text-gray-900 font-semibold text-sm flex items-center gap-2">
-                <Globe size={14} className="text-blue-600" /> API Specification — Exchange
+              <h2 className="text-gray-900 dark:text-gray-100 font-semibold text-sm flex items-center gap-2">
+                <Globe size={14} className="text-sf-600 dark:text-sf-400" /> API Specification — Exchange
               </h2>
-              <p className="text-slate-500 text-xs mt-0.5">
+              <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">
                 {pingSpecLoading ? 'Searching Exchange and parsing spec…' :
                   pingSpec ? <>
-                    <span className="text-gray-500">{pingSpec.assetName}</span>
+                    <span className="text-gray-500 dark:text-gray-400">{pingSpec.assetName}</span>
                     {' · '}{pingSpec.specType?.toUpperCase()} · {pingSpec.allEndpoints?.length ?? 0} endpoints
                     {pingSpec.pingEndpoints?.length > 0 && (
-                      <span className="ml-2 text-emerald-600 font-medium">
+                      <span className="ml-2 text-emerald-600 dark:text-emerald-400 font-medium">
                         · {pingSpec.pingEndpoints.length} ping path{pingSpec.pingEndpoints.length !== 1 ? 's' : ''} found
                       </span>
                     )}
@@ -2725,14 +2769,14 @@ export default function ApplicationDetailPage() {
             </div>
             <button onClick={() => fetchPingSpec()} disabled={pingSpecLoading}
               title="Re-fetch API spec from Exchange"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900 bg-gray-100/60 border border-gray-300/40 rounded-lg transition-colors disabled:opacity-50">
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-50/80 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200/70 dark:border-gray-700/60 rounded-lg transition-all disabled:opacity-50">
               <RefreshCw size={11} className={pingSpecLoading ? 'animate-spin' : ''} />
               {pingSpec ? 'Refresh' : 'Fetch Spec'}
             </button>
           </div>
 
           {pingSpecLoading && (
-            <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
+            <div className="flex items-center justify-center py-16 gap-3 text-gray-500 dark:text-gray-400">
               <RefreshCw size={18} className="animate-spin" />
               <span className="text-sm">Searching Exchange and parsing API spec…</span>
             </div>
@@ -2743,7 +2787,7 @@ export default function ApplicationDetailPage() {
               <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-sf-100 dark:bg-sf-500/10">
                 <Globe size={24} className="text-sf-500 dark:text-sf-400" />
               </div>
-              <p className="text-slate-500 text-sm">No Exchange spec found for this application</p>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">No Exchange spec found for this application</p>
               <p className="text-gray-400 dark:text-gray-500 text-xs">The app needs an Exchange asset linked via <code className="text-gray-500 dark:text-gray-400">application.ref</code> in its ARM descriptor</p>
             </div>
           )}
@@ -2752,9 +2796,9 @@ export default function ApplicationDetailPage() {
             <>
               {/* Ping endpoints highlighted */}
               {pingSpec.pingEndpoints?.length > 0 && (
-                <GlassCard icon={Activity} title="Ping / Health Endpoints" count={pingSpec.pingEndpoints.length} accent="blue" noPad>
-                  <div className="px-5 py-2 bg-emerald-50/20 border-b border-emerald-200/20">
-                    <span className="text-[10px] text-emerald-600/80">
+                <GlassCard icon={Activity} title="Ping / Health Endpoints" count={pingSpec.pingEndpoints.length} accent="green" noPad>
+                  <div className="px-5 py-2 bg-emerald-50/60 dark:bg-emerald-500/5 border-b border-emerald-200/40 dark:border-emerald-400/10">
+                    <span className="text-[10px] text-emerald-700 dark:text-emerald-400">
                       These endpoints will be tried first during ping tests. Required query params are auto-filled.
                     </span>
                   </div>
@@ -2770,38 +2814,34 @@ export default function ApplicationDetailPage() {
                       {pingSpec.pingEndpoints.map((ep, i) => (
                         <tr key={i} className="border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/30 dark:hover:bg-sf-500/5 transition-colors">
                           <td className="px-4 py-3">
-                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${
-                              ep.method === 'GET' ? 'bg-blue-50/40 text-blue-700 border-blue-300/40' :
-                              ep.method === 'POST' ? 'bg-green-50/40 text-green-700 border-green-300/40' :
-                              'bg-gray-100/60 text-gray-600 border-gray-300/40'
-                            }`}>{ep.method}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${methodCls(ep.method)}`}>{ep.method}</span>
                           </td>
-                          <td className="px-4 py-3 font-mono text-xs text-cyan-700">{ep.path}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-sfteal-700 dark:text-sfteal-300">{ep.path}</td>
                           <td className="px-4 py-3">
                             {ep.queryParams?.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {ep.queryParams.map(p => (
                                   <span key={p.name} title={`${p.description}${p.example ? ` (e.g. ${p.example})` : ''}`}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${p.required ? 'bg-orange-50/40 text-orange-700 border-orange-300/40' : 'bg-gray-100/60 text-gray-500 border-gray-300/40'}`}>
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${p.required ? 'bg-sforange-50 dark:bg-sforange-500/10 text-sforange-700 dark:text-sforange-300 border-sforange-200/60 dark:border-sforange-400/20' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60'}`}>
                                     {p.name}{p.required ? '*' : ''}
                                   </span>
                                 ))}
                               </div>
-                            ) : <span className="text-gray-400 text-xs">—</span>}
+                            ) : <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>}
                           </td>
-                                  <td className="px-4 py-3">
+                          <td className="px-4 py-3">
                             {ep.headers?.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {ep.headers.map(h => (
                                   <span key={h.name} title={h.description}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${h.required ? 'bg-purple-50/40 text-purple-700 border-purple-300/40' : 'bg-gray-100/60 text-gray-500 border-gray-300/40'}`}>
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${h.required ? 'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60'}`}>
                                     {h.name}{h.required ? '*' : ''}
                                   </span>
                                 ))}
                               </div>
-                            ) : <span className="text-gray-400 text-xs">—</span>}
+                            ) : <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>}
                           </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">{ep.description || '—'}</td>
+                          <td className="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs">{ep.description || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2815,7 +2855,7 @@ export default function ApplicationDetailPage() {
                   <div className="max-h-[50vh] overflow-y-auto">
                     <table className="w-full text-sm border-collapse">
                       <thead className="sticky top-0">
-                        <tr className="bg-gray-100/90 border-b border-gray-300/40">
+                        <tr className="bg-gray-50/95 dark:bg-gray-800/90 border-b border-gray-200/60 dark:border-gray-700/60">
                           {['Method', 'Path', 'Query Params', 'Headers', 'Description'].map(h => (
                             <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">{h}</th>
                           ))}
@@ -2825,65 +2865,59 @@ export default function ApplicationDetailPage() {
                         {pingSpec.allEndpoints.map((ep, i) => {
                           const isPing = pingSpec.pingEndpoints?.some(p => p.path === ep.path && p.method === ep.method);
                           return (
-                            <tr key={i} className={`border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/30 dark:hover:bg-sf-500/5 transition-colors ${isPing ? 'bg-emerald-50/10' : ''}`}>
+                            <tr key={i} className={`border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/30 dark:hover:bg-sf-500/5 transition-colors ${isPing ? 'bg-emerald-50/40 dark:bg-emerald-500/5' : ''}`}>
                               <td className="px-4 py-2.5">
-                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${
-                                  ep.method === 'GET' ? 'bg-blue-50/40 text-blue-700 border-blue-300/40' :
-                                  ep.method === 'POST' ? 'bg-green-50/40 text-green-700 border-green-300/40' :
-                                  ep.method === 'PUT' ? 'bg-yellow-50/40 text-yellow-700 border-yellow-300/40' :
-                                  ep.method === 'DELETE' ? 'bg-red-50/40 text-red-700 border-red-300/40' :
-                                  'bg-gray-100/60 text-gray-600 border-gray-300/40'
-                                }`}>{ep.method}</span>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${methodCls(ep.method)}`}>{ep.method}</span>
                               </td>
                               <td className="px-4 py-2.5">
-                                <span className={`font-mono text-xs ${isPing ? 'text-emerald-700' : 'text-gray-600'}`}>{ep.path}</span>
-                                {isPing && <span className="ml-1.5 text-[9px] text-emerald-500">● ping</span>}
+                                <span className={`font-mono text-xs ${isPing ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-600 dark:text-gray-300'}`}>{ep.path}</span>
+                                {isPing && <span className="ml-1.5 text-[9px] text-emerald-500 dark:text-emerald-400">● ping</span>}
                               </td>
                               <td className="px-4 py-2.5">
                                 {ep.queryParams?.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
                                     {ep.queryParams.map(p => (
                                       <span key={p.name} title={p.description}
-                                        className={`text-[9px] px-1 py-0.5 rounded border font-mono ${p.required ? 'bg-orange-50/30 text-orange-700 border-orange-300/40' : 'bg-gray-100/60 text-slate-500 border-gray-300/40'}`}>
+                                        className={`text-[9px] px-1 py-0.5 rounded border font-mono ${p.required ? 'bg-sforange-50 dark:bg-sforange-500/10 text-sforange-700 dark:text-sforange-300 border-sforange-200/60 dark:border-sforange-400/20' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60'}`}>
                                         {p.name}
                                       </span>
                                     ))}
                                   </div>
-                                ) : <span className="text-gray-400 text-[10px]">—</span>}
+                                ) : <span className="text-gray-400 dark:text-gray-600 text-[10px]">—</span>}
                               </td>
                               <td className="px-4 py-2.5">
                                 {ep.headers?.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
                                     {ep.headers.map(h => (
                                       <span key={h.name} title={h.description}
-                                        className="text-[9px] px-1 py-0.5 rounded border font-mono bg-gray-100/60 text-slate-500 border-gray-300/40">
+                                        className="text-[9px] px-1 py-0.5 rounded border font-mono bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60">
                                         {h.name}
                                       </span>
                                     ))}
                                   </div>
-                                ) : <span className="text-gray-400 text-[10px]">—</span>}
+                                ) : <span className="text-gray-400 dark:text-gray-600 text-[10px]">—</span>}
                               </td>
-                              <td className="px-4 py-2.5 text-slate-500 text-xs max-w-xs truncate">{ep.description || '—'}</td>
+                              <td className="px-4 py-2.5 text-gray-500 dark:text-gray-400 text-xs max-w-xs truncate">{ep.description || '—'}</td>
                             </tr>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
-                  <div className="px-5 py-2 border-t border-gray-200/60 text-[10px] text-gray-400">
-                    * = required · <span className="text-orange-600/70">orange</span> = required query param · <span className="text-purple-600/70">purple</span> = required header · <span className="text-emerald-600/60">● ping</span> = health check endpoint
+                  <div className="px-5 py-2 border-t border-gray-200/60 dark:border-gray-700/60 text-[10px] text-gray-400 dark:text-gray-500">
+                    * = required · <span className="text-sforange-600 dark:text-sforange-400">orange</span> = required query param · <span className="text-sfpurple-600 dark:text-sfpurple-400">purple</span> = required header · <span className="text-emerald-600 dark:text-emerald-400">● ping</span> = health check endpoint
                   </div>
                 </GlassCard>
               )}
 
               {pingSpec.pingEndpoints?.length === 0 && (
-                <div className="flex items-start gap-3 bg-white/60 border border-gray-200/60 rounded-2xl px-5 py-4">
-                  <AlertTriangle size={14} className="text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-500/5 border border-amber-200/60 dark:border-amber-400/15 rounded-2xl px-5 py-4">
+                  <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-gray-600 text-sm font-medium">No ping/health endpoints detected</p>
-                    <p className="text-slate-500 text-xs mt-1">
+                    <p className="text-amber-700 dark:text-amber-300 text-sm font-medium">No ping/health endpoints detected</p>
+                    <p className="text-amber-600/80 dark:text-amber-400/80 text-xs mt-1">
                       The spec doesn't contain paths matching: ping, health, status, liveness, readiness, or heartbeat.
-                      The dashboard will still try the standard paths: <code className="text-gray-500">/api/v1/ping → /api/v2/ping → /api/ping → /ping</code>
+                      The dashboard will still try the standard paths: <code className="text-amber-700 dark:text-amber-300">/api/v1/ping → /api/v2/ping → /api/ping → /ping</code>
                     </p>
                   </div>
                 </div>
@@ -2891,7 +2925,8 @@ export default function ApplicationDetailPage() {
             </>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── RAW JSON ────────────────────────────────── */}
       {tab==='raw' && (
