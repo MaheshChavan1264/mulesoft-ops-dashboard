@@ -35,31 +35,34 @@ export function availableActions(status) {
 /**
  * Visual configuration for each lifecycle action.
  *
- * `btnCls`  — used on per-row icon buttons in the applications table
- * `bulkCls` — used on bulk-action buttons in the toolbar
+ * `btnCls`   — used on per-row icon-only buttons in the applications table
+ *              (bordered chip at rest, fills solid + glows on hover)
+ * `bulkCls`  — used on solid buttons (bulk toolbar actions, confirm modals)
+ *              (gradient fill + colored glow shadow, lifts on hover)
+ * `detailCls`— detail-page variant (slightly different border style)
  */
 export const ACTION_CONFIG = {
   start: {
     label:   'Start',
     Icon:    Play,
-    btnCls:  'text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 border-emerald-200',
-    bulkCls: 'bg-emerald-600 hover:bg-emerald-500 text-white',
+    btnCls:  'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/70 dark:border-emerald-400/30 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-md hover:shadow-emerald-500/30',
+    bulkCls: 'bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white shadow-md shadow-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/40 ring-1 ring-inset ring-white/20',
     // Detail page variant (slightly different border style)
-    detailCls: 'text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700',
+    detailCls: 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-400/30 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-700 dark:hover:text-emerald-300',
   },
   stop: {
     label:   'Stop',
     Icon:    Square,
-    btnCls:  'text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200',
-    bulkCls: 'bg-red-600 hover:bg-red-500 text-white',
-    detailCls: 'text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700',
+    btnCls:  'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border-red-200/70 dark:border-red-400/30 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-md hover:shadow-red-500/30',
+    bulkCls: 'bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white shadow-md shadow-red-500/30 hover:shadow-lg hover:shadow-red-500/40 ring-1 ring-inset ring-white/20',
+    detailCls: 'text-red-600 dark:text-red-400 border-red-200 dark:border-red-400/30 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300',
   },
   restart: {
     label:   'Restart',
     Icon:    RotateCcw,
-    btnCls:  'text-blue-600 hover:bg-blue-50 hover:text-blue-700 border-blue-200',
-    bulkCls: 'bg-blue-600 hover:bg-blue-500 text-white',
-    detailCls: 'text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700',
+    btnCls:  'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-blue-200/70 dark:border-blue-400/30 hover:bg-blue-600 hover:text-white hover:border-blue-600 hover:shadow-md hover:shadow-blue-500/30',
+    bulkCls: 'bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40 ring-1 ring-inset ring-white/20',
+    detailCls: 'text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-400/30 hover:bg-blue-50 dark:hover:bg-blue-500/10 hover:text-blue-700 dark:hover:text-blue-300',
   },
 };
 

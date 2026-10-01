@@ -8,8 +8,8 @@ import { getVisibleEnvIds, saveVisibleEnvIds } from '../utils/filterUtils';
 export { ENV_FILTER_KEY, getVisibleEnvIds, saveVisibleEnvIds, applyEnvFilter } from '../utils/filterUtils';
 
 const ENV_TYPE_COLOR = {
-  production: 'bg-green-400',
-  sandbox: 'bg-yellow-400',
+  production: 'bg-emerald-400',
+  sandbox: 'bg-amber-400',
   design: 'bg-blue-400',
 };
 
@@ -18,20 +18,20 @@ function EnvRow({ e, isChecked, toggle, indent = 'pl-10' }) {
   const isProd = e.type === 'production';
   return (
     <label
-      className={`flex items-center gap-3 ${indent} pr-3 py-2 cursor-pointer transition-colors hover:bg-gray-100/40 dark:hover:bg-gray-800/40`}
+      className={`flex items-center gap-3 ${indent} pr-3 py-2.5 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/40 rounded-lg`}
     >
       <div
         onClick={() => toggle(e.id)}
-        className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+        className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${
           isChecked
-            ? (isProd ? 'bg-green-500 border-green-400' : 'bg-yellow-600 border-yellow-500')
-            : 'border-gray-300 dark:border-gray-600 hover:border-green-500'
+            ? (isProd ? 'bg-emerald-500 border-emerald-400 shadow-sm shadow-emerald-500/40' : 'bg-amber-500 border-amber-400 shadow-sm shadow-amber-500/40')
+            : 'border-gray-300 dark:border-gray-600 hover:border-emerald-500'
         }`}
       >
-        {isChecked && <Check size={10} className="text-white" />}
+        {isChecked && <Check size={11} className="text-white" />}
       </div>
       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-      <span className={`text-xs flex-1 ${isChecked ? 'text-gray-900 dark:text-gray-100 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>{e.name}</span>
+      <span className={`text-sm flex-1 truncate ${isChecked ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{e.name}</span>
     </label>
   );
 }
@@ -41,20 +41,20 @@ function TypeGroupHeader({ label, ids, selected, toggleGroup, accent }) {
   const allSel = ids.every(id => selected.has(id));
   const someSel = !allSel && ids.some(id => selected.has(id));
   const cls = accent === 'green'
-    ? { dot: 'bg-green-400', text: 'text-green-500/80 dark:text-green-400/90', check: 'bg-green-500 border-green-400', ind: 'bg-green-100/60 dark:bg-green-500/20 border-green-300 dark:border-green-400/40', hover: 'hover:border-green-500' }
-    : { dot: 'bg-yellow-400', text: 'text-yellow-500/80 dark:text-yellow-400/90', check: 'bg-yellow-600 border-yellow-500', ind: 'bg-yellow-100/60 dark:bg-yellow-500/20 border-yellow-300 dark:border-yellow-400/40', hover: 'hover:border-yellow-500' };
+    ? { dot: 'bg-emerald-400', text: 'text-emerald-600 dark:text-emerald-400', check: 'bg-emerald-500 border-emerald-400 shadow-sm shadow-emerald-500/40', ind: 'bg-emerald-100 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-400/40', hover: 'hover:border-emerald-500' }
+    : { dot: 'bg-amber-400', text: 'text-amber-600 dark:text-amber-400', check: 'bg-amber-500 border-amber-400 shadow-sm shadow-amber-500/40', ind: 'bg-amber-100 dark:bg-amber-500/20 border-amber-300 dark:border-amber-400/40', hover: 'hover:border-amber-500' };
   return (
     <div onClick={() => toggleGroup(ids)}
-      className="flex items-center gap-2 pl-8 pr-3 py-1.5 cursor-pointer hover:bg-gray-100/30 dark:hover:bg-gray-800/40 transition-colors group">
-      <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+      className="flex items-center gap-2 pl-8 pr-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors group">
+      <div className={`w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${
         allSel ? cls.check : someSel ? cls.ind : `border-gray-300 dark:border-gray-600 ${cls.hover}`
       }`}>
-        {allSel  && <Check size={8} className="text-white" />}
-        {someSel && <span className="text-[8px] font-bold leading-none" style={{ color: accent === 'green' ? '#4ade80' : '#facc15' }}>–</span>}
+        {allSel  && <Check size={9} className="text-white" />}
+        {someSel && <span className="text-[8px] font-bold leading-none" style={{ color: accent === 'green' ? '#10b981' : '#f59e0b' }}>–</span>}
       </div>
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cls.dot}`} />
       <span className={`text-[10px] font-bold uppercase tracking-wider ${cls.text} flex-1`}>{label}</span>
-      <span className="text-[9px] text-gray-500 dark:text-gray-400">{ids.length}</span>
+      <span className="text-[9px] font-semibold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700/60 px-1.5 py-0.5 rounded-full">{ids.length}</span>
     </div>
   );
 }
@@ -73,7 +73,7 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
   };
 
   return (
-    <div className="space-y-1.5 py-1">
+    <div className="space-y-2 py-1">
       {byBg.map(({ bgId, bgName, envs }) => {
         const bgIds = envs.map(e => e.id);
         const allSel = bgIds.every(id => selected.has(id));
@@ -85,36 +85,36 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
         const otherEnvs = envs.filter(e => e.type !== 'production');
 
         return (
-          <div key={bgId} className="rounded-xl border border-gray-200/60 dark:border-gray-700/60 overflow-hidden mx-1">
+          <div key={bgId} className="rounded-2xl border border-gray-200/80 dark:border-gray-700/60 overflow-hidden mx-1 shadow-sm">
             {/* BG Header — bold, prominent */}
-            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-gray-100/50 dark:bg-gray-800/50 cursor-pointer hover:bg-gray-100/80 dark:hover:bg-gray-800/80 transition-colors group select-none">
+            <div className="flex items-center gap-2.5 px-3.5 py-3 bg-gray-50 dark:bg-gray-900/40 cursor-pointer hover:bg-gray-100/80 dark:hover:bg-gray-900/60 transition-colors group select-none">
               {/* Tri-state checkbox */}
               <div onClick={() => toggleGroup(bgIds)}
-                className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                  allSel  ? 'bg-blue-500 border-blue-400' :
-                  someSel ? 'bg-blue-100/60 dark:bg-blue-500/20 border-blue-300 dark:border-blue-400/40' :
+                className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${
+                  allSel  ? 'bg-blue-600 border-blue-500 shadow-sm shadow-blue-500/40' :
+                  someSel ? 'bg-blue-100 dark:bg-blue-500/20 border-blue-300 dark:border-blue-400/40' :
                   'border-gray-300 dark:border-gray-600 group-hover:border-blue-500'
                 }`}>
-                {allSel  && <Check size={9} className="text-white" />}
+                {allSel  && <Check size={11} className="text-white" />}
                 {someSel && <span className="text-blue-600 dark:text-blue-400 text-[8px] font-bold leading-none">–</span>}
               </div>
               {/* BG name (click = toggle collapse) */}
-              <div className="flex items-center gap-1.5 flex-1 min-w-0" onClick={e => toggleCollapse(bgId, e)}>
-                <Building2 size={12} className="text-blue-600/70 dark:text-blue-400/80 flex-shrink-0" />
-                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{bgName}</span>
+              <div className="flex items-center gap-2 flex-1 min-w-0" onClick={e => toggleCollapse(bgId, e)}>
+                <Building2 size={13} className="text-blue-500 dark:text-blue-400 flex-shrink-0" />
+                <span className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">{bgName}</span>
               </div>
               {/* count + chevron (click = toggle collapse) */}
               <div className="flex items-center gap-2 flex-shrink-0" onClick={e => toggleCollapse(bgId, e)}>
                 {selCount > 0
                   ? <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-500/20 border border-blue-300/40 dark:border-blue-400/30 px-1.5 py-0.5 rounded-full">{selCount}/{envs.length}</span>
-                  : <span className="text-[10px] text-gray-500 dark:text-gray-400">{envs.length}</span>}
-                <ChevronDown size={13} className={`text-gray-500 dark:text-gray-400 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`} />
+                  : <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500">{envs.length}</span>}
+                <ChevronDown size={14} className={`text-gray-400 dark:text-gray-500 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`} />
               </div>
             </div>
 
             {/* Env rows grouped by type — hidden when BG is collapsed */}
             {!isCollapsed && (
-              <div className="border-t border-gray-200/40 dark:border-gray-700/40">
+              <div className="border-t border-gray-100 dark:border-gray-700/50 bg-white dark:bg-gray-800/40">
                 {/* Production sub-group */}
                 {prodEnvs.length > 0 && (
                   <>
@@ -125,7 +125,7 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
                       toggleGroup={toggleGroup}
                       accent="green"
                     />
-                    <div className="divide-y divide-gray-200/20 dark:divide-gray-700/40">
+                    <div className="divide-y divide-gray-100/60 dark:divide-gray-700/30">
                       {prodEnvs.map(e => (
                         <EnvRow key={e.id} e={e} isChecked={selected.has(e.id)} toggle={toggle} indent="pl-14" />
                       ))}
@@ -135,7 +135,7 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
                 {/* Sandbox/UAT/Dev sub-group */}
                 {otherEnvs.length > 0 && (
                   <>
-                    {prodEnvs.length > 0 && <div className="mx-4 border-t border-gray-200/40 dark:border-gray-700/40" />}
+                    {prodEnvs.length > 0 && <div className="mx-4 border-t border-gray-100 dark:border-gray-700/40" />}
                     <TypeGroupHeader
                       label="Sandbox / UAT / Dev"
                       ids={otherEnvs.map(e => e.id)}
@@ -143,7 +143,7 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
                       toggleGroup={toggleGroup}
                       accent="yellow"
                     />
-                    <div className="divide-y divide-gray-200/20 dark:divide-gray-700/40">
+                    <div className="divide-y divide-gray-100/60 dark:divide-gray-700/30">
                       {otherEnvs.map(e => (
                         <EnvRow key={e.id} e={e} isChecked={selected.has(e.id)} toggle={toggle} indent="pl-14" />
                       ))}
@@ -189,7 +189,6 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
     });
   };
 
-  const selectAll = () => setSelected(new Set(environments.map((e) => e.id)));
   const deselectAll = () => setSelected(new Set());
 
   // Detect if envs carry BG context (new format from Header)
@@ -249,62 +248,68 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-2xl w-full max-w-md shadow-2xl mx-4 flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700/80 rounded-3xl w-full max-w-md shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-green-50/50 dark:bg-green-500/10 border border-green-200/40 dark:border-green-400/30">
-              <SlidersHorizontal size={14} className="text-green-600 dark:text-green-400" />
+        <div className="relative flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-700/60 flex-shrink-0">
+          <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-emerald-50/80 dark:from-emerald-500/[0.07] to-transparent pointer-events-none" />
+          <div className="relative flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-emerald-100 dark:bg-emerald-500/15 shadow-sm">
+              <SlidersHorizontal size={18} className="text-emerald-600 dark:text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-gray-900 dark:text-gray-100 font-semibold text-sm">Environment Filter</h2>
+              <h2 className="text-gray-900 dark:text-gray-100 font-bold text-base">Environment Filter</h2>
               <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">Choose which environments appear in dropdowns</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 p-1">
+          <button onClick={onClose} className="relative text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1.5 rounded-xl transition-colors flex-shrink-0">
             <X size={16} />
           </button>
         </div>
 
         {/* Quick-select shortcuts */}
-        <div className="flex items-center gap-2 flex-wrap px-5 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-gray-100/20 dark:bg-gray-800/20">
-          <span className="text-[9px] text-gray-500 dark:text-gray-400 uppercase tracking-wider font-bold flex-shrink-0">Quick select:</span>
+        <div className="flex items-center gap-2 flex-wrap px-6 py-3 border-b border-gray-100 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-900/20 flex-shrink-0">
+          <span className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold flex-shrink-0">Quick:</span>
           {allProdIds.length > 0 && (
             <button onClick={() => selectByType(allProdIds)}
-              className="flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full border bg-green-50/40 dark:bg-green-500/10 text-green-600 dark:text-green-400 border-green-200/50 dark:border-green-400/30 hover:bg-green-50/70 dark:hover:bg-green-500/20 transition-colors font-medium">
-              ● All Production ({allProdIds.length})
+              className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/70 dark:border-emerald-400/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> All Production ({allProdIds.length})
             </button>
           )}
           {allOtherIds.length > 0 && (
             <button onClick={() => selectByType(allOtherIds)}
-              className="flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full border bg-yellow-50/40 dark:bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-200/50 dark:border-yellow-400/30 hover:bg-yellow-50/70 dark:hover:bg-yellow-500/20 transition-colors font-medium">
-              ● All Sandbox ({allOtherIds.length})
+              className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200/70 dark:border-amber-400/30 hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> All Sandbox ({allOtherIds.length})
             </button>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-[10px] text-gray-500 dark:text-gray-400">{selected.size}/{environments.length}</span>
-            {selected.size > 0 && <button onClick={deselectAll} className="text-[10px] text-red-500/70 dark:text-red-400/80 hover:text-red-600 dark:hover:text-red-400 transition-colors">Clear</button>}
+          <div className="ml-auto flex items-center gap-2.5">
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">{selected.size}/{environments.length}</span>
+            {selected.size > 0 && <button onClick={deselectAll} className="text-[11px] font-semibold text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors">Clear</button>}
           </div>
         </div>
 
         {/* Search */}
-        <div className="px-5 pt-3 pb-3 border-b border-gray-200 dark:border-gray-700 space-y-2.5">
+        <div className="px-6 pt-3 pb-3 border-b border-gray-100 dark:border-gray-700/60 flex-shrink-0">
           <div className="relative">
-            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 pointer-events-none" />
+            <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search environments…"
-              className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg pl-8 pr-4 py-2 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:border-green-500"
+              className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-emerald-500 dark:focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/15 transition-all"
             />
           </div>
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto py-2 px-2">
+        <div className="flex-1 overflow-y-auto py-2 px-3">
           {filteredEnvs.length === 0 ? (
-            <p className="text-center text-gray-500 dark:text-gray-400 text-xs py-6">No environments found</p>
+            <div className="flex flex-col items-center justify-center gap-2 py-10">
+              <div className="w-10 h-10 rounded-2xl bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center">
+                <Search size={16} className="text-gray-400 dark:text-gray-500" />
+              </div>
+              <p className="text-center text-gray-500 dark:text-gray-400 text-xs">No environments found</p>
+            </div>
           ) : hasBgContext && byBg ? (
             /* ── BG-grouped collapsible view ── */
             <BgGroupedList
@@ -319,28 +324,28 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
               {prodEnvs.length > 0 && (
                 <>
                   <div onClick={() => toggleTypeGroup(prodEnvs.map(e => e.id))}
-                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group">
-                    <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                      prodEnvs.every(e => selected.has(e.id)) ? 'bg-green-500 border-green-400' :
-                      prodEnvs.some(e => selected.has(e.id)) ? 'bg-green-100/60 dark:bg-green-500/20 border-green-300 dark:border-green-400/40' :
-                      'border-gray-300 dark:border-gray-600 group-hover:border-green-500'
+                    className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 rounded-xl mx-1 transition-colors group">
+                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${
+                      prodEnvs.every(e => selected.has(e.id)) ? 'bg-emerald-500 border-emerald-400 shadow-sm shadow-emerald-500/40' :
+                      prodEnvs.some(e => selected.has(e.id)) ? 'bg-emerald-100 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-400/40' :
+                      'border-gray-300 dark:border-gray-600 group-hover:border-emerald-500'
                     }`}>
-                      {prodEnvs.every(e => selected.has(e.id)) && <Check size={8} className="text-white" />}
-                      {!prodEnvs.every(e => selected.has(e.id)) && prodEnvs.some(e => selected.has(e.id)) && <span className="text-green-600 dark:text-green-400 text-[8px] font-bold leading-none">–</span>}
+                      {prodEnvs.every(e => selected.has(e.id)) && <Check size={9} className="text-white" />}
+                      {!prodEnvs.every(e => selected.has(e.id)) && prodEnvs.some(e => selected.has(e.id)) && <span className="text-emerald-600 dark:text-emerald-400 text-[8px] font-bold leading-none">–</span>}
                     </div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-green-500/70 dark:text-green-400/80 flex-1">Production</p>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">{prodEnvs.length}</span>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex-1">Production</p>
+                    <span className="text-[9px] font-semibold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700/60 px-1.5 py-0.5 rounded-full">{prodEnvs.length}</span>
                   </div>
                   {prodEnvs.map((e) => {
                     const isChecked = selected.has(e.id);
                     return (
-                      <label key={e.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors hover:bg-gray-100/60 dark:hover:bg-gray-800/60">
-                        <div onClick={() => toggle(e.id)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-green-500 border-green-400' : 'border-gray-300 dark:border-gray-600 hover:border-green-500'}`}>
-                          {isChecked && <Check size={10} className="text-white" />}
+                      <label key={e.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                        <div onClick={() => toggle(e.id)} className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${isChecked ? 'bg-emerald-500 border-emerald-400 shadow-sm shadow-emerald-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-emerald-500'}`}>
+                          {isChecked && <Check size={11} className="text-white" />}
                         </div>
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'}`}>{e.name}</span>
-                        <span className="text-[9px] bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-300 border border-green-200 dark:border-green-400/30 px-1.5 py-0.5 rounded-full font-semibold">PROD</span>
+                        <span className={`text-sm flex-1 truncate ${isChecked ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{e.name}</span>
+                        <span className="text-[9px] bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-400/30 px-1.5 py-0.5 rounded-full font-bold">PROD</span>
                       </label>
                     );
                   })}
@@ -348,30 +353,30 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
               )}
               {otherEnvs.length > 0 && (
                 <>
-                  {prodEnvs.length > 0 && <div className="mx-3 my-1 border-t border-gray-200/60 dark:border-gray-700/60" />}
+                  {prodEnvs.length > 0 && <div className="mx-3 my-1.5 border-t border-gray-100 dark:border-gray-700/50" />}
                   <div onClick={() => toggleTypeGroup(otherEnvs.map(e => e.id))}
-                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group">
-                    <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                      otherEnvs.every(e => selected.has(e.id)) ? 'bg-yellow-600 border-yellow-500' :
-                      otherEnvs.some(e => selected.has(e.id)) ? 'bg-yellow-100/60 dark:bg-yellow-500/20 border-yellow-300 dark:border-yellow-400/40' :
-                      'border-gray-300 dark:border-gray-600 group-hover:border-yellow-500'
+                    className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 rounded-xl mx-1 transition-colors group">
+                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${
+                      otherEnvs.every(e => selected.has(e.id)) ? 'bg-amber-500 border-amber-400 shadow-sm shadow-amber-500/40' :
+                      otherEnvs.some(e => selected.has(e.id)) ? 'bg-amber-100 dark:bg-amber-500/20 border-amber-300 dark:border-amber-400/40' :
+                      'border-gray-300 dark:border-gray-600 group-hover:border-amber-500'
                     }`}>
-                      {otherEnvs.every(e => selected.has(e.id)) && <Check size={8} className="text-white" />}
-                      {!otherEnvs.every(e => selected.has(e.id)) && otherEnvs.some(e => selected.has(e.id)) && <span className="text-yellow-600 dark:text-yellow-400 text-[8px] font-bold leading-none">–</span>}
+                      {otherEnvs.every(e => selected.has(e.id)) && <Check size={9} className="text-white" />}
+                      {!otherEnvs.every(e => selected.has(e.id)) && otherEnvs.some(e => selected.has(e.id)) && <span className="text-amber-600 dark:text-amber-400 text-[8px] font-bold leading-none">–</span>}
                     </div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-yellow-500/70 dark:text-yellow-400/80 flex-1">Sandbox / Other</p>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">{otherEnvs.length}</span>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex-1">Sandbox / Other</p>
+                    <span className="text-[9px] font-semibold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700/60 px-1.5 py-0.5 rounded-full">{otherEnvs.length}</span>
                   </div>
                   {otherEnvs.map((e) => {
                     const isChecked = selected.has(e.id);
                     return (
-                      <label key={e.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors hover:bg-gray-100/60 dark:hover:bg-gray-800/60">
-                        <div onClick={() => toggle(e.id)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-yellow-600 border-yellow-500' : 'border-gray-300 dark:border-gray-600 hover:border-yellow-500'}`}>
-                          {isChecked && <Check size={10} className="text-white" />}
+                      <label key={e.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                        <div onClick={() => toggle(e.id)} className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${isChecked ? 'bg-amber-500 border-amber-400 shadow-sm shadow-amber-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-amber-500'}`}>
+                          {isChecked && <Check size={11} className="text-white" />}
                         </div>
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'}`}>{e.name}</span>
-                        <span className="text-[9px] bg-yellow-100 dark:bg-yellow-500/20 text-yellow-600 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-400/30 px-1.5 py-0.5 rounded-full font-semibold capitalize">{e.type || 'sandbox'}</span>
+                        <span className={`text-sm flex-1 truncate ${isChecked ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{e.name}</span>
+                        <span className="text-[9px] bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-400/30 px-1.5 py-0.5 rounded-full font-bold capitalize">{e.type || 'sandbox'}</span>
                       </label>
                     );
                   })}
@@ -382,27 +387,27 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-700 gap-3">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-gray-700/60 gap-3 flex-shrink-0 bg-gray-50/50 dark:bg-gray-900/30">
           <button
             onClick={handleReset}
-            className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+            className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
             title="Show all environments (clear filter)"
           >
-            <RefreshCw size={11} /> Reset (show all)
+            <RefreshCw size={11} /> Reset
           </button>
-          <div className="flex gap-3">
+          <div className="flex gap-2.5">
             <button onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors">
+              className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors">
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={selected.size === 0}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-green-700 hover:bg-green-600 text-white rounded-lg disabled:opacity-50 transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white rounded-xl disabled:opacity-50 shadow-md shadow-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/40 ring-1 ring-inset ring-white/20 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
             >
               {saved
-                ? <><Check size={13} /> Saved</>
-                : <><SlidersHorizontal size={13} /> Apply Filter</>}
+                ? <><Check size={14} /> Saved</>
+                : <><SlidersHorizontal size={14} /> Apply Filter</>}
             </button>
           </div>
         </div>

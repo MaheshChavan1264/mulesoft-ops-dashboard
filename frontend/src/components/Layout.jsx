@@ -25,9 +25,12 @@ export default function Layout() {
       {/* Unified brand accent strip across the very top of the app shell */}
       <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-sf-500 via-sfteal-400 to-sfpurple-500 z-40 shadow-[0_1px_8px_rgba(1,118,211,0.35)]" />
       <Sidebar open={sidebarOpen} />
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="relative flex flex-col flex-1 overflow-hidden">
+        {/* Ambient dark-mode glows behind the main content for depth */}
+        <div className="hidden dark:block absolute top-0 right-0 w-[32rem] h-[32rem] rounded-full bg-sf-500/[0.07] blur-3xl pointer-events-none -z-10" />
+        <div className="hidden dark:block absolute bottom-0 left-1/4 w-96 h-96 rounded-full bg-sfpurple-500/[0.05] blur-3xl pointer-events-none -z-10" />
         <Header onToggleSidebar={toggleSidebar} />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="relative flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
       </div>
