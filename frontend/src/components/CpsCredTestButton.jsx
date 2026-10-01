@@ -61,18 +61,18 @@ export default function CpsCredTestButton({
         title={canTest ? 'Test these credentials against the CPS server' : 'Enter credentials first'}
         className={`flex items-center ${sizeClass} rounded-lg border font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
           status === 'valid'
-            ? 'bg-emerald-600/20 border-emerald-600/50 text-emerald-300 hover:bg-emerald-600/30'
+            ? 'bg-emerald-100 border-emerald-300/50 text-emerald-700 hover:bg-emerald-600/30'
             : status === 'invalid'
-            ? 'bg-red-600/20 border-red-600/50 text-red-300 hover:bg-red-600/30'
-            : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600'
+            ? 'bg-red-100 border-red-300/50 text-red-700 hover:bg-red-600/30'
+            : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900 hover:border-gray-300'
         }`}
       >
         {status === 'testing' ? (
           <><RefreshCw size={iconSize} className="animate-spin" /> Testing…</>
         ) : status === 'valid' ? (
-          <><CheckCircle size={iconSize} className="text-emerald-400" /> Valid</>
+          <><CheckCircle size={iconSize} className="text-emerald-600" /> Valid</>
         ) : status === 'invalid' ? (
-          <><XCircle size={iconSize} className="text-red-400" /> Invalid</>
+          <><XCircle size={iconSize} className="text-red-600" /> Invalid</>
         ) : (
           <><Wifi size={iconSize} /> Test Credential</>
         )}

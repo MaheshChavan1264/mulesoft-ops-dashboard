@@ -42,24 +42,24 @@ export const ACTION_CONFIG = {
   start: {
     label:   'Start',
     Icon:    Play,
-    btnCls:  'text-emerald-400 hover:bg-emerald-950/60 hover:text-emerald-300 border-emerald-800/40',
+    btnCls:  'text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 border-emerald-200',
     bulkCls: 'bg-emerald-600 hover:bg-emerald-500 text-white',
     // Detail page variant (slightly different border style)
-    detailCls: 'text-emerald-400 border-emerald-800/50 hover:bg-emerald-950/60 hover:text-emerald-300',
+    detailCls: 'text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700',
   },
   stop: {
     label:   'Stop',
     Icon:    Square,
-    btnCls:  'text-red-400 hover:bg-red-950/60 hover:text-red-300 border-red-800/40',
+    btnCls:  'text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200',
     bulkCls: 'bg-red-600 hover:bg-red-500 text-white',
-    detailCls: 'text-red-400 border-red-800/50 hover:bg-red-950/60 hover:text-red-300',
+    detailCls: 'text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700',
   },
   restart: {
     label:   'Restart',
     Icon:    RotateCcw,
-    btnCls:  'text-blue-400 hover:bg-blue-950/60 hover:text-blue-300 border-blue-800/40',
+    btnCls:  'text-blue-600 hover:bg-blue-50 hover:text-blue-700 border-blue-200',
     bulkCls: 'bg-blue-600 hover:bg-blue-500 text-white',
-    detailCls: 'text-blue-400 border-blue-800/50 hover:bg-blue-950/60 hover:text-blue-300',
+    detailCls: 'text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700',
   },
 };
 
@@ -84,26 +84,26 @@ export const ENV_BADGE = {
 export const PING_STATUS_CONFIG = {
   SUCCESS: {
     label: 'Healthy',
-    cls:   'text-emerald-400 bg-emerald-500/10 border-emerald-700/40',
-    dot:   'bg-emerald-400',
+    cls:   'text-emerald-700 bg-emerald-50 border-emerald-200',
+    dot:   'bg-emerald-500',
     ping:  true,
   },
   PARTIAL: {
     label: 'Partial',
-    cls:   'text-yellow-400 bg-yellow-500/10 border-yellow-700/40',
-    dot:   'bg-yellow-400',
+    cls:   'text-yellow-700 bg-yellow-50 border-yellow-200',
+    dot:   'bg-yellow-500',
     ping:  false,
   },
   FAILED: {
     label: 'Unreachable',
-    cls:   'text-red-400 bg-red-500/10 border-red-700/40',
+    cls:   'text-red-700 bg-red-50 border-red-200',
     dot:   'bg-red-500',
     ping:  false,
   },
   SKIPPED_CONTRACT_PENDING: {
     label: 'Contract Pending',
-    cls:   'text-orange-400 bg-orange-500/10 border-orange-700/40',
-    dot:   'bg-orange-400',
+    cls:   'text-orange-700 bg-orange-50 border-orange-200',
+    dot:   'bg-orange-500',
     ping:  false,
   },
 };
@@ -117,10 +117,10 @@ export const PING_STATUS_CONFIG = {
  * @returns {string}
  */
 export function latencyColor(ms) {
-  if (!ms) return 'text-gray-400';
-  if (ms < 300) return 'text-emerald-400';
-  if (ms < 1000) return 'text-yellow-400';
-  return 'text-red-400';
+  if (!ms) return 'text-gray-500';
+  if (ms < 300) return 'text-emerald-600';
+  if (ms < 1000) return 'text-yellow-600';
+  return 'text-red-600';
 }
 
 // ── Transaction ID generation ────────────────────────────────────────────────

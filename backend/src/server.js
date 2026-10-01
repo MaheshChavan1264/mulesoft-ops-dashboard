@@ -39,7 +39,7 @@ const healthRoutes = require('./routes/health');
 // Replaces the default MemoryStore (which loses all sessions on restart).
 // Sessions are persisted to ./data/sessions.db — survives restarts, deploys,
 // and OOM-induced process kills without logging out all users.
-const SQLiteStore = require('connect-sqlite3')(session);
+const SQLiteStore = require('./utils/sqliteSessionStore');
 const SESSION_DB_DIR = process.env.SESSION_DB_DIR || './data';
 try { if (!fs.existsSync(SESSION_DB_DIR)) fs.mkdirSync(SESSION_DB_DIR, { recursive: true }); } catch {}
 

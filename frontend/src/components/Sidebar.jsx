@@ -29,18 +29,18 @@ export default function Sidebar({ open }) {
     <aside
       className={`${
         open ? 'w-64' : 'w-16'
-      } bg-gray-900 border-r border-gray-800 flex flex-col transition-all duration-300 flex-shrink-0`}
+      } bg-white border-r border-gray-200 flex flex-col transition-all duration-300 flex-shrink-0`}
     >
       {/* Logo */}
-      <div className="flex items-center h-16 px-4 border-b border-gray-800">
+      <div className="flex items-center h-16 px-4 border-b border-gray-200">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-sf-600 flex items-center justify-center flex-shrink-0">
             <span className="text-white font-bold text-sm">M</span>
           </div>
           {open && (
             <div>
-              <p className="text-white font-semibold text-sm leading-tight">MuleSoft</p>
-              <p className="text-gray-400 text-xs">Ops Dashboard</p>
+              <p className="text-gray-900 font-semibold text-sm leading-tight">MuleSoft</p>
+              <p className="text-gray-500 text-xs">Ops Dashboard</p>
             </div>
           )}
         </div>
@@ -60,8 +60,8 @@ export default function Sidebar({ open }) {
               className={() =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium ${
                   isActive
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    ? 'bg-sf-600 text-white'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                 }`
               }
             >
@@ -74,13 +74,13 @@ export default function Sidebar({ open }) {
 
       {/* Footer */}
       {open && (
-        <div className="p-4 border-t border-gray-800">
+        <div className="p-4 border-t border-gray-200">
           <p className="text-xs text-gray-500">Anypoint Platform</p>
           <a
             href="https://docs.mulesoft.com/general/"
             target="_blank"
             rel="noreferrer"
-            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 mt-1"
+            className="text-xs text-sf-600 hover:text-sf-700 flex items-center gap-1 mt-1"
           >
             Docs <ChevronRight size={10} />
           </a>

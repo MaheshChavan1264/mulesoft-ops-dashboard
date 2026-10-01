@@ -8,6 +8,7 @@ import {
 import api from '../services/api';
 import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId, downloadCsv } from '../utils/appUtils';
 import { findOAuth2Url, findApiIdInProps as findApiId, flattenCpsResponse } from '../utils/cpsHelpers';
+import PostmanJsonViewer from '../components/PostmanJsonViewer';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -46,9 +47,9 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
     <>
       <tr
         onClick={() => result && setExpandedId(isExpanded ? null : rowKey)}
-        className={`border-t border-gray-800 transition-colors ${result ? 'cursor-pointer hover:bg-gray-800/30' : 'hover:bg-gray-800/20'}`}>
+        className={`border-t border-gray-200 transition-colors ${result ? 'cursor-pointer hover:bg-gray-100/30' : 'hover:bg-gray-100/20'}`}>
         {/* Row number */}
-        <td className="px-3 py-3 text-center text-gray-600 text-xs font-mono select-none w-8">
+        <td className="px-3 py-3 text-center text-gray-500 text-xs font-mono select-none w-8">
           {rowNum}
         </td>
         {/* App name */}
@@ -60,19 +61,19 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 <button
                   onClick={() => app._bgId && app.environment?.id && navigate(`/applications/${app._bgId}/${app.environment.id}/${app.id}`)}
                   title="Open application detail"
-                  className="text-white text-sm font-medium hover:text-cyan-300 transition-colors text-left">
+                  className="text-gray-900 text-sm font-medium hover:text-cyan-700 transition-colors text-left">
                   {app.name}
                 </button>
                 {autoResolved && (
                   <span title={`Auto-resolved: ${autoResolved.apiInstanceName} → ${autoResolved.contractApp}`}
-                    className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-700/40 text-emerald-400 rounded font-medium">
+                    className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-emerald-50 border border-emerald-300/40 text-emerald-600 rounded font-medium">
                     🔑 auto
                   </span>
                 )}
               </div>
               <p className="text-gray-500 text-xs">{app.environment?.name}</p>
               {result?._jwtError && (
-                <p className="text-[10px] text-red-400/70 mt-0.5">{result._jwtError}</p>
+                <p className="text-[10px] text-red-600/70 mt-0.5">{result._jwtError}</p>
               )}
             </div>
           </div>
@@ -80,7 +81,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
 
         {/* Type */}
         <td className="px-3 py-3">
-          <span className={`text-xs px-2 py-0.5 rounded font-medium ${isCH1 ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+          <span className={`text-xs px-2 py-0.5 rounded font-medium ${isCH1 ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
             {isCH1 ? 'CH1' : 'CH2'}
           </span>
         </td>
@@ -88,12 +89,12 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
         {/* Ping status */}
         <td className="px-3 py-3">
           {retrying ? (
-            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold text-cyan-400 bg-cyan-500/10 border-cyan-700/40">
+            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold text-cyan-600 bg-cyan-50 border-cyan-300/40">
               <RefreshCw size={10} className="animate-spin" /> Retrying…
             </span>
           ) : contractApproved ? (
             /* Contract was approved — show green "Approved" badge */
-            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold bg-emerald-500/10 text-emerald-400 border-emerald-700/40">
+            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold bg-emerald-50 text-emerald-600 border-emerald-300/40">
               ✅ Approved — Ping Ready
             </span>
           ) : cfg ? (
@@ -113,36 +114,36 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               )}
               {/* JWT auto-used badge */}
               {result._jwtUsed && (
-                <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-700/40 text-indigo-400 rounded font-medium">
+                <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-300/40 text-indigo-600 rounded font-medium">
                   <Lock size={8} /> JWT auto
                 </span>
               )}
               {/* JWT may be needed hint */}
               {result.status === 'PARTIAL' && !result._jwtUsed && (result.httpStatus === 401 || result.httpStatus === 400) && (
-                <span className="inline-flex items-center gap-0.5 text-[9px] text-indigo-400/60">
+                <span className="inline-flex items-center gap-0.5 text-[9px] text-indigo-600/60">
                   <Lock size={8} /> may need JWT
                 </span>
               )}
             </div>
-          ) : <span className="text-gray-600 text-xs">—</span>}
+          ) : <span className="text-gray-500 text-xs">—</span>}
         </td>
 
         {/* Active Endpoint */}
         <td className="px-3 py-3 max-w-xs">
           {result?.activeEndpoint ? (
-            <span className="font-mono text-xs text-cyan-300/90 truncate block" title={result.activeEndpoint}>
+            <span className="font-mono text-xs text-cyan-700/90 truncate block" title={result.activeEndpoint}>
               {result.activeEndpoint}
             </span>
-          ) : <span className="text-gray-600 text-xs">—</span>}
+          ) : <span className="text-gray-500 text-xs">—</span>}
         </td>
 
         {/* HTTP */}
         <td className="px-3 py-3 text-center">
           {result?.httpStatus != null ? (
-            <span className={`font-mono font-bold text-sm ${result.httpStatus < 300 ? 'text-emerald-400' : result.httpStatus < 500 ? 'text-yellow-400' : 'text-red-400'}`}>
+            <span className={`font-mono font-bold text-sm ${result.httpStatus < 300 ? 'text-emerald-600' : result.httpStatus < 500 ? 'text-yellow-600' : 'text-red-600'}`}>
               {result.httpStatus}
             </span>
-          ) : <span className="text-gray-600 text-xs">—</span>}
+          ) : <span className="text-gray-500 text-xs">—</span>}
         </td>
 
         {/* Latency */}
@@ -151,7 +152,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
             <span className={`font-mono font-semibold text-sm ${latencyColor(result.responseTimeMs)}`}>
               {result.responseTimeMs}ms
             </span>
-          ) : <span className="text-gray-600 text-xs">—</span>}
+          ) : <span className="text-gray-500 text-xs">—</span>}
         </td>
 
         {/* Actions: retry + expand */}
@@ -164,12 +165,12 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               <button
                 onClick={() => onCheckContract(app)}
                 title="Check if the contract has been approved in API Manager"
-                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-orange-400 hover:text-orange-300 hover:bg-orange-950/40 border border-orange-800/40 transition-colors font-medium whitespace-nowrap">
+                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-orange-600 hover:text-orange-700 hover:bg-orange-50/40 border border-orange-200/40 transition-colors font-medium whitespace-nowrap">
                 🔑 Check
               </button>
             )}
             {isPendingContract && checkingContract && (
-              <span className="text-[10px] text-orange-400/70 flex items-center gap-1">
+              <span className="text-[10px] text-orange-600/70 flex items-center gap-1">
                 <RefreshCw size={9} className="animate-spin" /> Checking…
               </span>
             )}
@@ -178,7 +179,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               <button
                 onClick={() => onRetry(app)}
                 title="Run ping test with resolved credentials"
-                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 border border-emerald-800/40 transition-colors font-medium whitespace-nowrap">
+                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50/40 border border-emerald-200/40 transition-colors font-medium whitespace-nowrap">
                 <RefreshCw size={10} /> Ping
               </button>
             )}
@@ -189,7 +190,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 onClick={() => onGetJwt(app)}
                 disabled={jwtLoading}
                 title="Fetch JWT token from CPS and retry ping"
-                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-indigo-400 hover:text-indigo-300 hover:bg-indigo-950/40 border border-indigo-800/40 transition-colors font-medium whitespace-nowrap disabled:opacity-50">
+                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/40 border border-indigo-200/40 transition-colors font-medium whitespace-nowrap disabled:opacity-50">
                 {jwtLoading ? <RefreshCw size={9} className="animate-spin" /> : <Lock size={9} />} JWT
               </button>
             )}
@@ -198,7 +199,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               <button
                 onClick={() => onRetry(app)}
                 title="Retry ping for this app"
-                className="p-1 rounded text-red-400 hover:text-red-300 hover:bg-red-950/40 transition-colors">
+                className="p-1 rounded text-red-600 hover:text-red-700 hover:bg-red-50/40 transition-colors">
                 <RefreshCw size={13} />
               </button>
             )}
@@ -214,12 +215,12 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                   }
                 }}
                 title="Copy cURL for this endpoint"
-                className="p-1 rounded text-gray-600 hover:text-white hover:bg-gray-800/60 transition-colors">
-                {copiedCurl ? <Check size={12} className="text-emerald-400" /> : <Terminal size={12} />}
+                className="p-1 rounded text-gray-500 hover:text-gray-900 hover:bg-gray-100/60 transition-colors">
+                {copiedCurl ? <Check size={12} className="text-emerald-600" /> : <Terminal size={12} />}
               </button>
             )}
             {result && (
-              <span className="text-gray-600 p-1" title={isExpanded ? 'Click row to collapse' : 'Click row to expand'}>
+              <span className="text-gray-500 p-1" title={isExpanded ? 'Click row to collapse' : 'Click row to expand'}>
                 {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               </span>
             )}
@@ -229,21 +230,21 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
 
       {/* Expanded detail */}
       {isExpanded && result && (
-        <tr className="border-t border-gray-800/40 bg-gray-900/40">
+        <tr className="border-t border-gray-200/40 bg-white/40">
           <td colSpan={8} className="px-6 py-4">
             <div className="space-y-3 text-sm">
               {result._jwtUsed && (
-                <div className="flex items-center gap-2 bg-indigo-950/30 border border-indigo-800/40 rounded-lg px-3 py-2 text-indigo-400 text-xs">
+                <div className="flex items-center gap-2 bg-indigo-50/30 border border-indigo-200/40 rounded-lg px-3 py-2 text-indigo-600 text-xs">
                   <Lock size={12} className="flex-shrink-0" />
                   JWT Bearer token was auto-fetched from CPS and used for this ping
                 </div>
               )}
               {autoResolved && (
                 <div className="flex items-start gap-3">
-                  <ShieldCheck size={13} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+                  <ShieldCheck size={13} className="text-emerald-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">Credentials (Auto-resolved)</span>
-                    <p className="text-emerald-400/90 text-xs mt-0.5">
+                    <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">Credentials (Auto-resolved)</span>
+                    <p className="text-emerald-600/90 text-xs mt-0.5">
                       API Manager: <span className="font-medium">{autoResolved.apiInstanceName}</span>
                       {' · '}Contract: <span className="font-medium">{autoResolved.contractApp}</span>
                       {' · '}client_id: <span className="font-mono">{autoResolved.clientId?.slice(0, 8)}…</span>
@@ -254,20 +255,20 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               <div className="flex items-start gap-3">
                 <Globe size={13} className="text-gray-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">Full Endpoint</span>
-                  <p className="font-mono text-xs text-cyan-300 break-all mt-0.5">{result.activeEndpoint || '—'}</p>
+                  <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">Full Endpoint</span>
+                  <p className="font-mono text-xs text-cyan-700 break-all mt-0.5">{result.activeEndpoint || '—'}</p>
                 </div>
               </div>
               {result.error && (
                 <div className="flex items-start gap-3">
                   {contractApproved
-                    ? <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0 mt-0.5" />
-                    : <XCircle size={13} className="text-red-400 flex-shrink-0 mt-0.5" />}
+                    ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                    : <XCircle size={13} className="text-red-600 flex-shrink-0 mt-0.5" />}
                   <div>
-                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">
+                    <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">
                       {contractApproved ? 'Status' : 'Error'}
                     </span>
-                    <p className={`text-xs mt-0.5 break-all ${contractApproved ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <p className={`text-xs mt-0.5 break-all ${contractApproved ? 'text-emerald-600' : 'text-red-600'}`}>
                       {result.error}
                     </p>
                   </div>
@@ -276,7 +277,6 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               {result.payload && (() => {
                 const endpoints = result.payload?.pingResponse?.endpoints;
                 const summary = result.payload?.pingResponse?.summary;
-                const payloadStr = typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload, null, 2);
                 return (
                   <div className="space-y-3">
                     {/* Structured endpoint health table when pingResponse.endpoints exists */}
@@ -285,11 +285,11 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                       return (
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">Endpoint Health</span>
+                            <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">Endpoint Health</span>
                             <div className="flex items-center gap-2 text-[10px]">
-                              <span className="text-emerald-400 font-semibold">✓ {ok}</span>
-                              {endpoints.length - ok > 0 && <span className="text-red-400 font-semibold">✗ {endpoints.length - ok}</span>}
-                              {summary?.serviceName && <span className="text-gray-600 font-mono">{summary.serviceName}</span>}
+                              <span className="text-emerald-600 font-semibold">✓ {ok}</span>
+                              {endpoints.length - ok > 0 && <span className="text-red-600 font-semibold">✗ {endpoints.length - ok}</span>}
+                              {summary?.serviceName && <span className="text-gray-500 font-mono">{summary.serviceName}</span>}
                             </div>
                           </div>
                           <div className="space-y-1">
@@ -297,15 +297,15 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                               if (!ep) return null;
                               const isOk = (ep.status || '').toLowerCase() === 'success';
                               return (
-                                <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border ${isOk ? 'bg-emerald-950/20 border-emerald-800/30' : 'bg-red-950/20 border-red-800/30'}`}>
+                                <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border ${isOk ? 'bg-emerald-50/20 border-emerald-200/30' : 'bg-red-50/20 border-red-200/30'}`}>
                                   <span className="text-[11px] flex-shrink-0 mt-0.5">{isOk ? '✅' : '❌'}</span>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-medium text-gray-200">{ep.serviceName}</span>
+                                      <span className="font-medium text-gray-700">{ep.serviceName}</span>
                                       {ep.endpointName && <span className="text-[10px] text-gray-500">· {ep.endpointName}</span>}
                                     </div>
-                                    {ep.apiUser && <p className="text-[10px] text-gray-600 font-mono mt-0.5">{ep.apiUser}</p>}
-                                    <p className={`text-[10px] mt-0.5 ${isOk ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                                    {ep.apiUser && <p className="text-[10px] text-gray-500 font-mono mt-0.5">{ep.apiUser}</p>}
+                                    <p className={`text-[10px] mt-0.5 ${isOk ? 'text-emerald-600/70' : 'text-red-600/70'}`}>
                                       {ep.message}{ep.domain ? ` · ${ep.domain}` : ''}
                                     </p>
                                   </div>
@@ -318,35 +318,33 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                     })()}
                     {/* Full raw JSON — always visible */}
                     <div>
-                      <span className="text-gray-400 text-xs font-medium uppercase tracking-wider block mb-1.5">Response Body</span>
-                      <pre className="bg-[#0B0F17] rounded-lg px-4 py-3 text-xs text-emerald-400/90 overflow-auto font-mono border border-gray-800/60 leading-relaxed whitespace-pre-wrap break-all">
-                        {payloadStr}
-                      </pre>
+                      <span className="text-gray-500 text-xs font-medium uppercase tracking-wider block mb-1.5">Response Body</span>
+                      <PostmanJsonViewer data={result.payload} maxHeight="400px" />
                     </div>
                   </div>
                 );
               })()}
               {result.attempts?.length > 0 && (
                 <div>
-                  <span className="text-gray-400 text-xs font-medium uppercase tracking-wider block mb-1.5">
+                  <span className="text-gray-500 text-xs font-medium uppercase tracking-wider block mb-1.5">
                     Attempt Log — {result.attempts.length} path{result.attempts.length !== 1 ? 's' : ''} tried
                   </span>
                   <table className="w-full text-xs border-collapse">
                     <thead>
-                      <tr className="bg-gray-800/60">
-                        <th className="px-3 py-2 text-left text-gray-400 font-medium">URL</th>
-                        <th className="px-3 py-2 text-left text-gray-400 font-medium w-32">Result</th>
-                        <th className="px-3 py-2 text-right text-gray-400 font-medium w-24">Latency</th>
+                      <tr className="bg-gray-100/60">
+                        <th className="px-3 py-2 text-left text-gray-500 font-medium">URL</th>
+                        <th className="px-3 py-2 text-left text-gray-500 font-medium w-32">Result</th>
+                        <th className="px-3 py-2 text-right text-gray-500 font-medium w-24">Latency</th>
                       </tr>
                     </thead>
                     <tbody>
                       {result.attempts.map((a, i) => (
-                        <tr key={i} className="border-t border-gray-800/40 hover:bg-gray-800/20">
-                          <td className="px-3 py-2 font-mono text-gray-300 break-all">{a.url}</td>
+                        <tr key={i} className="border-t border-gray-200/40 hover:bg-gray-100/20">
+                          <td className="px-3 py-2 font-mono text-gray-600 break-all">{a.url}</td>
                           <td className="px-3 py-2">
                             {a.error
-                              ? <span className="text-red-400 text-[11px]">{a.error}</span>
-                              : <span className={`font-bold ${a.httpStatus < 300 ? 'text-emerald-400' : a.httpStatus < 500 ? 'text-yellow-400' : 'text-red-400'}`}>HTTP {a.httpStatus}</span>}
+                              ? <span className="text-red-600 text-[11px]">{a.error}</span>
+                              : <span className={`font-bold ${a.httpStatus < 300 ? 'text-emerald-600' : a.httpStatus < 500 ? 'text-yellow-600' : 'text-red-600'}`}>HTTP {a.httpStatus}</span>}
                           </td>
                           <td className={`px-3 py-2 font-mono text-right ${latencyColor(a.responseTimeMs)}`}>
                             {a.responseTimeMs != null ? `${a.responseTimeMs}ms` : '—'}
@@ -401,79 +399,79 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <History size={20} className="text-indigo-400" /> Ping Test History
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <History size={20} className="text-indigo-600" /> Ping Test History
           </h1>
-          <p className="text-gray-400 text-sm mt-1">
+          <p className="text-gray-500 text-sm mt-1">
             {globalHistory.length} recorded ping test results in this session
-            {historyLoading && <RefreshCw size={12} className="inline animate-spin ml-2 text-indigo-400" />}
+            {historyLoading && <RefreshCw size={12} className="inline animate-spin ml-2 text-indigo-600" />}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {globalHistory.length > 0 && (
             <button onClick={exportHistoryCsv}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 rounded-lg transition-colors">
+              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 border border-emerald-200/50 rounded-lg transition-colors">
               <Download size={13} /> Export CSV
             </button>
           )}
           {globalHistory.length > 0 && (
             <button onClick={onClear}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 bg-red-950/40 border border-red-800/50 rounded-lg transition-colors">
+              className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 bg-red-50/40 border border-red-200/50 rounded-lg transition-colors">
               <Trash2 size={13} /> Clear History
             </button>
           )}
           <button onClick={onClose}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors">
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 rounded-lg transition-colors">
             <ArrowLeft size={13} /> Back to Results
           </button>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-xl">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xl">
         {globalHistory.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center text-slate-500 space-y-2">
             <History size={32} className="opacity-20 mb-2" />
             <p className="text-sm">No ping test history available yet.</p>
-            <p className="text-xs text-slate-600">Run a batch ping or ping individual apps to generate history.</p>
+            <p className="text-xs text-gray-400">Run a batch ping or ping individual apps to generate history.</p>
           </div>
         ) : (
           <div className="overflow-x-auto max-h-[75vh]">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-800/95 text-gray-400 text-xs uppercase tracking-wider backdrop-blur-sm">
-                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 w-44 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Timestamp</th>
-                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Application</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Environment</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Type</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Status</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">HTTP Code</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Active Endpoint</th>
-                  <th className="px-3 py-3 font-medium text-right sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Latency</th>
-                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-800/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Credentials</th>
+                <tr className="bg-gray-100/95 text-gray-500 text-xs uppercase tracking-wider backdrop-blur-sm">
+                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 w-44 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Timestamp</th>
+                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Application</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Environment</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Type</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Status</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">HTTP Code</th>
+                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Active Endpoint</th>
+                  <th className="px-3 py-3 font-medium text-right sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Latency</th>
+                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Credentials</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800/60">
+              <tbody className="divide-y divide-gray-200/60">
                 {globalHistory.map((entry, i) => {
                   const isOk = entry.status === 'SUCCESS';
                   const isPartial = entry.status === 'PARTIAL';
-                  const statusConfig = STATUS_CONFIG[entry.status] || { label: entry.status, cls: 'text-gray-400 bg-gray-900/50' };
+                  const statusConfig = STATUS_CONFIG[entry.status] || { label: entry.status, cls: 'text-gray-500 bg-white/50' };
                   
                   return (
                     <React.Fragment key={entry.id || i}>
-                      <tr className="hover:bg-gray-800/40 transition-colors">
-                        <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-400 font-mono">
+                      <tr className="hover:bg-gray-100/40 transition-colors">
+                        <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500 font-mono">
                           {new Date(entry.timestamp).toLocaleString()}
                         </td>
-                        <td className="px-4 py-3 font-medium text-gray-200">
+                        <td className="px-4 py-3 font-medium text-gray-700">
                           {entry.appName || '—'}
                         </td>
-                        <td className="px-3 py-3 text-xs text-gray-300">
+                        <td className="px-3 py-3 text-xs text-gray-600">
                           {entry.env_name || '—'}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap">
                           {entry.target_type ? (
-                            <span className="text-[10px] font-semibold text-gray-400 bg-gray-800/80 px-2 py-0.5 rounded border border-gray-700">
+                            <span className="text-[10px] font-semibold text-gray-500 bg-gray-100/80 px-2 py-0.5 rounded border border-gray-300">
                               {entry.target_type}
                             </span>
                           ) : '—'}
@@ -487,15 +485,15 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                         <td className="px-3 py-3 whitespace-nowrap">
                           {entry.http_status ? (
                             <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                              entry.http_status >= 200 && entry.http_status < 300 ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/30' :
-                              entry.http_status >= 400 && entry.http_status < 500 ? 'bg-yellow-950/40 text-yellow-400 border border-yellow-800/30' :
-                              'bg-red-950/40 text-red-400 border border-red-800/30'
+                              entry.http_status >= 200 && entry.http_status < 300 ? 'bg-emerald-50/40 text-emerald-600 border border-emerald-200/30' :
+                              entry.http_status >= 400 && entry.http_status < 500 ? 'bg-yellow-50/40 text-yellow-600 border border-yellow-200/30' :
+                              'bg-red-50/40 text-red-600 border border-red-200/30'
                             }`}>
                               {entry.http_status}
                             </span>
                           ) : '—'}
                         </td>
-                        <td className="px-3 py-3 font-mono text-xs text-cyan-400/90 truncate max-w-xs" title={entry.endpoint}>
+                        <td className="px-3 py-3 font-mono text-xs text-cyan-600/90 truncate max-w-xs" title={entry.endpoint}>
                           {entry.endpoint || '—'}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-right font-mono text-xs">
@@ -503,21 +501,19 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                             <span className={latencyColor(entry.responseTimeMs)}>{entry.responseTimeMs}ms</span>
                           ) : '—'}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-[10px] text-gray-400">
+                        <td className="px-4 py-3 whitespace-nowrap text-[10px] text-gray-500">
                           {entry.credentials || '—'}
                         </td>
                       </tr>
                       {(entry.error || entry.payload) && (
-                        <tr className="bg-gray-900/20">
+                        <tr className="bg-white/20">
                           <td colSpan={9} className="px-4 py-2 pb-4">
-                            <div className="pl-4 border-l-2 border-gray-700/50 space-y-2">
-                              {entry.error && <p className="text-xs text-red-400">{entry.error}</p>}
+                            <div className="pl-4 border-l-2 border-gray-300/50 space-y-2">
+                              {entry.error && <p className="text-xs text-red-600">{entry.error}</p>}
                               {entry.payload && (
                                 <div>
-                                  <span className="text-[10px] font-bold tracking-wider text-gray-500 uppercase">Response</span>
-                                  <pre className="text-xs text-emerald-400/80 mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-all font-mono bg-black/20 p-2 rounded border border-gray-800/50">
-                                    {typeof entry.payload === 'object' ? JSON.stringify(entry.payload, null, 2) : entry.payload}
-                                  </pre>
+                                  <span className="text-[10px] font-bold tracking-wider text-gray-500 uppercase block mb-1">Response</span>
+                                  <PostmanJsonViewer data={entry.payload} maxHeight="160px" />
                                 </div>
                               )}
                             </div>
@@ -1112,14 +1108,14 @@ export default function PingTestPage() {
   if (!hasResults && apps.length === 0) {
     return (
       <div className="space-y-5">
-        <h1 className="text-xl font-bold text-white flex items-center gap-2">
-          <Activity size={20} className="text-cyan-400" /> Ping Test Results
+        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <Activity size={20} className="text-cyan-600" /> Ping Test Results
         </h1>
-        <div className="flex flex-col items-center justify-center py-24 gap-5 bg-gray-900 border border-gray-800 rounded-xl">
-          <Activity size={48} className="text-gray-700" />
+        <div className="flex flex-col items-center justify-center py-24 gap-5 bg-white border border-gray-200 rounded-xl">
+          <Activity size={48} className="text-gray-500" />
           <div className="text-center space-y-2">
-            <p className="text-white font-medium">No ping results yet</p>
-            <p className="text-gray-400 text-sm">Run a bulk ping test from the <strong>Applications</strong> page or view past history.</p>
+            <p className="text-gray-900 font-medium">No ping results yet</p>
+            <p className="text-gray-500 text-sm">Run a bulk ping test from the <strong>Applications</strong> page or view past history.</p>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => navigate('/applications')}
@@ -1127,7 +1123,7 @@ export default function PingTestPage() {
               <ArrowLeft size={14} /> Go to Applications
             </button>
             <button onClick={() => setShowHistoryView(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-sm font-medium rounded-lg transition-colors">
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-600 hover:text-gray-900 text-sm font-medium rounded-lg transition-colors">
               <History size={14} /> View History
             </button>
           </div>
@@ -1144,20 +1140,20 @@ export default function PingTestPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <Activity size={20} className="text-cyan-400" /> Ping Test Results
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <Activity size={20} className="text-cyan-600" /> Ping Test Results
           </h1>
-          <p className="text-gray-400 text-sm mt-1">
+          <p className="text-gray-500 text-sm mt-1">
             {done} apps tested
             {done > 0 && (<span className="ml-2">
-              · <span className="text-emerald-400">{successCount} ✓</span>
-              {partialCount > 0 && <span className="text-yellow-400 ml-1">{partialCount} ~</span>}
-              {failedCount  > 0 && <span className="text-red-400 ml-1">{failedCount} ✗</span>}
+              · <span className="text-emerald-600">{successCount} ✓</span>
+              {partialCount > 0 && <span className="text-yellow-600 ml-1">{partialCount} ~</span>}
+              {failedCount  > 0 && <span className="text-red-600 ml-1">{failedCount} ✗</span>}
             </span>)}
-            {autoResolvedCount > 0 && <span className="ml-2 text-emerald-400/70 text-xs">· 🔑 {autoResolvedCount} auto-creds</span>}
+            {autoResolvedCount > 0 && <span className="ml-2 text-emerald-600/70 text-xs">· 🔑 {autoResolvedCount} auto-creds</span>}
             {/* Feature 1.8: show when the batch was tested */}
             {testedAt && (
-              <span className="ml-2 text-gray-600 text-xs">
+              <span className="ml-2 text-gray-500 text-xs">
                 · Tested at {new Date(testedAt).toLocaleTimeString()}
               </span>
             )}
@@ -1170,7 +1166,7 @@ export default function PingTestPage() {
           {unresolvedApps.length > 0 && (
             <button onClick={resolveUnresolved} disabled={resolvingAll}
               title={`Auto-resolve credentials for ${unresolvedApps.length} app${unresolvedApps.length !== 1 ? 's' : ''} that have no credentials yet`}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 hover:bg-emerald-50/60 border border-emerald-200/50 rounded-lg disabled:opacity-50 transition-colors">
               <ShieldCheck size={13} className={resolvingAll ? 'animate-spin' : ''} />
               {resolvingAll ? 'Resolving…' : `Re-resolve Creds (${unresolvedApps.length})`}
             </button>
@@ -1179,7 +1175,7 @@ export default function PingTestPage() {
           {failedCount > 0 && (
             <button onClick={retryAllFailed} disabled={retryingAll}
               title={`Retry all ${failedCount} failed ping test${failedCount !== 1 ? 's' : ''}`}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/60 border border-red-800/50 rounded-lg disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 bg-red-50/40 hover:bg-red-50/60 border border-red-200/50 rounded-lg disabled:opacity-50 transition-colors">
               <RefreshCw size={13} className={retryingAll ? 'animate-spin' : ''} />
               {retryingAll ? 'Retrying…' : `Retry Failed (${failedCount})`}
             </button>
@@ -1188,7 +1184,7 @@ export default function PingTestPage() {
           {approvedContractCount > 0 && (
             <button onClick={pingAllApproved} disabled={pingingAllApproved}
               title={`Ping all ${approvedContractCount} approved app${approvedContractCount !== 1 ? 's' : ''}`}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 hover:bg-emerald-50/60 border border-emerald-200/50 rounded-lg disabled:opacity-50 transition-colors">
               <Activity size={13} className={pingingAllApproved ? 'animate-pulse' : ''} />
               {pingingAllApproved ? 'Pinging…' : `Ping Approved (${approvedContractCount})`}
             </button>
@@ -1197,7 +1193,7 @@ export default function PingTestPage() {
           {pendingContractCount > 0 && (
             <button onClick={checkAllContracts} disabled={checkingAll}
               title={`Check contract approval for ${pendingContractCount} pending app${pendingContractCount !== 1 ? 's' : ''}`}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-orange-400 hover:text-orange-300 bg-orange-950/40 hover:bg-orange-950/60 border border-orange-800/50 rounded-lg disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 px-3 py-2 text-sm text-orange-600 hover:text-orange-700 bg-orange-50/40 hover:bg-orange-50/60 border border-orange-200/50 rounded-lg disabled:opacity-50 transition-colors">
               <RefreshCw size={13} className={checkingAll ? 'animate-spin' : ''} />
               {checkingAll ? 'Checking…' : `Check Contracts (${pendingContractCount})`}
             </button>
@@ -1205,27 +1201,27 @@ export default function PingTestPage() {
           {/* Feature 2: CSV Upload button */}
           <button onClick={() => csvInputRef.current?.click()}
             title="Upload a CSV of app names to batch-ping"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-blue-400 hover:text-blue-300 bg-blue-950/40 hover:bg-blue-950/60 border border-blue-800/50 rounded-lg transition-colors">
+            className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-700 bg-blue-50/40 hover:bg-blue-50/60 border border-blue-200/50 rounded-lg transition-colors">
             <UploadCloud size={13} /> Upload CSV
           </button>
           {hasResults && (
             <button onClick={exportCsv}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 rounded-lg transition-colors">
+              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 border border-emerald-200/50 rounded-lg transition-colors">
               <Download size={13} /> Export CSV
             </button>
           )}
           {hasResults && (
             <button onClick={clearResults}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 bg-red-950/40 border border-red-800/50 rounded-lg transition-colors">
+              className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 bg-red-50/40 border border-red-200/50 rounded-lg transition-colors">
               <X size={13} /> Clear Results
             </button>
           )}
           <button onClick={() => setShowHistoryView(true)}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-indigo-400 hover:text-indigo-300 bg-indigo-950/40 border border-indigo-800/50 rounded-lg transition-colors">
+            className="flex items-center gap-2 px-3 py-2 text-sm text-indigo-600 hover:text-indigo-700 bg-indigo-50/40 border border-indigo-200/50 rounded-lg transition-colors">
             <History size={13} /> View History
           </button>
           <button onClick={() => navigate('/applications')}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors">
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 rounded-lg transition-colors">
             <ArrowLeft size={13} /> Back to Applications
           </button>
         </div>
@@ -1235,16 +1231,16 @@ export default function PingTestPage() {
       {csvMatchedNames !== null && (
         <div className={`flex items-center justify-between flex-wrap gap-3 px-4 py-3 rounded-xl border text-sm ${
           csvMatchedApps.length > 0
-            ? 'bg-blue-950/30 border-blue-800/50'
-            : 'bg-gray-900 border-gray-800'
+            ? 'bg-blue-50/30 border-blue-200/50'
+            : 'bg-white border-gray-200'
         }`}>
           <div className="flex items-center gap-3">
-            <UploadCloud size={14} className="text-blue-400 flex-shrink-0" />
-            <span className="text-gray-300 text-xs">
+            <UploadCloud size={14} className="text-blue-600 flex-shrink-0" />
+            <span className="text-gray-600 text-xs">
               <span className="font-mono text-gray-500">{csvFileName}</span>
               {' — '}
               {csvMatchedApps.length > 0
-                ? <span className="text-blue-300 font-semibold">{csvMatchedApps.length} app{csvMatchedApps.length !== 1 ? 's' : ''} matched from CSV</span>
+                ? <span className="text-blue-700 font-semibold">{csvMatchedApps.length} app{csvMatchedApps.length !== 1 ? 's' : ''} matched from CSV</span>
                 : <span className="text-gray-500">No apps matched</span>}
             </span>
           </div>
@@ -1258,7 +1254,7 @@ export default function PingTestPage() {
               </button>
             )}
             <button onClick={() => { setCsvMatchedNames(null); setCsvFileName(''); }}
-              className="text-gray-600 hover:text-gray-300 transition-colors">
+              className="text-gray-500 hover:text-gray-900 transition-colors">
               <X size={14} />
             </button>
           </div>
@@ -1267,14 +1263,14 @@ export default function PingTestPage() {
 
       {/* Summary + toggle */}
       {hasResults && (
-        <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-3 bg-gray-900 border border-gray-800 rounded-xl text-sm">
+        <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-3 bg-white border border-gray-200 rounded-xl text-sm">
           <div className="flex items-center gap-4">
-            <span className="text-gray-400 font-medium">{done} tested</span>
-            <span className="text-emerald-400 font-semibold">✓ {successCount} healthy</span>
-            {partialCount > 0 && <span className="text-yellow-400 font-semibold">~ {partialCount} partial</span>}
-            {failedCount  > 0 && <span className="text-red-400 font-semibold">✗ {failedCount} failed</span>}
+            <span className="text-gray-500 font-medium">{done} tested</span>
+            <span className="text-emerald-600 font-semibold">✓ {successCount} healthy</span>
+            {partialCount > 0 && <span className="text-yellow-600 font-semibold">~ {partialCount} partial</span>}
+            {failedCount  > 0 && <span className="text-red-600 font-semibold">✗ {failedCount} failed</span>}
             {autoResolvedCount > 0 && (
-              <span className="flex items-center gap-1 text-emerald-400/70 text-xs font-medium">
+              <span className="flex items-center gap-1 text-emerald-600/70 text-xs font-medium">
                 <ShieldCheck size={11} /> {autoResolvedCount} auto-creds
               </span>
             )}
@@ -1282,21 +1278,21 @@ export default function PingTestPage() {
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             {/* Status filter chips */}
             {[
-              { key: 'ALL',               label: 'All',                count: null,                  cls: 'text-slate-400 border-slate-700 hover:border-slate-500' },
-              { key: 'SUCCESS',           label: '✓ Healthy',          count: successCount,          cls: 'text-emerald-400 border-emerald-800/50 hover:border-emerald-600' },
-              { key: 'PARTIAL',           label: '~ Partial',          count: partialCount,          cls: 'text-yellow-400 border-yellow-800/50 hover:border-yellow-600' },
-              { key: 'FAILED',            label: '✗ Failed',           count: failedCount,           cls: 'text-red-400 border-red-800/50 hover:border-red-600' },
-              { key: 'CONTRACT_PENDING',  label: '🔑 Pending',         count: pendingContractCount,  cls: 'text-orange-400 border-orange-800/50 hover:border-orange-600' },
-              { key: 'CONTRACT_APPROVED', label: '✅ Approved',         count: approvedContractCount, cls: 'text-emerald-300 border-emerald-700/50 hover:border-emerald-500' },
+              { key: 'ALL',               label: 'All',                count: null,                  cls: 'text-gray-500 border-gray-300 hover:border-slate-500' },
+              { key: 'SUCCESS',           label: '✓ Healthy',          count: successCount,          cls: 'text-emerald-600 border-emerald-200/50 hover:border-emerald-300' },
+              { key: 'PARTIAL',           label: '~ Partial',          count: partialCount,          cls: 'text-yellow-600 border-yellow-200/50 hover:border-yellow-300' },
+              { key: 'FAILED',            label: '✗ Failed',           count: failedCount,           cls: 'text-red-600 border-red-200/50 hover:border-red-300' },
+              { key: 'CONTRACT_PENDING',  label: '🔑 Pending',         count: pendingContractCount,  cls: 'text-orange-600 border-orange-200/50 hover:border-orange-300' },
+              { key: 'CONTRACT_APPROVED', label: '✅ Approved',         count: approvedContractCount, cls: 'text-emerald-700 border-emerald-300/50 hover:border-emerald-500' },
             ].filter(f => f.key === 'ALL' || f.count > 0).map(f => (
               <button key={f.key} onClick={() => setStatusFilter(f.key)}
-                className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${f.cls} ${statusFilter === f.key ? 'bg-gray-800/80 ring-1 ring-inset ring-current' : 'bg-transparent'}`}>
+                className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${f.cls} ${statusFilter === f.key ? 'bg-gray-100/80 ring-1 ring-inset ring-current' : 'bg-transparent'}`}>
                 {f.label}{f.count != null ? ` (${f.count})` : ''}
               </button>
             ))}
             <button onClick={() => setShowAll(v => !v)}
               className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${
-                showAll ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-cyan-600/20 border-cyan-600/60 text-cyan-300'
+                showAll ? 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900' : 'bg-cyan-100 border-cyan-300/60 text-cyan-700'
               }`}>
               {showAll ? 'Show tested only' : `✓ Showing tested (${done})`}
             </button>
@@ -1306,15 +1302,15 @@ export default function PingTestPage() {
 
       {/* Results table */}
       {displayApps.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             {/* Feature 23: sticky App Name + Status columns */}
             <thead>
-              <tr className="bg-gray-800/95 text-gray-400 text-xs uppercase tracking-wider backdrop-blur-sm">
-                <th className="px-3 py-3 font-medium text-center w-8 sticky left-0 z-20 bg-gray-800/95">#</th>
-                <th className="text-left px-4 py-3 font-medium sticky left-8 z-20 bg-gray-800/95 shadow-[2px_0_8px_rgba(0,0,0,0.3)]">Application</th>
+              <tr className="bg-gray-100/95 text-gray-500 text-xs uppercase tracking-wider backdrop-blur-sm">
+                <th className="px-3 py-3 font-medium text-center w-8 sticky left-0 z-20 bg-gray-100/95">#</th>
+                <th className="text-left px-4 py-3 font-medium sticky left-8 z-20 bg-gray-100/95 shadow-[2px_0_8px_rgba(0,0,0,0.3)]">Application</th>
                 <th className="text-left px-3 py-3 font-medium">Type</th>
-                <th className="text-left px-3 py-3 font-medium sticky left-64 z-20 bg-gray-800/95 shadow-[2px_0_8px_rgba(0,0,0,0.2)]">Status</th>
+                <th className="text-left px-3 py-3 font-medium sticky left-64 z-20 bg-gray-100/95 shadow-[2px_0_8px_rgba(0,0,0,0.2)]">Status</th>
                 <th className="text-left px-3 py-3 font-medium">Active Endpoint</th>
                 <th className="text-center px-3 py-3 font-medium">HTTP</th>
                 <th className="text-right px-3 py-3 font-medium">Latency</th>

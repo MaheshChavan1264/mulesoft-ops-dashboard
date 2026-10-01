@@ -59,3 +59,7 @@ graphify-out/cache/semantic/pd5fd89c46bb5/3969e122d76c0d49ad7552a9df67f0832895ff
 graphify-out/GRAPH_REPORT.md
 graphify-out/graph.html
 graphify-out/graph.json
+
+# graphify-axet
+.graphify/
+.graphifyignore

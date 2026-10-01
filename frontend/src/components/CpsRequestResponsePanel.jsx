@@ -4,13 +4,13 @@ import { ChevronDown, ChevronUp, X, Clock, Copy, Check } from 'lucide-react';
 // ── Method badge ──────────────────────────────────────────────────────────────
 function MethodBadge({ method }) {
   const colors = {
-    GET:    'bg-green-500/20 text-green-400 border-green-600/40',
-    POST:   'bg-blue-500/20 text-blue-400 border-blue-600/40',
-    PUT:    'bg-yellow-500/20 text-yellow-400 border-yellow-600/40',
-    DELETE: 'bg-red-500/20 text-red-400 border-red-600/40',
-    PATCH:  'bg-purple-500/20 text-purple-400 border-purple-600/40',
+    GET:    'bg-green-100 text-green-600 border-green-300/40',
+    POST:   'bg-blue-100 text-blue-600 border-blue-300/40',
+    PUT:    'bg-yellow-100 text-yellow-600 border-yellow-300/40',
+    DELETE: 'bg-red-100 text-red-600 border-red-300/40',
+    PATCH:  'bg-purple-100 text-purple-600 border-purple-300/40',
   };
-  const cls = colors[(method || '').toUpperCase()] || 'bg-gray-500/20 text-gray-400 border-gray-600/40';
+  const cls = colors[(method || '').toUpperCase()] || 'bg-gray-100 text-gray-500 border-gray-300/40';
   return (
     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider flex-shrink-0 ${cls}`}>
       {method}
@@ -24,12 +24,12 @@ function StatusBadge({ status }) {
   const isClientErr = status >= 400 && status < 500;
   const isServerErr = status >= 500;
   const cls = isSuccess
-    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-600/40'
+    ? 'bg-emerald-100 text-emerald-600 border-emerald-300/40'
     : isClientErr
-    ? 'bg-red-500/20 text-red-400 border-red-600/40'
+    ? 'bg-red-100 text-red-600 border-red-300/40'
     : isServerErr
-    ? 'bg-orange-500/20 text-orange-400 border-orange-600/40'
-    : 'bg-gray-500/20 text-gray-400 border-gray-600/40';
+    ? 'bg-orange-100 text-orange-600 border-orange-300/40'
+    : 'bg-gray-100 text-gray-500 border-gray-300/40';
   const label = isSuccess ? 'OK' : isClientErr ? 'Client Error' : isServerErr ? 'Server Error' : '';
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border ${cls}`}>
@@ -51,9 +51,9 @@ function CopyCodeBtn({ text }) {
     <button
       onClick={handle}
       title="Copy to clipboard"
-      className="flex items-center gap-1 text-[9px] text-gray-500 hover:text-gray-300 transition-colors px-1.5 py-0.5 rounded border border-gray-700/50 hover:border-gray-600/60 bg-gray-800/60"
+      className="flex items-center gap-1 text-[9px] text-gray-500 hover:text-gray-900 transition-colors px-1.5 py-0.5 rounded border border-gray-300/50 hover:border-gray-300/60 bg-gray-100/60"
     >
-      {done ? <Check size={9} className="text-emerald-400" /> : <Copy size={9} />}
+      {done ? <Check size={9} className="text-emerald-600" /> : <Copy size={9} />}
       {done ? 'Copied' : 'Copy'}
     </button>
   );
@@ -73,7 +73,7 @@ function formatJson(val) {
 // ── Code block ────────────────────────────────────────────────────────────────
 function CodeBlock({ value, isError = false }) {
   const text = formatJson(value);
-  if (!text) return <p className="text-[10px] text-gray-600 italic">empty</p>;
+  if (!text) return <p className="text-[10px] text-gray-500 italic">empty</p>;
   return (
     <div className="relative group/code">
       <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover/code:opacity-100 transition-opacity">
@@ -81,8 +81,8 @@ function CodeBlock({ value, isError = false }) {
       </div>
       <pre className={`rounded-lg p-3 text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap break-words max-h-52 overflow-y-auto border ${
         isError
-          ? 'bg-red-950/30 border-red-800/40 text-red-300/85'
-          : 'bg-gray-950/60 border-gray-800/50 text-cyan-300/85'
+          ? 'bg-red-50/30 border-red-200/40 text-red-700/85'
+          : 'bg-gray-950/60 border-gray-200/50 text-cyan-700/85'
       }`}>
         {text}
       </pre>
@@ -114,7 +114,7 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
 
   return (
     <div className={`rounded-xl border overflow-hidden transition-all ${
-      isError ? 'border-red-800/50 bg-red-950/10' : 'border-gray-700/50 bg-gray-900/80'
+      isError ? 'border-red-200/50 bg-red-50/10' : 'border-gray-300/50 bg-white/80'
     }`}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div
@@ -126,16 +126,16 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
             Last Operation
           </span>
           {label && (
-            <span className="text-[10px] text-gray-300 font-medium truncate">{label}</span>
+            <span className="text-[10px] text-gray-600 font-medium truncate">{label}</span>
           )}
           {success !== undefined && (
             success
-              ? <span className="text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-1.5 py-0.5 rounded-full flex-shrink-0">✓ Success</span>
-              : <span className="text-[9px] text-red-400 bg-red-500/10 border border-red-700/40 px-1.5 py-0.5 rounded-full flex-shrink-0">✗ Failed</span>
+              ? <span className="text-[9px] text-emerald-600 bg-emerald-50 border border-emerald-300/40 px-1.5 py-0.5 rounded-full flex-shrink-0">✓ Success</span>
+              : <span className="text-[9px] text-red-600 bg-red-50 border border-red-300/40 px-1.5 py-0.5 rounded-full flex-shrink-0">✗ Failed</span>
           )}
           {status !== undefined && <StatusBadge status={status} />}
           {timestamp && (
-            <span className="text-[9px] text-gray-600 flex items-center gap-1 flex-shrink-0">
+            <span className="text-[9px] text-gray-500 flex items-center gap-1 flex-shrink-0">
               <Clock size={8} />
               {new Date(timestamp).toLocaleTimeString()}
             </span>
@@ -149,7 +149,7 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
           <button
             onClick={e => { e.stopPropagation(); onDismiss?.(); }}
             title="Dismiss"
-            className="text-gray-600 hover:text-gray-300 p-0.5 rounded transition-colors"
+            className="text-gray-500 hover:text-gray-900 p-0.5 rounded transition-colors"
           >
             <X size={12} />
           </button>
@@ -158,7 +158,7 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
       {!collapsed && (
-        <div className="grid grid-cols-1 md:grid-cols-2 border-t border-gray-800/60 divide-y md:divide-y-0 md:divide-x divide-gray-800/60">
+        <div className="grid grid-cols-1 md:grid-cols-2 border-t border-gray-200/60 divide-y md:divide-y-0 md:divide-x divide-gray-200/60">
           {/* Request pane */}
           <div className="p-4 space-y-3">
             <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Request</p>
@@ -169,7 +169,7 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
                 <div className="flex items-center gap-2 flex-wrap">
                   {method && <MethodBadge method={method} />}
                   {url && (
-                    <span className="font-mono text-[10px] text-gray-300 break-all leading-snug">{url}</span>
+                    <span className="font-mono text-[10px] text-gray-600 break-all leading-snug">{url}</span>
                   )}
                 </div>
               </div>
@@ -178,7 +178,7 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
             {/* Query params */}
             {params && Object.keys(params).length > 0 && (
               <div className="space-y-1">
-                <p className="text-[9px] text-gray-600 uppercase tracking-wider font-medium">Query Params</p>
+                <p className="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Query Params</p>
                 <CodeBlock value={params} />
               </div>
             )}
@@ -186,7 +186,7 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
             {/* Headers (sanitized — no credentials) */}
             {headers && Object.keys(headers).length > 0 && (
               <div className="space-y-1">
-                <p className="text-[9px] text-gray-600 uppercase tracking-wider font-medium">Headers</p>
+                <p className="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Headers</p>
                 <CodeBlock value={headers} />
               </div>
             )}
@@ -194,13 +194,13 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
             {/* Request body */}
             {body !== undefined && body !== null && (
               <div className="space-y-1">
-                <p className="text-[9px] text-gray-600 uppercase tracking-wider font-medium">Body</p>
+                <p className="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Body</p>
                 <CodeBlock value={body} />
               </div>
             )}
 
             {!method && !url && !body && !params && (
-              <p className="text-[10px] text-gray-600 italic">No request details available</p>
+              <p className="text-[10px] text-gray-500 italic">No request details available</p>
             )}
           </div>
 
@@ -216,13 +216,13 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
 
             {resBody !== undefined && resBody !== null ? (
               <div className="space-y-1">
-                <p className="text-[9px] text-gray-600 uppercase tracking-wider font-medium">Body</p>
+                <p className="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Body</p>
                 <CodeBlock value={resBody} isError={isError} />
               </div>
             ) : status !== undefined ? (
-              <p className="text-[10px] text-gray-600 italic">Empty response body</p>
+              <p className="text-[10px] text-gray-500 italic">Empty response body</p>
             ) : (
-              <p className="text-[10px] text-gray-600 italic">No response details available</p>
+              <p className="text-[10px] text-gray-500 italic">No response details available</p>
             )}
           </div>
         </div>

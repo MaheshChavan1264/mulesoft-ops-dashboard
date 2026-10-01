@@ -43,12 +43,12 @@ export default function CredentialImportButton({ compact = false }) {
 
 const ACCENT = {
   emerald: {
-    badge:       'bg-emerald-500/10 border-emerald-700/40 text-emerald-400',
-    hover:       'hover:text-cyan-300 hover:border-cyan-700/50',
+    badge:       'bg-emerald-50 border-emerald-300/40 text-emerald-600',
+    hover:       'hover:text-cyan-700 hover:border-cyan-300/50',
   },
   purple: {
-    badge:       'bg-purple-500/10 border-purple-700/40 text-purple-400',
-    hover:       'hover:text-purple-300 hover:border-purple-700/50',
+    badge:       'bg-purple-50 border-purple-300/40 text-purple-600',
+    hover:       'hover:text-purple-700 hover:border-purple-300/50',
   },
 };
 
@@ -110,7 +110,7 @@ export function ImportCredentialButton({
         <button
           onClick={clearCredentials}
           title={clearTitle}
-          className="text-gray-500 hover:text-red-400 transition-colors p-0.5 rounded"
+          className="text-gray-500 hover:text-red-600 transition-colors p-0.5 rounded"
         >
           <X size={compact ? 11 : 13} />
         </button>
@@ -131,7 +131,7 @@ export function ImportCredentialButton({
       <button
         onClick={() => inputRef.current?.click()}
         title={importTitle}
-        className={`flex items-center ${sizeClass} bg-gray-800 border border-gray-700 text-gray-400 ${accent.hover} rounded-lg transition-colors font-medium`}
+        className={`flex items-center ${sizeClass} bg-gray-100 border border-gray-300 text-gray-500 ${accent.hover} rounded-lg transition-colors font-medium`}
       >
         <Upload size={iconSize} />
         {importLabel}

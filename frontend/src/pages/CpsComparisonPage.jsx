@@ -40,8 +40,8 @@ function CopyBtn({ text }) {
   const [done, setDone] = useState(false);
   return (
     <button onClick={() => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }}
-      className="text-gray-600 hover:text-gray-300 transition-colors p-0.5">
-      {done ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+      className="text-gray-500 hover:text-gray-900 transition-colors p-0.5">
+      {done ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
     </button>
   );
 }
@@ -72,8 +72,8 @@ function CopyDiffsBtn({ diff, keyA, keyB }) {
   };
   return (
     <button onClick={copy}
-      className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border text-purple-400 bg-purple-950/30 border-purple-800/50 hover:bg-purple-950/50 transition-colors">
-      {done ? <><Check size={11} className="text-emerald-400" /> Copied!</> : <><ClipboardCopy size={11} /> Copy Diffs</>}
+      className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border text-purple-600 bg-purple-50/30 border-purple-200/50 hover:bg-purple-50/50 transition-colors">
+      {done ? <><Check size={11} className="text-emerald-600" /> Copied!</> : <><ClipboardCopy size={11} /> Copy Diffs</>}
     </button>
   );
 }
@@ -104,16 +104,16 @@ function DiffModal({ row, labelA, labelB, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
       onClick={onClose}>
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl shadow-2xl mx-4"
+      <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-2xl shadow-2xl mx-4"
         onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <div>
             <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Property</p>
-            <p className="font-mono text-sm text-white font-semibold">{row.displayKey}</p>
-            {row.groupName && <p className="text-[10px] text-cyan-400/70 mt-0.5">Group: {row.groupName}</p>}
+            <p className="font-mono text-sm text-gray-900 font-semibold">{row.displayKey}</p>
+            {row.groupName && <p className="text-[10px] text-cyan-600/70 mt-0.5">Group: {row.groupName}</p>}
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white p-1.5 rounded-lg hover:bg-gray-800 transition-colors">
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-900 p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <X size={15} />
           </button>
         </div>
@@ -122,14 +122,14 @@ function DiffModal({ row, labelA, labelB, onClose }) {
         <div className="px-5 py-4 space-y-4">
           {/* Side A */}
           <div>
-            <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${isOnlyB ? 'text-gray-600' : 'text-blue-400'}`}>
+            <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${isOnlyB ? 'text-gray-500' : 'text-blue-600'}`}>
               Side A — {labelA}
-              {isOnlyB && <span className="ml-2 normal-case font-normal text-gray-600">(not set)</span>}
+              {isOnlyB && <span className="ml-2 normal-case font-normal text-gray-500">(not set)</span>}
             </p>
             <div className={`rounded-xl px-4 py-3 font-mono text-sm leading-relaxed break-all min-h-[48px] border ${
-              isOnlyB ? 'bg-gray-800/30 border-gray-700/30 text-gray-600 italic' :
-              isDiff   ? 'bg-red-950/30 border-red-800/40 text-red-200' :
-                         'bg-gray-800/60 border-gray-700/40 text-gray-200'
+              isOnlyB ? 'bg-gray-100/30 border-gray-300/30 text-gray-500 italic' :
+              isDiff   ? 'bg-red-50/30 border-red-200/40 text-red-200' :
+                         'bg-gray-100/60 border-gray-300/40 text-gray-700'
             }`}>
               {isOnlyB ? '(not present in Side A)' : isDiff ? (
                 aTokens.map((t, i) => (
@@ -143,14 +143,14 @@ function DiffModal({ row, labelA, labelB, onClose }) {
 
           {/* Side B */}
           <div>
-            <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${isOnlyA ? 'text-gray-600' : 'text-orange-400'}`}>
+            <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${isOnlyA ? 'text-gray-500' : 'text-orange-600'}`}>
               Side B — {labelB}
-              {isOnlyA && <span className="ml-2 normal-case font-normal text-gray-600">(not set)</span>}
+              {isOnlyA && <span className="ml-2 normal-case font-normal text-gray-500">(not set)</span>}
             </p>
             <div className={`rounded-xl px-4 py-3 font-mono text-sm leading-relaxed break-all min-h-[48px] border ${
-              isOnlyA ? 'bg-gray-800/30 border-gray-700/30 text-gray-600 italic' :
-              isDiff   ? 'bg-orange-950/30 border-orange-800/40 text-orange-200' :
-                         'bg-gray-800/60 border-gray-700/40 text-gray-200'
+              isOnlyA ? 'bg-gray-100/30 border-gray-300/30 text-gray-500 italic' :
+              isDiff   ? 'bg-orange-50/30 border-orange-200/40 text-orange-200' :
+                         'bg-gray-100/60 border-gray-300/40 text-gray-700'
             }`}>
               {isOnlyA ? '(not present in Side B)' : isDiff ? (
                 bTokens.map((t, i) => (
@@ -164,16 +164,16 @@ function DiffModal({ row, labelA, labelB, onClose }) {
 
           {/* Summary */}
           {isDiff && (
-            <div className="flex items-start gap-2 bg-yellow-950/20 border border-yellow-800/40 rounded-xl px-4 py-3 text-xs text-yellow-400/80">
+            <div className="flex items-start gap-2 bg-yellow-50/20 border border-yellow-200/40 rounded-xl px-4 py-3 text-xs text-yellow-600/80">
               <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
               <span>Values differ — highlighted words show what changed between the two sides.</span>
             </div>
           )}
         </div>
 
-        <div className="flex justify-end px-5 py-3 border-t border-gray-800">
+        <div className="flex justify-end px-5 py-3 border-t border-gray-200">
           <button onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
             Close
           </button>
         </div>
@@ -182,7 +182,7 @@ function DiffModal({ row, labelA, labelB, onClose }) {
   );
 }
 
-const ENV_TAG = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yellow-500/20 text-yellow-400' };
+const ENV_TAG = { production: 'bg-green-100 text-green-600', sandbox: 'bg-yellow-100 text-yellow-600' };
 
 // ─── MultiAppChecklist ────────────────────────────────────────────────────────
 
@@ -190,32 +190,32 @@ function MultiAppChecklist({ apps, selectedIds, loading, onToggle, onSelectAll, 
   const [localSearch, setLocalSearch] = useState('');
   const filtered = apps.filter(a => !localSearch || a.name.toLowerCase().includes(localSearch.toLowerCase()));
   const selectedSet = new Set(selectedIds);
-  const accentText = isBlue ? 'text-blue-400' : 'text-orange-400';
+  const accentText = isBlue ? 'text-blue-600' : 'text-orange-600';
   const accentBg = isBlue ? 'bg-blue-600' : 'bg-orange-600';
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <p className="text-[10px] text-gray-500 uppercase tracking-wider flex items-center gap-1">
-          Applications {loading && <RefreshCw size={9} className="animate-spin text-gray-600" />}
+          Applications {loading && <RefreshCw size={9} className="animate-spin text-gray-500" />}
           {selectedIds.length > 0 && <span className={`ml-1 font-bold ${accentText}`}>{selectedIds.length} selected</span>}
         </p>
         <div className="flex items-center gap-1.5">
           <button onClick={onSelectAll} className={`text-[9px] ${accentText} hover:opacity-80`}>All</button>
-          <span className="text-gray-700 text-[9px]">·</span>
-          <button onClick={onClearAll} className="text-[9px] text-gray-500 hover:text-gray-300">Clear</button>
+          <span className="text-gray-500 text-[9px]">·</span>
+          <button onClick={onClearAll} className="text-[9px] text-gray-500 hover:text-gray-900">Clear</button>
         </div>
       </div>
       {/* Search */}
       <div className="relative">
-        <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+        <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
         <input value={localSearch} onChange={e => setLocalSearch(e.target.value)} placeholder="Filter apps…"
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-6 pr-3 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-cyan-600/50" />
+          className="w-full bg-gray-100 border border-gray-300 rounded-lg pl-6 pr-3 py-1.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-cyan-300/50" />
       </div>
       {/* App list */}
-      <div className="max-h-48 overflow-y-auto border border-gray-700/50 rounded-lg divide-y divide-gray-800/30">
+      <div className="max-h-48 overflow-y-auto border border-gray-300/50 rounded-lg divide-y divide-gray-200/30">
         {filtered.length === 0 ? (
-          <p className="px-3 py-4 text-center text-[11px] text-gray-600">
+          <p className="px-3 py-4 text-center text-[11px] text-gray-500">
             {apps.length === 0 ? 'Select a BG and Environment first' : 'No apps match'}
           </p>
         ) : filtered.map(a => {
@@ -224,12 +224,12 @@ function MultiAppChecklist({ apps, selectedIds, loading, onToggle, onSelectAll, 
           const order = selectedIds.indexOf(compositeId) + 1; // 1-based order
           return (
             <button key={compositeId} onClick={() => onToggle(compositeId)}
-              className={`w-full flex items-center gap-2 px-2.5 py-2 hover:bg-gray-800/40 transition-colors text-left ${isChecked ? (isBlue ? 'bg-blue-950/20' : 'bg-orange-950/10') : ''}`}>
-              <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[9px] font-bold ${isChecked ? `${accentBg} border-transparent text-white` : 'border-gray-600'}`}>
+              className={`w-full flex items-center gap-2 px-2.5 py-2 hover:bg-gray-100/40 transition-colors text-left ${isChecked ? (isBlue ? 'bg-blue-50/20' : 'bg-orange-50/10') : ''}`}>
+              <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[9px] font-bold ${isChecked ? `${accentBg} border-transparent text-gray-900` : 'border-gray-300'}`}>
                 {isChecked ? order : ''}
               </div>
-              <span className={`text-xs font-mono truncate flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>{a.name}</span>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/10 text-blue-500' : 'bg-purple-500/10 text-purple-500'}`}>
+              <span className={`text-xs font-mono truncate flex-1 ${isChecked ? 'text-gray-900' : 'text-gray-500'}`}>{a.name}</span>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-50 text-blue-500' : 'bg-purple-50 text-purple-500'}`}>
                 {a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1'}
               </span>
             </button>
@@ -237,7 +237,7 @@ function MultiAppChecklist({ apps, selectedIds, loading, onToggle, onSelectAll, 
         })}
       </div>
       {selectedIds.length > 0 && (
-        <p className="text-[9px] text-gray-600">Numbers show comparison order (1st A paired with 1st B)</p>
+        <p className="text-[9px] text-gray-500">Numbers show comparison order (1st A paired with 1st B)</p>
       )}
     </div>
   );
@@ -248,7 +248,7 @@ function MultiAppChecklist({ apps, selectedIds, loading, onToggle, onSelectAll, 
 function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChange, onUpdate, onLoadEnvs, onLoadApps, onSelectApp, hideAppSelector, collapsed, onToggleCollapse }) {
   const { bgId, envId, envs, apps, appId, loadingEnvs, loadingApps, loadingDetail, cpsUrl, cpsEnv, cpsKey, cpsClientId, cpsClientSecret, credsResolved } = state;
   const [showSecret, setShowSecret] = useState(false);
-  const isBlue = color === 'border-blue-700/50';
+  const isBlue = color === 'border-blue-300/50';
   const showEnvInLabel = bgId === '__all__' || !envId;
   const bgName = filteredBgs.find(g => g.id === bgId)?.name || (bgId === '__all__' ? 'All BGs' : '—');
   const envName = envs.find(e => e.id === envId)?.name || (envId === '__all__' ? 'All Envs' : '—');
@@ -257,20 +257,20 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
 
   if (collapsed) {
     return (
-      <div className={`flex-1 min-w-0 bg-gray-900 border ${color} rounded-xl`}>
-        <button onClick={onToggleCollapse} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/20 transition-colors">
+      <div className={`flex-1 min-w-0 bg-white border ${color} rounded-xl`}>
+        <button onClick={onToggleCollapse} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100/20 transition-colors">
           <div className="flex items-center gap-2 min-w-0">
-            <p className={`text-xs font-bold uppercase tracking-wider flex-shrink-0 ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>{label}</p>
+            <p className={`text-xs font-bold uppercase tracking-wider flex-shrink-0 ${isBlue ? 'text-blue-600' : 'text-orange-600'}`}>{label}</p>
             {bgId ? (
-              <span className="text-[10px] text-gray-400 truncate">
+              <span className="text-[10px] text-gray-500 truncate">
                 {bgName} · {envName}
-                {appSummary !== '—' && <span className={`ml-1 font-medium ${isBlue ? 'text-blue-300' : 'text-orange-300'}`}> · {appSummary}</span>}
+                {appSummary !== '—' && <span className={`ml-1 font-medium ${isBlue ? 'text-blue-700' : 'text-orange-700'}`}> · {appSummary}</span>}
               </span>
-            ) : <span className="text-[10px] text-gray-600">not configured</span>}
+            ) : <span className="text-[10px] text-gray-500">not configured</span>}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {credsResolved && <span className="text-[9px] text-emerald-400">🔑</span>}
-            <span className="text-gray-500 text-[10px] border border-gray-700 rounded px-1.5 py-0.5 bg-gray-800">▼ Edit</span>
+            {credsResolved && <span className="text-[9px] text-emerald-600">🔑</span>}
+            <span className="text-gray-500 text-[10px] border border-gray-300 rounded px-1.5 py-0.5 bg-gray-100">▼ Edit</span>
           </div>
         </button>
       </div>
@@ -278,14 +278,14 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
   }
 
   const bgOptions = [
-    { value: '__all__', label: 'All Organizations', tag: `${filteredBgs.length}`, tagColor: 'bg-gray-700 text-gray-300' },
-    ...filteredBgs.map(g => ({ value: g.id, label: g.name, tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400', indent: !!g.parentId })),
+    { value: '__all__', label: 'All Organizations', tag: `${filteredBgs.length}`, tagColor: 'bg-gray-200 text-gray-600' },
+    ...filteredBgs.map(g => ({ value: g.id, label: g.name, tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-100 text-blue-600', indent: !!g.parentId })),
   ];
 
   const visibleEnvs = applyEnvFilter(envs);
   const envOptions = [
     { value: '__all__', label: 'All Environments' },
-    ...visibleEnvs.map(e => ({ value: e.id, label: e.name, badge: true, badgeColor: ENV_BADGE[e.type] || 'bg-gray-400', tag: e.type, tagColor: ENV_TAG[e.type] || 'bg-gray-700 text-gray-400' })),
+    ...visibleEnvs.map(e => ({ value: e.id, label: e.name, badge: true, badgeColor: ENV_BADGE[e.type] || 'bg-gray-400', tag: e.type, tagColor: ENV_TAG[e.type] || 'bg-gray-200 text-gray-500' })),
   ];
 
   // App options: when showing all, include env name in label for disambiguation
@@ -293,20 +293,20 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
     value: `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`,
     label: showEnvInLabel ? `${a.name} (${a.environment?.name || ''})` : a.name,
     tag: a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1',
-    tagColor: a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400',
+    tagColor: a.deploymentType === 'CloudHub 2.0' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600',
   }));
 
   return (
-    <div className={`flex-1 min-w-0 bg-gray-900 border ${color} rounded-xl p-4 space-y-3`}>
+    <div className={`flex-1 min-w-0 bg-white border ${color} rounded-xl p-4 space-y-3`}>
       <div className="flex items-center justify-between">
-        <p className={`text-xs font-bold uppercase tracking-wider ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>{label}</p>
+        <p className={`text-xs font-bold uppercase tracking-wider ${isBlue ? 'text-blue-600' : 'text-orange-600'}`}>{label}</p>
         <div className="flex items-center gap-2">
           {credsResolved && (
-            <span className="flex items-center gap-1 text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-1.5 py-0.5 rounded">
+            <span className="flex items-center gap-1 text-[9px] text-emerald-600 bg-emerald-50 border border-emerald-300/40 px-1.5 py-0.5 rounded">
               <Key size={8} /> CPS creds
             </span>
           )}
-          <button onClick={onToggleCollapse} className="text-[10px] text-gray-500 hover:text-gray-300 border border-gray-700 rounded px-1.5 py-0.5 bg-gray-800/60 transition-colors">
+          <button onClick={onToggleCollapse} className="text-[10px] text-gray-500 hover:text-gray-900 border border-gray-300 rounded px-1.5 py-0.5 bg-gray-100/60 transition-colors">
             ▲ Collapse
           </button>
         </div>
@@ -318,8 +318,8 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
           <button key={opt.value} onClick={() => onPropTypeChange(opt.value)}
             className={`flex-1 text-[10px] py-1 px-1.5 rounded-lg border font-medium transition-all text-center ${
               propType === opt.value
-                ? (isBlue ? 'bg-blue-600/20 border-blue-600/50 text-blue-300' : 'bg-orange-600/20 border-orange-600/50 text-orange-300')
-                : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
+                ? (isBlue ? 'bg-blue-100 border-blue-300/50 text-blue-700' : 'bg-orange-100 border-orange-300/50 text-orange-700')
+                : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900'
             }`}>
             {opt.value === 'non-secure' ? 'Non-Secure' : opt.value === 'secure' ? 'Secure' : 'Binaries'}
           </button>
@@ -345,7 +345,7 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
       {/* Env — optional; "All Environments" triggers loading all apps */}
       <div>
         <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
-          Environment {loadingEnvs && <RefreshCw size={9} className="animate-spin text-gray-600" />}
+          Environment {loadingEnvs && <RefreshCw size={9} className="animate-spin text-gray-500" />}
         </p>
         <Select
           value={envId || '__all__'}
@@ -361,9 +361,9 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
       {!hideAppSelector ? (
         <div>
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
-            Application {loadingApps && <RefreshCw size={9} className="animate-spin text-gray-600" />}
-            {loadingDetail && <span className="text-[9px] text-cyan-400 ml-1">Resolving CPS config…</span>}
-            {apps.length > 0 && <span className="text-[9px] text-gray-600 ml-auto">{apps.length} apps</span>}
+            Application {loadingApps && <RefreshCw size={9} className="animate-spin text-gray-500" />}
+            {loadingDetail && <span className="text-[9px] text-cyan-600 ml-1">Resolving CPS config…</span>}
+            {apps.length > 0 && <span className="text-[9px] text-gray-500 ml-auto">{apps.length} apps</span>}
           </p>
           <Select
             value={appId}
@@ -393,45 +393,45 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
       )}
 
       {/* CPS config — auto-filled, editable */}
-      <div className="pt-2 border-t border-gray-800/60 space-y-2">
+      <div className="pt-2 border-t border-gray-200/60 space-y-2">
         <p className="text-[10px] text-gray-500 uppercase tracking-wider">CPS Configuration (auto-filled)</p>
         <div>
-          <label className="text-[10px] text-gray-600 block mb-0.5">CPS Base URL</label>
+          <label className="text-[10px] text-gray-500 block mb-0.5">CPS Base URL</label>
           <input value={cpsUrl} onChange={e => onUpdate({ cpsUrl: e.target.value })} placeholder="https://cps-server.api.sfdcbt.net"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
+            className="w-full bg-gray-100 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 font-mono focus:outline-none focus:border-cyan-300/50 placeholder-gray-400" />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="text-[10px] text-gray-600 block mb-0.5">CPS Environment</label>
+            <label className="text-[10px] text-gray-500 block mb-0.5">CPS Environment</label>
             <input value={cpsEnv} onChange={e => onUpdate({ cpsEnv: e.target.value })} placeholder="prod / uat"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
+              className="w-full bg-gray-100 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 font-mono focus:outline-none focus:border-cyan-300/50 placeholder-gray-400" />
           </div>
           <div>
-            <label className="text-[10px] text-gray-600 block mb-0.5">Project Key</label>
+            <label className="text-[10px] text-gray-500 block mb-0.5">Project Key</label>
             <input value={cpsKey} onChange={e => onUpdate({ cpsKey: e.target.value })} placeholder="my-api-name"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
+              className="w-full bg-gray-100 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 font-mono focus:outline-none focus:border-cyan-300/50 placeholder-gray-400" />
           </div>
         </div>
         {/* CPS Credentials — shown after auto-resolve; editable for override */}
-        <div className="pt-1 border-t border-gray-800/40 space-y-1.5">
-          <p className="text-[10px] text-gray-600 flex items-center gap-1"><Key size={8} /> CPS Credentials (auto-resolved · override if needed)</p>
+        <div className="pt-1 border-t border-gray-200/40 space-y-1.5">
+          <p className="text-[10px] text-gray-500 flex items-center gap-1"><Key size={8} /> CPS Credentials (auto-resolved · override if needed)</p>
           <div>
-            <label className="text-[10px] text-gray-600 block mb-0.5">Client ID</label>
+            <label className="text-[10px] text-gray-500 block mb-0.5">Client ID</label>
             <input value={cpsClientId} onChange={e => onUpdate({ cpsClientId: e.target.value, credsResolved: !!e.target.value })} placeholder="auto-resolved"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600" />
+              className="w-full bg-gray-100 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 font-mono focus:outline-none focus:border-cyan-300/50 placeholder-gray-400" />
           </div>
           <div>
-            <label className="text-[10px] text-gray-600 block mb-0.5">Client Secret</label>
+            <label className="text-[10px] text-gray-500 block mb-0.5">Client Secret</label>
             <div className="relative">
               <input
                 type={showSecret ? 'text' : 'password'}
                 value={cpsClientSecret}
                 onChange={e => onUpdate({ cpsClientSecret: e.target.value })}
                 placeholder="auto-resolved"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 pr-8 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50 placeholder-gray-600"
+                className="w-full bg-gray-100 border border-gray-300 rounded-lg px-2.5 py-1.5 pr-8 text-xs text-gray-700 font-mono focus:outline-none focus:border-cyan-300/50 placeholder-gray-400"
               />
               <button onClick={() => setShowSecret(v => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-900">
                 {showSecret ? <EyeOff size={11} /> : <Eye size={11} />}
               </button>
             </div>
@@ -1105,16 +1105,16 @@ export default function CpsComparisonPage() {
   };
 
   const STATUS_ROW = {
-    different: 'bg-red-950/20 border-l-2 border-red-500',
-    'only-a':  'bg-blue-950/20 border-l-2 border-blue-500',
-    'only-b':  'bg-amber-950/20 border-l-2 border-amber-500',
+    different: 'bg-red-50/20 border-l-2 border-red-500',
+    'only-a':  'bg-blue-50/20 border-l-2 border-blue-500',
+    'only-b':  'bg-amber-50/20 border-l-2 border-amber-500',
     matching:  'opacity-50',   // muted — eye focuses on diffs
   };
   const STATUS_BADGE = {
-    different: 'text-red-300 bg-red-500/20 border-red-600/60 ring-1 ring-red-500/20',
-    'only-a':  'text-blue-300 bg-blue-500/20 border-blue-600/60',
-    'only-b':  'text-amber-300 bg-amber-500/20 border-amber-600/60',
-    matching:  'text-gray-600 bg-gray-700/20 border-gray-700/40',
+    different: 'text-red-700 bg-red-100 border-red-300/60 ring-1 ring-red-200',
+    'only-a':  'text-blue-700 bg-blue-100 border-blue-300/60',
+    'only-b':  'text-amber-700 bg-amber-100 border-amber-300/60',
+    matching:  'text-gray-500 bg-gray-200/20 border-gray-300/40',
   };
   const STATUS_LABEL = { different: 'DIFF', 'only-a': 'A ONLY', 'only-b': 'B ONLY', matching: 'MATCH' };
 
@@ -1127,23 +1127,23 @@ export default function CpsComparisonPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <GitCompare size={20} className="text-cyan-400" /> CPS Properties Comparison
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <GitCompare size={20} className="text-cyan-600" /> CPS Properties Comparison
           </h1>
-          <p className="text-gray-400 text-sm mt-1">Compare CPS property values between two environments side-by-side</p>
+          <p className="text-gray-500 text-sm mt-1">Compare CPS property values between two environments side-by-side</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* CPS credentials import */}
           <CpsCredentialImportButton />
           {/* BG Filter button */}
           <button onClick={() => setShowBgFilter(true)}
-            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${filterActive ? 'bg-blue-600/20 border-blue-600/50 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'}`}>
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${filterActive ? 'bg-blue-100 border-blue-300/50 text-blue-600' : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900'}`}>
             <SlidersHorizontal size={11} />
             {filterActive ? `${filteredBgs.length}/${allBgs.length} BGs` : 'Filter BGs'}
           </button>
           {hasResults && (
             <button onClick={exportCsv}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 rounded-lg transition-colors">
+              className="flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 hover:bg-emerald-50/60 border border-emerald-200/50 rounded-lg transition-colors">
               <Download size={12} /> Export CSV
             </button>
           )}
@@ -1154,7 +1154,7 @@ export default function CpsComparisonPage() {
       <div className="flex flex-col lg:flex-row gap-4 items-stretch">
         <SidePanel
           label="Side A"
-          color="border-blue-700/50"
+          color="border-blue-300/50"
           state={sideA}
           filteredBgs={filteredBgs}
           propType={propTypeA}
@@ -1171,21 +1171,21 @@ export default function CpsComparisonPage() {
         {/* Swap + Compare button column */}
         <div className="flex lg:flex-col items-center justify-center gap-3 lg:py-4">
           <button onClick={swapSides} title="Swap sides"
-            className="p-2 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-700 transition-colors">
+            className="p-2 text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300 transition-colors">
             <ArrowLeftRight size={14} />
           </button>
           {/* Mode toggle */}
-          <div className="flex gap-1 bg-gray-800 rounded-lg p-0.5 border border-gray-700">
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 border border-gray-300">
             {['single', 'multi'].map(m => (
               <button key={m} onClick={() => setCompareMode(m)}
-                className={`text-[10px] px-2 py-1 rounded-md font-medium transition-all ${compareMode === m ? 'bg-cyan-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                className={`text-[10px] px-2 py-1 rounded-md font-medium transition-all ${compareMode === m ? 'bg-cyan-700 text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}>
                 {m === 'single' ? '1 App' : 'All Apps'}
               </button>
             ))}
           </div>
           <button onClick={compareMode === 'multi' ? compareAll : compare}
             disabled={comparing || !canCompare}
-            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded-lg transition-colors">
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-gray-900 rounded-lg transition-colors">
             {comparing
               ? <><RefreshCw size={13} className="animate-spin" /> {compareMode === 'multi' && compareProgress.total > 0 ? `${compareProgress.done}/${compareProgress.total}` : 'Comparing…'}</>
               : <><GitCompare size={13} /> {compareMode === 'multi' ? `Compare (${multiAppCount})` : 'Compare'}</>}
@@ -1194,7 +1194,7 @@ export default function CpsComparisonPage() {
 
         <SidePanel
           label="Side B"
-          color="border-orange-700/50"
+          color="border-orange-300/50"
           state={sideB}
           filteredBgs={filteredBgs}
           propType={propTypeB}
@@ -1213,13 +1213,13 @@ export default function CpsComparisonPage() {
       {(errorA || errorB) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {errorA && (
-            <div className="flex items-start gap-2 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3 text-red-400 text-xs">
+            <div className="flex items-start gap-2 bg-red-50/30 border border-red-200/50 rounded-xl px-4 py-3 text-red-600 text-xs">
               <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
               <span><strong>Side A:</strong> {errorA}</span>
             </div>
           )}
           {errorB && (
-            <div className={`flex items-start gap-2 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3 text-red-400 text-xs ${!errorA ? 'lg:col-start-2' : ''}`}>
+            <div className={`flex items-start gap-2 bg-red-50/30 border border-red-200/50 rounded-xl px-4 py-3 text-red-600 text-xs ${!errorA ? 'lg:col-start-2' : ''}`}>
               <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
               <span><strong>Side B:</strong> {errorB}</span>
             </div>
@@ -1236,7 +1236,7 @@ export default function CpsComparisonPage() {
               {['all', 'different', 'only-a', 'only-b', 'matching'].map(f => (
                 <button key={f} onClick={() => setFilter(f)}
                   className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${
-                    filter === f ? 'bg-cyan-600/20 border-cyan-600/60 text-cyan-300' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+                    filter === f ? 'bg-cyan-100 border-cyan-300/60 text-cyan-700' : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900'
                   }`}>
                   {f === 'all' ? `All (${stats.total})`
                     : f === 'different' ? `🔴 Diff (${stats.different})`
@@ -1253,10 +1253,10 @@ export default function CpsComparisonPage() {
                 title="Hide matching rows"
                 className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-all ${
                   showDiffsOnly
-                    ? 'bg-cyan-600/20 border-cyan-600/50 text-cyan-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
+                    ? 'bg-cyan-100 border-cyan-300/50 text-cyan-700'
+                    : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900'
                 }`}>
-                <span className={`w-6 h-3.5 rounded-full flex items-center transition-colors ${showDiffsOnly ? 'bg-cyan-600' : 'bg-gray-600'}`}>
+                <span className={`w-6 h-3.5 rounded-full flex items-center transition-colors ${showDiffsOnly ? 'bg-cyan-600' : 'bg-gray-200'}`}>
                   <span className={`w-2.5 h-2.5 rounded-full bg-white shadow transition-transform mx-0.5 ${showDiffsOnly ? 'translate-x-2.5' : 'translate-x-0'}`} />
                 </span>
                 Diffs Only
@@ -1276,7 +1276,7 @@ export default function CpsComparisonPage() {
                     a.download = `cps-diffs-only-${new Date().toISOString().slice(0, 10)}.csv`;
                     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
                   }}
-                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border text-red-400 bg-red-950/30 border-red-800/50 hover:bg-red-950/50 transition-colors">
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border text-red-600 bg-red-50/30 border-red-200/50 hover:bg-red-50/50 transition-colors">
                   <Download size={11} /> Export Diffs
                 </button>
               )}
@@ -1288,17 +1288,17 @@ export default function CpsComparisonPage() {
               <div className="relative">
                 <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter by key or value…"
-                  className="bg-gray-800 border border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600/50 w-48" />
+                  className="bg-gray-100 border border-gray-300 rounded-lg pl-7 pr-3 py-1.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-cyan-300/50 w-48" />
               </div>
             </div>
           </div>
 
           {/* Diff table */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             {/* Feature 3: scroll container wraps both headers and rows so sticky top-0 works */}
-            <div className="divide-y divide-gray-800/40 max-h-[60vh] overflow-y-auto">
+            <div className="divide-y divide-gray-200/40 max-h-[60vh] overflow-y-auto">
               {/* Sticky column headers */}
-              <div className="grid grid-cols-[36px_1fr_1fr_1fr_80px] bg-gray-800/95 text-gray-400 text-[10px] uppercase tracking-wider px-4 py-2.5 gap-3 sticky top-0 z-10 backdrop-blur-sm border-b border-gray-700/60">
+              <div className="grid grid-cols-[36px_1fr_1fr_1fr_80px] bg-gray-100/95 text-gray-500 text-[10px] uppercase tracking-wider px-4 py-2.5 gap-3 sticky top-0 z-10 backdrop-blur-sm border-b border-gray-300/60">
                 <span className="text-center">#</span>
                 <span>Property Key</span>
                 <span>Side A ({sideA.cpsKey || '—'})</span>
@@ -1317,9 +1317,9 @@ export default function CpsComparisonPage() {
                       lastGroup = row.groupName;
                       rendered.push(
                         <div key={`__group__${row.groupName}`}
-                          className="col-span-full px-4 py-1.5 bg-gray-800/70 border-b border-gray-700/60 flex items-center gap-2">
+                          className="col-span-full px-4 py-1.5 bg-gray-100/70 border-b border-gray-300/60 flex items-center gap-2">
                           <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Group</span>
-                          <span className="font-mono text-[10px] text-cyan-400/80 font-semibold">{row.groupName}</span>
+                          <span className="font-mono text-[10px] text-cyan-600/80 font-semibold">{row.groupName}</span>
                         </div>
                       );
                     }
@@ -1328,14 +1328,14 @@ export default function CpsComparisonPage() {
                     rendered.push(
                       <div key={row.key}
                         onClick={() => clickable && setDiffRow(row)}
-                        className={`grid grid-cols-[36px_1fr_1fr_1fr_80px] gap-3 px-4 py-2.5 transition-colors hover:bg-gray-800/20 ${STATUS_ROW[row.status] || ''} ${clickable ? 'cursor-pointer' : ''}`}>
+                        className={`grid grid-cols-[36px_1fr_1fr_1fr_80px] gap-3 px-4 py-2.5 transition-colors hover:bg-gray-100/20 ${STATUS_ROW[row.status] || ''} ${clickable ? 'cursor-pointer' : ''}`}>
                         {/* Line number */}
                         <div className="flex items-center justify-center">
-                          <span className="text-[10px] text-gray-600 font-mono select-none">{lineNum}</span>
+                          <span className="text-[10px] text-gray-500 font-mono select-none">{lineNum}</span>
                         </div>
                         {/* Key */}
                         <div className="flex items-center gap-1.5 min-w-0" onClick={e => e.stopPropagation()}>
-                          <span className="font-mono text-xs text-gray-300 truncate" title={row.displayKey}>{row.displayKey}</span>
+                          <span className="font-mono text-xs text-gray-600 truncate" title={row.displayKey}>{row.displayKey}</span>
                           <CopyBtn text={row.displayKey} />
                         </div>
                         {/* Value A — inline word-diff for DIFF rows */}
@@ -1347,16 +1347,16 @@ export default function CpsComparisonPage() {
                                 return (
                                   <span className="font-mono text-xs leading-snug break-all line-clamp-2 flex-1 min-w-0" title={row.valA}>
                                     {aTokens.map((t, i) => (
-                                      <span key={i} className={t.changed ? 'bg-red-500/25 text-red-200 rounded-sm px-0.5' : 'text-gray-300'}>{t.word}</span>
+                                      <span key={i} className={t.changed ? 'bg-red-500/25 text-red-200 rounded-sm px-0.5' : 'text-gray-600'}>{t.word}</span>
                                     ))}
                                   </span>
                                 );
                               })() : (
-                                <span className="font-mono text-xs text-gray-300 truncate" title={row.valA}>{row.valA}</span>
+                                <span className="font-mono text-xs text-gray-600 truncate" title={row.valA}>{row.valA}</span>
                               )}
                               <CopyBtn text={row.valA} />
                             </>
-                          ) : <span className="text-[10px] text-gray-700 italic">not set</span>}
+                          ) : <span className="text-[10px] text-gray-500 italic">not set</span>}
                         </div>
                         {/* Value B — inline word-diff for DIFF rows */}
                         <div className="flex items-center gap-1.5 min-w-0" onClick={e => e.stopPropagation()}>
@@ -1367,16 +1367,16 @@ export default function CpsComparisonPage() {
                                 return (
                                   <span className="font-mono text-xs leading-snug break-all line-clamp-2 flex-1 min-w-0" title={row.valB}>
                                     {bTokens.map((t, i) => (
-                                      <span key={i} className={t.changed ? 'bg-amber-500/25 text-amber-200 rounded-sm px-0.5' : 'text-gray-300'}>{t.word}</span>
+                                      <span key={i} className={t.changed ? 'bg-amber-500/25 text-amber-200 rounded-sm px-0.5' : 'text-gray-600'}>{t.word}</span>
                                     ))}
                                   </span>
                                 );
                               })() : (
-                                <span className="font-mono text-xs text-gray-300 truncate" title={row.valB}>{row.valB}</span>
+                                <span className="font-mono text-xs text-gray-600 truncate" title={row.valB}>{row.valB}</span>
                               )}
                               <CopyBtn text={row.valB} />
                             </>
-                          ) : <span className="text-[10px] text-gray-700 italic">not set</span>}
+                          ) : <span className="text-[10px] text-gray-500 italic">not set</span>}
                         </div>
                         {/* Status badge — clickable for non-matching rows */}
                         <div className="flex items-center justify-center">
@@ -1393,10 +1393,10 @@ export default function CpsComparisonPage() {
 
             {/* Footer */}
             {displayRows.length > 0 && (
-              <div className="px-4 py-2 bg-gray-800/30 border-t border-gray-800 text-[10px] text-gray-600 flex items-center justify-between">
+              <div className="px-4 py-2 bg-gray-100/30 border-t border-gray-200 text-[10px] text-gray-500 flex items-center justify-between">
                 <span>Showing {displayRows.length} of {diff.length} properties{search && ` · search "${search}" matches keys and values`}</span>
                 {stats.different + stats['only-a'] + stats['only-b'] > 0 && (
-                  <span className="text-gray-700">Click any 🔴🔵🟠 row to see the diff detail</span>
+                  <span className="text-gray-500">Click any 🔴🔵🟠 row to see the diff detail</span>
                 )}
               </div>
             )}
@@ -1416,9 +1416,9 @@ export default function CpsComparisonPage() {
 
       {/* Empty state after compare */}
       {hasResults && diff.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-gray-900 border border-gray-800 rounded-xl">
-          <GitCompare size={40} className="text-gray-700" />
-          <p className="text-gray-400 text-sm">No properties found — check the CPS URL, credentials and project key.</p>
+        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white border border-gray-200 rounded-xl">
+          <GitCompare size={40} className="text-gray-500" />
+          <p className="text-gray-500 text-sm">No properties found — check the CPS URL, credentials and project key.</p>
         </div>
       )}
 
@@ -1426,10 +1426,10 @@ export default function CpsComparisonPage() {
       {compareMode === 'multi' && multiResults.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <p className="text-sm text-gray-400">
-              <span className="text-white font-semibold">{multiResults.length}</span> apps compared ·{' '}
-              <span className="text-red-400">{multiResults.filter(r => r.stats.different > 0 || r.stats['only-a'] > 0 || r.stats['only-b'] > 0).length} with diffs</span> ·{' '}
-              <span className="text-emerald-400">{multiResults.filter(r => r.stats.different === 0 && r.stats['only-a'] === 0 && r.stats['only-b'] === 0 && r.stats.total > 0).length} identical</span>
+            <p className="text-sm text-gray-500">
+              <span className="text-gray-900 font-semibold">{multiResults.length}</span> apps compared ·{' '}
+              <span className="text-red-600">{multiResults.filter(r => r.stats.different > 0 || r.stats['only-a'] > 0 || r.stats['only-b'] > 0).length} with diffs</span> ·{' '}
+              <span className="text-emerald-600">{multiResults.filter(r => r.stats.different === 0 && r.stats['only-a'] === 0 && r.stats['only-b'] === 0 && r.stats.total > 0).length} identical</span>
             </p>
             <button
               onClick={() => {
@@ -1442,7 +1442,7 @@ export default function CpsComparisonPage() {
                 a.href = url; a.download = `cps-multi-comparison-${new Date().toISOString().slice(0, 10)}.csv`;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 rounded-lg transition-colors">
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 border border-emerald-200/50 rounded-lg transition-colors">
               <Download size={11} /> Export All CSV
             </button>
           </div>
@@ -1451,43 +1451,43 @@ export default function CpsComparisonPage() {
             const isExpanded = expandedApps.has(mr.appName);
             const hasDiffs = mr.stats.different > 0 || mr.stats['only-a'] > 0 || mr.stats['only-b'] > 0;
             return (
-              <div key={mr.appName} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <div key={mr.appName} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 {/* App header row */}
                 <button
                   onClick={() => setExpandedApps(prev => { const n = new Set(prev); n.has(mr.appName) ? n.delete(mr.appName) : n.add(mr.appName); return n; })}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/30 transition-colors">
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100/30 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="font-mono text-sm text-white font-medium truncate">{mr.appName}</span>
-                    {!mr.appB && <span className="text-[9px] text-orange-400 bg-orange-950/30 border border-orange-800/40 px-1.5 py-0.5 rounded">No match in B</span>}
-                    {mr.errorA && <span className="text-[9px] text-red-400">A: {mr.errorA}</span>}
-                    {mr.errorB && <span className="text-[9px] text-orange-400">B: {mr.errorB}</span>}
+                    <span className="font-mono text-sm text-gray-900 font-medium truncate">{mr.appName}</span>
+                    {!mr.appB && <span className="text-[9px] text-orange-600 bg-orange-50/30 border border-orange-200/40 px-1.5 py-0.5 rounded">No match in B</span>}
+                    {mr.errorA && <span className="text-[9px] text-red-600">A: {mr.errorA}</span>}
+                    {mr.errorB && <span className="text-[9px] text-orange-600">B: {mr.errorB}</span>}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     {hasDiffs
-                      ? <span className="text-xs text-red-400 font-semibold">🔴 {mr.stats.different + mr.stats['only-a'] + mr.stats['only-b']} diffs</span>
-                      : mr.stats.total > 0 ? <span className="text-xs text-emerald-400 font-semibold">✅ identical</span>
-                      : <span className="text-xs text-gray-600">—</span>}
-                    <span className="text-gray-600 text-xs">{mr.stats.total} props</span>
+                      ? <span className="text-xs text-red-600 font-semibold">🔴 {mr.stats.different + mr.stats['only-a'] + mr.stats['only-b']} diffs</span>
+                      : mr.stats.total > 0 ? <span className="text-xs text-emerald-600 font-semibold">✅ identical</span>
+                      : <span className="text-xs text-gray-500">—</span>}
+                    <span className="text-gray-500 text-xs">{mr.stats.total} props</span>
                     <span className={`text-gray-500 text-xs transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
                   </div>
                 </button>
 
                 {/* Expanded diff rows */}
                 {isExpanded && mr.diff.length > 0 && (
-                  <div className="border-t border-gray-800">
-                    <div className="grid grid-cols-[36px_1fr_1fr_1fr_80px] bg-gray-800/40 text-gray-500 text-[9px] uppercase tracking-wider px-4 py-1.5 gap-3">
+                  <div className="border-t border-gray-200">
+                    <div className="grid grid-cols-[36px_1fr_1fr_1fr_80px] bg-gray-100/40 text-gray-500 text-[9px] uppercase tracking-wider px-4 py-1.5 gap-3">
                       <span className="text-center">#</span>
                       <span>Key</span><span>Side A</span><span>Side B</span><span className="text-center">Status</span>
                     </div>
-                    <div className="divide-y divide-gray-800/30 max-h-64 overflow-y-auto">
+                    <div className="divide-y divide-gray-200/30 max-h-64 overflow-y-auto">
                       {mr.diff.filter(d => d.status !== 'matching').concat(mr.diff.filter(d => d.status === 'matching')).map((row, idx) => (
                         <div key={row.key}
                           onClick={() => (row.status !== 'matching') && setDiffRow(row)}
-                          className={`grid grid-cols-[36px_1fr_1fr_1fr_80px] gap-3 px-4 py-2 text-xs transition-colors hover:bg-gray-800/20 ${STATUS_ROW[row.status] || ''} ${row.status !== 'matching' ? 'cursor-pointer' : ''}`}>
-                          <span className="flex items-center justify-center text-[10px] text-gray-700 font-mono">{idx + 1}</span>
-                          <span className="font-mono text-gray-300 truncate" title={row.displayKey}>{row.displayKey}</span>
-                          <span className={`font-mono truncate ${row.status === 'different' ? 'text-red-300' : 'text-gray-400'}`}>{row.valA ?? <em className="text-gray-700">not set</em>}</span>
-                          <span className={`font-mono truncate ${row.status === 'different' ? 'text-orange-300' : 'text-gray-400'}`}>{row.valB ?? <em className="text-gray-700">not set</em>}</span>
+                          className={`grid grid-cols-[36px_1fr_1fr_1fr_80px] gap-3 px-4 py-2 text-xs transition-colors hover:bg-gray-100/20 ${STATUS_ROW[row.status] || ''} ${row.status !== 'matching' ? 'cursor-pointer' : ''}`}>
+                          <span className="flex items-center justify-center text-[10px] text-gray-500 font-mono">{idx + 1}</span>
+                          <span className="font-mono text-gray-600 truncate" title={row.displayKey}>{row.displayKey}</span>
+                          <span className={`font-mono truncate ${row.status === 'different' ? 'text-red-700' : 'text-gray-500'}`}>{row.valA ?? <em className="text-gray-500">not set</em>}</span>
+                          <span className={`font-mono truncate ${row.status === 'different' ? 'text-orange-700' : 'text-gray-500'}`}>{row.valB ?? <em className="text-gray-500">not set</em>}</span>
                           <div className="flex items-center justify-center">
                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold ${STATUS_BADGE[row.status]}`}>{STATUS_LABEL[row.status]}</span>
                           </div>
@@ -1504,10 +1504,10 @@ export default function CpsComparisonPage() {
 
       {/* Initial empty state */}
       {!hasResults && !(compareMode === 'multi' && multiResults.length > 0) && !comparing && (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-gray-900 border border-gray-800 rounded-xl">
-          <GitCompare size={40} className="text-gray-700" />
-          <p className="text-gray-500 text-sm">Select apps on both sides, then click <strong className="text-white">Compare</strong></p>
-          <p className="text-gray-600 text-xs">CPS URL and project key will be auto-filled from the selected app's runtime properties</p>
+        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white border border-gray-200 rounded-xl">
+          <GitCompare size={40} className="text-gray-500" />
+          <p className="text-gray-500 text-sm">Select apps on both sides, then click <strong className="text-gray-900">Compare</strong></p>
+          <p className="text-gray-500 text-xs">CPS URL and project key will be auto-filled from the selected app's runtime properties</p>
         </div>
       )}
     </div>

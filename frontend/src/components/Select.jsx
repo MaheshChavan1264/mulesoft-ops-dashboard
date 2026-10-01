@@ -42,9 +42,9 @@ export default function Select({
         disabled={disabled}
         onClick={() => setOpen(!open)}
         className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-sm transition-colors
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-gray-600'}
-          ${open ? 'border-blue-500 bg-gray-800' : 'border-gray-700 bg-gray-900'}
-          text-white`}
+          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-gray-400'}
+          ${open ? 'border-sf-500 bg-white' : 'border-gray-300 bg-white'}
+          text-gray-900`}
       >
         <span className="flex items-center gap-2 min-w-0">
           {selected?.badge && (
@@ -57,24 +57,24 @@ export default function Select({
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute z-50 mt-1 w-full min-w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl overflow-hidden">
+        <div className="absolute z-50 mt-1 w-full min-w-48 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
           {searchable && (
-            <div className="px-3 py-2 border-b border-gray-700">
+            <div className="px-3 py-2 border-b border-gray-200">
               <div className="flex items-center gap-2">
-                <Search size={13} className="text-gray-500 flex-shrink-0" />
+                <Search size={13} className="text-gray-400 flex-shrink-0" />
                 <input
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search..."
-                  className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none"
+                  className="flex-1 bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none"
                 />
               </div>
             </div>
           )}
           <ul className="max-h-64 overflow-y-auto py-1">
             {filtered.length === 0 && (
-              <li className="px-4 py-3 text-sm text-gray-500 text-center">No results</li>
+              <li className="px-4 py-3 text-sm text-gray-400 text-center">No results</li>
             )}
             {filtered.map((opt) => (
               <li key={opt.value}>
@@ -82,7 +82,7 @@ export default function Select({
                   type="button"
                   onClick={() => handleSelect(opt)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors
-                    ${opt.value === value ? 'bg-blue-600/20 text-blue-300' : 'text-gray-200 hover:bg-gray-700'}
+                    ${opt.value === value ? 'bg-sf-50 text-sf-700' : 'text-gray-700 hover:bg-gray-100'}
                     ${opt.indent ? 'pl-7' : ''}`}
                 >
                   {opt.badge && (
@@ -90,11 +90,11 @@ export default function Select({
                   )}
                   <span className="flex-1 truncate">{opt.label}</span>
                   {opt.tag && (
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${opt.tagColor || 'bg-gray-700 text-gray-400'}`}>
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${opt.tagColor || 'bg-gray-200 text-gray-600'}`}>
                       {opt.tag}
                     </span>
                   )}
-                  {opt.value === value && <Check size={13} className="flex-shrink-0 text-blue-400" />}
+                  {opt.value === value && <Check size={13} className="flex-shrink-0 text-sf-600" />}
                 </button>
               </li>
             ))}

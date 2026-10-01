@@ -19,21 +19,21 @@ function EnvRow({ e, isChecked, toggle, indent = 'pl-10' }) {
   return (
     <label
       className={`flex items-center gap-3 ${indent} pr-3 py-2 cursor-pointer transition-colors ${
-        isChecked ? (isProd ? 'bg-green-950/20' : 'bg-yellow-950/10') : 'hover:bg-gray-800/40'
+        isChecked ? (isProd ? 'bg-green-50/20' : 'bg-yellow-50/10') : 'hover:bg-gray-100/40'
       }`}
     >
       <div
         onClick={() => toggle(e.id)}
         className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
           isChecked
-            ? (isProd ? 'bg-green-600 border-green-500' : 'bg-yellow-600 border-yellow-500')
-            : 'border-gray-600 hover:border-green-500'
+            ? (isProd ? 'bg-green-500 border-green-400' : 'bg-yellow-600 border-yellow-500')
+            : 'border-gray-300 hover:border-green-500'
         }`}
       >
         {isChecked && <Check size={10} className="text-white" />}
       </div>
       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-      <span className={`text-xs flex-1 ${isChecked ? 'text-white font-medium' : 'text-gray-400'}`}>{e.name}</span>
+      <span className={`text-xs flex-1 ${isChecked ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>{e.name}</span>
     </label>
   );
 }
@@ -43,20 +43,20 @@ function TypeGroupHeader({ label, ids, selected, toggleGroup, accent }) {
   const allSel = ids.every(id => selected.has(id));
   const someSel = !allSel && ids.some(id => selected.has(id));
   const cls = accent === 'green'
-    ? { dot: 'bg-green-400', text: 'text-green-500/80', check: 'bg-green-600 border-green-500', ind: 'bg-green-900/60 border-green-600', hover: 'hover:border-green-500' }
-    : { dot: 'bg-yellow-400', text: 'text-yellow-500/80', check: 'bg-yellow-600 border-yellow-500', ind: 'bg-yellow-900/60 border-yellow-600', hover: 'hover:border-yellow-500' };
+    ? { dot: 'bg-green-400', text: 'text-green-500/80', check: 'bg-green-500 border-green-400', ind: 'bg-green-100/60 border-green-300', hover: 'hover:border-green-500' }
+    : { dot: 'bg-yellow-400', text: 'text-yellow-500/80', check: 'bg-yellow-600 border-yellow-500', ind: 'bg-yellow-100/60 border-yellow-300', hover: 'hover:border-yellow-500' };
   return (
     <div onClick={() => toggleGroup(ids)}
-      className="flex items-center gap-2 pl-8 pr-3 py-1.5 cursor-pointer hover:bg-gray-800/30 transition-colors group">
+      className="flex items-center gap-2 pl-8 pr-3 py-1.5 cursor-pointer hover:bg-gray-100/30 transition-colors group">
       <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-        allSel ? cls.check : someSel ? cls.ind : `border-gray-600 ${cls.hover}`
+        allSel ? cls.check : someSel ? cls.ind : `border-gray-300 ${cls.hover}`
       }`}>
         {allSel  && <Check size={8} className="text-white" />}
         {someSel && <span className="text-[8px] font-bold leading-none" style={{ color: accent === 'green' ? '#4ade80' : '#facc15' }}>–</span>}
       </div>
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cls.dot}`} />
       <span className={`text-[10px] font-bold uppercase tracking-wider ${cls.text} flex-1`}>{label}</span>
-      <span className="text-[9px] text-gray-700">{ids.length}</span>
+      <span className="text-[9px] text-gray-500">{ids.length}</span>
     </div>
   );
 }
@@ -87,36 +87,36 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
         const otherEnvs = envs.filter(e => e.type !== 'production');
 
         return (
-          <div key={bgId} className="rounded-xl border border-gray-800/60 overflow-hidden mx-1">
+          <div key={bgId} className="rounded-xl border border-gray-200/60 overflow-hidden mx-1">
             {/* BG Header — bold, prominent */}
-            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-gray-800/50 cursor-pointer hover:bg-gray-800/80 transition-colors group select-none">
+            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-gray-100/50 cursor-pointer hover:bg-gray-100/80 transition-colors group select-none">
               {/* Tri-state checkbox */}
               <div onClick={() => toggleGroup(bgIds)}
                 className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                  allSel  ? 'bg-blue-600 border-blue-500' :
-                  someSel ? 'bg-blue-900/60 border-blue-600' :
-                  'border-gray-600 group-hover:border-blue-500'
+                  allSel  ? 'bg-blue-500 border-blue-400' :
+                  someSel ? 'bg-blue-100/60 border-blue-300' :
+                  'border-gray-300 group-hover:border-blue-500'
                 }`}>
                 {allSel  && <Check size={9} className="text-white" />}
-                {someSel && <span className="text-blue-400 text-[8px] font-bold leading-none">–</span>}
+                {someSel && <span className="text-blue-600 text-[8px] font-bold leading-none">–</span>}
               </div>
               {/* BG name (click = toggle collapse) */}
               <div className="flex items-center gap-1.5 flex-1 min-w-0" onClick={e => toggleCollapse(bgId, e)}>
-                <Building2 size={12} className="text-blue-400/70 flex-shrink-0" />
-                <span className="text-sm font-semibold text-white truncate">{bgName}</span>
+                <Building2 size={12} className="text-blue-600/70 flex-shrink-0" />
+                <span className="text-sm font-semibold text-gray-900 truncate">{bgName}</span>
               </div>
               {/* count + chevron (click = toggle collapse) */}
               <div className="flex items-center gap-2 flex-shrink-0" onClick={e => toggleCollapse(bgId, e)}>
                 {selCount > 0
-                  ? <span className="text-[10px] font-bold text-blue-300 bg-blue-600/20 border border-blue-600/40 px-1.5 py-0.5 rounded-full">{selCount}/{envs.length}</span>
-                  : <span className="text-[10px] text-gray-600">{envs.length}</span>}
+                  ? <span className="text-[10px] font-bold text-blue-700 bg-blue-100 border border-blue-300/40 px-1.5 py-0.5 rounded-full">{selCount}/{envs.length}</span>
+                  : <span className="text-[10px] text-gray-500">{envs.length}</span>}
                 <ChevronDown size={13} className={`text-gray-500 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`} />
               </div>
             </div>
 
             {/* Env rows grouped by type — hidden when BG is collapsed */}
             {!isCollapsed && (
-              <div className="border-t border-gray-800/40">
+              <div className="border-t border-gray-200/40">
                 {/* Production sub-group */}
                 {prodEnvs.length > 0 && (
                   <>
@@ -127,7 +127,7 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
                       toggleGroup={toggleGroup}
                       accent="green"
                     />
-                    <div className="divide-y divide-gray-800/20">
+                    <div className="divide-y divide-gray-200/20">
                       {prodEnvs.map(e => (
                         <EnvRow key={e.id} e={e} isChecked={selected.has(e.id)} toggle={toggle} indent="pl-14" />
                       ))}
@@ -137,7 +137,7 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
                 {/* Sandbox/UAT/Dev sub-group */}
                 {otherEnvs.length > 0 && (
                   <>
-                    {prodEnvs.length > 0 && <div className="mx-4 border-t border-gray-800/40" />}
+                    {prodEnvs.length > 0 && <div className="mx-4 border-t border-gray-200/40" />}
                     <TypeGroupHeader
                       label="Sandbox / UAT / Dev"
                       ids={otherEnvs.map(e => e.id)}
@@ -145,7 +145,7 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
                       toggleGroup={toggleGroup}
                       accent="yellow"
                     />
-                    <div className="divide-y divide-gray-800/20">
+                    <div className="divide-y divide-gray-200/20">
                       {otherEnvs.map(e => (
                         <EnvRow key={e.id} e={e} isChecked={selected.has(e.id)} toggle={toggle} indent="pl-14" />
                       ))}
@@ -252,53 +252,53 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl mx-4 flex flex-col max-h-[85vh]">
+      <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md shadow-2xl mx-4 flex flex-col max-h-[85vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-green-950/50 border border-green-800/40">
-              <SlidersHorizontal size={14} className="text-green-400" />
+            <div className="p-2 rounded-xl bg-green-50/50 border border-green-200/40">
+              <SlidersHorizontal size={14} className="text-green-600" />
             </div>
             <div>
-              <h2 className="text-white font-semibold text-sm">Environment Filter</h2>
+              <h2 className="text-gray-900 font-semibold text-sm">Environment Filter</h2>
               <p className="text-gray-500 text-xs mt-0.5">Choose which environments appear in dropdowns</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-600 hover:text-gray-300 p-1">
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-900 p-1">
             <X size={16} />
           </button>
         </div>
 
         {/* Quick-select shortcuts */}
-        <div className="flex items-center gap-2 flex-wrap px-5 py-2.5 border-b border-gray-800 bg-gray-800/20">
-          <span className="text-[9px] text-gray-600 uppercase tracking-wider font-bold flex-shrink-0">Quick select:</span>
+        <div className="flex items-center gap-2 flex-wrap px-5 py-2.5 border-b border-gray-200 bg-gray-100/20">
+          <span className="text-[9px] text-gray-500 uppercase tracking-wider font-bold flex-shrink-0">Quick select:</span>
           {allProdIds.length > 0 && (
             <button onClick={() => selectByType(allProdIds)}
-              className="flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full border bg-green-950/40 text-green-400 border-green-800/50 hover:bg-green-950/70 transition-colors font-medium">
+              className="flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full border bg-green-50/40 text-green-600 border-green-200/50 hover:bg-green-50/70 transition-colors font-medium">
               ● All Production ({allProdIds.length})
             </button>
           )}
           {allOtherIds.length > 0 && (
             <button onClick={() => selectByType(allOtherIds)}
-              className="flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full border bg-yellow-950/40 text-yellow-400 border-yellow-800/50 hover:bg-yellow-950/70 transition-colors font-medium">
+              className="flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full border bg-yellow-50/40 text-yellow-600 border-yellow-200/50 hover:bg-yellow-50/70 transition-colors font-medium">
               ● All Sandbox ({allOtherIds.length})
             </button>
           )}
           <div className="ml-auto flex items-center gap-2">
             <span className="text-[10px] text-gray-500">{selected.size}/{environments.length}</span>
-            {selected.size > 0 && <button onClick={deselectAll} className="text-[10px] text-red-500/70 hover:text-red-400 transition-colors">Clear</button>}
+            {selected.size > 0 && <button onClick={deselectAll} className="text-[10px] text-red-500/70 hover:text-red-600 transition-colors">Clear</button>}
           </div>
         </div>
 
         {/* Search */}
-        <div className="px-5 pt-3 pb-3 border-b border-gray-800 space-y-2.5">
+        <div className="px-5 pt-3 pb-3 border-b border-gray-200 space-y-2.5">
           <div className="relative">
             <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search environments…"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-8 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+              className="w-full bg-gray-100 border border-gray-300 rounded-lg pl-8 pr-4 py-2 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-green-500"
             />
           </div>
         </div>
@@ -306,7 +306,7 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
         {/* List */}
         <div className="flex-1 overflow-y-auto py-2 px-2">
           {filteredEnvs.length === 0 ? (
-            <p className="text-center text-gray-600 text-xs py-6">No environments found</p>
+            <p className="text-center text-gray-500 text-xs py-6">No environments found</p>
           ) : hasBgContext && byBg ? (
             /* ── BG-grouped collapsible view ── */
             <BgGroupedList
@@ -321,28 +321,28 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
               {prodEnvs.length > 0 && (
                 <>
                   <div onClick={() => toggleTypeGroup(prodEnvs.map(e => e.id))}
-                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group">
+                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-100/50 rounded-lg mx-1 transition-colors group">
                     <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                      prodEnvs.every(e => selected.has(e.id)) ? 'bg-green-600 border-green-500' :
-                      prodEnvs.some(e => selected.has(e.id)) ? 'bg-green-900/60 border-green-600' :
-                      'border-gray-600 group-hover:border-green-500'
+                      prodEnvs.every(e => selected.has(e.id)) ? 'bg-green-500 border-green-400' :
+                      prodEnvs.some(e => selected.has(e.id)) ? 'bg-green-100/60 border-green-300' :
+                      'border-gray-300 group-hover:border-green-500'
                     }`}>
                       {prodEnvs.every(e => selected.has(e.id)) && <Check size={8} className="text-white" />}
-                      {!prodEnvs.every(e => selected.has(e.id)) && prodEnvs.some(e => selected.has(e.id)) && <span className="text-green-400 text-[8px] font-bold leading-none">–</span>}
+                      {!prodEnvs.every(e => selected.has(e.id)) && prodEnvs.some(e => selected.has(e.id)) && <span className="text-green-600 text-[8px] font-bold leading-none">–</span>}
                     </div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-green-500/70 flex-1">Production</p>
-                    <span className="text-[9px] text-gray-600">{prodEnvs.length}</span>
+                    <span className="text-[9px] text-gray-500">{prodEnvs.length}</span>
                   </div>
                   {prodEnvs.map((e) => {
                     const isChecked = selected.has(e.id);
                     return (
-                      <label key={e.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isChecked ? 'bg-green-950/20' : 'hover:bg-gray-800/60'}`}>
-                        <div onClick={() => toggle(e.id)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-green-600 border-green-500' : 'border-gray-600 hover:border-green-500'}`}>
+                      <label key={e.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isChecked ? 'bg-green-50/20' : 'hover:bg-gray-100/60'}`}>
+                        <div onClick={() => toggle(e.id)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-green-500 border-green-400' : 'border-gray-300 hover:border-green-500'}`}>
                           {isChecked && <Check size={10} className="text-white" />}
                         </div>
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>{e.name}</span>
-                        <span className="text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-1.5 py-0.5 rounded-full font-semibold">PROD</span>
+                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-gray-900' : 'text-gray-500'}`}>{e.name}</span>
+                        <span className="text-[9px] bg-green-100 text-green-600 border border-green-200 px-1.5 py-0.5 rounded-full font-semibold">PROD</span>
                       </label>
                     );
                   })}
@@ -350,30 +350,30 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
               )}
               {otherEnvs.length > 0 && (
                 <>
-                  {prodEnvs.length > 0 && <div className="mx-3 my-1 border-t border-gray-800/60" />}
+                  {prodEnvs.length > 0 && <div className="mx-3 my-1 border-t border-gray-200/60" />}
                   <div onClick={() => toggleTypeGroup(otherEnvs.map(e => e.id))}
-                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-800/50 rounded-lg mx-1 transition-colors group">
+                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-100/50 rounded-lg mx-1 transition-colors group">
                     <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
                       otherEnvs.every(e => selected.has(e.id)) ? 'bg-yellow-600 border-yellow-500' :
-                      otherEnvs.some(e => selected.has(e.id)) ? 'bg-yellow-900/60 border-yellow-600' :
-                      'border-gray-600 group-hover:border-yellow-500'
+                      otherEnvs.some(e => selected.has(e.id)) ? 'bg-yellow-100/60 border-yellow-300' :
+                      'border-gray-300 group-hover:border-yellow-500'
                     }`}>
                       {otherEnvs.every(e => selected.has(e.id)) && <Check size={8} className="text-white" />}
-                      {!otherEnvs.every(e => selected.has(e.id)) && otherEnvs.some(e => selected.has(e.id)) && <span className="text-yellow-400 text-[8px] font-bold leading-none">–</span>}
+                      {!otherEnvs.every(e => selected.has(e.id)) && otherEnvs.some(e => selected.has(e.id)) && <span className="text-yellow-600 text-[8px] font-bold leading-none">–</span>}
                     </div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-yellow-500/70 flex-1">Sandbox / Other</p>
-                    <span className="text-[9px] text-gray-600">{otherEnvs.length}</span>
+                    <span className="text-[9px] text-gray-500">{otherEnvs.length}</span>
                   </div>
                   {otherEnvs.map((e) => {
                     const isChecked = selected.has(e.id);
                     return (
-                      <label key={e.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isChecked ? 'bg-yellow-950/10' : 'hover:bg-gray-800/60'}`}>
-                        <div onClick={() => toggle(e.id)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-yellow-600 border-yellow-500' : 'border-gray-600 hover:border-yellow-500'}`}>
+                      <label key={e.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isChecked ? 'bg-yellow-50/10' : 'hover:bg-gray-100/60'}`}>
+                        <div onClick={() => toggle(e.id)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-yellow-600 border-yellow-500' : 'border-gray-300 hover:border-yellow-500'}`}>
                           {isChecked && <Check size={10} className="text-white" />}
                         </div>
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_TYPE_COLOR[e.type] || 'bg-gray-400'}`} />
-                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>{e.name}</span>
-                        <span className="text-[9px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.5 rounded-full font-semibold capitalize">{e.type || 'sandbox'}</span>
+                        <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-gray-900' : 'text-gray-500'}`}>{e.name}</span>
+                        <span className="text-[9px] bg-yellow-100 text-yellow-600 border border-yellow-200 px-1.5 py-0.5 rounded-full font-semibold capitalize">{e.type || 'sandbox'}</span>
                       </label>
                     );
                   })}
@@ -384,17 +384,17 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-800 gap-3">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200 gap-3">
           <button
             onClick={handleReset}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition-colors"
             title="Show all environments (clear filter)"
           >
             <RefreshCw size={11} /> Reset (show all)
           </button>
           <div className="flex gap-3">
             <button onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
               Cancel
             </button>
             <button

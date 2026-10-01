@@ -93,8 +93,8 @@ export default function Tooltip({
           className="pointer-events-none"
           role="tooltip"
         >
-          <div className="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 shadow-xl max-w-xs">
-            <p className="text-xs text-white font-medium leading-snug">{content}</p>
+          <div className="bg-gray-100 border border-gray-300 rounded-lg px-2.5 py-1.5 shadow-xl max-w-xs">
+            <p className="text-xs text-gray-900 font-medium leading-snug">{content}</p>
             {sub && <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{sub}</p>}
           </div>
         </div>

@@ -5,6 +5,7 @@ import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, G
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 import CpsRawJsonModal from '../components/CpsRawJsonModal';
+import PostmanJsonViewer from '../components/PostmanJsonViewer';
 import PingTestPanel from '../components/PingTestPanel';
 import CopyBtn from '../components/CopyBtn';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
@@ -151,8 +152,8 @@ const CopyGroupBtn = ({ text }) => {
   const [done, setDone] = useState(false);
   const copy = () => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); };
   return (
-    <button onClick={copy} className="flex items-center gap-1 p-1 rounded-md text-orange-400/60 hover:text-orange-300 hover:bg-orange-900/30 transition-all flex-shrink-0" title="Copy as JSON">
-      {done ? <Check size={10} className="text-emerald-400"/> : <Copy size={10}/>}
+    <button onClick={copy} className="flex items-center gap-1 p-1 rounded-md text-orange-600/60 hover:text-orange-700 hover:bg-orange-100/30 transition-all flex-shrink-0" title="Copy as JSON">
+      {done ? <Check size={10} className="text-emerald-600"/> : <Copy size={10}/>}
     </button>
   );
 };
@@ -162,9 +163,9 @@ const SecretVal = ({ value }) => {
   const isSecret = /^\*+$/.test(String(value));
   return (
     <span className="flex items-center gap-1.5">
-      <span className="font-mono text-xs text-slate-200 break-all">{show || !isSecret ? String(value) : '••••••••••••'}</span>
+      <span className="font-mono text-xs text-gray-700 break-all">{show || !isSecret ? String(value) : '••••••••••••'}</span>
       {isSecret && (
-        <button onClick={() => setShow(!show)} className="text-slate-500 hover:text-slate-300 flex-shrink-0">
+        <button onClick={() => setShow(!show)} className="text-slate-500 hover:text-gray-600 flex-shrink-0">
           {show ? <EyeOff size={11}/> : <Eye size={11}/>}
         </button>
       )}
@@ -173,26 +174,26 @@ const SecretVal = ({ value }) => {
 };
 
 const MetaTag = ({ children, color = 'cyan' }) => {
-  const c = { cyan:'text-cyan-400 border-cyan-800/40 bg-cyan-950/30', blue:'text-blue-400 border-blue-800/40 bg-blue-950/30',
-    purple:'text-purple-400 border-purple-800/40 bg-purple-950/30', green:'text-emerald-400 border-emerald-800/40 bg-emerald-950/30',
-    red:'text-red-400 border-red-800/40 bg-red-950/30', gray:'text-slate-400 border-slate-700/40 bg-slate-800/40' }[color];
+  const c = { cyan:'text-cyan-600 border-cyan-200/40 bg-cyan-50/30', blue:'text-blue-600 border-blue-200/40 bg-blue-50/30',
+    purple:'text-purple-600 border-purple-200/40 bg-purple-50/30', green:'text-emerald-600 border-emerald-200/40 bg-emerald-50/30',
+    red:'text-red-600 border-red-200/40 bg-red-50/30', gray:'text-gray-500 border-gray-300/40 bg-gray-100/40' }[color];
   return <span className={`font-mono text-[11px] px-2 py-0.5 rounded-md border ${c} leading-none`}>{children}</span>;
 };
 
 const PulseDot = ({ active }) => (
   <span className="relative flex h-2 w-2 flex-shrink-0">
     {active && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"/>}
-    <span className={`relative inline-flex rounded-full h-2 w-2 ${active ? 'bg-emerald-400' : 'bg-slate-600'}`}/>
+    <span className={`relative inline-flex rounded-full h-2 w-2 ${active ? 'bg-emerald-400' : 'bg-gray-200'}`}/>
   </span>
 );
 
 const KVRow = ({ label, value, mono, secret }) => (
-  <div className="group flex items-start gap-3 py-2.5 px-4 rounded-lg hover:bg-slate-800/50 transition-colors -mx-4">
+  <div className="group flex items-start gap-3 py-2.5 px-4 rounded-lg hover:bg-gray-100/50 transition-colors -mx-4">
     <span className="text-[10px] font-bold tracking-wider text-slate-500 uppercase flex-shrink-0 w-40 pt-0.5">{label}</span>
     <div className="flex items-start gap-1.5 flex-1 min-w-0">
       {secret ? <SecretVal value={value}/> :
-        <span className={`${mono?'font-mono text-xs text-slate-200':'text-sm text-slate-200'} break-all leading-relaxed`}>
-          {value != null && value !== '' ? value : <span className="text-slate-700">—</span>}
+        <span className={`${mono?'font-mono text-xs text-gray-700':'text-sm text-gray-700'} break-all leading-relaxed`}>
+          {value != null && value !== '' ? value : <span className="text-gray-400">—</span>}
         </span>
       }
       {value && <CopyBtn text={String(value)}/>}
@@ -201,13 +202,13 @@ const KVRow = ({ label, value, mono, secret }) => (
 );
 
 const GlassCard = ({ icon: Icon, title, count, accent, children, noPad }) => (
-  <div className={`rounded-2xl border bg-slate-900/50 backdrop-blur-md transition-all overflow-hidden ${accent==='blue'?'border-blue-800/50 shadow-blue-900/20':accent==='purple'?'border-purple-800/50 shadow-purple-900/20':'border-slate-800/80 hover:border-slate-700/60'} shadow-xl`}>
-    <div className={`flex items-center gap-3 px-5 py-4 border-b ${accent==='blue'?'border-blue-800/30 bg-blue-900/10':accent==='purple'?'border-purple-800/30 bg-purple-900/10':'border-slate-800/60 bg-slate-800/20'}`}>
-      {Icon && <div className={`p-1.5 rounded-lg ${accent==='blue'?'bg-blue-500/15':accent==='purple'?'bg-purple-500/15':'bg-slate-700/60'}`}>
-        <Icon size={13} className={accent==='blue'?'text-blue-400':accent==='purple'?'text-purple-400':'text-slate-400'}/>
+  <div className={`rounded-2xl border bg-white/50 backdrop-blur-md transition-all overflow-hidden ${accent==='blue'?'border-blue-200/50 shadow-blue-900/20':accent==='purple'?'border-purple-200/50 shadow-purple-900/20':'border-gray-200/80 hover:border-gray-300/60'} shadow-xl`}>
+    <div className={`flex items-center gap-3 px-5 py-4 border-b ${accent==='blue'?'border-blue-200/30 bg-blue-100/10':accent==='purple'?'border-purple-200/30 bg-purple-100/10':'border-gray-200/60 bg-gray-100/20'}`}>
+      {Icon && <div className={`p-1.5 rounded-lg ${accent==='blue'?'bg-blue-500/15':accent==='purple'?'bg-purple-500/15':'bg-gray-200/60'}`}>
+        <Icon size={13} className={accent==='blue'?'text-blue-600':accent==='purple'?'text-purple-600':'text-gray-500'}/>
       </div>}
-      <span className="text-slate-100 font-semibold text-sm">{title}</span>
-      {count != null && <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-500 font-medium border border-slate-700/40">{count}</span>}
+      <span className="text-gray-800 font-semibold text-sm">{title}</span>
+      {count != null && <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-gray-100/80 text-slate-500 font-medium border border-gray-300/40">{count}</span>}
     </div>
     <div className={noPad?'':'px-5 py-4'}>{children}</div>
   </div>
@@ -225,28 +226,28 @@ function AppConfirmModal({ state, onConfirm, onCancel, loading }) {
   const dangerous = action === 'stop';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+      <div className="bg-white border border-gray-300 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
         <div className="flex items-start gap-4">
-          <div className={`p-2.5 rounded-xl flex-shrink-0 border ${dangerous ? 'bg-red-950/60 border-red-800/40' : 'bg-blue-950/60 border-blue-800/40'}`}>
-            <AlertTriangle size={18} className={dangerous ? 'text-red-400' : 'text-blue-400'} />
+          <div className={`p-2.5 rounded-xl flex-shrink-0 border ${dangerous ? 'bg-red-50/60 border-red-200/40' : 'bg-blue-50/60 border-blue-200/40'}`}>
+            <AlertTriangle size={18} className={dangerous ? 'text-red-600' : 'text-blue-600'} />
           </div>
           <div className="flex-1">
-            <h3 className="text-white font-semibold text-base mb-1">{cfg.label} Application?</h3>
-            <p className="text-slate-400 text-sm">
-              Are you sure you want to <span className="text-white font-medium">{cfg.label.toLowerCase()}</span>{' '}
-              <span className="font-mono text-blue-300 text-xs bg-blue-950/40 px-1.5 py-0.5 rounded">{appName}</span>?
+            <h3 className="text-gray-900 font-semibold text-base mb-1">{cfg.label} Application?</h3>
+            <p className="text-gray-500 text-sm">
+              Are you sure you want to <span className="text-gray-900 font-medium">{cfg.label.toLowerCase()}</span>{' '}
+              <span className="font-mono text-blue-700 text-xs bg-blue-50/40 px-1.5 py-0.5 rounded">{appName}</span>?
             </p>
-            {dangerous && <p className="text-red-400/80 text-xs mt-2">⚠ This will stop all running flows and connections.</p>}
+            {dangerous && <p className="text-red-600/80 text-xs mt-2">⚠ This will stop all running flows and connections.</p>}
           </div>
-          <button onClick={onCancel} className="text-slate-600 hover:text-slate-300"><X size={16} /></button>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg disabled:opacity-50 transition-colors">
+            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50 transition-colors">
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${dangerous ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${dangerous ? 'bg-red-600 hover:bg-red-500 text-gray-900' : 'bg-blue-600 hover:bg-blue-500 text-gray-900'}`}>
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
               : <><Icon size={13} /> Confirm {cfg.label}</>}
@@ -261,29 +262,29 @@ function SchedulerConfirmModal({ schedulerKey, onConfirm, onCancel, loading }) {
   if (!schedulerKey) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+      <div className="bg-white border border-gray-300 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
         <div className="flex items-start gap-4">
-          <div className="p-2.5 rounded-xl flex-shrink-0 border bg-purple-950/60 border-purple-800/40">
-            <Zap size={18} className="text-purple-400" />
+          <div className="p-2.5 rounded-xl flex-shrink-0 border bg-purple-50/60 border-purple-200/40">
+            <Zap size={18} className="text-purple-600" />
           </div>
           <div className="flex-1">
-            <h3 className="text-white font-semibold text-base mb-1">Run Scheduler Now?</h3>
-            <p className="text-slate-400 text-sm">
+            <h3 className="text-gray-900 font-semibold text-base mb-1">Run Scheduler Now?</h3>
+            <p className="text-gray-500 text-sm">
               Are you sure you want to trigger{' '}
-              <span className="font-mono text-purple-300 text-xs bg-purple-950/40 px-1.5 py-0.5 rounded">{schedulerKey}</span>{' '}
+              <span className="font-mono text-purple-700 text-xs bg-purple-50/40 px-1.5 py-0.5 rounded">{schedulerKey}</span>{' '}
               immediately?
             </p>
-            <p className="text-yellow-400/70 text-xs mt-2">⚠ This will execute the scheduler flow outside its normal schedule.</p>
+            <p className="text-yellow-600/70 text-xs mt-2">⚠ This will execute the scheduler flow outside its normal schedule.</p>
           </div>
-          <button onClick={onCancel} className="text-slate-600 hover:text-slate-300"><X size={16} /></button>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg disabled:opacity-50 transition-colors">
+            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50 transition-colors">
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors bg-purple-600 hover:bg-purple-500 text-white">
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors bg-purple-600 hover:bg-purple-500 text-gray-900">
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Running…</>
               : <><Zap size={13} /> Run Now</>}
@@ -301,48 +302,48 @@ function ContractConfirmModal({ state, onConfirm, onCancel, loading }) {
   const isDelete = action === 'delete';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+      <div className="bg-white border border-gray-300 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
         <div className="flex items-start gap-4">
           <div className={`p-2.5 rounded-xl flex-shrink-0 border ${
-            isDelete ? 'bg-red-950/60 border-red-800/40'
-            : isRevoke ? 'bg-red-950/60 border-red-800/40'
-            : 'bg-emerald-950/60 border-emerald-800/40'
+            isDelete ? 'bg-red-50/60 border-red-200/40'
+            : isRevoke ? 'bg-red-50/60 border-red-200/40'
+            : 'bg-emerald-50/60 border-emerald-200/40'
           }`}>
-            {isDelete ? <Trash2 size={18} className="text-red-400" />
-              : isRevoke ? <X size={18} className="text-red-400" />
-              : <Check size={18} className="text-emerald-400" />}
+            {isDelete ? <Trash2 size={18} className="text-red-600" />
+              : isRevoke ? <X size={18} className="text-red-600" />
+              : <Check size={18} className="text-emerald-600" />}
           </div>
           <div className="flex-1">
-            <h3 className="text-white font-semibold text-base mb-1">
+            <h3 className="text-gray-900 font-semibold text-base mb-1">
               {isDelete ? 'Delete Contract?' : isRevoke ? 'Revoke Contract?' : 'Approve Contract?'}
             </h3>
-            <p className="text-slate-400 text-sm">
+            <p className="text-gray-500 text-sm">
               Are you sure you want to{' '}
-              <span className={`font-semibold ${isDelete || isRevoke ? 'text-red-300' : 'text-emerald-300'}`}>
+              <span className={`font-semibold ${isDelete || isRevoke ? 'text-red-700' : 'text-emerald-700'}`}>
                 {isDelete ? 'permanently delete' : isRevoke ? 'revoke' : 'approve'}
               </span>{' '}
               the contract for{' '}
-              <span className="font-mono text-blue-300 text-xs bg-blue-950/40 px-1.5 py-0.5 rounded">{appName}</span>?
+              <span className="font-mono text-blue-700 text-xs bg-blue-50/40 px-1.5 py-0.5 rounded">{appName}</span>?
             </p>
             {isDelete && (
-              <p className="text-red-400/80 text-xs mt-2">⚠ This action is irreversible. The contract will be permanently removed.</p>
+              <p className="text-red-600/80 text-xs mt-2">⚠ This action is irreversible. The contract will be permanently removed.</p>
             )}
             {isRevoke && !isDelete && (
-              <p className="text-red-400/80 text-xs mt-2">⚠ The client application will immediately lose access to this API.</p>
+              <p className="text-red-600/80 text-xs mt-2">⚠ The client application will immediately lose access to this API.</p>
             )}
           </div>
-          <button onClick={onCancel} className="text-slate-600 hover:text-slate-300"><X size={16} /></button>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg disabled:opacity-50 transition-colors">
+            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50 transition-colors">
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${
-              isDelete ? 'bg-red-700 hover:bg-red-600 text-white'
-              : isRevoke ? 'bg-red-600 hover:bg-red-500 text-white'
-              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+              isDelete ? 'bg-red-700 hover:bg-red-600 text-gray-900'
+              : isRevoke ? 'bg-red-600 hover:bg-red-500 text-gray-900'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-gray-900'
             }`}>
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
@@ -808,8 +809,8 @@ export default function ApplicationDetailPage() {
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"/></div>;
   if (!app) return (
     <div className="space-y-4">
-      <button onClick={()=>navigate('/applications')} className="flex items-center gap-2 text-slate-400 hover:text-white text-sm"><ArrowLeft size={16}/> Back</button>
-      <div className="bg-red-950/30 border border-red-800/50 rounded-2xl p-10 text-center text-red-400">Application not found or access denied.</div>
+      <button onClick={()=>navigate('/applications')} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 text-sm"><ArrowLeft size={16}/> Back</button>
+      <div className="bg-red-50/30 border border-red-200/50 rounded-2xl p-10 text-center text-red-600">Application not found or access denied.</div>
     </div>
   );
 
@@ -996,12 +997,12 @@ export default function ApplicationDetailPage() {
   const rStatus = (app.application?.status || app.status || '').toUpperCase();
   const isRunning = rStatus === 'RUNNING' || rStatus === 'STARTED';
 
-  const statusStyle = { RUNNING:'text-emerald-300 bg-emerald-950/50 border-emerald-700/50 shadow-emerald-900/30',
-    STARTED:'text-emerald-300 bg-emerald-950/50 border-emerald-700/50 shadow-emerald-900/30',
-    FAILED:'text-red-300 bg-red-950/50 border-red-700/50 shadow-red-900/30',
-    STOPPED:'text-slate-400 bg-slate-800/50 border-slate-700/50',
-    DEPLOYING:' text-blue-300 bg-blue-950/50 border-blue-700/50 shadow-blue-900/30',
-    APPLIED:'text-cyan-300 bg-cyan-950/50 border-cyan-700/50' }[rStatus] || 'text-slate-400 bg-slate-800/50 border-slate-700/50';
+  const statusStyle = { RUNNING:'text-emerald-700 bg-emerald-50/50 border-emerald-300/50 shadow-emerald-900/30',
+    STARTED:'text-emerald-700 bg-emerald-50/50 border-emerald-300/50 shadow-emerald-900/30',
+    FAILED:'text-red-700 bg-red-50/50 border-red-300/50 shadow-red-900/30',
+    STOPPED:'text-gray-500 bg-gray-100/50 border-gray-300/50',
+    DEPLOYING:' text-blue-700 bg-blue-50/50 border-blue-300/50 shadow-blue-900/30',
+    APPLIED:'text-cyan-700 bg-cyan-50/50 border-cyan-300/50' }[rStatus] || 'text-gray-500 bg-gray-100/50 border-gray-300/50';
 
   // Feature 14: tab badges with live counts
   const tabs = [
@@ -1021,11 +1022,11 @@ export default function ApplicationDetailPage() {
       {/* Feature 3: Breadcrumb navigation */}
       <nav className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
         <button onClick={() => navigate('/applications')}
-          className="hover:text-slate-300 transition-colors">Applications</button>
+          className="hover:text-gray-600 transition-colors">Applications</button>
         {bgName && (
           <>
             <span>/</span>
-            <span className="text-slate-600">{bgName}</span>
+            <span className="text-gray-400">{bgName}</span>
           </>
         )}
         {(resolvedEnvName || app.environment?.name) && (
@@ -1037,7 +1038,7 @@ export default function ApplicationDetailPage() {
           </>
         )}
         <span>/</span>
-        <span className="text-slate-300 font-medium truncate max-w-xs">{app.name}</span>
+        <span className="text-gray-600 font-medium truncate max-w-xs">{app.name}</span>
       </nav>
 
       {showCpsSettings && <CpsSettingsModal
@@ -1077,8 +1078,8 @@ export default function ApplicationDetailPage() {
       {actionResult && (
         <div className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm ${
           actionResult.success
-            ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
-            : 'bg-red-950/40 border-red-800/50 text-red-300'
+            ? 'bg-emerald-50/40 border-emerald-200/50 text-emerald-700'
+            : 'bg-red-50/40 border-red-200/50 text-red-700'
         }`}>
           <span>{actionResult.message}</span>
           <button onClick={() => setActionResult(null)} className="ml-4 opacity-60 hover:opacity-100"><X size={14} /></button>
@@ -1086,35 +1087,35 @@ export default function ApplicationDetailPage() {
       )}
 
       {/* ── Hero Header ─────────────────────────────── */}
-      <div className="relative rounded-2xl border border-slate-800/60 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-[#0B0F17] to-blue-950/20"/>
+      <div className="relative rounded-2xl border border-gray-200/60 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-sf-50 via-white to-blue-50"/>
         <div className="absolute inset-0" style={{background:'radial-gradient(ellipse at 70% 50%, rgba(59,130,246,0.06) 0%, transparent 60%)'}}/>
         {isRunning && <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/3 rounded-full blur-3xl pointer-events-none"/>}
         <div className="relative p-6 flex items-start justify-between flex-wrap gap-4">
           <div className="flex items-start gap-4">
-            <button onClick={()=>navigate('/applications')} className="mt-0.5 p-2 rounded-xl text-slate-500 hover:text-white hover:bg-slate-800/80 border border-transparent hover:border-slate-700/50 transition-all">
+            <button onClick={()=>navigate('/applications')} className="mt-0.5 p-2 rounded-xl text-slate-500 hover:text-gray-900 hover:bg-gray-100/80 border border-transparent hover:border-gray-300/50 transition-all">
               <ArrowLeft size={16}/>
             </button>
             <div>
               <div className="flex items-center gap-3 flex-wrap mb-2">
-                <h1 className="text-xl font-bold text-white tracking-tight">{app.name}</h1>
+                <h1 className="text-xl font-bold text-gray-900 tracking-tight">{app.name}</h1>
                 <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border shadow-lg ${statusStyle}`}>
                   <PulseDot active={isRunning}/> {rStatus || 'Unknown'}
                 </span>
-                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${isCH1?'bg-purple-950/50 text-purple-300 border-purple-700/50':'bg-blue-950/50 text-blue-300 border-blue-700/50'}`}>
+                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${isCH1?'bg-purple-50/50 text-purple-700 border-purple-300/50':'bg-blue-50/50 text-blue-700 border-blue-300/50'}`}>
                   {isCH1?'CloudHub 1.0':'CloudHub 2.0'}
                 </span>
                 {/* Feature 3: BG & Env context badges */}
                 {bgName && (
-                  <span className="text-xs px-2 py-0.5 rounded-full border bg-slate-800/60 text-slate-400 border-slate-700/50">
+                  <span className="text-xs px-2 py-0.5 rounded-full border bg-gray-100/60 text-gray-500 border-gray-300/50">
                     🏢 {bgName}
                   </span>
                 )}
                 {(resolvedEnvName || app.environment?.name) && (
                   <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
                     app.environment?.type === 'production'
-                      ? 'bg-green-950/40 text-green-400 border-green-800/50'
-                      : 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50'
+                      ? 'bg-green-50/40 text-green-600 border-green-200/50'
+                      : 'bg-yellow-50/40 text-yellow-600 border-yellow-200/50'
                   }`}>
                     🌐 {resolvedEnvName || app.environment?.name}
                   </span>
@@ -1132,15 +1133,15 @@ export default function ApplicationDetailPage() {
             {actions.length > 0 && (
               <div className="flex items-center gap-1.5">
                 {actionLoading ? (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700/40">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100/60 border border-gray-300/40">
                     <span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-blue-400" />
-                    <span className="text-slate-400 text-xs">Working…</span>
+                    <span className="text-gray-500 text-xs">Working…</span>
                   </div>
                 ) : actions.map((action) => {
                   const { Icon, label, detailCls } = ACTION_CONFIG[action];
                   return (
                     <button key={action} title={label} onClick={() => requestAction(action)}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 transition-all ${detailCls}`}>
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 transition-all ${detailCls}`}>
                       <Icon size={13} /> {label}
                     </button>
                   );
@@ -1162,7 +1163,7 @@ export default function ApplicationDetailPage() {
                 navigate('/api-manager');
               }}
               title="Open API Manager filtered to this environment"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 text-slate-400 hover:text-blue-300 border-slate-700/40 hover:border-blue-700/50 hover:bg-blue-950/30 transition-all">
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 text-gray-500 hover:text-blue-700 border-gray-300/40 hover:border-blue-300/50 hover:bg-blue-50/30 transition-all">
               <ShieldCheck size={13} /> API Manager
             </button>
             {/* CPS Manager shortcut — navigates with pre-selected BG+Env+App */}
@@ -1178,7 +1179,7 @@ export default function ApplicationDetailPage() {
                 },
               })}
               title="Open this app in CPS Manager"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 text-slate-400 hover:text-cyan-300 border-slate-700/40 hover:border-cyan-700/50 hover:bg-cyan-950/30 transition-all">
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 text-gray-500 hover:text-cyan-700 border-gray-300/40 hover:border-cyan-300/50 hover:bg-cyan-50/30 transition-all">
               <Database size={13} /> CPS Manager
             </button>
             {/* Open in Exchange button — navigates to our Exchange page and auto-selects the asset */}
@@ -1195,7 +1196,7 @@ export default function ApplicationDetailPage() {
                     }
                   })}
                   title="View in Exchange Assets"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 text-slate-400 hover:text-emerald-300 border-slate-700/40 hover:border-emerald-700/50 hover:bg-emerald-950/30 transition-all">
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 text-gray-500 hover:text-emerald-700 border-gray-300/40 hover:border-emerald-300/50 hover:bg-emerald-50/30 transition-all">
                   <ExternalLink size={13} /> Exchange
                 </button>
               );
@@ -1239,10 +1240,10 @@ export default function ApplicationDetailPage() {
                   window.open(envAppUrl, '_blank', 'noreferrer');
                 }
               }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-slate-800/60 text-slate-400 hover:text-blue-300 border-slate-700/40 hover:border-blue-700/50 hover:bg-blue-950/30 transition-all">
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 text-gray-500 hover:text-blue-700 border-gray-300/40 hover:border-blue-300/50 hover:bg-blue-50/30 transition-all">
               <ExternalLink size={13} /> Anypoint
             </button>
-            <button onClick={load} className="p-2.5 rounded-xl text-slate-500 hover:text-white bg-slate-800/60 border border-slate-700/40 hover:bg-slate-700/60 transition-all">
+            <button onClick={load} className="p-2.5 rounded-xl text-slate-500 hover:text-gray-900 bg-gray-100/60 border border-gray-300/40 hover:bg-gray-200/60 transition-all">
               <RefreshCw size={14}/>
             </button>
           </div>
@@ -1250,7 +1251,7 @@ export default function ApplicationDetailPage() {
       </div>
 
       {/* ── Segmented Tabs ──────────────────────────── */}
-      <div className="bg-slate-900 p-1 rounded-xl border border-slate-800 w-fit flex gap-0.5">
+      <div className="bg-white p-1 rounded-xl border border-gray-200 w-fit flex gap-0.5">
         {tabs.map(t => (
           <button key={t.id}
             onClick={() => {
@@ -1260,15 +1261,15 @@ export default function ApplicationDetailPage() {
             if (t.id === 'contracts' && contracts === null && !contractsLoading) loadContracts();
             if (t.id === 'apispec' && pingSpec === null && !pingSpecLoading) fetchPingSpec();
           }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.id?'bg-slate-700/80 text-white shadow-md':'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'}`}>
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.id?'bg-gray-200/80 text-gray-900 shadow-md':'text-gray-500 hover:text-gray-700 hover:bg-gray-100/60'}`}>
             {t.id === 'cps' && <Key size={11} />}
             {t.id === 'ping' && <Activity size={11} />}
             {t.label}
             {t.badge && (
               <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
-                t.badgeErr ? 'bg-red-500/20 text-red-400' :
-                t.badge === '✓' ? 'bg-emerald-500/20 text-emerald-400' :
-                tab===t.id ? 'bg-blue-500/30 text-blue-300' : 'bg-slate-800 text-slate-500'
+                t.badgeErr ? 'bg-red-100 text-red-600' :
+                t.badge === '✓' ? 'bg-emerald-100 text-emerald-600' :
+                tab===t.id ? 'bg-blue-500/30 text-blue-700' : 'bg-gray-100 text-slate-500'
               }`}>{t.badge}</span>
             )}
           </button>
@@ -1319,8 +1320,8 @@ export default function ApplicationDetailPage() {
             <GlassCard icon={Server} title="Replica Instances" count={replicaList.length}>
               <div className="space-y-2">
                 {replicaList.map(r => (
-                  <div key={r.id} className="flex items-center justify-between bg-slate-800/40 border border-slate-700/30 rounded-xl px-4 py-3 gap-3">
-                    <span className="text-slate-300 text-xs font-mono truncate">{r.id}</span>
+                  <div key={r.id} className="flex items-center justify-between bg-gray-100/40 border border-gray-300/30 rounded-xl px-4 py-3 gap-3">
+                    <span className="text-gray-600 text-xs font-mono truncate">{r.id}</span>
                     <MetaTag color={r.state==='STARTED'||r.state==='RUNNING'?'green':'gray'}>{r.state}</MetaTag>
                   </div>
                 ))}
@@ -1336,24 +1337,24 @@ export default function ApplicationDetailPage() {
           <div className="relative">
             <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
             <input value={propSearch} onChange={e=>setPropSearch(e.target.value)} placeholder="Filter properties by key…"
-              className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50 focus:bg-slate-900"/>
+              className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-300/50 focus:bg-white"/>
           </div>
 
           <GlassCard icon={Settings} title="Properties" count={filteredProps.length} noPad>
             {filteredProps.length>0 ? (
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                  <tr className="bg-gray-100/50 border-b border-gray-300/40">
                     <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase w-[42%]">Property Key</th>
                     <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Value</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredProps.sort(([a],[b])=>a.localeCompare(b)).map(([k,v]) => (
-                    <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                    <tr key={k} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
                       <td className="px-5 py-3 align-top">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-slate-400 text-xs font-mono break-all leading-relaxed">{k}</span>
+                          <span className="text-gray-500 text-xs font-mono break-all leading-relaxed">{k}</span>
                           <CopyBtn text={k}/>
                         </div>
                       </td>
@@ -1367,19 +1368,19 @@ export default function ApplicationDetailPage() {
                   ))}
                 </tbody>
               </table>
-            ) : <div className="px-5 py-8 text-center text-slate-600 text-sm">{propSearch?`No matches for "${propSearch}"`:'No properties found'}</div>}
+            ) : <div className="px-5 py-8 text-center text-gray-400 text-sm">{propSearch?`No matches for "${propSearch}"`:'No properties found'}</div>}
           </GlassCard>
 
           {Object.keys(secureProps).length>0 && (
             <GlassCard icon={Settings} title="Secure Properties" count={Object.keys(secureProps).length} noPad>
-              <div className="px-5 py-2.5 bg-orange-950/20 border-b border-orange-900/20">
-                <span className="text-xs text-orange-400/70">⚠ Values are redacted by Anypoint Platform</span>
+              <div className="px-5 py-2.5 bg-orange-50/20 border-b border-orange-200/20">
+                <span className="text-xs text-orange-600/70">⚠ Values are redacted by Anypoint Platform</span>
               </div>
               <table className="w-full text-sm border-collapse">
                 <tbody>
                   {Object.entries(secureProps).map(([k,v]) => (
-                    <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
-                      <td className="px-5 py-3 w-[42%]"><span className="text-slate-400 text-xs font-mono">{k}</span></td>
+                    <tr key={k} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
+                      <td className="px-5 py-3 w-[42%]"><span className="text-gray-500 text-xs font-mono">{k}</span></td>
                       <td className="px-5 py-3"><SecretVal value={String(v)}/></td>
                     </tr>
                   ))}
@@ -1415,8 +1416,8 @@ export default function ApplicationDetailPage() {
               // Show whenever there are unresolved placeholders AND CPS is configured
               if (!hasUnresolved || !cpsBaseUrl) return null;
               return (
-                <div className="px-5 py-2.5 border-b border-slate-800/40 flex items-center justify-between bg-purple-950/10">
-                  <p className="text-[10px] text-purple-400/80 flex items-center gap-1.5">
+                <div className="px-5 py-2.5 border-b border-gray-200/40 flex items-center justify-between bg-purple-50/10">
+                  <p className="text-[10px] text-purple-600/80 flex items-center gap-1.5">
                     <Key size={9} /> Some cron expressions may be in CPS properties
                   </p>
                   <button
@@ -1460,7 +1461,7 @@ export default function ApplicationDetailPage() {
                       } catch { /* silently fail — button stays visible for retry */ }
                       setCpsSecureSchedulerLoading(false);
                     }}
-                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-purple-600/20 border border-purple-700/40 text-purple-400 hover:bg-purple-600/30 rounded-lg transition-colors disabled:opacity-50 font-medium flex-shrink-0">
+                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-purple-100 border border-purple-300/40 text-purple-600 hover:bg-purple-600/30 rounded-lg transition-colors disabled:opacity-50 font-medium flex-shrink-0">
                     {cpsSecureSchedulerLoading
                       ? <><RefreshCw size={9} className="animate-spin" /> Loading…</>
                       : <><Key size={9} /> Get Cron Expressions</>}
@@ -1472,29 +1473,29 @@ export default function ApplicationDetailPage() {
             {triggerResult && (
               <div className={`mx-5 mt-3 flex items-center justify-between px-4 py-2.5 rounded-xl border text-xs ${
                 triggerResult.success
-                  ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
-                  : 'bg-red-950/40 border-red-800/50 text-red-300'
+                  ? 'bg-emerald-50/40 border-emerald-200/50 text-emerald-700'
+                  : 'bg-red-50/40 border-red-200/50 text-red-700'
               }`}>
                 <span>{triggerResult.message}</span>
                 <button onClick={() => setTriggerResult(null)} className="ml-3 opacity-60 hover:opacity-100 flex-shrink-0"><X size={12} /></button>
               </div>
             )}
             {allSchedulers.length>0 && (
-              <div className="px-5 pt-4 pb-3 border-b border-slate-800/40">
+              <div className="px-5 pt-4 pb-3 border-b border-gray-200/40">
                 <div className="relative">
                   <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
                   <input
                     value={schedulerSearch}
                     onChange={(e) => setSchedulerSearch(e.target.value)}
                     placeholder="Filter by flow name or cron…"
-                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg pl-8 pr-4 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-purple-600/50 focus:bg-slate-800"
+                    className="w-full bg-gray-100/50 border border-gray-300/50 rounded-lg pl-8 pr-4 py-2 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:border-purple-300/50 focus:bg-gray-100"
                   />
                   {schedulerSearch && (
-                    <button onClick={() => setSchedulerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs">✕</button>
+                    <button onClick={() => setSchedulerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-gray-600 text-xs">✕</button>
                   )}
                 </div>
                 {schedulerSearch && (
-                  <p className="text-[10px] text-slate-600 mt-1.5">
+                  <p className="text-[10px] text-gray-400 mt-1.5">
                     Showing {schedulers.length} of {allSchedulers.length} scheduler{allSchedulers.length !== 1 ? 's' : ''}
                   </p>
                 )}
@@ -1503,7 +1504,7 @@ export default function ApplicationDetailPage() {
             {allSchedulers.length>0 ? (
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                  <tr className="bg-gray-100/50 border-b border-gray-300/40">
                     {['Flow Name','Cron Expression','Last Run','Next Run','State','Actions'].map(h=>(
                       <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
                     ))}
@@ -1560,11 +1561,11 @@ export default function ApplicationDetailPage() {
                                  (s.schedule?.period > 0 ? s.schedule.period : null);
                     const timeUnit = s.timeUnit || s.schedule?.timeUnit;
                     return (
-                      <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                      <tr key={i} className="border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
                         <td className="px-5 py-4 align-top">
                           <div className="flex items-center gap-2">
                             <PulseDot active={active}/>
-                            <span className="text-slate-200 text-xs font-mono font-medium break-all">{s.flow||s.flowName||s.name}</span>
+                            <span className="text-gray-700 text-xs font-mono font-medium break-all">{s.flow||s.flowName||s.name}</span>
                           </div>
                         </td>
                         <td className="px-5 py-4 align-top">
@@ -1572,26 +1573,26 @@ export default function ApplicationDetailPage() {
                             <div className="space-y-1">
                               <MetaTag color="cyan">{cron}</MetaTag>
                               {decodedCron && (
-                                <p className="text-[11px] text-cyan-300 font-medium">{decodedCron}</p>
+                                <p className="text-[11px] text-cyan-700 font-medium">{decodedCron}</p>
                               )}
                               {wasResolved && (
-                                <p className="text-[10px] text-slate-600 font-mono" title="Property placeholder resolved from app properties">{rawCron}</p>
+                                <p className="text-[10px] text-gray-400 font-mono" title="Property placeholder resolved from app properties">{rawCron}</p>
                               )}
-                              {schedulerTz && <p className="text-[10px] text-cyan-400/70">🕐 {schedulerTz}</p>}
+                              {schedulerTz && <p className="text-[10px] text-cyan-600/70">🕐 {schedulerTz}</p>}
                             </div>
                           ) : isUnresolvedPlaceholder ? (
                             <div className="space-y-1">
                               <MetaTag color="gray">{rawCron}</MetaTag>
                               <p className="text-[10px] text-yellow-600/80">⚠ property not in runtime props — check CPS</p>
-                              {schedulerTz && <p className="text-[10px] text-cyan-400/70">🕐 {schedulerTz}</p>}
+                              {schedulerTz && <p className="text-[10px] text-cyan-600/70">🕐 {schedulerTz}</p>}
                             </div>
                           ) : freq ? (
                             <div className="space-y-1">
                               <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
-                              {schedulerTz && <p className="text-[10px] text-cyan-400/70">🕐 {schedulerTz}</p>}
+                              {schedulerTz && <p className="text-[10px] text-cyan-600/70">🕐 {schedulerTz}</p>}
                             </div>
                           ) || <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
-                            : <span className="text-slate-700 text-xs">—</span>}
+                            : <span className="text-gray-400 text-xs">—</span>}
                         </td>
                         <td className="px-5 py-4 align-top">
                           {(() => {
@@ -1610,16 +1611,16 @@ export default function ApplicationDetailPage() {
                             const lastRunRaw = candidates.find(v => v != null && v !== 0 && v !== '');
                             if (!lastRunRaw) {
                               return isCH1
-                                ? <span className="text-slate-600 text-xs">—</span>
-                                : <span className="text-slate-600 text-xs" title="Last run not returned by CH2 schedulers API">—</span>;
+                                ? <span className="text-gray-400 text-xs">—</span>
+                                : <span className="text-gray-400 text-xs" title="Last run not returned by CH2 schedulers API">—</span>;
                             }
                             const d = new Date(lastRunRaw);
                             const valid = !isNaN(d.getTime()) && d.getFullYear() > 1970;
                             return valid ? (
                               <div className="space-y-0.5">
-                                <span className="text-slate-300 text-xs font-mono">{d.toLocaleDateString()}</span>
+                                <span className="text-gray-600 text-xs font-mono">{d.toLocaleDateString()}</span>
                                 <p className="text-slate-500 text-[10px] font-mono">{d.toLocaleTimeString()}</p>
-                                <p className="text-slate-600 text-[9px]">{localTz}</p>
+                                <p className="text-gray-400 text-[9px]">{localTz}</p>
                               </div>
                             ) : (
                               <span className="text-slate-500 text-xs font-mono">{String(lastRunRaw)}</span>
@@ -1629,18 +1630,18 @@ export default function ApplicationDetailPage() {
                         <td className="px-5 py-4 align-top">
                           {computedNextRun ? (
                             <div className="space-y-0.5">
-                              <span className="text-slate-300 text-xs font-mono">{computedNextRun.toLocaleDateString()}</span>
+                              <span className="text-gray-600 text-xs font-mono">{computedNextRun.toLocaleDateString()}</span>
                               <p className="text-slate-500 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
-                              <p className="text-slate-600 text-[9px]">{localTz}</p>
+                              <p className="text-gray-400 text-[9px]">{localTz}</p>
                             </div>
                           ) : freq ? (
-                            <span className="text-slate-600 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>
+                            <span className="text-gray-400 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>
                           ) : (
-                            <span className="text-slate-600 text-xs">—</span>
+                            <span className="text-gray-400 text-xs">—</span>
                           )}
                         </td>
                         <td className="px-5 py-4 align-top">
-                          <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${active?'bg-emerald-950/50 text-emerald-300 border-emerald-700/50':'bg-slate-800/60 text-slate-500 border-slate-700/50'}`}>
+                          <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${active?'bg-emerald-50/50 text-emerald-700 border-emerald-300/50':'bg-gray-100/60 text-slate-500 border-gray-300/50'}`}>
                             {active?'Enabled':'Disabled'}
                           </span>
                         </td>
@@ -1653,7 +1654,7 @@ export default function ApplicationDetailPage() {
                                 onClick={() => setSchedulerConfirmKey(schedulerKey)}
                                 disabled={isTriggering || !isRunning}
                                 title={!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-purple-950/30 text-purple-300 border-purple-700/40 hover:bg-purple-600/20 hover:text-purple-200 hover:border-purple-600/60">
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-purple-50/30 text-purple-700 border-purple-300/40 hover:bg-purple-100 hover:text-purple-200 hover:border-purple-300/60">
                                 {isTriggering
                                   ? <><RefreshCw size={9} className="animate-spin" /> Running…</>
                                   : <><Zap size={9} /> Run Now</>}
@@ -1667,16 +1668,16 @@ export default function ApplicationDetailPage() {
                 </tbody>
               </table>
             ) : schedulerSearch ? (
-              <div className="px-5 py-6 text-center text-slate-500 text-sm">No schedulers match <span className="text-slate-400 font-mono">"{schedulerSearch}"</span></div>
+              <div className="px-5 py-6 text-center text-slate-500 text-sm">No schedulers match <span className="text-gray-500 font-mono">"{schedulerSearch}"</span></div>
             ) : (
-              <div className="px-5 py-6 text-center text-slate-600 text-sm">No schedulers configured</div>
+              <div className="px-5 py-6 text-center text-gray-400 text-sm">No schedulers configured</div>
             )}
           </GlassCard>
           </div>
 
           {(httpInbound.publicUrl||endpoints.length>0) && (
             <GlassCard icon={Globe} title="HTTP Endpoints" count={endpoints.length} noPad>
-              <div className="px-5 py-4 border-b border-slate-800/40 space-y-1">
+              <div className="px-5 py-4 border-b border-gray-200/40 space-y-1">
                 {httpInbound.publicUrl && <KVRow label="Public URL" value={httpInbound.publicUrl} mono />}
                 {httpInbound.internalUrl && <KVRow label="Internal URL" value={httpInbound.internalUrl} mono />}
                 <KVRow label="Last Mile Security" value={httpInbound.lastMileSecurity!=null?String(httpInbound.lastMileSecurity):undefined} />
@@ -1684,14 +1685,14 @@ export default function ApplicationDetailPage() {
               </div>
               {endpoints.length>0 && (
                 <table className="w-full text-sm border-collapse">
-                  <thead><tr className="bg-slate-800/40"><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Access</th><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">URL</th></tr></thead>
+                  <thead><tr className="bg-gray-100/40"><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Access</th><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">URL</th></tr></thead>
                   <tbody>
                     {endpoints.map((ep,i)=>(
-                      <tr key={i} className="border-t border-slate-800/40 hover:bg-slate-800/30 group">
+                      <tr key={i} className="border-t border-gray-200/40 hover:bg-gray-100/30 group">
                         <td className="px-5 py-3"><MetaTag color={ep.access==='external'?'blue':'gray'}>{ep.access}</MetaTag></td>
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-slate-300 text-xs font-mono break-all">{ep.url}</span>
+                            <span className="text-gray-600 text-xs font-mono break-all">{ep.url}</span>
                             <CopyBtn text={ep.url}/>
                           </div>
                         </td>
@@ -1709,39 +1710,39 @@ export default function ApplicationDetailPage() {
       {tab==='cps' && cpsBaseUrl && (
         <div className="space-y-5">
           {/* Info bar */}
-          <div className="flex items-center justify-between flex-wrap gap-3 bg-slate-900/60 border border-slate-800/60 rounded-2xl px-5 py-4">
+          <div className="flex items-center justify-between flex-wrap gap-3 bg-white/60 border border-gray-200/60 rounded-2xl px-5 py-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <Key size={13} className="text-blue-400" />
-                <span className="text-white text-sm font-semibold">Config Property Server</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${cpsEnv==='prod'?'bg-emerald-950/50 text-emerald-300 border-emerald-700/50':'bg-yellow-950/50 text-yellow-300 border-yellow-700/50'}`}>{cpsEnv.toUpperCase()}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${isCH1?'bg-purple-950/50 text-purple-300 border-purple-700/50':'bg-blue-950/50 text-blue-300 border-blue-700/50'}`}>{isCH1?'CH1':'CH2'}</span>
+                <Key size={13} className="text-blue-600" />
+                <span className="text-gray-900 text-sm font-semibold">Config Property Server</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${cpsEnv==='prod'?'bg-emerald-50/50 text-emerald-700 border-emerald-300/50':'bg-yellow-50/50 text-yellow-700 border-yellow-300/50'}`}>{cpsEnv.toUpperCase()}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${isCH1?'bg-purple-50/50 text-purple-700 border-purple-300/50':'bg-blue-50/50 text-blue-700 border-blue-300/50'}`}>{isCH1?'CH1':'CH2'}</span>
                 {cpsCredsResolved && (
-                  <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-1.5 py-0.5 rounded-full">
+                  <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-300/40 px-1.5 py-0.5 rounded-full">
                     <Key size={8} /> CPS creds auto-resolved
                   </span>
                 )}
       {hasCpsCsvCredentials && !cpsCredsResolved && !cpsData && (
-        <span className="text-[10px] text-yellow-400/70">🔑 CSV loaded — will auto-resolve on load</span>
+        <span className="text-[10px] text-yellow-600/70">🔑 CSV loaded — will auto-resolve on load</span>
       )}
               </div>
               <p className="text-slate-500 text-xs font-mono break-all">{cpsBaseUrl}</p>
               {/* Editable key + env overrides */}
               <div className="flex flex-wrap gap-2 mt-2">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-slate-600 uppercase tracking-wider">Env:</span>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wider">Env:</span>
                   <input
                     value={cpsEnvOverride || effectiveCpsEnv}
                     onChange={(e) => { setCpsEnvOverride(e.target.value); setCpsData(null); setCpsError(''); }}
-                    className="bg-slate-800/60 border border-slate-700/40 rounded-lg px-2 py-1 text-xs text-slate-200 font-mono w-24 focus:outline-none focus:border-blue-600/50"
+                    className="bg-gray-100/60 border border-gray-300/40 rounded-lg px-2 py-1 text-xs text-gray-700 font-mono w-24 focus:outline-none focus:border-blue-300/50"
                   />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-slate-600 uppercase tracking-wider">Key:</span>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wider">Key:</span>
                   <input
                     value={cpsKeyOverride || effectiveCpsKey}
                     onChange={(e) => { setCpsKeyOverride(e.target.value); setCpsData(null); setCpsError(''); }}
-                    className="bg-slate-800/60 border border-slate-700/40 rounded-lg px-2 py-1 text-xs text-slate-200 font-mono w-56 focus:outline-none focus:border-blue-600/50"
+                    className="bg-gray-100/60 border border-gray-300/40 rounded-lg px-2 py-1 text-xs text-gray-700 font-mono w-56 focus:outline-none focus:border-blue-300/50"
                   />
                 </div>
               </div>
@@ -1757,7 +1758,7 @@ export default function ApplicationDetailPage() {
                         data: raw
                       });
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded-lg transition-colors">
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/40 rounded-lg transition-colors">
                     <Database size={11} /> Raw JSON (NS)
                   </button>
                   <button
@@ -1770,8 +1771,8 @@ export default function ApplicationDetailPage() {
                       setCopiedCpsNs(true);
                       setTimeout(() => setCopiedCpsNs(false), 2000);
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 rounded-lg transition-colors">
-                    {copiedCpsNs ? <><Check size={11} className="text-emerald-400" /> Copied!</> : <><Copy size={11} /> Non-Secure</>}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 border border-emerald-200/40 rounded-lg transition-colors">
+                    {copiedCpsNs ? <><Check size={11} className="text-emerald-600" /> Copied!</> : <><Copy size={11} /> Non-Secure</>}
                   </button>
                 </>
               )}
@@ -1785,7 +1786,7 @@ export default function ApplicationDetailPage() {
                         data: raw
                       });
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded-lg transition-colors">
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/40 rounded-lg transition-colors">
                     <Database size={11} /> Raw JSON (Sec)
                   </button>
                   <button
@@ -1798,38 +1799,38 @@ export default function ApplicationDetailPage() {
                       setCopiedCpsSec(true);
                       setTimeout(() => setCopiedCpsSec(false), 2000);
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-400 hover:text-purple-300 bg-purple-950/40 border border-purple-800/40 rounded-lg transition-colors">
-                    {copiedCpsSec ? <><Check size={11} className="text-purple-400" /> Copied!</> : <><Copy size={11} /> Secure</>}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-600 hover:text-purple-700 bg-purple-50/40 border border-purple-200/40 rounded-lg transition-colors">
+                    {copiedCpsSec ? <><Check size={11} className="text-purple-600" /> Copied!</> : <><Copy size={11} /> Secure</>}
                   </button>
                 </>
               )}
-              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors"><RefreshCw size={11}/> {cpsData ? 'Refresh' : 'Load'}</button>
-              <button onClick={() => setShowCpsSettings(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded-lg transition-colors"><Key size={11}/> Configure CPS</button>
+              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900 bg-gray-100/60 border border-gray-300/40 rounded-lg transition-colors"><RefreshCw size={11}/> {cpsData ? 'Refresh' : 'Load'}</button>
+              <button onClick={() => setShowCpsSettings(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/40 rounded-lg transition-colors"><Key size={11}/> Configure CPS</button>
             </div>
           </div>
 
           {/* Missing credentials warning */}
           {cpsMissingCred && (
-            <div className="flex items-center justify-between gap-4 bg-yellow-950/30 border border-yellow-800/50 rounded-xl px-5 py-4">
+            <div className="flex items-center justify-between gap-4 bg-yellow-50/30 border border-yellow-200/50 rounded-xl px-5 py-4">
               <div className="flex items-center gap-3">
-                <AlertTriangle size={16} className="text-yellow-400 flex-shrink-0" />
+                <AlertTriangle size={16} className="text-yellow-600 flex-shrink-0" />
                 <div>
-                  <p className="text-yellow-300 text-sm font-medium">CPS credentials not configured</p>
-                  <p className="text-yellow-500/80 text-xs mt-0.5">Missing <code className="bg-yellow-950/60 px-1 rounded">{cpsMissingCred}</code> credentials. Click "Configure CPS" to add them.</p>
+                  <p className="text-yellow-700 text-sm font-medium">CPS credentials not configured</p>
+                  <p className="text-yellow-500/80 text-xs mt-0.5">Missing <code className="bg-yellow-50/60 px-1 rounded">{cpsMissingCred}</code> credentials. Click "Configure CPS" to add them.</p>
                 </div>
               </div>
-              <button onClick={() => setShowCpsSettings(true)} className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg transition-colors">Configure</button>
+              <button onClick={() => setShowCpsSettings(true)} className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-yellow-600 hover:bg-yellow-500 text-gray-900 rounded-lg transition-colors">Configure</button>
             </div>
           )}
 
           {/* Error */}
           {cpsError && (
-            <div className="bg-red-950/30 border border-red-800/50 rounded-xl px-5 py-4 space-y-2">
-              <div className="flex items-center gap-3 text-red-300 text-sm">
+            <div className="bg-red-50/30 border border-red-200/50 rounded-xl px-5 py-4 space-y-2">
+              <div className="flex items-center gap-3 text-red-700 text-sm">
                 <AlertTriangle size={14} className="flex-shrink-0" /> {cpsError}
               </div>
               {cpsAttemptedUrl && (
-                <div className="text-[10px] text-red-500/80 font-mono break-all border-t border-red-900/30 pt-2">
+                <div className="text-[10px] text-red-500/80 font-mono break-all border-t border-red-200/30 pt-2">
                   Attempted: {cpsAttemptedUrl}
                 </div>
               )}
@@ -1851,10 +1852,10 @@ export default function ApplicationDetailPage() {
           {/* Not loaded yet */}
           {!cpsLoading && !cpsData && !cpsError && !cpsMissingCred && (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
-              <Key size={32} className="text-slate-700" />
+              <Key size={32} className="text-gray-400" />
               <p className="text-slate-500 text-sm">Click to load properties from the Config Property Server</p>
-              <p className="text-slate-600 text-xs">Will fetch <code className="text-slate-500">{effectiveCpsKey}</code> in <code className="text-slate-500">{effectiveCpsEnv}</code></p>
-              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
+              <p className="text-gray-400 text-xs">Will fetch <code className="text-slate-500">{effectiveCpsKey}</code> in <code className="text-slate-500">{effectiveCpsEnv}</code></p>
+              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-gray-900 text-sm font-medium rounded-xl transition-colors">
                 <Key size={13} /> Load CPS Properties
               </button>
             </div>
@@ -1867,7 +1868,7 @@ export default function ApplicationDetailPage() {
               <div className="relative">
                 <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 <input value={cpsSearch} onChange={(e) => setCpsSearch(e.target.value)} placeholder="Filter CPS properties by key or value…"
-                  className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50" />
+                  className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-300/50" />
               </div>
 
               {/* Non-secure properties — flat table from the properties object */}
@@ -1883,7 +1884,7 @@ export default function ApplicationDetailPage() {
                     <div className="max-h-80 overflow-y-auto">
                     <table className="w-full text-sm border-collapse">
                       <thead>
-                        <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                        <tr className="bg-gray-100/50 border-b border-gray-300/40">
                           <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase w-[42%]">Property Key</th>
                           <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Value</th>
                         </tr>
@@ -1896,10 +1897,10 @@ export default function ApplicationDetailPage() {
                             : typeof v === 'object' ? JSON.stringify(v)
                             : String(v);
                           return (
-                            <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                            <tr key={k} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
                               <td className="px-5 py-3 align-top">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-slate-400 text-xs font-mono break-all">{k}</span>
+                                  <span className="text-gray-500 text-xs font-mono break-all">{k}</span>
                                   <CopyBtn text={k} />
                                 </div>
                               </td>
@@ -1909,15 +1910,15 @@ export default function ApplicationDetailPage() {
                                     {display.split(',').map((item) => item.trim()).filter(Boolean).map((item) => (
                                       <span key={item} className={`inline-flex text-[10px] px-2 py-0.5 rounded-md font-mono border ${
                                         k === 'cps.secure.binaries'
-                                          ? 'bg-orange-950/30 text-orange-300 border-orange-800/40'
-                                          : 'bg-purple-950/30 text-purple-300 border-purple-800/40'
+                                          ? 'bg-orange-50/30 text-orange-700 border-orange-200/40'
+                                          : 'bg-purple-50/30 text-purple-700 border-purple-200/40'
                                       }`}>{item}</span>
                                     ))}
                                     <CopyBtn text={display} />
                                   </div>
                                 ) : (
                                   <div className="flex items-start gap-1.5">
-                                    <span className={`text-xs font-mono break-all ${isNum ? 'text-cyan-300' : 'text-slate-200'}`}>{display}</span>
+                                    <span className={`text-xs font-mono break-all ${isNum ? 'text-cyan-700' : 'text-gray-700'}`}>{display}</span>
                                     <CopyBtn text={display} />
                                   </div>
                                 )}
@@ -1934,9 +1935,9 @@ export default function ApplicationDetailPage() {
 
               {/* ── Get Secure Properties button ── */}
               {cpsData.secureKeys && cpsData.secureGroups.length === 0 && (
-                <div className="flex items-center justify-between bg-purple-950/20 border border-purple-800/40 rounded-2xl px-5 py-4">
+                <div className="flex items-center justify-between bg-purple-50/20 border border-purple-200/40 rounded-2xl px-5 py-4">
                   <div className="space-y-1">
-                    <p className="text-purple-300 text-sm font-semibold flex items-center gap-2">
+                    <p className="text-purple-700 text-sm font-semibold flex items-center gap-2">
                       <Key size={13} /> Secure Properties
                     </p>
                     <p className="text-purple-500/70 text-xs">Keys: {cpsData.secureKeys}</p>
@@ -1976,7 +1977,7 @@ export default function ApplicationDetailPage() {
                       }
                       setSecureLoading(false);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-xl transition-colors disabled:opacity-50 flex-shrink-0"
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-gray-900 text-xs font-medium rounded-xl transition-colors disabled:opacity-50 flex-shrink-0"
                   >
                     {secureLoading
                       ? <><RefreshCw size={12} className="animate-spin" /> Loading…</>
@@ -1990,7 +1991,7 @@ export default function ApplicationDetailPage() {
                 // Error group — show error message instead of a property card
                 if (group.key === '__error__' || group._error) {
                   return (
-                    <div key="__error__" className="flex items-start gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-5 py-4 text-red-400 text-sm">
+                    <div key="__error__" className="flex items-start gap-3 bg-red-50/30 border border-red-200/50 rounded-xl px-5 py-4 text-red-600 text-sm">
                       <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                       <div>
                         <p className="font-medium">Secure properties could not be loaded</p>
@@ -2006,7 +2007,7 @@ export default function ApplicationDetailPage() {
                 // Skip groups where properties is a "COULD NOT ACCESS" string
                 if (typeof groupProps === 'string') {
                   return (
-                    <div key={group.key} className="flex items-start gap-3 bg-yellow-950/30 border border-yellow-800/50 rounded-xl px-5 py-3 text-yellow-400 text-xs">
+                    <div key={group.key} className="flex items-start gap-3 bg-yellow-50/30 border border-yellow-200/50 rounded-xl px-5 py-3 text-yellow-600 text-xs">
                       <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
                       <span>🔒 <strong>{group.key}</strong>: {groupProps}</span>
                     </div>
@@ -2017,8 +2018,8 @@ export default function ApplicationDetailPage() {
                 if (filtered.length === 0 && cpsSearch) return null;
                 return (
                   <GlassCard key={group.key} icon={Key} title={`🔒 ${group.key}`} count={Object.keys(groupProps).length} noPad>
-                    <div className="px-5 py-2 bg-orange-950/20 border-b border-orange-900/20 flex items-center justify-between">
-                      <span className="text-[10px] text-orange-400/70">Secure property group — treat values as sensitive</span>
+                    <div className="px-5 py-2 bg-orange-50/20 border-b border-orange-200/20 flex items-center justify-between">
+                      <span className="text-[10px] text-orange-600/70">Secure property group — treat values as sensitive</span>
                       <CopyGroupBtn text={JSON.stringify({
                         responses: [{
                           environment: group.environment || cpsData.useEnv || effectiveCpsEnv,
@@ -2031,8 +2032,8 @@ export default function ApplicationDetailPage() {
                     <table className="w-full text-sm border-collapse">
                       <tbody>
                         {(cpsSearch ? filtered : Object.entries(groupProps).sort(([a],[b])=>a.localeCompare(b))).map(([k, v]) => (
-                          <tr key={k} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
-                            <td className="px-5 py-3 w-[42%]"><span className="text-slate-400 text-xs font-mono break-all">{k}</span></td>
+                          <tr key={k} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
+                            <td className="px-5 py-3 w-[42%]"><span className="text-gray-500 text-xs font-mono break-all">{k}</span></td>
                             <td className="px-5 py-3"><SecretVal value={String(v)} /></td>
                           </tr>
                         ))}
@@ -2050,12 +2051,12 @@ export default function ApplicationDetailPage() {
                 if (binaryFiles.length === 0) return null;
                 return (
                   <GlassCard icon={Package} title="Binary Assets" count={binaryFiles.length} noPad>
-                    <div className="px-5 py-2 bg-orange-950/20 border-b border-orange-900/20">
-                      <span className="text-[10px] text-orange-400/70">Binary files configured in <code className="text-orange-400">cps.secure.binaries</code></span>
+                    <div className="px-5 py-2 bg-orange-50/20 border-b border-orange-200/20">
+                      <span className="text-[10px] text-orange-600/70">Binary files configured in <code className="text-orange-600">cps.secure.binaries</code></span>
                     </div>
                     <table className="w-full text-sm border-collapse">
                       <thead>
-                        <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                        <tr className="bg-gray-100/50 border-b border-gray-300/40">
                           <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">File Name</th>
                           <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Extension</th>
                         </tr>
@@ -2063,16 +2064,16 @@ export default function ApplicationDetailPage() {
                       <tbody>
                         {binaryFiles.map((fileName, i) => {
                           const ext = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '—';
-                          const extColor = ext === 'jks' ? 'bg-blue-950/30 text-blue-300 border-blue-800/40'
-                            : ext === 'pem' ? 'bg-green-950/30 text-green-300 border-green-800/40'
-                            : ext === 'gpg' || ext === 'pgp' ? 'bg-purple-950/30 text-purple-300 border-purple-800/40'
-                            : ext === 'crt' || ext === 'cer' ? 'bg-cyan-950/30 text-cyan-300 border-cyan-800/40'
-                            : 'bg-slate-800/40 text-slate-400 border-slate-700/40';
+                          const extColor = ext === 'jks' ? 'bg-blue-50/30 text-blue-700 border-blue-200/40'
+                            : ext === 'pem' ? 'bg-green-50/30 text-green-700 border-green-200/40'
+                            : ext === 'gpg' || ext === 'pgp' ? 'bg-purple-50/30 text-purple-700 border-purple-200/40'
+                            : ext === 'crt' || ext === 'cer' ? 'bg-cyan-50/30 text-cyan-700 border-cyan-200/40'
+                            : 'bg-gray-100/40 text-gray-500 border-gray-300/40';
                           return (
-                            <tr key={i} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                            <tr key={i} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
                               <td className="px-5 py-3">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-slate-200 text-xs font-mono">{fileName}</span>
+                                  <span className="text-gray-700 text-xs font-mono">{fileName}</span>
                                   <CopyBtn text={fileName} />
                                 </div>
                               </td>
@@ -2164,20 +2165,20 @@ export default function ApplicationDetailPage() {
 
         const srcBadge = (source) => {
           const s = {
-            'ARM': 'bg-blue-950/40 text-blue-300 border-blue-800/40',
-            'CPS (non-secure)': 'bg-slate-800/60 text-slate-400 border-slate-700/40',
-            'CPS (secure)': 'bg-orange-950/40 text-orange-300 border-orange-800/40',
-          }[source] || 'bg-slate-800/60 text-slate-400 border-slate-700/40';
+            'ARM': 'bg-blue-50/40 text-blue-700 border-blue-200/40',
+            'CPS (non-secure)': 'bg-gray-100/60 text-gray-500 border-gray-300/40',
+            'CPS (secure)': 'bg-orange-50/40 text-orange-700 border-orange-200/40',
+          }[source] || 'bg-gray-100/60 text-gray-500 border-gray-300/40';
           return <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${s}`}>{source}</span>;
         };
 
         const typeBadge = (dep) => {
           const cls = {
-            CH1:      'bg-purple-950/40 text-purple-300 border-purple-700/40',
-            CH2:      'bg-blue-950/40 text-blue-300 border-blue-700/40',
-            ANYPOINT: 'bg-cyan-950/40 text-cyan-300 border-cyan-700/40',
-            EXTERNAL: 'bg-slate-800/60 text-slate-400 border-slate-700/40',
-          }[dep.type] || 'bg-slate-800/60 text-slate-400 border-slate-700/40';
+            CH1:      'bg-purple-50/40 text-purple-700 border-purple-300/40',
+            CH2:      'bg-blue-50/40 text-blue-700 border-blue-300/40',
+            ANYPOINT: 'bg-cyan-50/40 text-cyan-700 border-cyan-300/40',
+            EXTERNAL: 'bg-gray-100/60 text-gray-500 border-gray-300/40',
+          }[dep.type] || 'bg-gray-100/60 text-gray-500 border-gray-300/40';
           return <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${cls}`}>{dep.label}</span>;
         };
 
@@ -2185,7 +2186,7 @@ export default function ApplicationDetailPage() {
           <GlassCard icon={Share2} title={title} count={rows.length} accent={accent} noPad>
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                <tr className="bg-gray-100/50 border-b border-gray-300/40">
                   {['Host / URL', 'Type', 'Discovered via (property key → value)'].map(h => (
                     <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
                   ))}
@@ -2193,10 +2194,10 @@ export default function ApplicationDetailPage() {
               </thead>
               <tbody>
                 {rows.map((dep) => (
-                  <tr key={dep.host} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors align-top">
+                  <tr key={dep.host} className="border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors align-top">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-xs text-slate-200 break-all">{dep.host}</span>
+                        <span className="font-mono text-xs text-gray-700 break-all">{dep.host}</span>
                         <CopyBtn text={dep.host} />
                       </div>
                     </td>
@@ -2206,9 +2207,9 @@ export default function ApplicationDetailPage() {
                         {dep.refs.map((r, i) => (
                           <div key={i} className="flex flex-wrap items-start gap-1.5">
                             {srcBadge(r.source)}
-                            <span className="font-mono text-[10px] text-slate-400 break-all">{r.key}</span>
-                            <span className="text-slate-600 text-[10px]">→</span>
-                            <span className="font-mono text-[10px] text-slate-300 break-all">{r.value}</span>
+                            <span className="font-mono text-[10px] text-gray-500 break-all">{r.key}</span>
+                            <span className="text-gray-400 text-[10px]">→</span>
+                            <span className="font-mono text-[10px] text-gray-600 break-all">{r.value}</span>
                             <CopyBtn text={r.value} />
                           </div>
                         ))}
@@ -2226,22 +2227,22 @@ export default function ApplicationDetailPage() {
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
-                <h2 className="text-white font-semibold text-sm flex items-center gap-2">
-                  <Share2 size={14} className="text-cyan-400" /> App Dependencies
+                <h2 className="text-gray-900 font-semibold text-sm flex items-center gap-2">
+                  <Share2 size={14} className="text-cyan-600" /> App Dependencies
                 </h2>
                 <p className="text-slate-500 text-xs mt-0.5">
                   Upstream hosts and external services detected from ARM properties
                   {cpsData ? ' and CPS properties' : ''}.
                   {!cpsData && cpsBaseUrl && (
                     <button onClick={() => { setTab('cps'); loadCpsData(); }}
-                      className="ml-1.5 text-blue-400 hover:text-blue-300 underline underline-offset-2">
+                      className="ml-1.5 text-blue-600 hover:text-blue-700 underline underline-offset-2">
                       Load CPS to discover more
                     </button>
                   )}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-600 border border-slate-800 rounded-lg px-2 py-1">
+                <span className="text-[10px] text-gray-400 border border-gray-200 rounded-lg px-2 py-1">
                   {total} unique host{total !== 1 ? 's' : ''} found
                 </span>
               </div>
@@ -2254,24 +2255,24 @@ export default function ApplicationDetailPage() {
                 value={depSearch}
                 onChange={e => setDepSearch(e.target.value)}
                 placeholder="Filter by host, property key, or value…"
-                className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-600/50"
+                className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-300/50"
               />
             </div>
 
             {/* Legend */}
-            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-600">
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-400">
               <span className="font-medium text-slate-500">Sources:</span>
-              <span className="px-1.5 py-0.5 rounded border bg-blue-950/40 text-blue-300 border-blue-800/40 font-mono">ARM</span>
-              <span className="text-slate-700">= CloudHub deployment properties</span>
-              <span className="px-1.5 py-0.5 rounded border bg-slate-800/60 text-slate-400 border-slate-700/40 font-mono">CPS (non-secure)</span>
-              <span className="px-1.5 py-0.5 rounded border bg-orange-950/40 text-orange-300 border-orange-800/40 font-mono">CPS (secure)</span>
+              <span className="px-1.5 py-0.5 rounded border bg-blue-50/40 text-blue-700 border-blue-200/40 font-mono">ARM</span>
+              <span className="text-gray-400">= CloudHub deployment properties</span>
+              <span className="px-1.5 py-0.5 rounded border bg-gray-100/60 text-gray-500 border-gray-300/40 font-mono">CPS (non-secure)</span>
+              <span className="px-1.5 py-0.5 rounded border bg-orange-50/40 text-orange-700 border-orange-200/40 font-mono">CPS (secure)</span>
             </div>
 
             {deps.length === 0 && !searchLo && (
-              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-slate-900/50 border border-slate-800/60 rounded-2xl">
-                <Share2 size={32} className="text-slate-700" />
+              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/50 border border-gray-200/60 rounded-2xl">
+                <Share2 size={32} className="text-gray-400" />
                 <p className="text-slate-500 text-sm">No upstream dependencies detected</p>
-                <p className="text-slate-600 text-xs text-center max-w-sm">
+                <p className="text-gray-400 text-xs text-center max-w-sm">
                   No properties containing <code className="text-slate-500">host</code>, <code className="text-slate-500">url</code>,
                   <code className="text-slate-500"> endpoint</code>, or <code className="text-slate-500">uri</code> patterns were found
                   with URL-like values.
@@ -2282,7 +2283,7 @@ export default function ApplicationDetailPage() {
 
             {deps.length === 0 && searchLo && (
               <div className="flex items-center justify-center py-12 text-slate-500 text-sm">
-                No dependencies match <span className="ml-1 font-mono text-slate-400">"{depSearch}"</span>
+                No dependencies match <span className="ml-1 font-mono text-gray-500">"{depSearch}"</span>
               </div>
             )}
 
@@ -2297,10 +2298,10 @@ export default function ApplicationDetailPage() {
         <div className="space-y-5">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
-              <h2 className="text-white font-semibold text-sm">API Consumer Contracts</h2>
+              <h2 className="text-gray-900 font-semibold text-sm">API Consumer Contracts</h2>
               <p className="text-slate-500 text-xs mt-0.5">
                 Client applications approved to consume this API instance
-                {contractApiInstanceId && <span className="ml-2 font-mono text-slate-600">API ID: {contractApiInstanceId}</span>}
+                {contractApiInstanceId && <span className="ml-2 font-mono text-gray-400">API ID: {contractApiInstanceId}</span>}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -2312,11 +2313,11 @@ export default function ApplicationDetailPage() {
                   navigate('/api-manager');
                 }}
                 title="Open API Manager for this environment"
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 hover:border-blue-600/50 rounded-lg transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/40 hover:border-blue-300/50 rounded-lg transition-colors">
                 <ShieldCheck size={11} /> Open in API Manager
               </button>
               <button onClick={loadContracts} disabled={contractsLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900 bg-gray-100/60 border border-gray-300/40 rounded-lg transition-colors">
                 <RefreshCw size={11} className={contractsLoading ? 'animate-spin' : ''} />
                 {contracts ? 'Refresh' : 'Load'}
               </button>
@@ -2327,8 +2328,8 @@ export default function ApplicationDetailPage() {
           {contractActionResult && (
             <div className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm ${
               contractActionResult.success
-                ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
-                : 'bg-red-950/40 border-red-800/50 text-red-300'
+                ? 'bg-emerald-50/40 border-emerald-200/50 text-emerald-700'
+                : 'bg-red-50/40 border-red-200/50 text-red-700'
             }`}>
               <span>{contractActionResult.message}</span>
               <button onClick={() => setContractActionResult(null)} className="ml-4 opacity-60 hover:opacity-100"><X size={14} /></button>
@@ -2343,10 +2344,10 @@ export default function ApplicationDetailPage() {
           )}
 
           {contractsError && !contractsLoading && (
-            <div className="flex items-start gap-3 bg-slate-900/60 border border-slate-800/60 rounded-2xl px-5 py-4">
-              <AlertTriangle size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 bg-white/60 border border-gray-200/60 rounded-2xl px-5 py-4">
+              <AlertTriangle size={16} className="text-yellow-600 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-slate-300 text-sm font-medium">No contracts available</p>
+                <p className="text-gray-600 text-sm font-medium">No contracts available</p>
                 <p className="text-slate-500 text-xs mt-1">{contractsError}</p>
               </div>
             </div>
@@ -2354,8 +2355,8 @@ export default function ApplicationDetailPage() {
 
           {contracts !== null && !contractsLoading && !contractsError && (
             contracts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-slate-900/50 border border-slate-800/60 rounded-2xl">
-                <Key size={36} className="text-slate-700" />
+              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/50 border border-gray-200/60 rounded-2xl">
+                <Key size={36} className="text-gray-400" />
                 <p className="text-slate-500 text-sm">No approved contracts for this API instance</p>
               </div>
             ) : (
@@ -2363,7 +2364,7 @@ export default function ApplicationDetailPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                      <tr className="bg-gray-100/50 border-b border-gray-300/40">
                         {['Client App', 'Client ID', 'Status', 'SLA Tier', 'Requested', 'Actions'].map(h => (
                           <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
                         ))}
@@ -2373,10 +2374,10 @@ export default function ApplicationDetailPage() {
                       {contracts.map((c, i) => {
                         const status = (c.status || 'UNKNOWN').toUpperCase();
                         const statusCls = status === 'APPROVED'
-                          ? 'bg-emerald-950/50 text-emerald-300 border-emerald-700/50'
+                          ? 'bg-emerald-50/50 text-emerald-700 border-emerald-300/50'
                           : status === 'REVOKED'
-                          ? 'bg-red-950/50 text-red-300 border-red-700/50'
-                          : 'bg-yellow-950/50 text-yellow-300 border-yellow-700/50';
+                          ? 'bg-red-50/50 text-red-700 border-red-300/50'
+                          : 'bg-yellow-50/50 text-yellow-700 border-yellow-300/50';
                         const clientId =
                           c.application?.coreServicesId ||
                           c.application?.clientId ||
@@ -2393,29 +2394,29 @@ export default function ApplicationDetailPage() {
                         const canApprove = status === 'PENDING' || status === 'REVOKED';
                         const canRevoke  = status === 'APPROVED' || status === 'PENDING';
                         return (
-                          <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                          <tr key={i} className="border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
                             <td className="px-5 py-3">
-                              <p className="text-slate-200 text-xs font-medium">{appName}</p>
+                              <p className="text-gray-700 text-xs font-medium">{appName}</p>
                               {c.application?.description && (
-                                <p className="text-slate-600 text-[10px] mt-0.5 truncate max-w-xs">{c.application.description}</p>
+                                <p className="text-gray-400 text-[10px] mt-0.5 truncate max-w-xs">{c.application.description}</p>
                               )}
                             </td>
                             <td className="px-5 py-3">
                               <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-xs text-slate-300 break-all">{clientId}</span>
+                                <span className="font-mono text-xs text-gray-600 break-all">{clientId}</span>
                                 {clientId !== '—' && <CopyBtn text={String(clientId)} />}
                               </div>
                             </td>
                             <td className="px-5 py-3">
                               <span className={`inline-flex text-[10px] px-2 py-0.5 rounded-full border font-bold ${statusCls}`}>{status}</span>
                             </td>
-                            <td className="px-5 py-3 text-slate-400 text-xs">{slaTier}</td>
+                            <td className="px-5 py-3 text-gray-500 text-xs">{slaTier}</td>
                             <td className="px-5 py-3 text-slate-500 text-xs">{reqDate}</td>
                             <td className="px-5 py-3">
                               {contractId ? (
                                 <div className="flex items-center gap-1.5">
                                   {isActioning ? (
-                                    <span className="flex items-center gap-1.5 text-[10px] text-slate-400 px-2 py-1">
+                                    <span className="flex items-center gap-1.5 text-[10px] text-gray-500 px-2 py-1">
                                       <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-slate-400" /> Working…
                                     </span>
                                   ) : (
@@ -2424,7 +2425,7 @@ export default function ApplicationDetailPage() {
                                         <button
                                           onClick={() => setContractConfirmState({ contractId, action: 'approve', appName })}
                                           title={`Approve contract for ${appName}`}
-                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-emerald-950/30 text-emerald-300 border-emerald-700/40 hover:bg-emerald-600/20 hover:text-emerald-200 hover:border-emerald-600/60">
+                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-emerald-50/30 text-emerald-700 border-emerald-300/40 hover:bg-emerald-100 hover:text-emerald-200 hover:border-emerald-300/60">
                                           <Check size={9} /> Approve
                                         </button>
                                       )}
@@ -2432,21 +2433,21 @@ export default function ApplicationDetailPage() {
                                         <button
                                           onClick={() => setContractConfirmState({ contractId, action: 'revoke', appName })}
                                           title={`Revoke contract for ${appName}`}
-                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-red-950/30 text-red-300 border-red-700/40 hover:bg-red-600/20 hover:text-red-200 hover:border-red-600/60">
+                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-red-50/30 text-red-700 border-red-300/40 hover:bg-red-100 hover:text-red-200 hover:border-red-300/60">
                                           <X size={9} /> Revoke
                                         </button>
                                       )}
                                       <button
                                         onClick={() => setContractConfirmState({ contractId, action: 'delete', appName })}
                                         title={`Permanently delete contract for ${appName}`}
-                                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-red-950/40 text-red-400 border-red-800/50 hover:bg-red-700/30 hover:text-red-300 hover:border-red-600/60">
+                                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-red-50/40 text-red-600 border-red-200/50 hover:bg-red-700/30 hover:text-red-700 hover:border-red-300/60">
                                         <Trash2 size={9} /> Delete
                                       </button>
                                     </>
                                   )}
                                 </div>
                               ) : (
-                                <span className="text-slate-700 text-xs">—</span>
+                                <span className="text-gray-400 text-xs">—</span>
                               )}
                             </td>
                           </tr>
@@ -2460,11 +2461,11 @@ export default function ApplicationDetailPage() {
           )}
 
           {contracts === null && !contractsLoading && !contractsError && (
-            <div className="flex flex-col items-center justify-center py-16 gap-4 bg-slate-900/50 border border-slate-800/60 rounded-2xl">
-              <Key size={32} className="text-slate-700" />
+            <div className="flex flex-col items-center justify-center py-16 gap-4 bg-white/50 border border-gray-200/60 rounded-2xl">
+              <Key size={32} className="text-gray-400" />
               <p className="text-slate-500 text-sm">Click <strong>Load</strong> to fetch consumer contracts from API Manager</p>
               <button onClick={loadContracts}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-gray-900 text-sm font-medium rounded-xl transition-colors">
                 <Key size={13} /> Load Contracts
               </button>
             </div>
@@ -2513,16 +2514,16 @@ export default function ApplicationDetailPage() {
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-white font-semibold text-sm flex items-center gap-2">
-                <Globe size={14} className="text-blue-400" /> API Specification — Exchange
+              <h2 className="text-gray-900 font-semibold text-sm flex items-center gap-2">
+                <Globe size={14} className="text-blue-600" /> API Specification — Exchange
               </h2>
               <p className="text-slate-500 text-xs mt-0.5">
                 {pingSpecLoading ? 'Searching Exchange and parsing spec…' :
                   pingSpec ? <>
-                    <span className="text-slate-400">{pingSpec.assetName}</span>
+                    <span className="text-gray-500">{pingSpec.assetName}</span>
                     {' · '}{pingSpec.specType?.toUpperCase()} · {pingSpec.allEndpoints?.length ?? 0} endpoints
                     {pingSpec.pingEndpoints?.length > 0 && (
-                      <span className="ml-2 text-emerald-400 font-medium">
+                      <span className="ml-2 text-emerald-600 font-medium">
                         · {pingSpec.pingEndpoints.length} ping path{pingSpec.pingEndpoints.length !== 1 ? 's' : ''} found
                       </span>
                     )}
@@ -2531,7 +2532,7 @@ export default function ApplicationDetailPage() {
             </div>
             <button onClick={() => fetchPingSpec()} disabled={pingSpecLoading}
               title="Re-fetch API spec from Exchange"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/40 rounded-lg transition-colors disabled:opacity-50">
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900 bg-gray-100/60 border border-gray-300/40 rounded-lg transition-colors disabled:opacity-50">
               <RefreshCw size={11} className={pingSpecLoading ? 'animate-spin' : ''} />
               {pingSpec ? 'Refresh' : 'Fetch Spec'}
             </button>
@@ -2545,10 +2546,10 @@ export default function ApplicationDetailPage() {
           )}
 
           {!pingSpecLoading && !pingSpec && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3 bg-slate-900/50 border border-slate-800/60 rounded-2xl">
-              <Globe size={32} className="text-slate-700" />
+            <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/50 border border-gray-200/60 rounded-2xl">
+              <Globe size={32} className="text-gray-400" />
               <p className="text-slate-500 text-sm">No Exchange spec found for this application</p>
-              <p className="text-slate-600 text-xs">The app needs an Exchange asset linked via <code>application.ref</code> in its ARM descriptor</p>
+              <p className="text-gray-400 text-xs">The app needs an Exchange asset linked via <code>application.ref</code> in its ARM descriptor</p>
             </div>
           )}
 
@@ -2557,14 +2558,14 @@ export default function ApplicationDetailPage() {
               {/* Ping endpoints highlighted */}
               {pingSpec.pingEndpoints?.length > 0 && (
                 <GlassCard icon={Activity} title="Ping / Health Endpoints" count={pingSpec.pingEndpoints.length} accent="blue" noPad>
-                  <div className="px-5 py-2 bg-emerald-950/20 border-b border-emerald-900/20">
-                    <span className="text-[10px] text-emerald-400/80">
+                  <div className="px-5 py-2 bg-emerald-50/20 border-b border-emerald-200/20">
+                    <span className="text-[10px] text-emerald-600/80">
                       These endpoints will be tried first during ping tests. Required query params are auto-filled.
                     </span>
                   </div>
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="bg-slate-800/50 border-b border-slate-700/40">
+                      <tr className="bg-gray-100/50 border-b border-gray-300/40">
                         {['Method', 'Path', 'Query Params', 'Headers', 'Description'].map(h => (
                           <th key={h} className="px-4 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
                         ))}
@@ -2572,40 +2573,40 @@ export default function ApplicationDetailPage() {
                     </thead>
                     <tbody>
                       {pingSpec.pingEndpoints.map((ep, i) => (
-                        <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/20 transition-colors">
+                        <tr key={i} className="border-b border-gray-200/40 hover:bg-gray-100/20 transition-colors">
                           <td className="px-4 py-3">
                             <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${
-                              ep.method === 'GET' ? 'bg-blue-950/40 text-blue-300 border-blue-700/40' :
-                              ep.method === 'POST' ? 'bg-green-950/40 text-green-300 border-green-700/40' :
-                              'bg-slate-800/60 text-slate-300 border-slate-700/40'
+                              ep.method === 'GET' ? 'bg-blue-50/40 text-blue-700 border-blue-300/40' :
+                              ep.method === 'POST' ? 'bg-green-50/40 text-green-700 border-green-300/40' :
+                              'bg-gray-100/60 text-gray-600 border-gray-300/40'
                             }`}>{ep.method}</span>
                           </td>
-                          <td className="px-4 py-3 font-mono text-xs text-cyan-300">{ep.path}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-cyan-700">{ep.path}</td>
                           <td className="px-4 py-3">
                             {ep.queryParams?.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {ep.queryParams.map(p => (
                                   <span key={p.name} title={`${p.description}${p.example ? ` (e.g. ${p.example})` : ''}`}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${p.required ? 'bg-orange-950/40 text-orange-300 border-orange-700/40' : 'bg-slate-800/60 text-slate-400 border-slate-700/40'}`}>
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${p.required ? 'bg-orange-50/40 text-orange-700 border-orange-300/40' : 'bg-gray-100/60 text-gray-500 border-gray-300/40'}`}>
                                     {p.name}{p.required ? '*' : ''}
                                   </span>
                                 ))}
                               </div>
-                            ) : <span className="text-slate-700 text-xs">—</span>}
+                            ) : <span className="text-gray-400 text-xs">—</span>}
                           </td>
                                   <td className="px-4 py-3">
                             {ep.headers?.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {ep.headers.map(h => (
                                   <span key={h.name} title={h.description}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${h.required ? 'bg-purple-950/40 text-purple-300 border-purple-700/40' : 'bg-slate-800/60 text-slate-400 border-slate-700/40'}`}>
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${h.required ? 'bg-purple-50/40 text-purple-700 border-purple-300/40' : 'bg-gray-100/60 text-gray-500 border-gray-300/40'}`}>
                                     {h.name}{h.required ? '*' : ''}
                                   </span>
                                 ))}
                               </div>
-                            ) : <span className="text-slate-700 text-xs">—</span>}
+                            ) : <span className="text-gray-400 text-xs">—</span>}
                           </td>
-                          <td className="px-4 py-3 text-slate-400 text-xs">{ep.description || '—'}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{ep.description || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2619,7 +2620,7 @@ export default function ApplicationDetailPage() {
                   <div className="max-h-[50vh] overflow-y-auto">
                     <table className="w-full text-sm border-collapse">
                       <thead className="sticky top-0">
-                        <tr className="bg-slate-800/90 border-b border-slate-700/40">
+                        <tr className="bg-gray-100/90 border-b border-gray-300/40">
                           {['Method', 'Path', 'Query Params', 'Headers', 'Description'].map(h => (
                             <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
                           ))}
@@ -2629,18 +2630,18 @@ export default function ApplicationDetailPage() {
                         {pingSpec.allEndpoints.map((ep, i) => {
                           const isPing = pingSpec.pingEndpoints?.some(p => p.path === ep.path && p.method === ep.method);
                           return (
-                            <tr key={i} className={`border-b border-slate-800/40 hover:bg-slate-800/20 transition-colors ${isPing ? 'bg-emerald-950/10' : ''}`}>
+                            <tr key={i} className={`border-b border-gray-200/40 hover:bg-gray-100/20 transition-colors ${isPing ? 'bg-emerald-50/10' : ''}`}>
                               <td className="px-4 py-2.5">
                                 <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${
-                                  ep.method === 'GET' ? 'bg-blue-950/40 text-blue-300 border-blue-700/40' :
-                                  ep.method === 'POST' ? 'bg-green-950/40 text-green-300 border-green-700/40' :
-                                  ep.method === 'PUT' ? 'bg-yellow-950/40 text-yellow-300 border-yellow-700/40' :
-                                  ep.method === 'DELETE' ? 'bg-red-950/40 text-red-300 border-red-700/40' :
-                                  'bg-slate-800/60 text-slate-300 border-slate-700/40'
+                                  ep.method === 'GET' ? 'bg-blue-50/40 text-blue-700 border-blue-300/40' :
+                                  ep.method === 'POST' ? 'bg-green-50/40 text-green-700 border-green-300/40' :
+                                  ep.method === 'PUT' ? 'bg-yellow-50/40 text-yellow-700 border-yellow-300/40' :
+                                  ep.method === 'DELETE' ? 'bg-red-50/40 text-red-700 border-red-300/40' :
+                                  'bg-gray-100/60 text-gray-600 border-gray-300/40'
                                 }`}>{ep.method}</span>
                               </td>
                               <td className="px-4 py-2.5">
-                                <span className={`font-mono text-xs ${isPing ? 'text-emerald-300' : 'text-slate-300'}`}>{ep.path}</span>
+                                <span className={`font-mono text-xs ${isPing ? 'text-emerald-700' : 'text-gray-600'}`}>{ep.path}</span>
                                 {isPing && <span className="ml-1.5 text-[9px] text-emerald-500">● ping</span>}
                               </td>
                               <td className="px-4 py-2.5">
@@ -2648,24 +2649,24 @@ export default function ApplicationDetailPage() {
                                   <div className="flex flex-wrap gap-1">
                                     {ep.queryParams.map(p => (
                                       <span key={p.name} title={p.description}
-                                        className={`text-[9px] px-1 py-0.5 rounded border font-mono ${p.required ? 'bg-orange-950/30 text-orange-300 border-orange-700/40' : 'bg-slate-800/60 text-slate-500 border-slate-700/40'}`}>
+                                        className={`text-[9px] px-1 py-0.5 rounded border font-mono ${p.required ? 'bg-orange-50/30 text-orange-700 border-orange-300/40' : 'bg-gray-100/60 text-slate-500 border-gray-300/40'}`}>
                                         {p.name}
                                       </span>
                                     ))}
                                   </div>
-                                ) : <span className="text-slate-700 text-[10px]">—</span>}
+                                ) : <span className="text-gray-400 text-[10px]">—</span>}
                               </td>
                               <td className="px-4 py-2.5">
                                 {ep.headers?.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
                                     {ep.headers.map(h => (
                                       <span key={h.name} title={h.description}
-                                        className="text-[9px] px-1 py-0.5 rounded border font-mono bg-slate-800/60 text-slate-500 border-slate-700/40">
+                                        className="text-[9px] px-1 py-0.5 rounded border font-mono bg-gray-100/60 text-slate-500 border-gray-300/40">
                                         {h.name}
                                       </span>
                                     ))}
                                   </div>
-                                ) : <span className="text-slate-700 text-[10px]">—</span>}
+                                ) : <span className="text-gray-400 text-[10px]">—</span>}
                               </td>
                               <td className="px-4 py-2.5 text-slate-500 text-xs max-w-xs truncate">{ep.description || '—'}</td>
                             </tr>
@@ -2674,20 +2675,20 @@ export default function ApplicationDetailPage() {
                       </tbody>
                     </table>
                   </div>
-                  <div className="px-5 py-2 border-t border-slate-800/60 text-[10px] text-slate-600">
-                    * = required · <span className="text-orange-400/70">orange</span> = required query param · <span className="text-purple-400/70">purple</span> = required header · <span className="text-emerald-400/60">● ping</span> = health check endpoint
+                  <div className="px-5 py-2 border-t border-gray-200/60 text-[10px] text-gray-400">
+                    * = required · <span className="text-orange-600/70">orange</span> = required query param · <span className="text-purple-600/70">purple</span> = required header · <span className="text-emerald-600/60">● ping</span> = health check endpoint
                   </div>
                 </GlassCard>
               )}
 
               {pingSpec.pingEndpoints?.length === 0 && (
-                <div className="flex items-start gap-3 bg-slate-900/60 border border-slate-800/60 rounded-2xl px-5 py-4">
-                  <AlertTriangle size={14} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                <div className="flex items-start gap-3 bg-white/60 border border-gray-200/60 rounded-2xl px-5 py-4">
+                  <AlertTriangle size={14} className="text-yellow-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-slate-300 text-sm font-medium">No ping/health endpoints detected</p>
+                    <p className="text-gray-600 text-sm font-medium">No ping/health endpoints detected</p>
                     <p className="text-slate-500 text-xs mt-1">
                       The spec doesn't contain paths matching: ping, health, status, liveness, readiness, or heartbeat.
-                      The dashboard will still try the standard paths: <code className="text-slate-400">/api/v1/ping → /api/v2/ping → /api/ping → /ping</code>
+                      The dashboard will still try the standard paths: <code className="text-gray-500">/api/v1/ping → /api/v2/ping → /api/ping → /ping</code>
                     </p>
                   </div>
                 </div>
@@ -2700,12 +2701,7 @@ export default function ApplicationDetailPage() {
       {/* ── RAW JSON ────────────────────────────────── */}
       {tab==='raw' && (
         <GlassCard icon={Copy} title="Raw JSON">
-          <div className="flex justify-end mb-3">
-            <CopyBtn text={JSON.stringify(app,null,2)}/>
-          </div>
-          <pre className="bg-[#0B0F17] rounded-xl p-5 text-xs text-emerald-400/90 overflow-auto max-h-[600px] font-mono leading-relaxed border border-slate-800/60">
-            {JSON.stringify(app,null,2)}
-          </pre>
+          <PostmanJsonViewer data={app} />
         </GlassCard>
       )}
     </div>

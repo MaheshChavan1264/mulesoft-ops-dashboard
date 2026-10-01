@@ -130,8 +130,8 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
 
   if (!canLoad) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 gap-3 text-gray-600">
-        <ShieldCheck size={32} className="text-gray-700" />
+      <div className="flex flex-col items-center justify-center py-12 gap-3 text-gray-500">
+        <ShieldCheck size={32} className="text-gray-500" />
         <p className="text-sm">Select an app to view access control</p>
       </div>
     );
@@ -142,26 +142,26 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-            <ShieldCheck size={14} className="text-cyan-400" />
+          <h3 className="text-gray-900 font-semibold text-sm flex items-center gap-2">
+            <ShieldCheck size={14} className="text-cyan-600" />
             Access Control
           </h3>
           <p className="text-gray-500 text-xs mt-0.5">
             Manage which client IDs can access{' '}
-            <code className="text-gray-400 bg-gray-800 px-1 rounded">{projectKey}</code>
+            <code className="text-gray-500 bg-gray-100 px-1 rounded">{projectKey}</code>
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowRawJson(true)}
-            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-cyan-300 bg-gray-800 border border-gray-700 hover:border-cyan-700/50 px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-cyan-700 bg-gray-100 border border-gray-300 hover:border-cyan-300/50 px-3 py-1.5 rounded-lg transition-colors"
           >
             <Code size={11} /> Raw JSON
           </button>
           <button
             onClick={loadAuth}
             disabled={loading}
-            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 bg-gray-100 border border-gray-300 px-3 py-1.5 rounded-lg transition-colors"
           >
             <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
             {loading ? 'Loading…' : 'Refresh'}
@@ -170,25 +170,25 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
       </div>
 
       {/* Mode toggle */}
-      <div className="flex items-center gap-3 bg-gray-800/40 border border-gray-700/50 rounded-xl px-4 py-3">
+      <div className="flex items-center gap-3 bg-gray-100/40 border border-gray-300/50 rounded-xl px-4 py-3">
         <ShieldCheck size={13} className="text-gray-500 flex-shrink-0" />
         <div className="flex-1">
-          <p className="text-xs text-gray-300 font-medium">Update Mode</p>
+          <p className="text-xs text-gray-600 font-medium">Update Mode</p>
           <p className="text-[10px] text-gray-500 mt-0.5">
             {replaceMode
               ? 'Replace all: existing clientIds NOT in your list will be removed'
               : 'Add to existing: non-destructive — only new IDs are added'}
           </p>
         </div>
-        <div className="flex gap-1 bg-gray-700/60 rounded-lg p-0.5 flex-shrink-0">
+        <div className="flex gap-1 bg-gray-200/60 rounded-lg p-0.5 flex-shrink-0">
           {[{ label: 'Add', value: false }, { label: 'Replace', value: true }].map(opt => (
             <button
               key={String(opt.value)}
               onClick={() => setReplaceMode(opt.value)}
               className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${
                 replaceMode === opt.value
-                  ? opt.value ? 'bg-red-700 text-white' : 'bg-cyan-700 text-white'
-                  : 'text-gray-500 hover:text-gray-300'
+                  ? opt.value ? 'bg-red-700 text-gray-900' : 'bg-cyan-700 text-gray-900'
+                  : 'text-gray-500 hover:text-gray-900'
               }`}
             >
               {opt.label}
@@ -198,9 +198,9 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
       </div>
 
       {replaceMode && (
-        <div className="flex items-start gap-2 bg-red-950/20 border border-red-800/40 rounded-lg px-3 py-2">
-          <AlertTriangle size={11} className="text-red-400 flex-shrink-0 mt-0.5" />
-          <p className="text-[10px] text-red-400/90">
+        <div className="flex items-start gap-2 bg-red-50/20 border border-red-200/40 rounded-lg px-3 py-2">
+          <AlertTriangle size={11} className="text-red-600 flex-shrink-0 mt-0.5" />
+          <p className="text-[10px] text-red-600/90">
             <strong>Replace mode:</strong> Any clientId currently configured but not in your list below will be removed when you save.
           </p>
         </div>
@@ -208,9 +208,9 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
 
       {/* Allowed ClientIds */}
       <div className="space-y-2">
-        <p className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+        <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider flex items-center gap-1.5">
           Allowed ClientIds (read + write)
-          <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-blue-500/20">{allowedClientIds.length}</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-blue-100">{allowedClientIds.length}</span>
           {searchAllowed && filteredAllowed.length !== allowedClientIds.length && (
             <span className="text-[9px] text-gray-500 font-normal normal-case">
               {filteredAllowed.length} shown
@@ -225,10 +225,10 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
               value={searchAllowed}
               onChange={e => setSearchAllowed(e.target.value)}
               placeholder="Search allowed IDs…"
-              className="w-full bg-gray-800/60 border border-gray-700/60 rounded-lg pl-7 pr-3 py-1 text-[10px] text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-blue-600/40"
+              className="w-full bg-gray-100/60 border border-gray-300/60 rounded-lg pl-7 pr-3 py-1 text-[10px] text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-blue-300/40"
             />
             {searchAllowed && (
-              <button onClick={() => setSearchAllowed('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400">
+              <button onClick={() => setSearchAllowed('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-500">
                 <X size={9} />
               </button>
             )}
@@ -236,14 +236,14 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
         )}
         <div className="max-h-40 overflow-y-auto space-y-1 pr-0.5">
           {allowedClientIds.length === 0 ? (
-            <p className="text-[10px] text-gray-600 italic px-1">No client IDs configured</p>
+            <p className="text-[10px] text-gray-500 italic px-1">No client IDs configured</p>
           ) : filteredAllowed.length === 0 ? (
-            <p className="text-[10px] text-gray-600 italic px-1">No matches for "{searchAllowed}"</p>
+            <p className="text-[10px] text-gray-500 italic px-1">No matches for "{searchAllowed}"</p>
           ) : (
             filteredAllowed.map((id) => (
-              <div key={id} className="flex items-center justify-between bg-blue-950/20 border border-blue-800/30 rounded-lg px-2.5 py-1.5">
-                <span className="font-mono text-[10px] text-gray-200 truncate flex-1">{id}</span>
-                <button onClick={() => removeId(setAllowedClientIds, id)} className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0 ml-2">
+              <div key={id} className="flex items-center justify-between bg-blue-50/20 border border-blue-200/30 rounded-lg px-2.5 py-1.5">
+                <span className="font-mono text-[10px] text-gray-700 truncate flex-1">{id}</span>
+                <button onClick={() => removeId(setAllowedClientIds, id)} className="text-gray-500 hover:text-red-600 transition-colors flex-shrink-0 ml-2">
                   <X size={11} />
                 </button>
               </div>
@@ -256,12 +256,12 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
             onChange={e => setNewAllowed(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addId(allowedClientIds, setAllowedClientIds, newAllowed, setNewAllowed)}
             placeholder="Add client ID…"
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1 text-[10px] text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-blue-600/50"
+            className="flex-1 bg-gray-100 border border-gray-300 rounded-lg px-2.5 py-1 text-[10px] text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-blue-300/50"
           />
           <button
             onClick={() => addId(allowedClientIds, setAllowedClientIds, newAllowed, setNewAllowed)}
             disabled={!newAllowed.trim()}
-            className="flex items-center gap-0.5 px-2 py-1 text-[10px] rounded-lg border font-medium transition-colors disabled:opacity-40 bg-blue-600/20 border-blue-600/40 text-blue-300 hover:bg-blue-600/30"
+            className="flex items-center gap-0.5 px-2 py-1 text-[10px] rounded-lg border font-medium transition-colors disabled:opacity-40 bg-blue-100 border-blue-300/40 text-blue-700 hover:bg-blue-600/30"
           >
             <Plus size={9} /> Add
           </button>
@@ -270,10 +270,10 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
 
       {/* Read-Only ClientIds */}
       <div className="space-y-2">
-        <p className="text-[10px] text-purple-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+        <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider flex items-center gap-1.5">
           Read-Only ClientIds
-          <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-purple-500/20">{readOnlyClientIds.length}</span>
-          <span className="text-gray-600 font-normal normal-case">(optional)</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-purple-100">{readOnlyClientIds.length}</span>
+          <span className="text-gray-500 font-normal normal-case">(optional)</span>
           {searchReadOnly && filteredReadOnly.length !== readOnlyClientIds.length && (
             <span className="text-[9px] text-gray-500 font-normal normal-case">
               {filteredReadOnly.length} shown
@@ -288,10 +288,10 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
               value={searchReadOnly}
               onChange={e => setSearchReadOnly(e.target.value)}
               placeholder="Search read-only IDs…"
-              className="w-full bg-gray-800/60 border border-gray-700/60 rounded-lg pl-7 pr-3 py-1 text-[10px] text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-purple-600/40"
+              className="w-full bg-gray-100/60 border border-gray-300/60 rounded-lg pl-7 pr-3 py-1 text-[10px] text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-purple-300/40"
             />
             {searchReadOnly && (
-              <button onClick={() => setSearchReadOnly('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400">
+              <button onClick={() => setSearchReadOnly('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-500">
                 <X size={9} />
               </button>
             )}
@@ -299,14 +299,14 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
         )}
         <div className="max-h-32 overflow-y-auto space-y-1 pr-0.5">
           {readOnlyClientIds.length === 0 ? (
-            <p className="text-[10px] text-gray-600 italic px-1">No read-only client IDs configured</p>
+            <p className="text-[10px] text-gray-500 italic px-1">No read-only client IDs configured</p>
           ) : filteredReadOnly.length === 0 ? (
-            <p className="text-[10px] text-gray-600 italic px-1">No matches for "{searchReadOnly}"</p>
+            <p className="text-[10px] text-gray-500 italic px-1">No matches for "{searchReadOnly}"</p>
           ) : (
             filteredReadOnly.map((id) => (
-              <div key={id} className="flex items-center justify-between bg-purple-950/20 border border-purple-800/30 rounded-lg px-2.5 py-1.5">
-                <span className="font-mono text-[10px] text-gray-200 truncate flex-1">{id}</span>
-                <button onClick={() => removeId(setReadOnlyClientIds, id)} className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0 ml-2">
+              <div key={id} className="flex items-center justify-between bg-purple-50/20 border border-purple-200/30 rounded-lg px-2.5 py-1.5">
+                <span className="font-mono text-[10px] text-gray-700 truncate flex-1">{id}</span>
+                <button onClick={() => removeId(setReadOnlyClientIds, id)} className="text-gray-500 hover:text-red-600 transition-colors flex-shrink-0 ml-2">
                   <X size={11} />
                 </button>
               </div>
@@ -319,12 +319,12 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
             onChange={e => setNewReadOnly(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addId(readOnlyClientIds, setReadOnlyClientIds, newReadOnly, setNewReadOnly)}
             placeholder="Add read-only client ID…"
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1 text-[10px] text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-purple-600/50"
+            className="flex-1 bg-gray-100 border border-gray-300 rounded-lg px-2.5 py-1 text-[10px] text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-purple-300/50"
           />
           <button
             onClick={() => addId(readOnlyClientIds, setReadOnlyClientIds, newReadOnly, setNewReadOnly)}
             disabled={!newReadOnly.trim()}
-            className="flex items-center gap-0.5 px-2 py-1 text-[10px] rounded-lg border font-medium transition-colors disabled:opacity-40 bg-purple-600/20 border-purple-600/40 text-purple-300 hover:bg-purple-600/30"
+            className="flex items-center gap-0.5 px-2 py-1 text-[10px] rounded-lg border font-medium transition-colors disabled:opacity-40 bg-purple-100 border-purple-300/40 text-purple-700 hover:bg-purple-600/30"
           >
             <Plus size={9} /> Add
           </button>
@@ -333,29 +333,29 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
 
       {/* Error / Success */}
       {error && (
-        <div className="flex items-center gap-2 bg-red-950/30 border border-red-800/50 rounded-lg px-3 py-2 text-red-400 text-xs">
+        <div className="flex items-center gap-2 bg-red-50/30 border border-red-200/50 rounded-lg px-3 py-2 text-red-600 text-xs">
           <AlertTriangle size={11} className="flex-shrink-0" /> {error}
         </div>
       )}
       {successMsg && (
-        <div className="flex items-center gap-2 bg-emerald-950/30 border border-emerald-800/50 rounded-lg px-3 py-2 text-emerald-400 text-xs">
+        <div className="flex items-center gap-2 bg-emerald-50/30 border border-emerald-200/50 rounded-lg px-3 py-2 text-emerald-600 text-xs">
           <ShieldCheck size={11} className="flex-shrink-0" /> {successMsg}
         </div>
       )}
 
       {/* Save / Discard */}
-      <div className="flex justify-end gap-3 pt-2 border-t border-gray-800/60">
+      <div className="flex justify-end gap-3 pt-2 border-t border-gray-200/60">
         <button
           onClick={loadAuth}
           disabled={loading || saving}
-          className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+          className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
         >
           Discard
         </button>
         <button
           onClick={handleSave}
           disabled={saving || allowedClientIds.length === 0}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg disabled:opacity-50 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 text-gray-900 rounded-lg disabled:opacity-50 transition-colors"
         >
           {saving
             ? <><RefreshCw size={13} className="animate-spin" /> Saving…</>
