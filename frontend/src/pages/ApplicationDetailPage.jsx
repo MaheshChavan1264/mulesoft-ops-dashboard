@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity, Share2, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity, Share2, ShieldCheck, Trash2, GitBranch, Layers, Hash, Boxes } from 'lucide-react';
 import api from '../services/api';
 import CpsSettingsModal from '../components/CpsSettingsModal';
 import CpsRawJsonModal from '../components/CpsRawJsonModal';
@@ -187,6 +187,17 @@ const MetaTag = ({ children, color = 'cyan' }) => (
   <span className={`font-mono text-[11px] px-2 py-0.5 rounded-md border font-medium ${TAG_COLORS[color] || TAG_COLORS.gray} leading-none`}>{children}</span>
 );
 
+// Solid dot colors for the small namespace indicator in the Properties table —
+// kept separate from TAG_COLORS (which mixes bg/text/border for pill chips).
+const NS_DOT_COLORS = {
+  blue: 'bg-sf-400 dark:bg-sf-500',
+  cyan: 'bg-sfteal-400 dark:bg-sfteal-500',
+  purple: 'bg-sfpurple-400 dark:bg-sfpurple-500',
+  green: 'bg-emerald-400 dark:bg-emerald-500',
+  orange: 'bg-sforange-400 dark:bg-sforange-500',
+  red: 'bg-red-400 dark:bg-red-500',
+};
+
 const PulseDot = ({ active }) => (
   <span className="relative flex h-2 w-2 flex-shrink-0">
     {active && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"/>}
@@ -254,6 +265,48 @@ const HeroActionBtn = ({ icon: Icon, label, accent='sf', onClick, title }) => {
     </button>
   );
 };
+
+const STAT_TILE_ACCENTS = {
+  blue:    { chip:'bg-gradient-to-br from-sf-500 to-sf-600 shadow-sf-500/30',             ring:'group-hover:border-sf-300/70 dark:group-hover:border-sf-500/40' },
+  teal:    { chip:'bg-gradient-to-br from-sfteal-500 to-sfteal-600 shadow-sfteal-500/30',  ring:'group-hover:border-sfteal-300/70 dark:group-hover:border-sfteal-500/40' },
+  purple:  { chip:'bg-gradient-to-br from-sfpurple-500 to-sfpurple-600 shadow-sfpurple-500/30', ring:'group-hover:border-sfpurple-300/70 dark:group-hover:border-sfpurple-500/40' },
+  emerald: { chip:'bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/30', ring:'group-hover:border-emerald-300/70 dark:group-hover:border-emerald-500/40' },
+  amber:   { chip:'bg-gradient-to-br from-amber-500 to-amber-600 shadow-amber-500/30',     ring:'group-hover:border-amber-300/70 dark:group-hover:border-amber-500/40' },
+  red:     { chip:'bg-gradient-to-br from-red-500 to-red-600 shadow-red-500/30',           ring:'group-hover:border-red-300/70 dark:group-hover:border-red-500/40' },
+  gray:    { chip:'bg-gray-300 dark:bg-gray-700',                                          ring:'group-hover:border-gray-300/70 dark:group-hover:border-gray-600/50' },
+};
+
+// Hero-style stat tile used atop the Overview tab — surfaces the handful of facts
+// that matter most at a glance, instead of burying them in a flat KV list.
+const StatTile = ({ icon: Icon, label, value, sub, accent='blue' }) => {
+  const a = STAT_TILE_ACCENTS[accent] || STAT_TILE_ACCENTS.blue;
+  return (
+    <div className={`group relative rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/50 backdrop-blur-md px-4 py-3.5 shadow-sm hover:shadow-lg transition-all duration-300 ${a.ring}`}>
+      <div className="flex items-center gap-3">
+        <div className={`flex items-center justify-center w-9 h-9 rounded-xl flex-shrink-0 text-white shadow-md ${a.chip}`}>
+          <Icon size={16} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase">{label}</p>
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate" title={typeof value === 'string' ? value : undefined}>
+            {value ?? <span className="text-gray-400 dark:text-gray-600 font-normal">—</span>}
+          </p>
+          {sub && <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate mt-0.5">{sub}</p>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Groups KVRows within a card under a small uppercase section label with a divider —
+// turns a long flat list of facts into scannable, named clusters.
+const SectionLabel = ({ icon: Icon, children }) => (
+  <div className="flex items-center gap-1.5 pt-1 pb-1.5 mt-1 first:mt-0">
+    {Icon && <Icon size={10} className="text-gray-400 dark:text-gray-500" />}
+    <span className="text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase">{children}</span>
+    <span className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
+  </div>
+);
 
 /* ── Action helpers ────────────────────────────────────── */
 // availableActions and ACTION_CONFIG are imported from utils/appUtils.
@@ -1324,75 +1377,178 @@ export default function ApplicationDetailPage() {
       </div>
 
       {/* ── OVERVIEW ────────────────────────────────── */}
-      {tab==='overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <GlassCard icon={Server} title="General Information" accent="blue">
-            {isCH1 ? (<>
-              <KVRow label="App ID" value={app.id} mono />
-              <KVRow label="Status" value={app.status} />
-              <KVRow label="Mule Version" value={app.muleVersion} mono />
-              <KVRow label="Region" value={app.region} mono />
-              <KVRow label="Workers" value={app.workers?.amount!=null?String(app.workers.amount):undefined} />
-              <KVRow label="Worker Type" value={typeof app.workers?.type==='string'?app.workers.type:app.workers?.type?.name} />
-              <KVRow label="Static IPs" value={app.staticIPsEnabled!=null?(app.staticIPsEnabled?'✅ Enabled':'❌ Disabled'):undefined} />
-              {app.staticIPs && app.staticIPs.length > 0 && (
-                <KVRow label="Static IP Addresses" value={app.staticIPs.join(', ')} mono />
-              )}
-              <KVRow label="Last Modified" value={app.lastModifiedDate?new Date(app.lastModifiedDate).toLocaleString():undefined} />
-            </>) : (<>
-              <KVRow label="Runtime Status" value={app.application?.status} />
-              <KVRow label="Desired State" value={app.application?.desiredState} />
-              <KVRow label="Deployment Status" value={app.status} />
-              <KVRow label="Mule Version" value={ds.runtime?.version||ds.runtimeVersion} mono />
-              <KVRow label="Java" value={ds.runtime?.java?`Java ${ds.runtime.java}`:undefined} mono />
-              <KVRow label="Release Channel" value={ds.runtime?.releaseChannel} />
-              <KVRow label="vCores" value={app.application?.vCores!=null?String(app.application.vCores):undefined} />
-              <KVRow label="Replicas" value={replicas!=null?String(replicas):undefined} />
-              <KVRow label="Static IPs" value={ds.staticIpEnabled!=null?(ds.staticIpEnabled?'✅ Enabled':'❌ Disabled'):undefined} />
-              {/* Private Space static outbound IPs */}
-              {ch2PrivateIPs.length > 0 && (
-                <KVRow label="Static Outbound IPs" value={ch2PrivateIPs.join(', ')} mono />
-              )}
-              {/* Replica IPs (shared space) */}
-              {ch2PrivateIPs.length === 0 && replicaList.filter(r => r.ipAddress || r.publicIpAddress).length > 0 && (
-                <KVRow label="Replica IPs" value={replicaList.filter(r => r.ipAddress || r.publicIpAddress).map(r => r.ipAddress || r.publicIpAddress).join(', ')} mono />
-              )}
-              <KVRow label="Update Strategy" value={typeof ds.updateStrategy==='string'?ds.updateStrategy:undefined} />
-              <KVRow label="Artifact" value={app.application?.ref?`${app.application.ref.artifactId} v${app.application.ref.version}`:undefined} />
-              <KVRow label="Last Modified" value={app.lastModifiedDate?new Date(app.lastModifiedDate).toLocaleString():undefined} />
-            </>)}
-          </GlassCard>
-
-          {replicaList.length>0 && (
-            <GlassCard icon={Server} title="Replica Instances" count={replicaList.length}>
-              <div className="space-y-2">
-                {replicaList.map(r => (
-                  <div key={r.id} className="flex items-center justify-between bg-gray-100/40 border border-gray-300/30 rounded-xl px-4 py-3 gap-3">
-                    <span className="text-gray-600 text-xs font-mono truncate">{r.id}</span>
-                    <MetaTag color={r.state==='STARTED'||r.state==='RUNNING'?'green':'gray'}>{r.state}</MetaTag>
-                  </div>
-                ))}
-              </div>
-            </GlassCard>
-          )}
-        </div>
-      )}
-
-      {/* ── PROPERTIES ──────────────────────────────── */}
-      {tab==='properties' && (
-        <div className="space-y-4">
-          <div className="relative">
-            <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
-            <input value={propSearch} onChange={e=>setPropSearch(e.target.value)} placeholder="Filter properties by key…"
-              className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10 focus:bg-white"/>
+      {tab==='overview' && (() => {
+        const statusAccent = isRunning ? 'emerald' : rStatus === 'FAILED' ? 'red' : rStatus === 'DEPLOYING' ? 'blue' : 'amber';
+        const versionVal = isCH1 ? app.muleVersion : (ds.runtime?.version || ds.runtimeVersion);
+        const versionSub = isCH1 ? app.region : (ds.runtime?.java ? `Java ${ds.runtime.java}` : (ds.runtime?.releaseChannel || undefined));
+        const scaleVal = isCH1
+          ? (app.workers?.amount != null ? `${app.workers.amount} worker${app.workers.amount === 1 ? '' : 's'}` : undefined)
+          : (replicas != null ? `${replicas} replica${replicas === 1 ? '' : 's'}` : undefined);
+        const scaleSub = isCH1
+          ? (typeof app.workers?.type === 'string' ? app.workers.type : app.workers?.type?.name)
+          : (app.application?.vCores != null ? `${app.application.vCores} vCores` : undefined);
+        const lastMod = app.lastModifiedDate ? new Date(app.lastModifiedDate) : null;
+        return (
+        <div className="space-y-5">
+          {/* ── Stat tiles — the handful of facts that matter most, at a glance ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatTile icon={Activity} label="Runtime Status" accent={statusAccent}
+              value={rStatus || 'Unknown'} sub={isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'} />
+            <StatTile icon={GitBranch} label="Mule Runtime" accent="blue"
+              value={versionVal || '—'} sub={versionSub} />
+            <StatTile icon={Layers} label="Scale" accent="purple"
+              value={scaleVal || '—'} sub={scaleSub} />
+            <StatTile icon={Clock} label="Last Modified" accent="teal"
+              value={lastMod ? lastMod.toLocaleDateString() : '—'} sub={lastMod ? lastMod.toLocaleTimeString() : undefined} />
           </div>
 
-          <GlassCard icon={Settings} title="Properties" count={filteredProps.length} noPad>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <GlassCard icon={Server} title="Deployment Details" accent="blue">
+              {isCH1 ? (<>
+                <SectionLabel icon={Hash}>Identity</SectionLabel>
+                <KVRow label="App ID" value={app.id} mono />
+                <KVRow label="Status" value={app.status} />
+                <KVRow label="Region" value={app.region} mono />
+
+                <SectionLabel icon={Boxes}>Network</SectionLabel>
+                <KVRow label="Static IPs" value={app.staticIPsEnabled!=null?(app.staticIPsEnabled?'✅ Enabled':'❌ Disabled'):undefined} />
+                {app.staticIPs && app.staticIPs.length > 0 && (
+                  <KVRow label="Static IP Addresses" value={app.staticIPs.join(', ')} mono />
+                )}
+              </>) : (<>
+                <SectionLabel icon={Hash}>Runtime</SectionLabel>
+                <KVRow label="Desired State" value={app.application?.desiredState} />
+                <KVRow label="Deployment Status" value={app.status} />
+                <KVRow label="Release Channel" value={ds.runtime?.releaseChannel} />
+
+                <SectionLabel icon={Boxes}>Scaling & Network</SectionLabel>
+                <KVRow label="Static IPs" value={ds.staticIpEnabled!=null?(ds.staticIpEnabled?'✅ Enabled':'❌ Disabled'):undefined} />
+                {/* Private Space static outbound IPs */}
+                {ch2PrivateIPs.length > 0 && (
+                  <KVRow label="Static Outbound IPs" value={ch2PrivateIPs.join(', ')} mono />
+                )}
+                {/* Replica IPs (shared space) */}
+                {ch2PrivateIPs.length === 0 && replicaList.filter(r => r.ipAddress || r.publicIpAddress).length > 0 && (
+                  <KVRow label="Replica IPs" value={replicaList.filter(r => r.ipAddress || r.publicIpAddress).map(r => r.ipAddress || r.publicIpAddress).join(', ')} mono />
+                )}
+                <KVRow label="Update Strategy" value={typeof ds.updateStrategy==='string'?ds.updateStrategy:undefined} />
+
+                <SectionLabel icon={Package}>Artifact</SectionLabel>
+                <KVRow label="Artifact" value={app.application?.ref?`${app.application.ref.artifactId} v${app.application.ref.version}`:undefined} />
+              </>)}
+            </GlassCard>
+
+            <GlassCard icon={Server} title="Replica Instances" count={replicaList.length} accent="purple">
+              {replicaList.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {replicaList.map(r => {
+                    const ip = r.ipAddress || r.publicIpAddress;
+                    const active = r.state === 'STARTED' || r.state === 'RUNNING';
+                    return (
+                      <div key={r.id} className="flex items-center gap-2.5 bg-gray-50/70 dark:bg-gray-800/40 border border-gray-200/60 dark:border-gray-700/50 rounded-xl px-3.5 py-3">
+                        <PulseDot active={active} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-gray-700 dark:text-gray-200 text-xs font-mono truncate">{r.id}</p>
+                          {ip && <p className="text-gray-400 dark:text-gray-500 text-[10px] font-mono truncate mt-0.5">{ip}</p>}
+                        </div>
+                        <MetaTag color={active?'green':'gray'}>{r.state}</MetaTag>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                  <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gray-100 dark:bg-gray-800">
+                    <Server size={18} className="text-gray-400 dark:text-gray-500" />
+                  </div>
+                  <p className="text-gray-400 dark:text-gray-500 text-xs">No replica instances reported</p>
+                </div>
+              )}
+            </GlassCard>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <GlassCard icon={Database} title="Object Store & Settings" accent="cyan">
+              <KVRow label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
+              {isCH1 && <KVRow label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
+              {isCH1 && <KVRow label="Monitoring" value={app.monitoringEnabled!=null?String(app.monitoringEnabled):undefined} />}
+              {isCH1 && <KVRow label="Custom Log4j" value={app.loggingCustomLog4JEnabled!=null?String(app.loggingCustomLog4JEnabled):undefined} />}
+              {!isCH1 && <KVRow label="AM Log Forwarding" value={ds.disableAmLogForwarding!=null?String(!ds.disableAmLogForwarding):undefined} />}
+            </GlassCard>
+
+            {(httpInbound.publicUrl||endpoints.length>0) ? (
+              <GlassCard icon={Globe} title="HTTP Endpoints" count={endpoints.length} accent="green" noPad>
+                <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 space-y-1">
+                  {httpInbound.publicUrl && <KVRow label="Public URL" value={httpInbound.publicUrl} mono />}
+                  {httpInbound.internalUrl && <KVRow label="Internal URL" value={httpInbound.internalUrl} mono />}
+                  <KVRow label="Last Mile Security" value={httpInbound.lastMileSecurity!=null?String(httpInbound.lastMileSecurity):undefined} />
+                  <KVRow label="Forward SSL" value={httpInbound.forwardSslSession!=null?String(httpInbound.forwardSslSession):undefined} />
+                </div>
+                {endpoints.length>0 && (
+                  <table className="w-full text-sm border-collapse">
+                    <thead><tr className="bg-gray-50/80 dark:bg-gray-800/60"><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Access</th><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">URL</th></tr></thead>
+                    <tbody>
+                      {endpoints.map((ep,i)=>(
+                        <tr key={i} className="border-t border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors group">
+                          <td className="px-5 py-3"><MetaTag color={ep.access==='external'?'blue':'gray'}>{ep.access}</MetaTag></td>
+                          <td className="px-5 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-600 dark:text-gray-300 text-xs font-mono break-all">{ep.url}</span>
+                              <CopyBtn text={ep.url}/>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </GlassCard>
+            ) : (
+              <GlassCard icon={Globe} title="HTTP Endpoints" accent="green">
+                <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                  <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gray-100 dark:bg-gray-800">
+                    <Globe size={18} className="text-gray-400 dark:text-gray-500" />
+                  </div>
+                  <p className="text-gray-400 dark:text-gray-500 text-xs">No HTTP endpoints configured</p>
+                </div>
+              </GlassCard>
+            )}
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* ── PROPERTIES ──────────────────────────────── */}
+      {tab==='properties' && (() => {
+        const namespaceOf = (k) => (k.includes('.') ? k.slice(0, k.indexOf('.')) : 'other');
+        const NS_PALETTE = ['blue', 'cyan', 'purple', 'green', 'orange', 'red'];
+        const namespaceColor = (ns) => {
+          let hash = 0;
+          for (let i = 0; i < ns.length; i++) hash = (hash * 31 + ns.charCodeAt(i)) >>> 0;
+          return NS_PALETTE[hash % NS_PALETTE.length];
+        };
+        const namespaceCount = new Set(Object.keys(allProps).map(namespaceOf)).size;
+        return (
+        <div className="space-y-5">
+          {/* Stat tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatTile icon={Settings} label="Total Properties" accent="blue" value={Object.keys(allProps).length} />
+            <StatTile icon={Key} label="Secure Properties" accent="amber" value={Object.keys(secureProps).length} />
+            <StatTile icon={Boxes} label="Namespaces" accent="purple" value={namespaceCount} sub="unique key prefixes" />
+          </div>
+
+          <div className="relative">
+            <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none"/>
+            <input value={propSearch} onChange={e=>setPropSearch(e.target.value)} placeholder="Filter properties by key…"
+              className="w-full bg-white/70 dark:bg-gray-900/50 border border-gray-200/70 dark:border-gray-700/60 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10 focus:bg-white dark:focus:bg-gray-900 transition-all shadow-sm"/>
+          </div>
+
+          <GlassCard icon={Settings} title="Properties" count={filteredProps.length} accent="blue" noPad>
             {filteredProps.length>0 ? (
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-gray-50/80 dark:bg-gray-800/60 border-b border-gray-200/60 dark:border-gray-700/60">
-                    <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase w-[42%]">Property Key</th>
+                    <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase w-[46%]">Property Key</th>
                     <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">Value</th>
                   </tr>
                 </thead>
@@ -1400,8 +1556,9 @@ export default function ApplicationDetailPage() {
                   {filteredProps.sort(([a],[b])=>a.localeCompare(b)).map(([k,v]) => (
                     <tr key={k} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                       <td className="px-5 py-3 align-top">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-gray-500 text-xs font-mono break-all leading-relaxed">{k}</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${NS_DOT_COLORS[namespaceColor(namespaceOf(k))]}`} title={namespaceOf(k)} />
+                          <span className="text-gray-500 dark:text-gray-400 text-xs font-mono break-all leading-relaxed">{k}</span>
                           <CopyBtn text={k}/>
                         </div>
                       </td>
@@ -1415,113 +1572,120 @@ export default function ApplicationDetailPage() {
                   ))}
                 </tbody>
               </table>
-            ) : <div className="px-5 py-8 text-center text-gray-400 text-sm">{propSearch?`No matches for "${propSearch}"`:'No properties found'}</div>}
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gray-100 dark:bg-gray-800">
+                  <Search size={16} className="text-gray-400 dark:text-gray-500" />
+                </div>
+                <p className="text-gray-400 dark:text-gray-500 text-sm">{propSearch?`No matches for "${propSearch}"`:'No properties found'}</p>
+              </div>
+            )}
           </GlassCard>
 
           {Object.keys(secureProps).length>0 && (
-            <GlassCard icon={Settings} title="Secure Properties" count={Object.keys(secureProps).length} accent="orange" noPad>
-              <div className="px-5 py-2.5 bg-sforange-50/40 dark:bg-sforange-500/5 border-b border-sforange-200/30 dark:border-sforange-400/10">
-                <span className="text-xs text-sforange-600 dark:text-sforange-400">⚠ Values are redacted by Anypoint Platform</span>
+            <GlassCard icon={Key} title="Secure Properties" count={Object.keys(secureProps).length} accent="orange">
+              <div className="flex items-center gap-2 mb-3.5 -mt-1">
+                <AlertTriangle size={12} className="text-sforange-500 dark:text-sforange-400 flex-shrink-0" />
+                <span className="text-xs text-sforange-600 dark:text-sforange-400">Values are redacted by Anypoint Platform</span>
               </div>
-              <table className="w-full text-sm border-collapse">
-                <tbody>
-                  {Object.entries(secureProps).map(([k,v]) => (
-                    <tr key={k} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
-                      <td className="px-5 py-3 w-[42%]"><span className="text-gray-500 text-xs font-mono">{k}</span></td>
-                      <td className="px-5 py-3"><SecretVal value={String(v)}/></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {Object.entries(secureProps).map(([k,v]) => (
+                  <div key={k} className="group bg-sforange-50/40 dark:bg-sforange-500/5 border border-sforange-200/50 dark:border-sforange-400/15 rounded-xl px-3.5 py-2.5">
+                    <p className="text-gray-500 dark:text-gray-400 text-[10px] font-mono break-all leading-relaxed mb-1">{k}</p>
+                    <div className="flex items-center justify-between gap-1.5">
+                      <SecretVal value={String(v)}/>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </GlassCard>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── INFRA & CONFIG ───────────────────────────── */}
-      {tab==='infrastructure' && (
+      {tab==='infrastructure' && (() => {
+        const enabledCount = allSchedulers.filter(s => s.enabled !== false).length;
+        const disabledCount = allSchedulers.length - enabledCount;
+        const hasUnresolved = allSchedulers.some(s => {
+          const expr = s.expression || s.schedule?.expression || '';
+          if (!expr.startsWith('${')) return false;
+          const propName = expr.slice(2, -1);
+          return !cpsSchedulerProps[propName] && !cpsSchedulerProps[propName.toLowerCase()] && !allProps[propName];
+        });
+        const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        return (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-            <GlassCard icon={Database} title="Object Store & Settings" accent="cyan">
-              <KVRow label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
-              {isCH1 && <KVRow label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
-              {isCH1 && <KVRow label="Monitoring" value={app.monitoringEnabled!=null?String(app.monitoringEnabled):undefined} />}
-              {isCH1 && <KVRow label="Custom Log4j" value={app.loggingCustomLog4JEnabled!=null?String(app.loggingCustomLog4JEnabled):undefined} />}
-              {!isCH1 && <KVRow label="AM Log Forwarding" value={ds.disableAmLogForwarding!=null?String(!ds.disableAmLogForwarding):undefined} />}
-            </GlassCard>
+          {/* Stat tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatTile icon={Clock} label="Total Schedulers" accent="purple" value={allSchedulers.length} />
+            <StatTile icon={Zap} label="Enabled" accent="emerald" value={enabledCount} sub={disabledCount > 0 ? `${disabledCount} disabled` : undefined} />
+            <StatTile icon={Activity} label="App State" accent={isRunning ? 'emerald' : 'amber'} value={isRunning ? 'Running' : (rStatus || 'Unknown')} sub={isRunning ? 'Schedulers can fire' : 'Triggers unavailable'} />
+          </div>
 
-            <GlassCard icon={Clock} title="Schedulers" count={allSchedulers.length} accent="purple" noPad>
+          <GlassCard icon={Clock} title="Scheduled Flows" count={allSchedulers.length} accent="purple" noPad>
             {/* Show "Get Cron Expressions" button when there are unresolved ${...} placeholders
                 and CPS is configured for this app (even if cps.secure.properties wasn't auto-discovered) */}
-            {(() => {
-              const hasUnresolved = allSchedulers.some(s => {
-                const expr = s.expression || s.schedule?.expression || '';
-                if (!expr.startsWith('${')) return false;
-                const propName = expr.slice(2, -1);
-                return !cpsSchedulerProps[propName] && !cpsSchedulerProps[propName.toLowerCase()] && !allProps[propName];
-              });
-              // Show whenever there are unresolved placeholders AND CPS is configured
-              if (!hasUnresolved || !cpsBaseUrl) return null;
-              return (
-                <div className="px-5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-sfpurple-50/50 dark:bg-sfpurple-500/5">
-                  <p className="text-[10px] text-sfpurple-600 dark:text-sfpurple-400 flex items-center gap-1.5 font-medium">
-                    <Key size={9} /> Some cron expressions may be in CPS properties
-                  </p>
-                  <button
-                    disabled={cpsSecureSchedulerLoading}
-                    onClick={async () => {
-                      setCpsSecureSchedulerLoading(true);
-                      try {
-                        // Step 1: If cps.secure.properties key is not yet known, fetch non-secure to discover it
-                        let secureKeys = cpsSchedulerProps['cps.secure.properties'];
-                        if (!secureKeys) {
-                          try {
-                            const nsRes = await api.get('/cps/fetch', {
-                              params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: effectiveCpsKey, environment: effectiveCpsEnv, bgOrgId: orgId }
-                            });
-                            const data = nsRes.data;
-                            let flat = {};
-                            if (Array.isArray(data?.responses)) data.responses.forEach(r => Object.assign(flat, r.properties || {}));
-                            else if (Array.isArray(data)) data.forEach(r => { if (r?.properties) Object.assign(flat, r.properties); });
-                            else if (data && typeof data === 'object') {
-                              const fv = Object.values(data)[0];
-                              flat = (fv && typeof fv === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
-                            }
-                            if (Object.keys(flat).length > 0) {
-                              setCpsSchedulerProps(prev => ({ ...prev, ...flat }));
-                              secureKeys = flat['cps.secure.properties'];
-                            }
-                          } catch { /* continue */ }
-                        }
-                        if (!secureKeys) { setCpsSecureSchedulerLoading(false); return; }
-                        // Step 2: Fetch secure properties using the discovered keys
-                        const sr = await api.get('/cps/fetch', {
-                          params: { baseUrl: cpsBaseUrl, type: 'secure', environment: effectiveCpsEnv, keys: secureKeys, bgOrgId: orgId }
-                        });
-                        const data = sr.data;
-                        const groups = Array.isArray(data?.responses) ? data.responses
-                          : Array.isArray(data?.properties) ? data.properties
-                          : Array.isArray(data) ? data : [];
-                        const merged = {};
-                        groups.forEach(g => Object.assign(merged, g.properties || {}));
-                        if (Object.keys(merged).length > 0) setCpsSchedulerProps(prev => ({ ...prev, ...merged }));
-                      } catch { /* silently fail — button stays visible for retry */ }
-                      setCpsSecureSchedulerLoading(false);
-                    }}
-                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-sfpurple-100 dark:bg-sfpurple-500/15 border border-sfpurple-200/60 dark:border-sfpurple-400/20 text-sfpurple-700 dark:text-sfpurple-300 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 rounded-lg transition-all disabled:opacity-50 font-semibold flex-shrink-0">
-                    {cpsSecureSchedulerLoading
-                      ? <><RefreshCw size={9} className="animate-spin" /> Loading…</>
-                      : <><Key size={9} /> Get Cron Expressions</>}
-                  </button>
-                </div>
-              );
-            })()}
+            {hasUnresolved && cpsBaseUrl && (
+              <div className="px-5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-sfpurple-50/50 dark:bg-sfpurple-500/5">
+                <p className="text-[10px] text-sfpurple-600 dark:text-sfpurple-400 flex items-center gap-1.5 font-medium">
+                  <Key size={9} /> Some cron expressions may be in CPS properties
+                </p>
+                <button
+                  disabled={cpsSecureSchedulerLoading}
+                  onClick={async () => {
+                    setCpsSecureSchedulerLoading(true);
+                    try {
+                      // Step 1: If cps.secure.properties key is not yet known, fetch non-secure to discover it
+                      let secureKeys = cpsSchedulerProps['cps.secure.properties'];
+                      if (!secureKeys) {
+                        try {
+                          const nsRes = await api.get('/cps/fetch', {
+                            params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: effectiveCpsKey, environment: effectiveCpsEnv, bgOrgId: orgId }
+                          });
+                          const data = nsRes.data;
+                          let flat = {};
+                          if (Array.isArray(data?.responses)) data.responses.forEach(r => Object.assign(flat, r.properties || {}));
+                          else if (Array.isArray(data)) data.forEach(r => { if (r?.properties) Object.assign(flat, r.properties); });
+                          else if (data && typeof data === 'object') {
+                            const fv = Object.values(data)[0];
+                            flat = (fv && typeof fv === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
+                          }
+                          if (Object.keys(flat).length > 0) {
+                            setCpsSchedulerProps(prev => ({ ...prev, ...flat }));
+                            secureKeys = flat['cps.secure.properties'];
+                          }
+                        } catch { /* continue */ }
+                      }
+                      if (!secureKeys) { setCpsSecureSchedulerLoading(false); return; }
+                      // Step 2: Fetch secure properties using the discovered keys
+                      const sr = await api.get('/cps/fetch', {
+                        params: { baseUrl: cpsBaseUrl, type: 'secure', environment: effectiveCpsEnv, keys: secureKeys, bgOrgId: orgId }
+                      });
+                      const data = sr.data;
+                      const groups = Array.isArray(data?.responses) ? data.responses
+                        : Array.isArray(data?.properties) ? data.properties
+                        : Array.isArray(data) ? data : [];
+                      const merged = {};
+                      groups.forEach(g => Object.assign(merged, g.properties || {}));
+                      if (Object.keys(merged).length > 0) setCpsSchedulerProps(prev => ({ ...prev, ...merged }));
+                    } catch { /* silently fail — button stays visible for retry */ }
+                    setCpsSecureSchedulerLoading(false);
+                  }}
+                  className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-sfpurple-100 dark:bg-sfpurple-500/15 border border-sfpurple-200/60 dark:border-sfpurple-400/20 text-sfpurple-700 dark:text-sfpurple-300 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 rounded-lg transition-all disabled:opacity-50 font-semibold flex-shrink-0">
+                  {cpsSecureSchedulerLoading
+                    ? <><RefreshCw size={9} className="animate-spin" /> Loading…</>
+                    : <><Key size={9} /> Get Cron Expressions</>}
+                </button>
+              </div>
+            )}
             {/* Trigger result toast inside the scheduler card */}
             {triggerResult && (
               <div className={`mx-5 mt-3 flex items-center justify-between px-4 py-2.5 rounded-xl border text-xs ${
                 triggerResult.success
-                  ? 'bg-emerald-50/40 border-emerald-200/50 text-emerald-700'
-                  : 'bg-red-50/40 border-red-200/50 text-red-700'
+                  ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-red-50 dark:bg-red-500/10 border-red-200/60 dark:border-red-400/20 text-red-700 dark:text-red-300'
               }`}>
                 <span>{triggerResult.message}</span>
                 <button onClick={() => setTriggerResult(null)} className="ml-3 opacity-60 hover:opacity-100 flex-shrink-0"><X size={12} /></button>
@@ -1530,228 +1694,200 @@ export default function ApplicationDetailPage() {
             {allSchedulers.length>0 && (
               <div className="px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
                 <div className="relative">
-                  <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
+                  <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none"/>
                   <input
                     value={schedulerSearch}
                     onChange={(e) => setSchedulerSearch(e.target.value)}
                     placeholder="Filter by flow name or cron…"
-                    className="w-full bg-gray-100/50 border border-gray-300/50 rounded-lg pl-8 pr-4 py-2 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:border-purple-300/50 focus:bg-gray-100"
+                    className="w-full bg-gray-50/70 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/60 rounded-xl pl-8 pr-4 py-2.5 text-xs text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfpurple-400 dark:focus:border-sfpurple-500 focus:ring-2 focus:ring-sfpurple-500/10 focus:bg-white dark:focus:bg-gray-800 transition-all"
                   />
                   {schedulerSearch && (
-                    <button onClick={() => setSchedulerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-gray-600 text-xs">✕</button>
+                    <button onClick={() => setSchedulerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xs">✕</button>
                   )}
                 </div>
                 {schedulerSearch && (
-                  <p className="text-[10px] text-gray-400 mt-1.5">
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5">
                     Showing {schedulers.length} of {allSchedulers.length} scheduler{allSchedulers.length !== 1 ? 's' : ''}
                   </p>
                 )}
               </div>
             )}
             {allSchedulers.length>0 ? (
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-gray-50/80 dark:bg-gray-800/60 border-b border-gray-200/60 dark:border-gray-700/60">
-                    {['Flow Name','Cron Expression','Last Run','Next Run','State','Actions'].map(h=>(
-                      <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedulers.map((s,i) => {
-                    // CH2 uses s.schedule.expression; CH1 uses s.schedule.cronExpression or s.expression
-                    const rawCron = s.schedule?.cronExpression ||
-                                    s.schedule?.expression ||
-                                    s.expression ||
-                                    s.cronExpression;
-                    // Scheduler-configured timezone (CH2 returns this in schedule.timeZone)
-                    const rawTz = s.schedule?.timeZone || s.schedule?.timezone || s.timeZone || s.timezone || null;
-                    // Resolve ${...} placeholders in timezone value (same as cron expression)
-                    const schedulerTz = rawTz?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
-                      allProps[propName] ||
-                      allProps[propName.toLowerCase()] ||
-                      cpsSchedulerProps[propName] ||
-                      cpsSchedulerProps[propName.toLowerCase()] ||
-                      cpsData?.nonSecure?.[propName] ||
-                      match
-                    ) || null;
-                    // Browser local timezone — Next Run is computed in this zone
-                    const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                    // Resolve ${propName} placeholders: check runtime props first, then CPS props
-                    const resolvedCron = rawCron?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
-                      allProps[propName] ||
-                      allProps[propName.toLowerCase()] ||
-                      cpsSchedulerProps[propName] ||
-                      cpsSchedulerProps[propName.toLowerCase()] ||
-                      cpsData?.nonSecure?.[propName] ||
-                      match
-                    );
-                    const isUnresolvedPlaceholder = rawCron?.startsWith('${') && resolvedCron === rawCron;
-                    const wasResolved = rawCron !== resolvedCron;
-                    const cron = resolvedCron; // display the resolved value
-                    let decodedCron = '';
-                    if (cron && !isUnresolvedPlaceholder) {
-                      try {
-                        decodedCron = cronstrue.toString(cron, { throwExceptionOnParseError: true });
-                      } catch (e) {
-                        // ignore parsing errors (e.g. non-standard crons)
-                      }
+              <div className="p-4 space-y-3">
+                {schedulers.map((s,i) => {
+                  // CH2 uses s.schedule.expression; CH1 uses s.schedule.cronExpression or s.expression
+                  const rawCron = s.schedule?.cronExpression ||
+                                  s.schedule?.expression ||
+                                  s.expression ||
+                                  s.cronExpression;
+                  // Scheduler-configured timezone (CH2 returns this in schedule.timeZone)
+                  const rawTz = s.schedule?.timeZone || s.schedule?.timezone || s.timeZone || s.timezone || null;
+                  // Resolve ${...} placeholders in timezone value (same as cron expression)
+                  const schedulerTz = rawTz?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
+                    allProps[propName] ||
+                    allProps[propName.toLowerCase()] ||
+                    cpsSchedulerProps[propName] ||
+                    cpsSchedulerProps[propName.toLowerCase()] ||
+                    cpsData?.nonSecure?.[propName] ||
+                    match
+                  ) || null;
+                  // Resolve ${propName} placeholders: check runtime props first, then CPS props
+                  const resolvedCron = rawCron?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
+                    allProps[propName] ||
+                    allProps[propName.toLowerCase()] ||
+                    cpsSchedulerProps[propName] ||
+                    cpsSchedulerProps[propName.toLowerCase()] ||
+                    cpsData?.nonSecure?.[propName] ||
+                    match
+                  );
+                  const isUnresolvedPlaceholder = rawCron?.startsWith('${') && resolvedCron === rawCron;
+                  const wasResolved = rawCron !== resolvedCron;
+                  const cron = resolvedCron; // display the resolved value
+                  let decodedCron = '';
+                  if (cron && !isUnresolvedPlaceholder) {
+                    try {
+                      decodedCron = cronstrue.toString(cron, { throwExceptionOnParseError: true });
+                    } catch (e) {
+                      // ignore parsing errors (e.g. non-standard crons)
                     }
-                    // Compute next run from cron expression (works for both CH1 and CH2 since
-                    // the Anypoint Platform schedulers API does not return nextRun reliably).
-                    // Only compute for ENABLED schedulers — a disabled scheduler has no next run.
-                    const active = s.enabled!==false;
-                    const computedNextRun = (cron && !isUnresolvedPlaceholder && active) ? getNextCronRun(cron) : null;
-                    // CH2 fixed-frequency: s.schedule.frequency; CH1: s.frequency or s.schedule.period
-                    const freq = s.frequency ||
-                                 s.schedule?.frequency ||
-                                 (s.schedule?.period > 0 ? s.schedule.period : null);
-                    const timeUnit = s.timeUnit || s.schedule?.timeUnit;
-                    return (
-                      <tr key={i} className="border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
-                        <td className="px-5 py-4 align-top">
-                          <div className="flex items-center gap-2">
-                            <PulseDot active={active}/>
-                            <span className="text-gray-700 text-xs font-mono font-medium break-all">{s.flow||s.flowName||s.name}</span>
+                  }
+                  // Compute next run from cron expression (works for both CH1 and CH2 since
+                  // the Anypoint Platform schedulers API does not return nextRun reliably).
+                  // Only compute for ENABLED schedulers — a disabled scheduler has no next run.
+                  const active = s.enabled!==false;
+                  const computedNextRun = (cron && !isUnresolvedPlaceholder && active) ? getNextCronRun(cron) : null;
+                  // CH2 fixed-frequency: s.schedule.frequency; CH1: s.frequency or s.schedule.period
+                  const freq = s.frequency ||
+                               s.schedule?.frequency ||
+                               (s.schedule?.period > 0 ? s.schedule.period : null);
+                  const timeUnit = s.timeUnit || s.schedule?.timeUnit;
+                  const flowName = s.flow||s.flowName||s.name;
+                  const schedulerKey = s.name || s.schedulerName || s.flow || s.flowName || `scheduler-${i}`;
+                  const isTriggering = triggerLoadingSet.has(schedulerKey);
+
+                  // Lastrun lookup
+                  const lastRunCandidates = [
+                    s.lastRun, s.schedule?.lastRun, s.status?.lastRun,
+                    s.lastRunAt, s.schedule?.lastRunAt, s.status?.lastRunAt,
+                    s.lastFireAt, s.schedule?.lastFireAt, s.status?.lastFireAt,
+                    s.lastFiredAt, s.schedule?.lastFiredAt, s.status?.lastFiredAt,
+                    s.lastFired, s.schedule?.lastFired, s.status?.lastFired,
+                    s.lastRunTime, s.schedule?.lastRunTime, s.status?.lastRunTime,
+                    s.lastExecution, s.schedule?.lastExecution, s.status?.lastExecution,
+                    s.lastTriggerTime, s.schedule?.lastTriggerTime, s.stats?.lastRun,
+                    s.trigger?.lastFireTime, s.meta?.lastRun,
+                  ];
+                  const lastRunRaw = lastRunCandidates.find(v => v != null && v !== 0 && v !== '');
+                  let lastRunNode;
+                  if (!lastRunRaw) {
+                    lastRunNode = <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>;
+                  } else {
+                    const d = new Date(lastRunRaw);
+                    const valid = !isNaN(d.getTime()) && d.getFullYear() > 1970;
+                    lastRunNode = valid ? (
+                      <>
+                        <span className="text-gray-600 dark:text-gray-300 text-xs font-mono">{d.toLocaleDateString()}</span>
+                        <p className="text-gray-400 dark:text-gray-500 text-[10px] font-mono">{d.toLocaleTimeString()}</p>
+                      </>
+                    ) : <span className="text-gray-500 dark:text-gray-400 text-xs font-mono">{String(lastRunRaw)}</span>;
+                  }
+
+                  return (
+                    <div key={i} className={`group relative rounded-2xl border bg-white/70 dark:bg-gray-900/40 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden ${active ? 'border-gray-200/70 dark:border-gray-700/60' : 'border-gray-200/50 dark:border-gray-800/60 opacity-70'}`}>
+                      <div className={`absolute left-0 top-0 bottom-0 w-1 ${active ? 'bg-gradient-to-b from-sfpurple-400 to-sfpurple-600' : 'bg-gray-300 dark:bg-gray-700'}`} />
+                      <div className="flex flex-wrap items-center gap-4 px-5 py-4 pl-6">
+                        {/* Flow identity */}
+                        <div className="flex items-center gap-2.5 min-w-[160px] flex-shrink-0">
+                          <PulseDot active={active}/>
+                          <div className="min-w-0">
+                            <p className="text-gray-800 dark:text-gray-100 text-sm font-semibold font-mono break-all leading-tight">{flowName}</p>
+                            <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-md font-semibold mt-1 ${active?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400':'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}>
+                              {active?'Enabled':'Disabled'}
+                            </span>
                           </div>
-                        </td>
-                        <td className="px-5 py-4 align-top">
+                        </div>
+
+                        {/* Cron / frequency */}
+                        <div className="flex-1 min-w-[200px]">
                           {cron && !isUnresolvedPlaceholder ? (
                             <div className="space-y-1">
-                              <MetaTag color="cyan">{cron}</MetaTag>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <MetaTag color="cyan">{cron}</MetaTag>
+                                {schedulerTz && <span className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {schedulerTz}</span>}
+                              </div>
                               {decodedCron && (
-                                <p className="text-[11px] text-cyan-700 font-medium">{decodedCron}</p>
+                                <p className="text-[12px] text-gray-600 dark:text-gray-300 font-medium">{decodedCron}</p>
                               )}
                               {wasResolved && (
-                                <p className="text-[10px] text-gray-400 font-mono" title="Property placeholder resolved from app properties">{rawCron}</p>
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono" title="Property placeholder resolved from app properties">{rawCron}</p>
                               )}
-                              {schedulerTz && <p className="text-[10px] text-cyan-600/70">🕐 {schedulerTz}</p>}
                             </div>
                           ) : isUnresolvedPlaceholder ? (
                             <div className="space-y-1">
                               <MetaTag color="gray">{rawCron}</MetaTag>
-                              <p className="text-[10px] text-yellow-600/80">⚠ property not in runtime props — check CPS</p>
-                              {schedulerTz && <p className="text-[10px] text-cyan-600/70">🕐 {schedulerTz}</p>}
+                              <p className="text-[10px] text-amber-600 dark:text-amber-400">⚠ property not in runtime props — check CPS</p>
+                              {schedulerTz && <p className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {schedulerTz}</p>}
                             </div>
                           ) : freq ? (
                             <div className="space-y-1">
                               <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
-                              {schedulerTz && <p className="text-[10px] text-cyan-600/70">🕐 {schedulerTz}</p>}
+                              {schedulerTz && <p className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {schedulerTz}</p>}
                             </div>
-                          ) || <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
-                            : <span className="text-gray-400 text-xs">—</span>}
-                        </td>
-                        <td className="px-5 py-4 align-top">
-                          {(() => {
-                            // Check all known field paths; use != null so numeric 0 is also skipped
-                            const candidates = [
-                              s.lastRun, s.schedule?.lastRun, s.status?.lastRun,
-                              s.lastRunAt, s.schedule?.lastRunAt, s.status?.lastRunAt,
-                              s.lastFireAt, s.schedule?.lastFireAt, s.status?.lastFireAt,
-                              s.lastFiredAt, s.schedule?.lastFiredAt, s.status?.lastFiredAt,
-                              s.lastFired, s.schedule?.lastFired, s.status?.lastFired,
-                              s.lastRunTime, s.schedule?.lastRunTime, s.status?.lastRunTime,
-                              s.lastExecution, s.schedule?.lastExecution, s.status?.lastExecution,
-                              s.lastTriggerTime, s.schedule?.lastTriggerTime, s.stats?.lastRun,
-                              s.trigger?.lastFireTime, s.meta?.lastRun,
-                            ];
-                            const lastRunRaw = candidates.find(v => v != null && v !== 0 && v !== '');
-                            if (!lastRunRaw) {
-                              return isCH1
-                                ? <span className="text-gray-400 text-xs">—</span>
-                                : <span className="text-gray-400 text-xs" title="Last run not returned by CH2 schedulers API">—</span>;
-                            }
-                            const d = new Date(lastRunRaw);
-                            const valid = !isNaN(d.getTime()) && d.getFullYear() > 1970;
-                            return valid ? (
-                              <div className="space-y-0.5">
-                                <span className="text-gray-600 text-xs font-mono">{d.toLocaleDateString()}</span>
-                                <p className="text-slate-500 text-[10px] font-mono">{d.toLocaleTimeString()}</p>
-                                <p className="text-gray-400 text-[9px]">{localTz}</p>
-                              </div>
-                            ) : (
-                              <span className="text-slate-500 text-xs font-mono">{String(lastRunRaw)}</span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-5 py-4 align-top">
+                          ) : <span className="text-gray-400 dark:text-gray-600 text-xs">No schedule info</span>}
+                        </div>
+
+                        {/* Last run */}
+                        <div className="flex-shrink-0 min-w-[90px]">
+                          <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1">Last Run</p>
+                          {lastRunNode}
+                        </div>
+
+                        {/* Next run */}
+                        <div className="flex-shrink-0 min-w-[90px]">
+                          <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1">Next Run</p>
                           {computedNextRun ? (
-                            <div className="space-y-0.5">
-                              <span className="text-gray-600 text-xs font-mono">{computedNextRun.toLocaleDateString()}</span>
-                              <p className="text-slate-500 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
-                              <p className="text-gray-400 text-[9px]">{localTz}</p>
-                            </div>
+                            <>
+                              <span className="text-sfpurple-700 dark:text-sfpurple-300 text-xs font-mono font-semibold">{computedNextRun.toLocaleDateString()}</span>
+                              <p className="text-sfpurple-500 dark:text-sfpurple-400 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
+                            </>
                           ) : freq ? (
-                            <span className="text-gray-400 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>
+                            <span className="text-gray-400 dark:text-gray-600 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>
                           ) : (
-                            <span className="text-gray-400 text-xs">—</span>
+                            <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>
                           )}
-                        </td>
-                        <td className="px-5 py-4 align-top">
-                          <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${active?'bg-emerald-50/50 text-emerald-700 border-emerald-300/50':'bg-gray-100/60 text-slate-500 border-gray-300/50'}`}>
-                            {active?'Enabled':'Disabled'}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4 align-top">
-                          {(() => {
-                            const schedulerKey = s.name || s.schedulerName || s.flow || s.flowName || `scheduler-${i}`;
-                            const isTriggering = triggerLoadingSet.has(schedulerKey);
-                            return (
-                              <button
-                                onClick={() => setSchedulerConfirmKey(schedulerKey)}
-                                disabled={isTriggering || !isRunning}
-                                title={!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 hover:shadow-md hover:shadow-sfpurple-500/30">
-                                {isTriggering
-                                  ? <><RefreshCw size={9} className="animate-spin" /> Running…</>
-                                  : <><Zap size={9} /> Run Now</>}
-                              </button>
-                            );
-                          })()}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+
+                        {/* Action */}
+                        <div className="flex-shrink-0 ml-auto">
+                          <button
+                            onClick={() => setSchedulerConfirmKey(schedulerKey)}
+                            disabled={isTriggering || !isRunning}
+                            title={!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`}
+                            className="flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 hover:shadow-md hover:shadow-sfpurple-500/30">
+                            {isTriggering
+                              ? <><RefreshCw size={11} className="animate-spin" /> Running…</>
+                              : <><Zap size={11} /> Run Now</>}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : schedulerSearch ? (
-              <div className="px-5 py-6 text-center text-slate-500 text-sm">No schedulers match <span className="text-gray-500 font-mono">"{schedulerSearch}"</span></div>
+              <div className="px-5 py-10 text-center text-gray-500 dark:text-gray-400 text-sm">No schedulers match <span className="text-gray-700 dark:text-gray-300 font-mono">"{schedulerSearch}"</span></div>
             ) : (
-              <div className="px-5 py-6 text-center text-gray-400 text-sm">No schedulers configured</div>
+              <div className="flex flex-col items-center justify-center py-14 gap-3 text-center">
+                <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-sfpurple-100 dark:bg-sfpurple-500/10">
+                  <Clock size={24} className="text-sfpurple-500 dark:text-sfpurple-400" />
+                </div>
+                <p className="text-gray-400 dark:text-gray-500 text-sm">No schedulers configured for this application</p>
+              </div>
             )}
           </GlassCard>
-          </div>
-
-          {(httpInbound.publicUrl||endpoints.length>0) && (
-            <GlassCard icon={Globe} title="HTTP Endpoints" count={endpoints.length} accent="cyan" noPad>
-              <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 space-y-1">
-                {httpInbound.publicUrl && <KVRow label="Public URL" value={httpInbound.publicUrl} mono />}
-                {httpInbound.internalUrl && <KVRow label="Internal URL" value={httpInbound.internalUrl} mono />}
-                <KVRow label="Last Mile Security" value={httpInbound.lastMileSecurity!=null?String(httpInbound.lastMileSecurity):undefined} />
-                <KVRow label="Forward SSL" value={httpInbound.forwardSslSession!=null?String(httpInbound.forwardSslSession):undefined} />
-              </div>
-              {endpoints.length>0 && (
-                <table className="w-full text-sm border-collapse">
-                  <thead><tr className="bg-gray-100/40"><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Access</th><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">URL</th></tr></thead>
-                  <tbody>
-                    {endpoints.map((ep,i)=>(
-                      <tr key={i} className="border-t border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors group">
-                        <td className="px-5 py-3"><MetaTag color={ep.access==='external'?'blue':'gray'}>{ep.access}</MetaTag></td>
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-gray-600 text-xs font-mono break-all">{ep.url}</span>
-                            <CopyBtn text={ep.url}/>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </GlassCard>
-          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── CPS CONFIG ──────────────────────────────── */}
       {tab==='cps' && cpsBaseUrl && (
