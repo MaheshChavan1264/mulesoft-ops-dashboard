@@ -1108,7 +1108,7 @@ export default function CpsComparisonPage() {
     different: 'bg-red-50/20 border-l-2 border-red-500',
     'only-a':  'bg-blue-50/20 border-l-2 border-blue-500',
     'only-b':  'bg-amber-50/20 border-l-2 border-amber-500',
-    matching:  'opacity-50',   // muted — eye focuses on diffs
+    matching:  'bg-gray-50/60',   // muted — eye focuses on diffs
   };
   const STATUS_BADGE = {
     different: 'text-red-700 bg-red-100 border-red-300/60 ring-1 ring-red-200',

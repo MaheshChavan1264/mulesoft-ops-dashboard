@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, X, Clock, Copy, Check } from 'lucide-react';
 
-// ── Method badge ──────────────────────────────────────────────────────────────
+// ── Method badge — Postman's method color scheme ──────────────────────────────
 function MethodBadge({ method }) {
   const colors = {
-    GET:    'bg-green-100 text-green-600 border-green-300/40',
-    POST:   'bg-blue-100 text-blue-600 border-blue-300/40',
-    PUT:    'bg-yellow-100 text-yellow-600 border-yellow-300/40',
-    DELETE: 'bg-red-100 text-red-600 border-red-300/40',
-    PATCH:  'bg-purple-100 text-purple-600 border-purple-300/40',
+    GET:    'text-emerald-600',
+    POST:   'text-amber-600',
+    PUT:    'text-blue-600',
+    DELETE: 'text-red-600',
+    PATCH:  'text-purple-600',
+    HEAD:   'text-gray-500',
+    OPTIONS:'text-purple-600',
   };
-  const cls = colors[(method || '').toUpperCase()] || 'bg-gray-100 text-gray-500 border-gray-300/40';
+  const cls = colors[(method || '').toUpperCase()] || 'text-gray-500';
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider flex-shrink-0 ${cls}`}>
+    <span className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${cls}`}>
       {method}
     </span>
   );
@@ -70,21 +72,69 @@ function formatJson(val) {
   }
 }
 
-// ── Code block ────────────────────────────────────────────────────────────────
+// ── Postman-style JSON syntax highlighting ────────────────────────────────────
+// Tokenizes a line of JSON text into { text, type } pieces so each piece can be
+// coloured like Postman's "Pretty" JSON viewer: keys in rose, strings in green,
+// numbers in blue, booleans/null in purple, punctuation in gray.
+const JSON_TOKEN_RE = /"(?:[^"\\]|\\.)*"(\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\d+\.?\d*(?:[eE][+-]?\d+)?/g;
+
+const TOKEN_CLASS = {
+  key:    'text-rose-600 font-medium',
+  string: 'text-emerald-700',
+  number: 'text-blue-600',
+  bool:   'text-purple-600 font-medium',
+  null:   'text-gray-400 italic',
+  punct:  'text-gray-500',
+};
+
+function highlightJsonLine(line) {
+  const nodes = [];
+  let lastIndex = 0;
+  let m;
+  JSON_TOKEN_RE.lastIndex = 0;
+  while ((m = JSON_TOKEN_RE.exec(line)) !== null) {
+    if (m.index > lastIndex) nodes.push({ text: line.slice(lastIndex, m.index), type: 'punct' });
+    const token = m[0];
+    let type = 'punct';
+    if (token.startsWith('"')) type = m[1] ? 'key' : 'string';
+    else if (token === 'true' || token === 'false') type = 'bool';
+    else if (token === 'null') type = 'null';
+    else type = 'number';
+    nodes.push({ text: token, type });
+    lastIndex = m.index + token.length;
+  }
+  if (lastIndex < line.length) nodes.push({ text: line.slice(lastIndex), type: 'punct' });
+  return nodes;
+}
+
+// ── Code block — Postman "Pretty" viewer: white panel, line numbers, JSON syntax colors ──
 function CodeBlock({ value, isError = false }) {
   const text = formatJson(value);
   if (!text) return <p className="text-[10px] text-gray-500 italic">empty</p>;
+  const isJsonLike = typeof value !== 'string';
+  const lines = text.split('\n');
   return (
-    <div className="relative group/code">
+    <div className={`relative group/code rounded-lg border overflow-hidden ${isError ? 'border-red-200/50' : 'border-gray-200'}`}>
       <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover/code:opacity-100 transition-opacity">
         <CopyCodeBtn text={text} />
       </div>
-      <pre className={`rounded-lg p-3 text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap break-words max-h-52 overflow-y-auto border ${
-        isError
-          ? 'bg-red-50/30 border-red-200/40 text-red-700/85'
-          : 'bg-gray-950/60 border-gray-200/50 text-cyan-700/85'
+      <pre className={`m-0 flex text-[10px] font-mono leading-relaxed overflow-x-auto max-h-52 overflow-y-auto ${
+        isError ? 'bg-red-50/30' : 'bg-white'
       }`}>
-        {text}
+        <code className="flex-shrink-0 select-none text-right pr-2.5 pl-3 py-2 text-gray-300 border-r border-gray-100 bg-gray-50/60">
+          {lines.map((_, i) => <div key={i}>{i + 1}</div>)}
+        </code>
+        <code className={`flex-1 pl-3 pr-3 py-2 whitespace-pre-wrap break-words ${isError ? 'text-red-700/85' : 'text-gray-700'}`}>
+          {lines.map((line, i) => (
+            <div key={i}>
+              {isError || !isJsonLike
+                ? (line || '\u00A0')
+                : highlightJsonLine(line).map((tok, ti) => (
+                    <span key={ti} className={TOKEN_CLASS[tok.type]}>{tok.text}</span>
+                  ))}
+            </div>
+          ))}
+        </code>
       </pre>
     </div>
   );
@@ -163,15 +213,13 @@ export default function CpsRequestResponsePanel({ operation, onDismiss }) {
           <div className="p-4 space-y-3">
             <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Request</p>
 
-            {/* Method + URL */}
+            {/* Method + URL — Postman address-bar style */}
             {(method || url) && (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {method && <MethodBadge method={method} />}
-                  {url && (
-                    <span className="font-mono text-[10px] text-gray-600 break-all leading-snug">{url}</span>
-                  )}
-                </div>
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5">
+                {method && <MethodBadge method={method} />}
+                {url && (
+                  <span className="font-mono text-[10px] text-gray-700 break-all leading-snug">{url}</span>
+                )}
               </div>
             )}
 
