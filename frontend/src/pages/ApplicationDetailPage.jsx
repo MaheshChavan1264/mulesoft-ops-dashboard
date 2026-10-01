@@ -152,7 +152,7 @@ const CopyGroupBtn = ({ text }) => {
   const [done, setDone] = useState(false);
   const copy = () => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); };
   return (
-    <button onClick={copy} className="flex items-center gap-1 p-1 rounded-md text-orange-600/60 hover:text-orange-700 hover:bg-orange-100/30 transition-all flex-shrink-0" title="Copy as JSON">
+    <button onClick={copy} className="flex items-center gap-1 p-1.5 rounded-lg text-sforange-600 dark:text-sforange-400 hover:text-sforange-700 dark:hover:text-sforange-300 hover:bg-sforange-100 dark:hover:bg-sforange-500/10 transition-all flex-shrink-0" title="Copy as JSON">
       {done ? <Check size={10} className="text-emerald-600"/> : <Copy size={10}/>}
     </button>
   );
@@ -163,9 +163,9 @@ const SecretVal = ({ value }) => {
   const isSecret = /^\*+$/.test(String(value));
   return (
     <span className="flex items-center gap-1.5">
-      <span className="font-mono text-xs text-gray-700 break-all">{show || !isSecret ? String(value) : '••••••••••••'}</span>
+      <span className="font-mono text-xs text-gray-700 dark:text-gray-300 break-all">{show || !isSecret ? String(value) : '••••••••••••'}</span>
       {isSecret && (
-        <button onClick={() => setShow(!show)} className="text-slate-500 hover:text-gray-600 flex-shrink-0">
+        <button onClick={() => setShow(!show)} className="text-gray-400 dark:text-gray-500 hover:text-sf-600 dark:hover:text-sf-400 flex-shrink-0 transition-colors">
           {show ? <EyeOff size={11}/> : <Eye size={11}/>}
         </button>
       )}
@@ -173,27 +173,35 @@ const SecretVal = ({ value }) => {
   );
 };
 
-const MetaTag = ({ children, color = 'cyan' }) => {
-  const c = { cyan:'text-cyan-600 border-cyan-200/40 bg-cyan-50/30', blue:'text-blue-600 border-blue-200/40 bg-blue-50/30',
-    purple:'text-purple-600 border-purple-200/40 bg-purple-50/30', green:'text-emerald-600 border-emerald-200/40 bg-emerald-50/30',
-    red:'text-red-600 border-red-200/40 bg-red-50/30', gray:'text-gray-500 border-gray-300/40 bg-gray-100/40' }[color];
-  return <span className={`font-mono text-[11px] px-2 py-0.5 rounded-md border ${c} leading-none`}>{children}</span>;
+const TAG_COLORS = {
+  cyan:   'text-sfteal-700 dark:text-sfteal-300 border-sfteal-200/60 dark:border-sfteal-400/20 bg-sfteal-50 dark:bg-sfteal-500/10',
+  blue:   'text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20 bg-sf-50 dark:bg-sf-500/10',
+  purple: 'text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 bg-sfpurple-50 dark:bg-sfpurple-500/10',
+  green:  'text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 bg-emerald-50 dark:bg-emerald-500/10',
+  red:    'text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 bg-red-50 dark:bg-red-500/10',
+  orange: 'text-sforange-700 dark:text-sforange-300 border-sforange-200/60 dark:border-sforange-400/20 bg-sforange-50 dark:bg-sforange-500/10',
+  gray:   'text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60 bg-gray-100/60 dark:bg-gray-800/60',
 };
+
+const MetaTag = ({ children, color = 'cyan' }) => (
+  <span className={`font-mono text-[11px] px-2 py-0.5 rounded-md border font-medium ${TAG_COLORS[color] || TAG_COLORS.gray} leading-none`}>{children}</span>
+);
 
 const PulseDot = ({ active }) => (
   <span className="relative flex h-2 w-2 flex-shrink-0">
     {active && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"/>}
-    <span className={`relative inline-flex rounded-full h-2 w-2 ${active ? 'bg-emerald-400' : 'bg-gray-200'}`}/>
+    <span className={`relative inline-flex rounded-full h-2 w-2 ${active ? 'bg-emerald-400' : 'bg-gray-300 dark:bg-gray-600'}`}/>
   </span>
 );
 
 const KVRow = ({ label, value, mono, secret }) => (
-  <div className="group flex items-start gap-3 py-2.5 px-4 rounded-lg hover:bg-gray-100/50 transition-colors -mx-4">
-    <span className="text-[10px] font-bold tracking-wider text-slate-500 uppercase flex-shrink-0 w-40 pt-0.5">{label}</span>
+  <div className="group relative flex items-start gap-3 py-2.5 px-4 rounded-xl hover:bg-sf-50/50 dark:hover:bg-sf-500/5 transition-colors -mx-4">
+    <span className="absolute left-0.5 top-1/2 -translate-y-1/2 w-0.5 h-0 group-hover:h-4 rounded-full bg-sf-400 dark:bg-sf-500 transition-all duration-200"/>
+    <span className="text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase flex-shrink-0 w-40 pt-0.5">{label}</span>
     <div className="flex items-start gap-1.5 flex-1 min-w-0">
       {secret ? <SecretVal value={value}/> :
-        <span className={`${mono?'font-mono text-xs text-gray-700':'text-sm text-gray-700'} break-all leading-relaxed`}>
-          {value != null && value !== '' ? value : <span className="text-gray-400">—</span>}
+        <span className={`${mono?'font-mono text-xs text-gray-700 dark:text-gray-300':'text-sm text-gray-700 dark:text-gray-300'} break-all leading-relaxed`}>
+          {value != null && value !== '' ? value : <span className="text-gray-400 dark:text-gray-600">—</span>}
         </span>
       }
       {value && <CopyBtn text={String(value)}/>}
@@ -201,18 +209,51 @@ const KVRow = ({ label, value, mono, secret }) => (
   </div>
 );
 
-const GlassCard = ({ icon: Icon, title, count, accent, children, noPad }) => (
-  <div className={`rounded-2xl border bg-white/50 backdrop-blur-md transition-all overflow-hidden ${accent==='blue'?'border-blue-200/50 shadow-blue-900/20':accent==='purple'?'border-purple-200/50 shadow-purple-900/20':'border-gray-200/80 hover:border-gray-300/60'} shadow-xl`}>
-    <div className={`flex items-center gap-3 px-5 py-4 border-b ${accent==='blue'?'border-blue-200/30 bg-blue-100/10':accent==='purple'?'border-purple-200/30 bg-purple-100/10':'border-gray-200/60 bg-gray-100/20'}`}>
-      {Icon && <div className={`p-1.5 rounded-lg ${accent==='blue'?'bg-blue-500/15':accent==='purple'?'bg-purple-500/15':'bg-gray-200/60'}`}>
-        <Icon size={13} className={accent==='blue'?'text-blue-600':accent==='purple'?'text-purple-600':'text-gray-500'}/>
-      </div>}
-      <span className="text-gray-800 font-semibold text-sm">{title}</span>
-      {count != null && <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-gray-100/80 text-slate-500 font-medium border border-gray-300/40">{count}</span>}
+const CARD_ACCENTS = {
+  blue:   { chip:'bg-gradient-to-br from-sf-500 to-sf-600 shadow-sf-500/30',             border:'border-sf-200/60 dark:border-sf-400/15',             headerBg:'bg-sf-50/60 dark:bg-sf-500/5',             badge:'bg-sf-100 dark:bg-sf-500/15 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20' },
+  purple: { chip:'bg-gradient-to-br from-sfpurple-500 to-sfpurple-600 shadow-sfpurple-500/30', border:'border-sfpurple-200/60 dark:border-sfpurple-400/15', headerBg:'bg-sfpurple-50/60 dark:bg-sfpurple-500/5', badge:'bg-sfpurple-100 dark:bg-sfpurple-500/15 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20' },
+  cyan:   { chip:'bg-gradient-to-br from-sfteal-500 to-sfteal-600 shadow-sfteal-500/30',  border:'border-sfteal-200/60 dark:border-sfteal-400/15',    headerBg:'bg-sfteal-50/60 dark:bg-sfteal-500/5',    badge:'bg-sfteal-100 dark:bg-sfteal-500/15 text-sfteal-700 dark:text-sfteal-300 border-sfteal-200/60 dark:border-sfteal-400/20' },
+  orange: { chip:'bg-gradient-to-br from-sforange-500 to-sforange-600 shadow-sforange-500/30', border:'border-sforange-200/60 dark:border-sforange-400/15', headerBg:'bg-sforange-50/60 dark:bg-sforange-500/5', badge:'bg-sforange-100 dark:bg-sforange-500/15 text-sforange-700 dark:text-sforange-300 border-sforange-200/60 dark:border-sforange-400/20' },
+  green:  { chip:'bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/30', border:'border-emerald-200/60 dark:border-emerald-400/15', headerBg:'bg-emerald-50/60 dark:bg-emerald-500/5', badge:'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20' },
+  gray:   { chip:'bg-gray-200/80 dark:bg-gray-700',                                       border:'border-gray-200/70 dark:border-gray-700/60',         headerBg:'bg-gray-50/70 dark:bg-gray-800/40',        badge:'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60' },
+};
+
+const GlassCard = ({ icon: Icon, title, count, accent='gray', children, noPad }) => {
+  const a = CARD_ACCENTS[accent] || CARD_ACCENTS.gray;
+  return (
+    <div className={`group rounded-2xl border ${a.border} bg-white/70 dark:bg-gray-900/50 backdrop-blur-md shadow-lg shadow-gray-900/5 dark:shadow-black/20 hover:shadow-xl transition-all duration-300 overflow-hidden`}>
+      <div className={`flex items-center gap-3 px-5 py-4 border-b ${a.border} ${a.headerBg}`}>
+        {Icon && (
+          <div className={`flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0 shadow-sm ${a.chip} ${accent==='gray' ? 'text-gray-500 dark:text-gray-400' : 'text-white shadow-lg'}`}>
+            <Icon size={13} />
+          </div>
+        )}
+        <span className="text-gray-800 dark:text-gray-100 font-semibold text-sm">{title}</span>
+        {count != null && <span className={`ml-auto text-[11px] px-2 py-0.5 rounded-full font-semibold border ${a.badge}`}>{count}</span>}
+      </div>
+      <div className={noPad?'':'px-5 py-4'}>{children}</div>
     </div>
-    <div className={noPad?'':'px-5 py-4'}>{children}</div>
-  </div>
-);
+  );
+};
+
+const HERO_ACTION_ACCENTS = {
+  sf:      { chip:'bg-sf-100 dark:bg-sf-500/15 text-sf-600 dark:text-sf-400',             chipHover:'group-hover:bg-sf-600 group-hover:text-white',             text:'group-hover:text-sf-700 dark:group-hover:text-sf-300' },
+  sfteal:  { chip:'bg-sfteal-100 dark:bg-sfteal-500/15 text-sfteal-600 dark:text-sfteal-400', chipHover:'group-hover:bg-sfteal-600 group-hover:text-white',    text:'group-hover:text-sfteal-700 dark:group-hover:text-sfteal-300' },
+  emerald: { chip:'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', chipHover:'group-hover:bg-emerald-600 group-hover:text-white', text:'group-hover:text-emerald-700 dark:group-hover:text-emerald-300' },
+};
+
+const HeroActionBtn = ({ icon: Icon, label, accent='sf', onClick, title }) => {
+  const a = HERO_ACTION_ACCENTS[accent] || HERO_ACTION_ACCENTS.sf;
+  return (
+    <button type="button" onClick={onClick} title={title}
+      className="group flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-xl text-xs font-medium text-gray-500 dark:text-gray-400 bg-white/70 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 hover:border-transparent hover:bg-white dark:hover:bg-gray-800 hover:shadow-md transition-all">
+      <span className={`flex items-center justify-center w-6 h-6 rounded-lg transition-all duration-200 ${a.chip} ${a.chipHover}`}>
+        <Icon size={12} />
+      </span>
+      <span className={`transition-colors ${a.text}`}>{label}</span>
+    </button>
+  );
+};
 
 /* ── Action helpers ────────────────────────────────────── */
 // availableActions and ACTION_CONFIG are imported from utils/appUtils.
@@ -222,35 +263,35 @@ function AppConfirmModal({ state, onConfirm, onCancel, loading }) {
   if (!state) return null;
   const { action, appName } = state;
   const cfg = ACTION_CONFIG[action];
-  const { Icon } = cfg;
+  const { Icon, label, bulkCls } = cfg;
   const dangerous = action === 'stop';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-white border border-gray-300 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
         <div className="flex items-start gap-4">
-          <div className={`p-2.5 rounded-xl flex-shrink-0 border ${dangerous ? 'bg-red-50/60 border-red-200/40' : 'bg-blue-50/60 border-blue-200/40'}`}>
-            <AlertTriangle size={18} className={dangerous ? 'text-red-600' : 'text-blue-600'} />
+          <div className={`p-3 rounded-2xl flex-shrink-0 ${dangerous ? 'bg-red-50 dark:bg-red-500/10' : 'bg-sf-50 dark:bg-sf-500/10'}`}>
+            <AlertTriangle size={20} className={dangerous ? 'text-red-600 dark:text-red-400' : 'text-sf-600 dark:text-sf-400'} />
           </div>
           <div className="flex-1">
-            <h3 className="text-gray-900 font-semibold text-base mb-1">{cfg.label} Application?</h3>
-            <p className="text-gray-500 text-sm">
-              Are you sure you want to <span className="text-gray-900 font-medium">{cfg.label.toLowerCase()}</span>{' '}
-              <span className="font-mono text-blue-700 text-xs bg-blue-50/40 px-1.5 py-0.5 rounded">{appName}</span>?
+            <h3 className="text-gray-900 dark:text-gray-100 font-bold text-base mb-1">{label} Application?</h3>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
+              Are you sure you want to <span className="font-semibold text-gray-900 dark:text-gray-100">{label.toLowerCase()}</span>{' '}
+              <span className="font-mono text-sf-700 dark:text-sf-300 text-xs bg-sf-50 dark:bg-sf-500/15 px-1.5 py-0.5 rounded-md">{appName}</span>?
             </p>
-            {dangerous && <p className="text-red-600/80 text-xs mt-2">⚠ This will stop all running flows and connections.</p>}
+            {dangerous && <p className="text-red-600 dark:text-red-400 text-xs mt-2 font-medium">⚠ This will stop all running flows and connections.</p>}
           </div>
-          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+          <button onClick={onCancel} className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex-shrink-0 transition-colors"><X size={16} /></button>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50 transition-colors">
+            className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl disabled:opacity-50 transition-colors">
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${dangerous ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>
+            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 ${bulkCls}`}>
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
-              : <><Icon size={13} /> Confirm {cfg.label}</>}
+              : <><Icon size={13} /> Confirm {label}</>}
           </button>
         </div>
       </div>
@@ -262,29 +303,29 @@ function SchedulerConfirmModal({ schedulerKey, onConfirm, onCancel, loading }) {
   if (!schedulerKey) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-white border border-gray-300 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
         <div className="flex items-start gap-4">
-          <div className="p-2.5 rounded-xl flex-shrink-0 border bg-purple-50/60 border-purple-200/40">
-            <Zap size={18} className="text-purple-600" />
+          <div className="p-3 rounded-2xl flex-shrink-0 bg-sfpurple-50 dark:bg-sfpurple-500/10">
+            <Zap size={20} className="text-sfpurple-600 dark:text-sfpurple-400" />
           </div>
           <div className="flex-1">
-            <h3 className="text-gray-900 font-semibold text-base mb-1">Run Scheduler Now?</h3>
-            <p className="text-gray-500 text-sm">
+            <h3 className="text-gray-900 dark:text-gray-100 font-bold text-base mb-1">Run Scheduler Now?</h3>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
               Are you sure you want to trigger{' '}
-              <span className="font-mono text-purple-700 text-xs bg-purple-50/40 px-1.5 py-0.5 rounded">{schedulerKey}</span>{' '}
+              <span className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-xs bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{schedulerKey}</span>{' '}
               immediately?
             </p>
-            <p className="text-yellow-600/70 text-xs mt-2">⚠ This will execute the scheduler flow outside its normal schedule.</p>
+            <p className="text-amber-600 dark:text-amber-400 text-xs mt-2 font-medium">⚠ This will execute the scheduler flow outside its normal schedule.</p>
           </div>
-          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+          <button onClick={onCancel} className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex-shrink-0 transition-colors"><X size={16} /></button>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50 transition-colors">
+            className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl disabled:opacity-50 transition-colors">
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors bg-purple-600 hover:bg-purple-500 text-white">
+            className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 bg-gradient-to-b from-sfpurple-500 to-sfpurple-600 hover:from-sfpurple-400 hover:to-sfpurple-500 text-white shadow-md shadow-sfpurple-500/30 hover:shadow-lg hover:shadow-sfpurple-500/40 ring-1 ring-inset ring-white/20">
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Running…</>
               : <><Zap size={13} /> Run Now</>}
@@ -300,51 +341,49 @@ function ContractConfirmModal({ state, onConfirm, onCancel, loading }) {
   const { action, appName } = state;
   const isRevoke = action === 'revoke';
   const isDelete = action === 'delete';
+  const dangerous = isDelete || isRevoke;
+  const confirmCls = isDelete
+    ? 'bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white shadow-md shadow-red-500/30 hover:shadow-lg hover:shadow-red-500/40 ring-1 ring-inset ring-white/20'
+    : isRevoke
+    ? 'bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white shadow-md shadow-red-500/30 hover:shadow-lg hover:shadow-red-500/40 ring-1 ring-inset ring-white/20'
+    : 'bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white shadow-md shadow-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/40 ring-1 ring-inset ring-white/20';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-white border border-gray-300 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
         <div className="flex items-start gap-4">
-          <div className={`p-2.5 rounded-xl flex-shrink-0 border ${
-            isDelete ? 'bg-red-50/60 border-red-200/40'
-            : isRevoke ? 'bg-red-50/60 border-red-200/40'
-            : 'bg-emerald-50/60 border-emerald-200/40'
-          }`}>
-            {isDelete ? <Trash2 size={18} className="text-red-600" />
-              : isRevoke ? <X size={18} className="text-red-600" />
-              : <Check size={18} className="text-emerald-600" />}
+          <div className={`p-3 rounded-2xl flex-shrink-0 ${dangerous ? 'bg-red-50 dark:bg-red-500/10' : 'bg-emerald-50 dark:bg-emerald-500/10'}`}>
+            {isDelete ? <Trash2 size={20} className="text-red-600 dark:text-red-400" />
+              : isRevoke ? <X size={20} className="text-red-600 dark:text-red-400" />
+              : <Check size={20} className="text-emerald-600 dark:text-emerald-400" />}
           </div>
           <div className="flex-1">
-            <h3 className="text-gray-900 font-semibold text-base mb-1">
+            <h3 className="text-gray-900 dark:text-gray-100 font-bold text-base mb-1">
               {isDelete ? 'Delete Contract?' : isRevoke ? 'Revoke Contract?' : 'Approve Contract?'}
             </h3>
-            <p className="text-gray-500 text-sm">
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
               Are you sure you want to{' '}
-              <span className={`font-semibold ${isDelete || isRevoke ? 'text-red-700' : 'text-emerald-700'}`}>
+              <span className={`font-semibold ${dangerous ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                 {isDelete ? 'permanently delete' : isRevoke ? 'revoke' : 'approve'}
               </span>{' '}
               the contract for{' '}
-              <span className="font-mono text-blue-700 text-xs bg-blue-50/40 px-1.5 py-0.5 rounded">{appName}</span>?
+              <span className="font-mono text-sf-700 dark:text-sf-300 text-xs bg-sf-50 dark:bg-sf-500/15 px-1.5 py-0.5 rounded-md">{appName}</span>?
             </p>
             {isDelete && (
-              <p className="text-red-600/80 text-xs mt-2">⚠ This action is irreversible. The contract will be permanently removed.</p>
+              <p className="text-red-600 dark:text-red-400 text-xs mt-2 font-medium">⚠ This action is irreversible. The contract will be permanently removed.</p>
             )}
             {isRevoke && !isDelete && (
-              <p className="text-red-600/80 text-xs mt-2">⚠ The client application will immediately lose access to this API.</p>
+              <p className="text-red-600 dark:text-red-400 text-xs mt-2 font-medium">⚠ The client application will immediately lose access to this API.</p>
             )}
           </div>
-          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+          <button onClick={onCancel} className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex-shrink-0 transition-colors"><X size={16} /></button>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50 transition-colors">
+            className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl disabled:opacity-50 transition-colors">
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${
-              isDelete ? 'bg-red-700 hover:bg-red-600 text-white'
-              : isRevoke ? 'bg-red-600 hover:bg-red-500 text-white'
-              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-            }`}>
+            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 ${confirmCls}`}>
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
               : isDelete
@@ -1087,36 +1126,40 @@ export default function ApplicationDetailPage() {
       )}
 
       {/* ── Hero Header ─────────────────────────────── */}
-      <div className="relative rounded-2xl border border-gray-200/60 dark:border-gray-700/60 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-sf-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800"/>
-        <div className="absolute inset-0 dark:hidden" style={{background:'radial-gradient(ellipse at 70% 50%, rgba(59,130,246,0.06) 0%, transparent 60%)'}}/>
-        <div className="absolute inset-0 hidden dark:block" style={{background:'radial-gradient(ellipse at 70% 50%, rgba(59,130,246,0.12) 0%, transparent 60%)'}}/>
-        {isRunning && <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/3 rounded-full blur-3xl pointer-events-none"/>}
+      <div className="relative rounded-2xl border border-gray-200/60 dark:border-gray-700/60 overflow-hidden shadow-lg shadow-gray-900/5 dark:shadow-black/20">
+        <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-sf-500 via-sfteal-400 to-sfpurple-500 z-10"/>
+        <div className="absolute inset-0 bg-gradient-to-br from-sf-50 via-white to-sfteal-50/50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800"/>
+        <div className="absolute inset-0 dark:hidden" style={{background:'radial-gradient(ellipse at 70% 50%, rgba(1,118,211,0.06) 0%, transparent 60%)'}}/>
+        <div className="absolute inset-0 hidden dark:block" style={{background:'radial-gradient(ellipse at 70% 50%, rgba(1,118,211,0.12) 0%, transparent 60%)'}}/>
+        {isRunning && <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"/>}
         <div className="relative p-6 flex items-start justify-between flex-wrap gap-4">
           <div className="flex items-start gap-4">
-            <button onClick={()=>navigate('/applications')} className="mt-0.5 p-2 rounded-xl text-slate-500 hover:text-gray-900 hover:bg-gray-100/80 border border-transparent hover:border-gray-300/50 transition-all">
+            <button onClick={()=>navigate('/applications')} className="mt-0.5 p-2 rounded-xl text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-white dark:hover:bg-gray-800 border border-transparent hover:border-gray-200/60 dark:hover:border-gray-700/60 hover:shadow-sm transition-all">
               <ArrowLeft size={16}/>
             </button>
+            <div className={`mt-0.5 flex items-center justify-center w-11 h-11 rounded-2xl flex-shrink-0 shadow-lg ring-1 ring-white/20 ${isCH1 ? 'bg-gradient-to-br from-sfpurple-500 to-sfpurple-700 shadow-sfpurple-500/30' : 'bg-gradient-to-br from-sf-500 to-sf-700 shadow-sf-500/30'}`}>
+              <Package size={19} className="text-white" />
+            </div>
             <div>
               <div className="flex items-center gap-3 flex-wrap mb-2">
-                <h1 className="text-xl font-bold text-gray-900 tracking-tight">{app.name}</h1>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">{app.name}</h1>
                 <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border shadow-lg ${statusStyle}`}>
                   <PulseDot active={isRunning}/> {rStatus || 'Unknown'}
                 </span>
-                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${isCH1?'bg-purple-50/50 text-purple-700 border-purple-300/50':'bg-blue-50/50 text-blue-700 border-blue-300/50'}`}>
+                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${isCH1?'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20':'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20'}`}>
                   {isCH1?'CloudHub 1.0':'CloudHub 2.0'}
                 </span>
                 {/* Feature 3: BG & Env context badges */}
                 {bgName && (
-                  <span className="text-xs px-2 py-0.5 rounded-full border bg-gray-100/60 text-gray-500 border-gray-300/50">
+                  <span className="text-xs px-2 py-0.5 rounded-full border bg-gray-100/70 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-gray-700/60">
                     🏢 {bgName}
                   </span>
                 )}
                 {(resolvedEnvName || app.environment?.name) && (
                   <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
                     app.environment?.type === 'production'
-                      ? 'bg-green-50/40 text-green-600 border-green-200/50'
-                      : 'bg-yellow-50/40 text-yellow-600 border-yellow-200/50'
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-400/20'
+                      : 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200/60 dark:border-amber-400/20'
                   }`}>
                     🌐 {resolvedEnvName || app.environment?.name}
                   </span>
@@ -1134,15 +1177,15 @@ export default function ApplicationDetailPage() {
             {actions.length > 0 && (
               <div className="flex items-center gap-1.5">
                 {actionLoading ? (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100/60 border border-gray-300/40">
-                    <span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-blue-400" />
-                    <span className="text-gray-500 text-xs">Working…</span>
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/70 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60">
+                    <span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-sf-500" />
+                    <span className="text-gray-500 dark:text-gray-400 text-xs">Working…</span>
                   </div>
                 ) : actions.map((action) => {
                   const { Icon, label, detailCls } = ACTION_CONFIG[action];
                   return (
                     <button key={action} title={label} onClick={() => requestAction(action)}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 transition-all ${detailCls}`}>
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border bg-white/70 dark:bg-gray-800/60 shadow-sm transition-all ${detailCls}`}>
                       <Icon size={13} /> {label}
                     </button>
                   );
@@ -1150,7 +1193,11 @@ export default function ApplicationDetailPage() {
               </div>
             )}
             {/* API Manager shortcut — pre-selects the current BG + env (+ API instance if known) */}
-            <button
+            <HeroActionBtn
+              icon={ShieldCheck}
+              label="API Manager"
+              accent="sf"
+              title="Open API Manager filtered to this environment"
               onClick={() => {
                 localStorage.setItem('mule_apimgr_bg', orgId);
                 if (envId) localStorage.setItem('mule_apimgr_env', envId);
@@ -1163,12 +1210,13 @@ export default function ApplicationDetailPage() {
                 }
                 navigate('/api-manager');
               }}
-              title="Open API Manager filtered to this environment"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 text-gray-500 hover:text-blue-700 border-gray-300/40 hover:border-blue-300/50 hover:bg-blue-50/30 transition-all">
-              <ShieldCheck size={13} /> API Manager
-            </button>
+            />
             {/* CPS Manager shortcut — navigates with pre-selected BG+Env+App */}
-            <button
+            <HeroActionBtn
+              icon={Database}
+              label="CPS Manager"
+              accent="sfteal"
+              title="Open this app in CPS Manager"
               onClick={() => navigate('/cps-manager', {
                 state: {
                   cpsAutoSelect: {
@@ -1179,15 +1227,16 @@ export default function ApplicationDetailPage() {
                   },
                 },
               })}
-              title="Open this app in CPS Manager"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 text-gray-500 hover:text-cyan-700 border-gray-300/40 hover:border-cyan-300/50 hover:bg-cyan-50/30 transition-all">
-              <Database size={13} /> CPS Manager
-            </button>
+            />
             {/* Open in Exchange button — navigates to our Exchange page and auto-selects the asset */}
             {(() => {
               const ref = app.application?.ref;
               return (
-                <button
+                <HeroActionBtn
+                  icon={ExternalLink}
+                  label="Exchange"
+                  accent="emerald"
+                  title="View in Exchange Assets"
                   onClick={() => navigate('/exchange', {
                     state: {
                       assetId: ref?.artifactId || app.name,
@@ -1196,18 +1245,17 @@ export default function ApplicationDetailPage() {
                       name: app.name
                     }
                   })}
-                  title="View in Exchange Assets"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 text-gray-500 hover:text-emerald-700 border-gray-300/40 hover:border-emerald-300/50 hover:bg-emerald-50/30 transition-all">
-                  <ExternalLink size={13} /> Exchange
-                </button>
+                />
               );
             })()}
             {/* Open in Anypoint Platform:
                 Step 1 — switch BG via home/organizations/{orgId}/
                 Step 2 — navigate to env-in-path URL after 4s
                 If env selector appears, the tooltip tells the user exactly which env to click. */}
-            <button
-              type="button"
+            <HeroActionBtn
+              icon={ExternalLink}
+              label="Anypoint"
+              accent="sf"
               title={
                 resolvedEnvName || app.environment?.name
                   ? `Open in Anypoint Platform — app name copied to clipboard. If prompted, select "${resolvedEnvName || app.environment?.name}"`
@@ -1241,10 +1289,8 @@ export default function ApplicationDetailPage() {
                   window.open(envAppUrl, '_blank', 'noreferrer');
                 }
               }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border bg-gray-100/60 text-gray-500 hover:text-blue-700 border-gray-300/40 hover:border-blue-300/50 hover:bg-blue-50/30 transition-all">
-              <ExternalLink size={13} /> Anypoint
-            </button>
-            <button onClick={load} className="p-2.5 rounded-xl text-slate-500 hover:text-gray-900 bg-gray-100/60 border border-gray-300/40 hover:bg-gray-200/60 transition-all">
+            />
+            <button onClick={load} title="Refresh" className="p-2.5 rounded-xl text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 bg-white/70 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 hover:bg-white dark:hover:bg-gray-800 hover:shadow-md transition-all">
               <RefreshCw size={14}/>
             </button>
           </div>
@@ -1252,7 +1298,7 @@ export default function ApplicationDetailPage() {
       </div>
 
       {/* ── Segmented Tabs ──────────────────────────── */}
-      <div className="bg-white p-1 rounded-xl border border-gray-200 w-fit flex gap-0.5">
+      <div className="bg-white/80 dark:bg-gray-900/60 backdrop-blur-md p-1.5 rounded-2xl border border-gray-200/70 dark:border-gray-700/60 w-fit flex gap-1 shadow-sm overflow-x-auto max-w-full">
         {tabs.map(t => (
           <button key={t.id}
             onClick={() => {
@@ -1262,15 +1308,15 @@ export default function ApplicationDetailPage() {
             if (t.id === 'contracts' && contracts === null && !contractsLoading) loadContracts();
             if (t.id === 'apispec' && pingSpec === null && !pingSpecLoading) fetchPingSpec();
           }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.id?'bg-gray-200/80 text-gray-900 shadow-md':'text-gray-500 hover:text-gray-700 hover:bg-gray-100/60'}`}>
+            className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${tab===t.id?'bg-gradient-to-br from-sf-500 to-sf-600 text-white shadow-md shadow-sf-500/30':'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100/70 dark:hover:bg-gray-800/60'}`}>
             {t.id === 'cps' && <Key size={11} />}
             {t.id === 'ping' && <Activity size={11} />}
             {t.label}
             {t.badge && (
               <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
-                t.badgeErr ? 'bg-red-100 text-red-600' :
-                t.badge === '✓' ? 'bg-emerald-100 text-emerald-600' :
-                tab===t.id ? 'bg-blue-500/30 text-blue-700' : 'bg-gray-100 text-slate-500'
+                t.badgeErr ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400' :
+                t.badge === '✓' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                tab===t.id ? 'bg-white/25 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
               }`}>{t.badge}</span>
             )}
           </button>
@@ -1338,21 +1384,21 @@ export default function ApplicationDetailPage() {
           <div className="relative">
             <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
             <input value={propSearch} onChange={e=>setPropSearch(e.target.value)} placeholder="Filter properties by key…"
-              className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-300/50 focus:bg-white"/>
+              className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10 focus:bg-white"/>
           </div>
 
           <GlassCard icon={Settings} title="Properties" count={filteredProps.length} noPad>
             {filteredProps.length>0 ? (
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-gray-100/50 border-b border-gray-300/40">
-                    <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase w-[42%]">Property Key</th>
-                    <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Value</th>
+                  <tr className="bg-gray-50/80 dark:bg-gray-800/60 border-b border-gray-200/60 dark:border-gray-700/60">
+                    <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase w-[42%]">Property Key</th>
+                    <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">Value</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredProps.sort(([a],[b])=>a.localeCompare(b)).map(([k,v]) => (
-                    <tr key={k} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
+                    <tr key={k} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                       <td className="px-5 py-3 align-top">
                         <div className="flex items-center gap-1.5">
                           <span className="text-gray-500 text-xs font-mono break-all leading-relaxed">{k}</span>
@@ -1373,14 +1419,14 @@ export default function ApplicationDetailPage() {
           </GlassCard>
 
           {Object.keys(secureProps).length>0 && (
-            <GlassCard icon={Settings} title="Secure Properties" count={Object.keys(secureProps).length} noPad>
-              <div className="px-5 py-2.5 bg-orange-50/20 border-b border-orange-200/20">
-                <span className="text-xs text-orange-600/70">⚠ Values are redacted by Anypoint Platform</span>
+            <GlassCard icon={Settings} title="Secure Properties" count={Object.keys(secureProps).length} accent="orange" noPad>
+              <div className="px-5 py-2.5 bg-sforange-50/40 dark:bg-sforange-500/5 border-b border-sforange-200/30 dark:border-sforange-400/10">
+                <span className="text-xs text-sforange-600 dark:text-sforange-400">⚠ Values are redacted by Anypoint Platform</span>
               </div>
               <table className="w-full text-sm border-collapse">
                 <tbody>
                   {Object.entries(secureProps).map(([k,v]) => (
-                    <tr key={k} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
+                    <tr key={k} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                       <td className="px-5 py-3 w-[42%]"><span className="text-gray-500 text-xs font-mono">{k}</span></td>
                       <td className="px-5 py-3"><SecretVal value={String(v)}/></td>
                     </tr>
@@ -1396,7 +1442,7 @@ export default function ApplicationDetailPage() {
       {tab==='infrastructure' && (
         <div className="space-y-5">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-            <GlassCard icon={Database} title="Object Store & Settings">
+            <GlassCard icon={Database} title="Object Store & Settings" accent="cyan">
               <KVRow label="Persistent Object Store" value={osEnabled?'✅ Enabled':'❌ Disabled'} />
               {isCH1 && <KVRow label="Persistent Queues" value={app.persistentQueues!=null?String(app.persistentQueues):undefined} />}
               {isCH1 && <KVRow label="Monitoring" value={app.monitoringEnabled!=null?String(app.monitoringEnabled):undefined} />}
@@ -1417,8 +1463,8 @@ export default function ApplicationDetailPage() {
               // Show whenever there are unresolved placeholders AND CPS is configured
               if (!hasUnresolved || !cpsBaseUrl) return null;
               return (
-                <div className="px-5 py-2.5 border-b border-gray-200/40 flex items-center justify-between bg-purple-50/10">
-                  <p className="text-[10px] text-purple-600/80 flex items-center gap-1.5">
+                <div className="px-5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-sfpurple-50/50 dark:bg-sfpurple-500/5">
+                  <p className="text-[10px] text-sfpurple-600 dark:text-sfpurple-400 flex items-center gap-1.5 font-medium">
                     <Key size={9} /> Some cron expressions may be in CPS properties
                   </p>
                   <button
@@ -1462,7 +1508,7 @@ export default function ApplicationDetailPage() {
                       } catch { /* silently fail — button stays visible for retry */ }
                       setCpsSecureSchedulerLoading(false);
                     }}
-                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-purple-100 border border-purple-300/40 text-purple-600 hover:bg-purple-600/30 rounded-lg transition-colors disabled:opacity-50 font-medium flex-shrink-0">
+                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-sfpurple-100 dark:bg-sfpurple-500/15 border border-sfpurple-200/60 dark:border-sfpurple-400/20 text-sfpurple-700 dark:text-sfpurple-300 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 rounded-lg transition-all disabled:opacity-50 font-semibold flex-shrink-0">
                     {cpsSecureSchedulerLoading
                       ? <><RefreshCw size={9} className="animate-spin" /> Loading…</>
                       : <><Key size={9} /> Get Cron Expressions</>}
@@ -1482,7 +1528,7 @@ export default function ApplicationDetailPage() {
               </div>
             )}
             {allSchedulers.length>0 && (
-              <div className="px-5 pt-4 pb-3 border-b border-gray-200/40">
+              <div className="px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
                 <div className="relative">
                   <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"/>
                   <input
@@ -1505,9 +1551,9 @@ export default function ApplicationDetailPage() {
             {allSchedulers.length>0 ? (
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-gray-100/50 border-b border-gray-300/40">
+                  <tr className="bg-gray-50/80 dark:bg-gray-800/60 border-b border-gray-200/60 dark:border-gray-700/60">
                     {['Flow Name','Cron Expression','Last Run','Next Run','State','Actions'].map(h=>(
-                      <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                      <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1562,7 +1608,7 @@ export default function ApplicationDetailPage() {
                                  (s.schedule?.period > 0 ? s.schedule.period : null);
                     const timeUnit = s.timeUnit || s.schedule?.timeUnit;
                     return (
-                      <tr key={i} className="border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
+                      <tr key={i} className="border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                         <td className="px-5 py-4 align-top">
                           <div className="flex items-center gap-2">
                             <PulseDot active={active}/>
@@ -1655,7 +1701,7 @@ export default function ApplicationDetailPage() {
                                 onClick={() => setSchedulerConfirmKey(schedulerKey)}
                                 disabled={isTriggering || !isRunning}
                                 title={!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-purple-50/30 text-purple-700 border-purple-300/40 hover:bg-purple-100 hover:text-purple-200 hover:border-purple-300/60">
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 hover:shadow-md hover:shadow-sfpurple-500/30">
                                 {isTriggering
                                   ? <><RefreshCw size={9} className="animate-spin" /> Running…</>
                                   : <><Zap size={9} /> Run Now</>}
@@ -1677,8 +1723,8 @@ export default function ApplicationDetailPage() {
           </div>
 
           {(httpInbound.publicUrl||endpoints.length>0) && (
-            <GlassCard icon={Globe} title="HTTP Endpoints" count={endpoints.length} noPad>
-              <div className="px-5 py-4 border-b border-gray-200/40 space-y-1">
+            <GlassCard icon={Globe} title="HTTP Endpoints" count={endpoints.length} accent="cyan" noPad>
+              <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 space-y-1">
                 {httpInbound.publicUrl && <KVRow label="Public URL" value={httpInbound.publicUrl} mono />}
                 {httpInbound.internalUrl && <KVRow label="Internal URL" value={httpInbound.internalUrl} mono />}
                 <KVRow label="Last Mile Security" value={httpInbound.lastMileSecurity!=null?String(httpInbound.lastMileSecurity):undefined} />
@@ -1689,7 +1735,7 @@ export default function ApplicationDetailPage() {
                   <thead><tr className="bg-gray-100/40"><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Access</th><th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">URL</th></tr></thead>
                   <tbody>
                     {endpoints.map((ep,i)=>(
-                      <tr key={i} className="border-t border-gray-200/40 hover:bg-gray-100/30 group">
+                      <tr key={i} className="border-t border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors group">
                         <td className="px-5 py-3"><MetaTag color={ep.access==='external'?'blue':'gray'}>{ep.access}</MetaTag></td>
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-1.5">
@@ -1735,7 +1781,7 @@ export default function ApplicationDetailPage() {
                   <input
                     value={cpsEnvOverride || effectiveCpsEnv}
                     onChange={(e) => { setCpsEnvOverride(e.target.value); setCpsData(null); setCpsError(''); }}
-                    className="bg-gray-100/60 border border-gray-300/40 rounded-lg px-2 py-1 text-xs text-gray-700 font-mono w-24 focus:outline-none focus:border-blue-300/50"
+                    className="bg-gray-100/60 border border-gray-300/40 rounded-lg px-2 py-1 text-xs text-gray-700 font-mono w-24 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10"
                   />
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -1743,7 +1789,7 @@ export default function ApplicationDetailPage() {
                   <input
                     value={cpsKeyOverride || effectiveCpsKey}
                     onChange={(e) => { setCpsKeyOverride(e.target.value); setCpsData(null); setCpsError(''); }}
-                    className="bg-gray-100/60 border border-gray-300/40 rounded-lg px-2 py-1 text-xs text-gray-700 font-mono w-56 focus:outline-none focus:border-blue-300/50"
+                    className="bg-gray-100/60 border border-gray-300/40 rounded-lg px-2 py-1 text-xs text-gray-700 font-mono w-56 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10"
                   />
                 </div>
               </div>
@@ -1812,15 +1858,17 @@ export default function ApplicationDetailPage() {
 
           {/* Missing credentials warning */}
           {cpsMissingCred && (
-            <div className="flex items-center justify-between gap-4 bg-yellow-50/30 border border-yellow-200/50 rounded-xl px-5 py-4">
+            <div className="flex items-center justify-between gap-4 bg-amber-50 dark:bg-amber-500/5 border border-amber-200/60 dark:border-amber-400/15 rounded-2xl px-5 py-4">
               <div className="flex items-center gap-3">
-                <AlertTriangle size={16} className="text-yellow-600 flex-shrink-0" />
+                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/15 flex-shrink-0">
+                  <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400" />
+                </div>
                 <div>
-                  <p className="text-yellow-700 text-sm font-medium">CPS credentials not configured</p>
-                  <p className="text-yellow-500/80 text-xs mt-0.5">Missing <code className="bg-yellow-50/60 px-1 rounded">{cpsMissingCred}</code> credentials. Click "Configure CPS" to add them.</p>
+                  <p className="text-amber-700 dark:text-amber-300 text-sm font-semibold">CPS credentials not configured</p>
+                  <p className="text-amber-600/80 dark:text-amber-400/80 text-xs mt-0.5">Missing <code className="bg-amber-100 dark:bg-amber-500/15 px-1 rounded">{cpsMissingCred}</code> credentials. Click "Configure CPS" to add them.</p>
                 </div>
               </div>
-              <button onClick={() => setShowCpsSettings(true)} className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg transition-colors">Configure</button>
+              <button onClick={() => setShowCpsSettings(true)} className="flex-shrink-0 px-3.5 py-2 text-xs font-semibold bg-gradient-to-b from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white rounded-xl shadow-md shadow-amber-500/30 hover:shadow-lg transition-all hover:-translate-y-0.5 active:translate-y-0">Configure</button>
             </div>
           )}
 
@@ -1852,11 +1900,13 @@ export default function ApplicationDetailPage() {
 
           {/* Not loaded yet */}
           {!cpsLoading && !cpsData && !cpsError && !cpsMissingCred && (
-            <div className="flex flex-col items-center justify-center py-16 gap-4">
-              <Key size={32} className="text-gray-400" />
-              <p className="text-slate-500 text-sm">Click to load properties from the Config Property Server</p>
-              <p className="text-gray-400 text-xs">Will fetch <code className="text-slate-500">{effectiveCpsKey}</code> in <code className="text-slate-500">{effectiveCpsEnv}</code></p>
-              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
+            <div className="flex flex-col items-center justify-center py-16 gap-4 bg-white/50 dark:bg-gray-900/30 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl">
+              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-sf-100 dark:bg-sf-500/10">
+                <Key size={24} className="text-sf-500 dark:text-sf-400" />
+              </div>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">Click to load properties from the Config Property Server</p>
+              <p className="text-gray-400 dark:text-gray-500 text-xs">Will fetch <code className="text-gray-500 dark:text-gray-400">{effectiveCpsKey}</code> in <code className="text-gray-500 dark:text-gray-400">{effectiveCpsEnv}</code></p>
+              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-b from-sf-500 to-sf-600 hover:from-sf-400 hover:to-sf-500 text-white text-sm font-semibold rounded-xl shadow-md shadow-sf-500/30 hover:shadow-lg hover:shadow-sf-500/40 ring-1 ring-inset ring-white/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
                 <Key size={13} /> Load CPS Properties
               </button>
             </div>
@@ -1869,7 +1919,7 @@ export default function ApplicationDetailPage() {
               <div className="relative">
                 <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 <input value={cpsSearch} onChange={(e) => setCpsSearch(e.target.value)} placeholder="Filter CPS properties by key or value…"
-                  className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-300/50" />
+                  className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10" />
               </div>
 
               {/* Non-secure properties — flat table from the properties object */}
@@ -1881,13 +1931,13 @@ export default function ApplicationDetailPage() {
                   .sort(([a], [b]) => a.localeCompare(b));
 
                 return (
-                  <GlassCard icon={Settings} title="Non-Secure Properties" count={visibleEntries.length} noPad>
+                  <GlassCard icon={Settings} title="Non-Secure Properties" count={visibleEntries.length} accent="blue" noPad>
                     <div className="max-h-80 overflow-y-auto">
                     <table className="w-full text-sm border-collapse">
                       <thead>
-                        <tr className="bg-gray-100/50 border-b border-gray-300/40">
-                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase w-[42%]">Property Key</th>
-                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Value</th>
+                        <tr className="bg-gray-50/80 dark:bg-gray-800/60 border-b border-gray-200/60 dark:border-gray-700/60">
+                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase w-[42%]">Property Key</th>
+                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">Value</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1898,7 +1948,7 @@ export default function ApplicationDetailPage() {
                             : typeof v === 'object' ? JSON.stringify(v)
                             : String(v);
                           return (
-                            <tr key={k} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
+                            <tr key={k} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                               <td className="px-5 py-3 align-top">
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-gray-500 text-xs font-mono break-all">{k}</span>
@@ -1936,12 +1986,12 @@ export default function ApplicationDetailPage() {
 
               {/* ── Get Secure Properties button ── */}
               {cpsData.secureKeys && cpsData.secureGroups.length === 0 && (
-                <div className="flex items-center justify-between bg-purple-50/20 border border-purple-200/40 rounded-2xl px-5 py-4">
+                <div className="flex items-center justify-between bg-sfpurple-50/60 dark:bg-sfpurple-500/5 border border-sfpurple-200/50 dark:border-sfpurple-400/15 rounded-2xl px-5 py-4">
                   <div className="space-y-1">
-                    <p className="text-purple-700 text-sm font-semibold flex items-center gap-2">
+                    <p className="text-sfpurple-700 dark:text-sfpurple-300 text-sm font-semibold flex items-center gap-2">
                       <Key size={13} /> Secure Properties
                     </p>
-                    <p className="text-purple-500/70 text-xs">Keys: {cpsData.secureKeys}</p>
+                    <p className="text-sfpurple-500 dark:text-sfpurple-400 text-xs">Keys: {cpsData.secureKeys}</p>
                   </div>
                   <button
                     disabled={secureLoading}
@@ -1978,7 +2028,7 @@ export default function ApplicationDetailPage() {
                       }
                       setSecureLoading(false);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-xl transition-colors disabled:opacity-50 flex-shrink-0"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-b from-sfpurple-500 to-sfpurple-600 hover:from-sfpurple-400 hover:to-sfpurple-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-sfpurple-500/30 hover:shadow-lg hover:shadow-sfpurple-500/40 ring-1 ring-inset ring-white/20 transition-all disabled:opacity-50 flex-shrink-0 hover:-translate-y-0.5 active:translate-y-0"
                   >
                     {secureLoading
                       ? <><RefreshCw size={12} className="animate-spin" /> Loading…</>
@@ -2018,7 +2068,7 @@ export default function ApplicationDetailPage() {
                   !cpsSearch || k.toLowerCase().includes(cpsSearch.toLowerCase()) || String(v).toLowerCase().includes(cpsSearch.toLowerCase()));
                 if (filtered.length === 0 && cpsSearch) return null;
                 return (
-                  <GlassCard key={group.key} icon={Key} title={`🔒 ${group.key}`} count={Object.keys(groupProps).length} noPad>
+                  <GlassCard key={group.key} icon={Key} title={`🔒 ${group.key}`} count={Object.keys(groupProps).length} accent="orange" noPad>
                     <div className="px-5 py-2 bg-orange-50/20 border-b border-orange-200/20 flex items-center justify-between">
                       <span className="text-[10px] text-orange-600/70">Secure property group — treat values as sensitive</span>
                       <CopyGroupBtn text={JSON.stringify({
@@ -2033,7 +2083,7 @@ export default function ApplicationDetailPage() {
                     <table className="w-full text-sm border-collapse">
                       <tbody>
                         {(cpsSearch ? filtered : Object.entries(groupProps).sort(([a],[b])=>a.localeCompare(b))).map(([k, v]) => (
-                          <tr key={k} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
+                          <tr key={k} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                             <td className="px-5 py-3 w-[42%]"><span className="text-gray-500 text-xs font-mono break-all">{k}</span></td>
                             <td className="px-5 py-3"><SecretVal value={String(v)} /></td>
                           </tr>
@@ -2051,15 +2101,15 @@ export default function ApplicationDetailPage() {
                   .filter((f) => !cpsSearch || f.toLowerCase().includes(cpsSearch.toLowerCase()));
                 if (binaryFiles.length === 0) return null;
                 return (
-                  <GlassCard icon={Package} title="Binary Assets" count={binaryFiles.length} noPad>
+                  <GlassCard icon={Package} title="Binary Assets" count={binaryFiles.length} accent="purple" noPad>
                     <div className="px-5 py-2 bg-orange-50/20 border-b border-orange-200/20">
                       <span className="text-[10px] text-orange-600/70">Binary files configured in <code className="text-orange-600">cps.secure.binaries</code></span>
                     </div>
                     <table className="w-full text-sm border-collapse">
                       <thead>
-                        <tr className="bg-gray-100/50 border-b border-gray-300/40">
-                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">File Name</th>
-                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">Extension</th>
+                        <tr className="bg-gray-50/80 dark:bg-gray-800/60 border-b border-gray-200/60 dark:border-gray-700/60">
+                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">File Name</th>
+                          <th className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">Extension</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2071,7 +2121,7 @@ export default function ApplicationDetailPage() {
                             : ext === 'crt' || ext === 'cer' ? 'bg-cyan-50/30 text-cyan-700 border-cyan-200/40'
                             : 'bg-gray-100/40 text-gray-500 border-gray-300/40';
                           return (
-                            <tr key={i} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
+                            <tr key={i} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                               <td className="px-5 py-3">
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-gray-700 text-xs font-mono">{fileName}</span>
@@ -2187,15 +2237,15 @@ export default function ApplicationDetailPage() {
           <GlassCard icon={Share2} title={title} count={rows.length} accent={accent} noPad>
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="bg-gray-100/50 border-b border-gray-300/40">
+                <tr className="bg-gray-50/80 dark:bg-gray-800/60 border-b border-gray-200/60 dark:border-gray-700/60">
                   {['Host / URL', 'Type', 'Discovered via (property key → value)'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                    <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((dep) => (
-                  <tr key={dep.host} className="border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors align-top">
+                  <tr key={dep.host} className="border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors align-top">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono text-xs text-gray-700 break-all">{dep.host}</span>
@@ -2256,7 +2306,7 @@ export default function ApplicationDetailPage() {
                 value={depSearch}
                 onChange={e => setDepSearch(e.target.value)}
                 placeholder="Filter by host, property key, or value…"
-                className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-300/50"
+                className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-sf-400 dark:focus:border-sf-500 focus:ring-2 focus:ring-sf-500/10"
               />
             </div>
 
@@ -2270,8 +2320,10 @@ export default function ApplicationDetailPage() {
             </div>
 
             {deps.length === 0 && !searchLo && (
-              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/50 border border-gray-200/60 rounded-2xl">
-                <Share2 size={32} className="text-gray-400" />
+              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/50 dark:bg-gray-900/30 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl">
+                <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-sfteal-100 dark:bg-sfteal-500/10">
+                  <Share2 size={24} className="text-sfteal-500 dark:text-sfteal-400" />
+                </div>
                 <p className="text-slate-500 text-sm">No upstream dependencies detected</p>
                 <p className="text-gray-400 text-xs text-center max-w-sm">
                   No properties containing <code className="text-slate-500">host</code>, <code className="text-slate-500">url</code>,
@@ -2356,18 +2408,20 @@ export default function ApplicationDetailPage() {
 
           {contracts !== null && !contractsLoading && !contractsError && (
             contracts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/50 border border-gray-200/60 rounded-2xl">
-                <Key size={36} className="text-gray-400" />
+              <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/50 dark:bg-gray-900/30 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl">
+                <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-500/10">
+                  <Key size={24} className="text-emerald-500 dark:text-emerald-400" />
+                </div>
                 <p className="text-slate-500 text-sm">No approved contracts for this API instance</p>
               </div>
             ) : (
-              <GlassCard icon={Key} title="Consumer Contracts" count={contracts.length} noPad>
+              <GlassCard icon={Key} title="Consumer Contracts" count={contracts.length} accent="green" noPad>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="bg-gray-100/50 border-b border-gray-300/40">
+                      <tr className="bg-gray-50/80 dark:bg-gray-800/60 border-b border-gray-200/60 dark:border-gray-700/60">
                         {['Client App', 'Client ID', 'Status', 'SLA Tier', 'Requested', 'Actions'].map(h => (
-                          <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                          <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -2395,7 +2449,7 @@ export default function ApplicationDetailPage() {
                         const canApprove = status === 'PENDING' || status === 'REVOKED';
                         const canRevoke  = status === 'APPROVED' || status === 'PENDING';
                         return (
-                          <tr key={i} className="border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors">
+                          <tr key={i} className="border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                             <td className="px-5 py-3">
                               <p className="text-gray-700 text-xs font-medium">{appName}</p>
                               {c.application?.description && (
@@ -2426,7 +2480,7 @@ export default function ApplicationDetailPage() {
                                         <button
                                           onClick={() => setContractConfirmState({ contractId, action: 'approve', appName })}
                                           title={`Approve contract for ${appName}`}
-                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-emerald-50/30 text-emerald-700 border-emerald-300/40 hover:bg-emerald-100 hover:text-emerald-200 hover:border-emerald-300/60">
+                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded-lg border transition-all bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-md hover:shadow-emerald-500/30">
                                           <Check size={9} /> Approve
                                         </button>
                                       )}
@@ -2434,14 +2488,14 @@ export default function ApplicationDetailPage() {
                                         <button
                                           onClick={() => setContractConfirmState({ contractId, action: 'revoke', appName })}
                                           title={`Revoke contract for ${appName}`}
-                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-red-50/30 text-red-700 border-red-300/40 hover:bg-red-100 hover:text-red-200 hover:border-red-300/60">
+                                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded-lg border transition-all bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-md hover:shadow-red-500/30">
                                           <X size={9} /> Revoke
                                         </button>
                                       )}
                                       <button
                                         onClick={() => setContractConfirmState({ contractId, action: 'delete', appName })}
                                         title={`Permanently delete contract for ${appName}`}
-                                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded-lg border transition-all bg-red-50/40 text-red-600 border-red-200/50 hover:bg-red-700/30 hover:text-red-700 hover:border-red-300/60">
+                                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded-lg border transition-all bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200/50 dark:border-red-400/20 hover:bg-red-700 hover:text-white hover:border-red-700 hover:shadow-md hover:shadow-red-500/30">
                                         <Trash2 size={9} /> Delete
                                       </button>
                                     </>
@@ -2462,11 +2516,13 @@ export default function ApplicationDetailPage() {
           )}
 
           {contracts === null && !contractsLoading && !contractsError && (
-            <div className="flex flex-col items-center justify-center py-16 gap-4 bg-white/50 border border-gray-200/60 rounded-2xl">
-              <Key size={32} className="text-gray-400" />
-              <p className="text-slate-500 text-sm">Click <strong>Load</strong> to fetch consumer contracts from API Manager</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-4 bg-white/50 dark:bg-gray-900/30 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl">
+              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-sf-100 dark:bg-sf-500/10">
+                <Key size={24} className="text-sf-500 dark:text-sf-400" />
+              </div>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">Click <strong className="text-gray-700 dark:text-gray-200">Load</strong> to fetch consumer contracts from API Manager</p>
               <button onClick={loadContracts}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-gray-900 text-sm font-medium rounded-xl transition-colors">
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-b from-sf-500 to-sf-600 hover:from-sf-400 hover:to-sf-500 text-white text-sm font-semibold rounded-xl shadow-md shadow-sf-500/30 hover:shadow-lg hover:shadow-sf-500/40 ring-1 ring-inset ring-white/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
                 <Key size={13} /> Load Contracts
               </button>
             </div>
@@ -2547,10 +2603,12 @@ export default function ApplicationDetailPage() {
           )}
 
           {!pingSpecLoading && !pingSpec && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/50 border border-gray-200/60 rounded-2xl">
-              <Globe size={32} className="text-gray-400" />
+            <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/50 dark:bg-gray-900/30 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl">
+              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-sf-100 dark:bg-sf-500/10">
+                <Globe size={24} className="text-sf-500 dark:text-sf-400" />
+              </div>
               <p className="text-slate-500 text-sm">No Exchange spec found for this application</p>
-              <p className="text-gray-400 text-xs">The app needs an Exchange asset linked via <code>application.ref</code> in its ARM descriptor</p>
+              <p className="text-gray-400 dark:text-gray-500 text-xs">The app needs an Exchange asset linked via <code className="text-gray-500 dark:text-gray-400">application.ref</code> in its ARM descriptor</p>
             </div>
           )}
 
@@ -2566,15 +2624,15 @@ export default function ApplicationDetailPage() {
                   </div>
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="bg-gray-100/50 border-b border-gray-300/40">
+                      <tr className="bg-gray-50/80 dark:bg-gray-800/60 border-b border-gray-200/60 dark:border-gray-700/60">
                         {['Method', 'Path', 'Query Params', 'Headers', 'Description'].map(h => (
-                          <th key={h} className="px-4 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                          <th key={h} className="px-4 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {pingSpec.pingEndpoints.map((ep, i) => (
-                        <tr key={i} className="border-b border-gray-200/40 hover:bg-gray-100/20 transition-colors">
+                        <tr key={i} className="border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/30 dark:hover:bg-sf-500/5 transition-colors">
                           <td className="px-4 py-3">
                             <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${
                               ep.method === 'GET' ? 'bg-blue-50/40 text-blue-700 border-blue-300/40' :
@@ -2617,13 +2675,13 @@ export default function ApplicationDetailPage() {
 
               {/* All endpoints table */}
               {pingSpec.allEndpoints?.length > 0 && (
-                <GlassCard icon={Globe} title="All Endpoints" count={pingSpec.allEndpoints.length} noPad>
+                <GlassCard icon={Globe} title="All Endpoints" count={pingSpec.allEndpoints.length} accent="cyan" noPad>
                   <div className="max-h-[50vh] overflow-y-auto">
                     <table className="w-full text-sm border-collapse">
                       <thead className="sticky top-0">
                         <tr className="bg-gray-100/90 border-b border-gray-300/40">
                           {['Method', 'Path', 'Query Params', 'Headers', 'Description'].map(h => (
-                            <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase">{h}</th>
+                            <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -2631,7 +2689,7 @@ export default function ApplicationDetailPage() {
                         {pingSpec.allEndpoints.map((ep, i) => {
                           const isPing = pingSpec.pingEndpoints?.some(p => p.path === ep.path && p.method === ep.method);
                           return (
-                            <tr key={i} className={`border-b border-gray-200/40 hover:bg-gray-100/20 transition-colors ${isPing ? 'bg-emerald-50/10' : ''}`}>
+                            <tr key={i} className={`border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/30 dark:hover:bg-sf-500/5 transition-colors ${isPing ? 'bg-emerald-50/10' : ''}`}>
                               <td className="px-4 py-2.5">
                                 <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${
                                   ep.method === 'GET' ? 'bg-blue-50/40 text-blue-700 border-blue-300/40' :
