@@ -3,6 +3,7 @@ import { Database, Globe, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Up
 import Select from '../components/Select';
 import GlobalCpsCsvUpload from '../components/GlobalCpsCsvUpload';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
+import { useTheme } from '../context/ThemeContext';
 import { PropertyTable, SecureGroupEditor, AuthTabWithSearch } from './CpsManagerPage';
 import CpsRequestResponsePanel from '../components/CpsRequestResponsePanel';
 import CpsBinaryUploadPanel from '../components/CpsBinaryUploadPanel';
@@ -36,6 +37,7 @@ const CPS_URLS = {
 
 export default function GlobalCpsManagerPage() {
   const { globalCredentials, hasGlobalCredentials, getGlobalCredential, loadGlobalFromCsv } = useCpsCredentialStore();
+  const { isDark } = useTheme();
   const fileInputRef = useRef(null);
 
   const handlePremiumUpload = (e) => {
@@ -442,9 +444,11 @@ export default function GlobalCpsManagerPage() {
       {!hasGlobalCredentials ? (
         <div
           style={{
-            background: 'radial-gradient(ellipse at top, rgba(79, 70, 229, 0.08) 0%, #ffffff 60%)',
-            boxShadow: '0 20px 40px -15px rgba(0,0,0,0.1)',
-            border: '1px solid rgba(0, 0, 0, 0.08)',
+            background: isDark
+              ? 'radial-gradient(ellipse at top, rgba(99, 102, 241, 0.12) 0%, #111827 60%)'
+              : 'radial-gradient(ellipse at top, rgba(79, 70, 229, 0.08) 0%, #ffffff 60%)',
+            boxShadow: isDark ? '0 20px 40px -15px rgba(0,0,0,0.4)' : '0 20px 40px -15px rgba(0,0,0,0.1)',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)',
           }}
           className="rounded-[2rem] p-12 lg:p-16 text-center flex flex-col items-center justify-center mx-auto max-w-3xl mt-12 mb-20"
         >
@@ -455,18 +459,18 @@ export default function GlobalCpsManagerPage() {
             }}
             className="p-5 rounded-full mb-8 relative flex items-center justify-center shadow-[0_0_30px_rgba(59,130,246,0.2)]"
           >
-            <FileUp size={44} className="text-blue-600" />
+            <FileUp size={44} className="text-blue-600 dark:text-blue-400" />
           </div>
           
           <h2
             style={{ letterSpacing: '-0.02em' }}
-            className="text-3xl lg:text-4xl font-semibold text-gray-900 mb-4 font-sans"
+            className="text-3xl lg:text-4xl font-semibold text-gray-900 dark:text-gray-100 mb-4 font-sans"
           >
             Global Configuration
           </h2>
           
-          <p className="max-w-xl text-base mb-10 leading-relaxed text-gray-500">
-            Upload your master configuration CSV to manage properties across all business groups, <strong className="text-gray-700 font-medium">UAT/PROD</strong> environments, and <strong className="text-gray-700 font-medium">CH1/CH2</strong> versions from a single interface.
+          <p className="max-w-xl text-base mb-10 leading-relaxed text-gray-500 dark:text-gray-400">
+            Upload your master configuration CSV to manage properties across all business groups, <strong className="text-gray-700 dark:text-gray-300 font-medium">UAT/PROD</strong> environments, and <strong className="text-gray-700 dark:text-gray-300 font-medium">CH1/CH2</strong> versions from a single interface.
           </p>
           
           <input
@@ -479,10 +483,10 @@ export default function GlobalCpsManagerPage() {
           
           <div
             style={{
-              border: '1px dashed rgba(0, 0, 0, 0.15)',
-              backgroundColor: 'rgba(0, 0, 0, 0.015)'
+              border: isDark ? '1px dashed rgba(255, 255, 255, 0.15)' : '1px dashed rgba(0, 0, 0, 0.15)',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)'
             }}
-            className="w-full max-w-lg rounded-2xl p-10 flex flex-col items-center justify-center transition-all hover:bg-black/[0.03] cursor-pointer group"
+            className="w-full max-w-lg rounded-2xl p-10 flex flex-col items-center justify-center transition-all hover:bg-black/[0.03] dark:hover:bg-white/[0.03] cursor-pointer group"
             onClick={() => fileInputRef.current?.click()}
           >
             <button
@@ -496,10 +500,10 @@ export default function GlobalCpsManagerPage() {
               <Upload size={16} />
               Browse Files
             </button>
-            <span className="text-sm text-gray-600 font-medium">
+            <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
               Drag & drop your CSV here, or browse
             </span>
-            <span className="text-xs text-slate-500 mt-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400 mt-2">
               Supports .csv files up to 25MB • UTF-8 encoded
             </span>
           </div>
@@ -516,7 +520,7 @@ export default function GlobalCpsManagerPage() {
                   value={bg}
                   onChange={setBg}
                   options={bgOptions.length ? bgOptions : [{ value: '', label: 'No BGs found' }]}
-                  className="[&>button]:h-[42px] [&>button]:!bg-white/80 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 [&>button]:transition-all"
+                  className="[&>button]:h-[42px] [&>button]:!bg-white/80 dark:[&>button]:!bg-gray-800/80 dark:[&>button]:!border-gray-700 dark:[&>button]:!text-gray-100 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 dark:[&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
                 />
               </div>
               
@@ -531,7 +535,7 @@ export default function GlobalCpsManagerPage() {
                     { value: 'uat', label: 'UAT' },
                     { value: 'prod', label: 'PROD' }
                   ]}
-                  className="[&>button]:h-[42px] [&>button]:!bg-white/80 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 [&>button]:transition-all"
+                  className="[&>button]:h-[42px] [&>button]:!bg-white/80 dark:[&>button]:!bg-gray-800/80 dark:[&>button]:!border-gray-700 dark:[&>button]:!text-gray-100 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 dark:[&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
                 />
               </div>
 
@@ -546,7 +550,7 @@ export default function GlobalCpsManagerPage() {
                     { value: 'ch1', label: 'CloudHub 1.0 (CH1)' },
                     { value: 'ch2', label: 'CloudHub 2.0 (CH2)' }
                   ]}
-                  className="[&>button]:h-[42px] [&>button]:!bg-white/80 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 [&>button]:transition-all"
+                  className="[&>button]:h-[42px] [&>button]:!bg-white/80 dark:[&>button]:!bg-gray-800/80 dark:[&>button]:!border-gray-700 dark:[&>button]:!text-gray-100 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 dark:[&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
                 />
               </div>
 
@@ -582,7 +586,7 @@ export default function GlobalCpsManagerPage() {
                         { value: 'secure', label: 'Secure' },
                         { value: 'binary', label: 'Binary' }
                       ]}
-                      className="[&>button]:rounded-l-xl [&>button]:rounded-r-none [&>button]:border-r-0 [&>button]:h-[42px] [&>button]:!bg-white/80 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 [&>button]:transition-all"
+                      className="[&>button]:rounded-l-xl [&>button]:rounded-r-none [&>button]:border-r-0 [&>button]:h-[42px] [&>button]:!bg-white/80 dark:[&>button]:!bg-gray-800/80 dark:[&>button]:!border-gray-700 dark:[&>button]:!text-gray-100 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 dark:[&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
                     />
                   </div>
                   <input

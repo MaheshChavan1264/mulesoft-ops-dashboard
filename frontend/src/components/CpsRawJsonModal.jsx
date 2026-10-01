@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, AlertTriangle, Save, AlignLeft, ChevronUp, ChevronDown, Search, RefreshCw } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 
 /* ═══════════════════════════════════════════════════
    Postman Light Palette
 ═══════════════════════════════════════════════════ */
-const PM = {
+const LIGHT_PM = {
   bg:          '#ffffff',
   panelBg:     '#f5f5f5',
   toolbarBg:   '#efefef',
@@ -30,6 +31,39 @@ const PM = {
   errBg:       'rgba(220,38,38,0.05)',
   errBorder:   'rgba(220,38,38,0.25)',
   errText:     '#dc2626',
+  overlay:     'rgba(0,0,0,0.55)',
+};
+
+/* ═══════════════════════════════════════════════════
+   Postman Dark Palette (VS Code Dark+ inspired)
+═══════════════════════════════════════════════════ */
+const DARK_PM = {
+  bg:          '#1e1e1e',
+  panelBg:     '#252526',
+  toolbarBg:   '#2d2d30',
+  editorBg:    '#1e1e1e',
+  border:      '#3c3c3c',
+  borderFocus: '#ff6c37',
+  orange:      '#ff8a5c',
+  orangeDim:   'rgba(255,138,92,0.18)',
+  orangeHover: '#ff6c37',
+  text:        '#d4d4d4',
+  textMuted:   '#9a9a9a',
+  textDim:     '#5f5f5f',
+  inputBg:     '#2d2d30',
+  // JSON syntax
+  jsonKey:     '#9cdcfe',
+  jsonString:  '#ce9178',
+  jsonNumber:  '#b5cea8',
+  jsonKeyword: '#569cd6',
+  jsonPunct:   '#d4d4d4',
+  lineNum:     '#6a6a6a',
+  lineNumBg:   '#1e1e1e',
+  // Error
+  errBg:       'rgba(248,81,73,0.1)',
+  errBorder:   'rgba(248,81,73,0.35)',
+  errText:     '#f85149',
+  overlay:     'rgba(0,0,0,0.75)',
 };
 
 /* ═══════════════════════════════════════════════════
@@ -76,15 +110,15 @@ function tokenizeJSON(text) {
   return tokens;
 }
 
-function tokenColor(type) {
+function tokenColor(type, pm) {
   switch (type) {
-    case 'key':         return PM.jsonKey;
-    case 'string':      return PM.jsonString;
-    case 'number':      return PM.jsonNumber;
-    case 'keyword':     return PM.jsonKeyword;
+    case 'key':         return pm.jsonKey;
+    case 'string':      return pm.jsonString;
+    case 'number':      return pm.jsonNumber;
+    case 'keyword':     return pm.jsonKeyword;
     case 'punctuation':
-    case 'colon':       return PM.jsonPunct;
-    default:            return PM.text;
+    case 'colon':       return pm.jsonPunct;
+    default:            return pm.text;
   }
 }
 
@@ -108,6 +142,9 @@ export default function CpsRawJsonModal({
   const [matchCase,       setMatchCase]       = useState(false);
   const [activeMatchIdx,  setActiveMatchIdx]  = useState(0);
   const [showReplace,     setShowReplace]     = useState(false);
+
+  const { isDark } = useTheme();
+  const PM = isDark ? DARK_PM : LIGHT_PM;
 
   const backdropRef   = useRef(null);
   const textareaRef   = useRef(null);
@@ -167,14 +204,14 @@ export default function CpsRawJsonModal({
     const syntaxTokens = tokenizeJSON(jsonText);
     if (matchRanges.length === 0) {
       return syntaxTokens.map((tok, i) => (
-        <span key={i} style={{ color: tokenColor(tok.type) }}>{tok.text}</span>
+        <span key={i} style={{ color: tokenColor(tok.type, PM) }}>{tok.text}</span>
       ));
     }
 
     const nodes = [];
     for (const tok of syntaxTokens) {
       const { start: tS, end: tE, text: tT, type: tType } = tok;
-      const color = tokenColor(tType);
+      const color = tokenColor(tType, PM);
       const overlaps = matchRanges.filter(mr => mr.start < tE && mr.end > tS);
 
       if (!overlaps.length) {
@@ -232,7 +269,7 @@ export default function CpsRawJsonModal({
 
   if (!isOpen) return null;
 
-  /* ── Shared micro-styles ── */
+  // ── Shared micro-styles (recomputed each render so they track the active PM) ──
   const btnBase = {
     display: 'flex', alignItems: 'center', gap: '5px',
     borderRadius: '4px', fontSize: '12px', fontWeight: 500,
@@ -258,7 +295,7 @@ export default function CpsRawJsonModal({
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.55)',
+      background: PM.overlay,
       padding: '16px',
     }}>
       <div style={{

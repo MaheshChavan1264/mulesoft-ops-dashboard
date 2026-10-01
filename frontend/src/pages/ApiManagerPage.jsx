@@ -664,17 +664,6 @@ export default function ApiManagerPage() {
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium flex-1">Business Group</p>
-            <button
-              onClick={() => setShowBgFilter(true)}
-              className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border transition-all ${
-                filterActive
-                  ? 'bg-blue-100 border-blue-300/50 text-blue-600'
-                  : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              <SlidersHorizontal size={9} />
-              {filterActive ? `${visibleGroups.length}/${allBusinessGroups.length}` : 'Filter'}
-            </button>
           </div>
           <Select
             value={selectedBg}

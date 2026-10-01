@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Menu, LogOut, User, RefreshCw, Zap, SlidersHorizontal, Building2, Globe, Bell, X, CheckCheck } from 'lucide-react';
+import { Menu, LogOut, User, RefreshCw, Zap, SlidersHorizontal, Building2, Globe, Bell, X, CheckCheck, Sun, Moon } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { isDemoMode } from '../services/api';
 import api from '../services/api';
@@ -47,10 +48,10 @@ function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-xl z-50 overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-            <p className="text-xs font-semibold text-gray-900">Notifications</p>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+            <p className="text-xs font-semibold text-gray-900 dark:text-gray-100">Notifications</p>
             <div className="flex items-center gap-2">
               {notifications.length > 0 && (
                 <>
@@ -68,23 +69,23 @@ function NotificationBell() {
           </div>
 
           {/* List */}
-          <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+          <div className="max-h-80 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
             {notifications.length === 0 ? (
               <div className="px-4 py-8 text-center">
-                <Bell size={20} className="text-gray-300 mx-auto mb-2" />
-                <p className="text-gray-400 text-xs">No notifications</p>
+                <Bell size={20} className="text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                <p className="text-gray-400 dark:text-gray-500 text-xs">No notifications</p>
               </div>
             ) : notifications.map(n => (
-              <div key={n.id} className={`flex items-start gap-3 px-4 py-3 transition-colors hover:bg-gray-50 ${n.read ? 'opacity-60' : ''}`}>
+              <div key={n.id} className={`flex items-start gap-3 px-4 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50 ${n.read ? 'opacity-60' : ''}`}>
                 <span className="text-sm flex-shrink-0 mt-0.5">{typeIcon[n.type] || 'ℹ️'}</span>
                 <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-medium ${typeColor[n.type] || 'text-gray-700'} leading-snug`}>{n.title}</p>
-                  {n.body && <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{n.body}</p>}
-                  <p className="text-[9px] text-gray-400 mt-1">
+                  <p className={`text-xs font-medium ${typeColor[n.type] || 'text-gray-700 dark:text-gray-300'} leading-snug`}>{n.title}</p>
+                  {n.body && <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">{n.body}</p>}
+                  <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-1">
                     {new Date(n.ts).toLocaleTimeString()}
                   </p>
                 </div>
-                <button onClick={() => dismiss(n.id)} className="text-gray-300 hover:text-gray-500 flex-shrink-0 transition-colors">
+                <button onClick={() => dismiss(n.id)} className="text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 flex-shrink-0 transition-colors">
                   <X size={11} />
                 </button>
               </div>
@@ -98,6 +99,7 @@ function NotificationBell() {
 
 export default function Header({ onToggleSidebar }) {
   const { user, orgName, logout } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const demo = isDemoMode();
 
@@ -197,20 +199,20 @@ export default function Header({ onToggleSidebar }) {
         />
       )}
 
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0">
+    <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-6 flex-shrink-0">
       <div className="flex items-center gap-4">
         <button
           onClick={onToggleSidebar}
-          className="text-gray-500 hover:text-gray-900 transition-colors"
+          className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
         >
           <Menu size={20} />
         </button>
         <div className="flex items-center gap-2">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               {orgName || 'MuleSoft Dashboard'}
             </h2>
-            <p className="text-xs text-gray-500">Anypoint Platform</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Anypoint Platform</p>
           </div>
           {demo && (
             <span className="flex items-center gap-1 text-xs font-semibold bg-sfpurple-500/20 text-sfpurple-600 border border-sfpurple-500/30 px-2 py-0.5 rounded-full">
@@ -221,15 +223,24 @@ export default function Header({ onToggleSidebar }) {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Light / Dark theme toggle */}
+        <button
+          onClick={toggleTheme}
+          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="relative p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          {isDark ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+
         {/* Global BG + Env filter buttons */}
-        <div className="flex items-center gap-1.5 border-r border-gray-200 pr-3">
+        <div className="flex items-center gap-1.5 border-r border-gray-200 dark:border-gray-700 pr-3">
           <button
             onClick={() => setShowBgFilter(true)}
             title="Filter visible Business Groups"
             className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${
               bgFilterActive
                 ? 'bg-sf-500/10 border-sf-500/40 text-sf-700 hover:bg-sf-500/20'
-                : 'bg-gray-100 border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
             }`}
           >
             <Building2 size={12} />
@@ -245,7 +256,7 @@ export default function Header({ onToggleSidebar }) {
             className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all disabled:opacity-50 ${
               envFilterActive
                 ? 'bg-sfgreen-500/10 border-sfgreen-500/40 text-sfgreen-700 hover:bg-sfgreen-500/20'
-                : 'bg-gray-100 border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
             }`}
           >
             <Globe size={12} />
@@ -255,7 +266,7 @@ export default function Header({ onToggleSidebar }) {
         </div>
 
         {/* Global credential imports — always accessible from any page */}
-        <div className="flex items-center gap-2 border-r border-gray-200 pr-3">
+        <div className="flex items-center gap-2 border-r border-gray-200 dark:border-gray-700 pr-3">
           <CredentialImportButton compact />
           <CpsCredentialImportButton compact />
         </div>
@@ -266,20 +277,20 @@ export default function Header({ onToggleSidebar }) {
         {/* Feature 7: Refresh button with timestamp */}
         <div className="flex items-center gap-1">
           <button onClick={handleRefresh}
-            className="text-gray-500 hover:text-gray-900 transition-colors p-2 rounded-lg hover:bg-gray-100"
+            className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
             title={lastRefreshed ? `Last refreshed ${relativeTime}` : 'Refresh page'}>
             <RefreshCw size={16} />
           </button>
           {relativeTime && (
-            <span className="text-[10px] text-gray-400 whitespace-nowrap hidden sm:inline" title="Last refreshed">
+            <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap hidden sm:inline" title="Last refreshed">
               {relativeTime}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100">
-          <User size={14} className="text-gray-500" />
-          <span className="text-sm text-gray-700">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800">
+          <User size={14} className="text-gray-500 dark:text-gray-400" />
+          <span className="text-sm text-gray-700 dark:text-gray-300">
             {user?.firstName
               ? `${user.firstName} ${user.lastName || ''}`
               : user?.username || 'User'}
@@ -288,7 +299,7 @@ export default function Header({ onToggleSidebar }) {
 
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 text-sm text-gray-500 hover:text-sfred-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100"
+          className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-sfred-600 dark:hover:text-sfred-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
         >
           <LogOut size={15} />
           <span>{demo ? 'Exit Demo' : 'Logout'}</span>

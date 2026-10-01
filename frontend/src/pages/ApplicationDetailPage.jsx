@@ -1087,9 +1087,10 @@ export default function ApplicationDetailPage() {
       )}
 
       {/* ── Hero Header ─────────────────────────────── */}
-      <div className="relative rounded-2xl border border-gray-200/60 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-sf-50 via-white to-blue-50"/>
-        <div className="absolute inset-0" style={{background:'radial-gradient(ellipse at 70% 50%, rgba(59,130,246,0.06) 0%, transparent 60%)'}}/>
+      <div className="relative rounded-2xl border border-gray-200/60 dark:border-gray-700/60 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-sf-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800"/>
+        <div className="absolute inset-0 dark:hidden" style={{background:'radial-gradient(ellipse at 70% 50%, rgba(59,130,246,0.06) 0%, transparent 60%)'}}/>
+        <div className="absolute inset-0 hidden dark:block" style={{background:'radial-gradient(ellipse at 70% 50%, rgba(59,130,246,0.12) 0%, transparent 60%)'}}/>
         {isRunning && <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/3 rounded-full blur-3xl pointer-events-none"/>}
         <div className="relative p-6 flex items-start justify-between flex-wrap gap-4">
           <div className="flex items-start gap-4">

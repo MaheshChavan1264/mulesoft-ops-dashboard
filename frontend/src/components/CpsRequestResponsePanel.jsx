@@ -121,7 +121,7 @@ function CodeBlock({ value, isError = false }) {
       <pre className={`m-0 flex text-[10px] font-mono leading-relaxed overflow-x-auto max-h-52 overflow-y-auto ${
         isError ? 'bg-red-50/30' : 'bg-white'
       }`}>
-        <code className="flex-shrink-0 select-none text-right pr-2.5 pl-3 py-2 text-gray-300 border-r border-gray-100 bg-gray-50/60">
+        <code className="flex-shrink-0 select-none text-right pr-2.5 pl-3 py-2 text-gray-300 dark:text-gray-600 border-r border-gray-100 bg-gray-50/60">
           {lines.map((_, i) => <div key={i}>{i + 1}</div>)}
         </code>
         <code className={`flex-1 pl-3 pr-3 py-2 whitespace-pre-wrap break-words ${isError ? 'text-red-700/85' : 'text-gray-700'}`}>

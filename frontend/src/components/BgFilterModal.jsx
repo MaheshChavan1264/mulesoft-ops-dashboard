@@ -65,42 +65,42 @@ export default function BgFilterModal({ businessGroups = [], onClose, onSaved })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md shadow-2xl mx-4 flex flex-col max-h-[85vh]">
+      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-2xl w-full max-w-md shadow-2xl mx-4 flex flex-col max-h-[85vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-blue-50/50 border border-blue-200/40">
-              <SlidersHorizontal size={14} className="text-blue-600" />
+            <div className="p-2 rounded-xl bg-blue-50/50 dark:bg-blue-500/10 border border-blue-200/40 dark:border-blue-400/30">
+              <SlidersHorizontal size={14} className="text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <h2 className="text-gray-900 font-semibold text-sm">Business Group Filter</h2>
-              <p className="text-gray-500 text-xs mt-0.5">Choose which groups to show in dropdowns</p>
+              <h2 className="text-gray-900 dark:text-gray-100 font-semibold text-sm">Business Group Filter</h2>
+              <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">Choose which groups to show in dropdowns</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-900 p-1">
+          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 p-1">
             <X size={16} />
           </button>
         </div>
 
         {/* Search + Select All */}
-        <div className="px-5 pt-4 pb-3 border-b border-gray-200 space-y-2.5">
+        <div className="px-5 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700 space-y-2.5">
           <div className="relative">
-            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 pointer-events-none" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search business groups…"
-              className="w-full bg-gray-100 border border-gray-300 rounded-lg pl-8 pr-4 py-2 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500"
+              className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg pl-8 pr-4 py-2 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:border-blue-500"
             />
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               {selected.size} of {businessGroups.length} selected
             </span>
             <div className="flex gap-2">
-              <button onClick={selectAll} className="text-xs text-blue-600 hover:text-blue-700">Select all</button>
-              <span className="text-gray-500">·</span>
-              <button onClick={deselectAll} className="text-xs text-gray-500 hover:text-gray-900">Clear all</button>
+              <button onClick={selectAll} className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">Select all</button>
+              <span className="text-gray-500 dark:text-gray-400">·</span>
+              <button onClick={deselectAll} className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">Clear all</button>
             </div>
           </div>
         </div>
@@ -108,32 +108,30 @@ export default function BgFilterModal({ businessGroups = [], onClose, onSaved })
         {/* List */}
         <div className="flex-1 overflow-y-auto py-2 px-2">
           {filteredOrdered.length === 0 ? (
-            <p className="text-center text-gray-500 text-xs py-6">No groups found</p>
+            <p className="text-center text-gray-500 dark:text-gray-400 text-xs py-6">No groups found</p>
           ) : filteredOrdered.map((g) => {
             const isChecked = selected.has(g.id);
             const isRoot = !g.parentId;
             return (
               <label
                 key={g.id}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
-                  isChecked ? 'bg-blue-50/20' : 'hover:bg-gray-100/60'
-                } ${g.parentId ? 'ml-4' : ''}`}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors hover:bg-gray-100/60 dark:hover:bg-gray-800/60 ${g.parentId ? 'ml-4' : ''}`}
               >
                 {/* Custom checkbox */}
                 <div
                   onClick={() => toggle(g.id)}
                   className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                    isChecked ? 'bg-blue-500 border-blue-400' : 'border-gray-300 hover:border-blue-500'
+                    isChecked ? 'bg-blue-500 border-blue-400' : 'border-gray-300 dark:border-gray-600 hover:border-blue-500'
                   }`}
                 >
                   {isChecked && <Check size={10} className="text-white" />}
                 </div>
-                <Building2 size={13} className={isChecked ? 'text-blue-600' : 'text-gray-500'} />
-                <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-gray-900' : 'text-gray-500'}`}>
+                <Building2 size={13} className={isChecked ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'} />
+                <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'}`}>
                   {g.name}
                 </span>
                 {isRoot && (
-                  <span className="text-[9px] bg-blue-100 text-blue-600 border border-blue-200 px-1.5 py-0.5 rounded-full font-semibold">ROOT</span>
+                  <span className="text-[9px] bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-400/30 px-1.5 py-0.5 rounded-full font-semibold">ROOT</span>
                 )}
               </label>
             );
@@ -141,17 +139,17 @@ export default function BgFilterModal({ businessGroups = [], onClose, onSaved })
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200 gap-3">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-700 gap-3">
           <button
             onClick={handleReset}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
             title="Show all business groups (clear filter)"
           >
             <RefreshCw size={11} /> Reset (show all)
           </button>
           <div className="flex gap-3">
             <button onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+              className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors">
               Cancel
             </button>
             <button

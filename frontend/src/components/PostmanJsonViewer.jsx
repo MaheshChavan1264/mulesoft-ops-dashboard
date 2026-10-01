@@ -1,18 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { Copy, Check } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 
 /**
  * PostmanJsonViewer
  *
- * Read-only, syntax-highlighted JSON viewer styled after Postman's light
- * JSON editor — white background, orange accents, line-number gutter,
- * colour-coded keys/strings/numbers/keywords.
- *
- * This is intentionally scoped to wherever it's explicitly used (e.g. the
- * "Raw JSON" tab on ApplicationDetailPage) rather than being a global theme
- * change. The palette + tokenizer mirror components/CpsRawJsonModal.jsx.
+ * Read-only, syntax-highlighted JSON viewer styled after Postman's JSON
+ * editor — white/dark background, orange accents, line-number gutter,
+ * colour-coded keys/strings/numbers/keywords. Follows the app's light/dark
+ * theme toggle via useTheme(). Palette + tokenizer mirror components/CpsRawJsonModal.jsx.
  */
-const PM = {
+const LIGHT_PM = {
   bg:         '#ffffff',
   toolbarBg:  '#efefef',
   border:     '#e0e0e0',
@@ -27,6 +25,23 @@ const PM = {
   jsonPunct:   '#555555',
   lineNum:    '#c0c0c0',
   lineNumBg:  '#f8f8f8',
+};
+
+const DARK_PM = {
+  bg:         '#1e1e1e',
+  toolbarBg:  '#2d2d30',
+  border:     '#3c3c3c',
+  orange:     '#ff8a5c',
+  orangeDim:  'rgba(255,138,92,0.18)',
+  text:       '#d4d4d4',
+  textMuted:  '#9a9a9a',
+  jsonKey:     '#9cdcfe',
+  jsonString:  '#ce9178',
+  jsonNumber:  '#b5cea8',
+  jsonKeyword: '#569cd6',
+  jsonPunct:   '#d4d4d4',
+  lineNum:    '#6a6a6a',
+  lineNumBg:  '#1e1e1e',
 };
 
 function tokenizeJSON(text) {
@@ -57,19 +72,21 @@ function tokenizeJSON(text) {
   return tokens;
 }
 
-function tokenColor(type) {
+function tokenColor(type, pm) {
   switch (type) {
-    case 'key':         return PM.jsonKey;
-    case 'string':      return PM.jsonString;
-    case 'number':      return PM.jsonNumber;
-    case 'keyword':     return PM.jsonKeyword;
+    case 'key':         return pm.jsonKey;
+    case 'string':      return pm.jsonString;
+    case 'number':      return pm.jsonNumber;
+    case 'keyword':     return pm.jsonKeyword;
     case 'punctuation':
-    case 'colon':       return PM.jsonPunct;
-    default:            return PM.text;
+    case 'colon':       return pm.jsonPunct;
+    default:            return pm.text;
   }
 }
 
 export default function PostmanJsonViewer({ data, maxHeight = '600px' }) {
+  const { isDark } = useTheme();
+  const PM = isDark ? DARK_PM : LIGHT_PM;
   const jsonText = useMemo(() => {
     if (typeof data === 'string') return data;
     try { return JSON.stringify(data, null, 2); } catch { return String(data); }
@@ -154,7 +171,7 @@ export default function PostmanJsonViewer({ data, maxHeight = '600px' }) {
           color: PM.text,
         }}>
           {tokens.map((tok, i) => (
-            <span key={i} style={{ color: tokenColor(tok.type) }}>{tok.text}</span>
+            <span key={i} style={{ color: tokenColor(tok.type, PM) }}>{tok.text}</span>
           ))}
         </pre>
       </div>
