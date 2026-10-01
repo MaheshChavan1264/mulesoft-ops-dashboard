@@ -128,12 +128,12 @@ function DiffModal({ row, labelA, labelB, onClose }) {
             </p>
             <div className={`rounded-xl px-4 py-3 font-mono text-sm leading-relaxed break-all min-h-[48px] border ${
               isOnlyB ? 'bg-gray-100/30 border-gray-300/30 text-gray-500 italic' :
-              isDiff   ? 'bg-red-50/30 border-red-200/40 text-red-200' :
+              isDiff   ? 'bg-red-50/30 border-red-200/40 text-gray-700' :
                          'bg-gray-100/60 border-gray-300/40 text-gray-700'
             }`}>
               {isOnlyB ? '(not present in Side A)' : isDiff ? (
                 aTokens.map((t, i) => (
-                  <span key={i} className={t.changed ? 'bg-red-500/30 text-red-200 rounded px-0.5' : ''}>
+                  <span key={i} className={t.changed ? 'bg-red-200 text-red-800 font-semibold rounded px-0.5' : ''}>
                     {t.word}
                   </span>
                 ))
@@ -149,12 +149,12 @@ function DiffModal({ row, labelA, labelB, onClose }) {
             </p>
             <div className={`rounded-xl px-4 py-3 font-mono text-sm leading-relaxed break-all min-h-[48px] border ${
               isOnlyA ? 'bg-gray-100/30 border-gray-300/30 text-gray-500 italic' :
-              isDiff   ? 'bg-orange-50/30 border-orange-200/40 text-orange-200' :
+              isDiff   ? 'bg-orange-50/30 border-orange-200/40 text-gray-700' :
                          'bg-gray-100/60 border-gray-300/40 text-gray-700'
             }`}>
               {isOnlyA ? '(not present in Side B)' : isDiff ? (
                 bTokens.map((t, i) => (
-                  <span key={i} className={t.changed ? 'bg-orange-500/30 text-orange-200 rounded px-0.5' : ''}>
+                  <span key={i} className={t.changed ? 'bg-orange-200 text-orange-800 font-semibold rounded px-0.5' : ''}>
                     {t.word}
                   </span>
                 ))
@@ -1347,7 +1347,7 @@ export default function CpsComparisonPage() {
                                 return (
                                   <span className="font-mono text-xs leading-snug break-all line-clamp-2 flex-1 min-w-0" title={row.valA}>
                                     {aTokens.map((t, i) => (
-                                      <span key={i} className={t.changed ? 'bg-red-500/25 text-red-200 rounded-sm px-0.5' : 'text-gray-600'}>{t.word}</span>
+                                      <span key={i} className={t.changed ? 'bg-red-200 text-red-800 font-semibold rounded-sm px-0.5' : 'text-gray-600'}>{t.word}</span>
                                     ))}
                                   </span>
                                 );
@@ -1367,7 +1367,7 @@ export default function CpsComparisonPage() {
                                 return (
                                   <span className="font-mono text-xs leading-snug break-all line-clamp-2 flex-1 min-w-0" title={row.valB}>
                                     {bTokens.map((t, i) => (
-                                      <span key={i} className={t.changed ? 'bg-amber-500/25 text-amber-200 rounded-sm px-0.5' : 'text-gray-600'}>{t.word}</span>
+                                      <span key={i} className={t.changed ? 'bg-amber-200 text-amber-900 font-semibold rounded-sm px-0.5' : 'text-gray-600'}>{t.word}</span>
                                     ))}
                                   </span>
                                 );
