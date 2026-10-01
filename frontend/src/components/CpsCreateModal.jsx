@@ -246,7 +246,7 @@ export default function CpsCreateModal({
             <button
               onClick={handleCreate}
               disabled={saving || !projectKey.trim()}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-gray-900 rounded-lg disabled:opacity-50 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg disabled:opacity-50 transition-colors"
             >
               {saving
                 ? <><RefreshCw size={13} className="animate-spin" /> Creating…</>

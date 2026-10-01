@@ -247,7 +247,7 @@ function AppConfirmModal({ state, onConfirm, onCancel, loading }) {
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${dangerous ? 'bg-red-600 hover:bg-red-500 text-gray-900' : 'bg-blue-600 hover:bg-blue-500 text-gray-900'}`}>
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${dangerous ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
               : <><Icon size={13} /> Confirm {cfg.label}</>}
@@ -284,7 +284,7 @@ function SchedulerConfirmModal({ schedulerKey, onConfirm, onCancel, loading }) {
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors bg-purple-600 hover:bg-purple-500 text-gray-900">
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors bg-purple-600 hover:bg-purple-500 text-white">
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Running…</>
               : <><Zap size={13} /> Run Now</>}
@@ -341,9 +341,9 @@ function ContractConfirmModal({ state, onConfirm, onCancel, loading }) {
           </button>
           <button onClick={onConfirm} disabled={loading}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${
-              isDelete ? 'bg-red-700 hover:bg-red-600 text-gray-900'
-              : isRevoke ? 'bg-red-600 hover:bg-red-500 text-gray-900'
-              : 'bg-emerald-600 hover:bg-emerald-500 text-gray-900'
+              isDelete ? 'bg-red-700 hover:bg-red-600 text-white'
+              : isRevoke ? 'bg-red-600 hover:bg-red-500 text-white'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
             }`}>
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
@@ -1819,7 +1819,7 @@ export default function ApplicationDetailPage() {
                   <p className="text-yellow-500/80 text-xs mt-0.5">Missing <code className="bg-yellow-50/60 px-1 rounded">{cpsMissingCred}</code> credentials. Click "Configure CPS" to add them.</p>
                 </div>
               </div>
-              <button onClick={() => setShowCpsSettings(true)} className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-yellow-600 hover:bg-yellow-500 text-gray-900 rounded-lg transition-colors">Configure</button>
+              <button onClick={() => setShowCpsSettings(true)} className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg transition-colors">Configure</button>
             </div>
           )}
 
@@ -1855,7 +1855,7 @@ export default function ApplicationDetailPage() {
               <Key size={32} className="text-gray-400" />
               <p className="text-slate-500 text-sm">Click to load properties from the Config Property Server</p>
               <p className="text-gray-400 text-xs">Will fetch <code className="text-slate-500">{effectiveCpsKey}</code> in <code className="text-slate-500">{effectiveCpsEnv}</code></p>
-              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-gray-900 text-sm font-medium rounded-xl transition-colors">
+              <button onClick={() => loadCpsData(cpsKeyOverride, cpsEnvOverride)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
                 <Key size={13} /> Load CPS Properties
               </button>
             </div>
@@ -1977,7 +1977,7 @@ export default function ApplicationDetailPage() {
                       }
                       setSecureLoading(false);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-gray-900 text-xs font-medium rounded-xl transition-colors disabled:opacity-50 flex-shrink-0"
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-xl transition-colors disabled:opacity-50 flex-shrink-0"
                   >
                     {secureLoading
                       ? <><RefreshCw size={12} className="animate-spin" /> Loading…</>

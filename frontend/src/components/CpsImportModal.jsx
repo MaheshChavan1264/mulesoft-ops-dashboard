@@ -316,7 +316,7 @@ export default function CpsImportModal({
             <button
               onClick={handleImport}
               disabled={importing || !parsedRows || parsedRows.length === 0}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-gray-900 rounded-lg disabled:opacity-50 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 transition-colors"
             >
               {importing
                 ? <><RefreshCw size={13} className="animate-spin" /> Importing…</>
