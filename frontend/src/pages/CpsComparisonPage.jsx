@@ -225,7 +225,7 @@ function MultiAppChecklist({ apps, selectedIds, loading, onToggle, onSelectAll, 
           return (
             <button key={compositeId} onClick={() => onToggle(compositeId)}
               className={`w-full flex items-center gap-2 px-2.5 py-2 hover:bg-gray-100/40 transition-colors text-left ${isChecked ? (isBlue ? 'bg-blue-50/20' : 'bg-orange-50/10') : ''}`}>
-              <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[9px] font-bold ${isChecked ? `${accentBg} border-transparent text-gray-900` : 'border-gray-300'}`}>
+              <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[9px] font-bold ${isChecked ? `${accentBg} border-transparent text-white` : 'border-gray-300'}`}>
                 {isChecked ? order : ''}
               </div>
               <span className={`text-xs font-mono truncate flex-1 ${isChecked ? 'text-gray-900' : 'text-gray-500'}`}>{a.name}</span>
@@ -1178,14 +1178,14 @@ export default function CpsComparisonPage() {
           <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 border border-gray-300">
             {['single', 'multi'].map(m => (
               <button key={m} onClick={() => setCompareMode(m)}
-                className={`text-[10px] px-2 py-1 rounded-md font-medium transition-all ${compareMode === m ? 'bg-cyan-700 text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}>
+                className={`text-[10px] px-2 py-1 rounded-md font-medium transition-all ${compareMode === m ? 'bg-cyan-700 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
                 {m === 'single' ? '1 App' : 'All Apps'}
               </button>
             ))}
           </div>
           <button onClick={compareMode === 'multi' ? compareAll : compare}
             disabled={comparing || !canCompare}
-            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-gray-900 rounded-lg transition-colors">
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded-lg transition-colors">
             {comparing
               ? <><RefreshCw size={13} className="animate-spin" /> {compareMode === 'multi' && compareProgress.total > 0 ? `${compareProgress.done}/${compareProgress.total}` : 'Comparing…'}</>
               : <><GitCompare size={13} /> {compareMode === 'multi' ? `Compare (${multiAppCount})` : 'Compare'}</>}
