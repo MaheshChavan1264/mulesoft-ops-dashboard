@@ -27,7 +27,7 @@ export default function CpsCredentialImportButton({ compact = false }) {
       compact={compact}
       accentColor="purple"
       loadedLabel={(n) => `${n} CPS creds`}
-      importLabel="Import CPS Creds"
+      importLabel="CPS Creds"
       logPrefix="[CpsCredentialImport]"
       ariaLabel="Import CPS credentials CSV file"
       importTitle="Import CPS client_id/client_secret CSV — parsed locally, never uploaded"

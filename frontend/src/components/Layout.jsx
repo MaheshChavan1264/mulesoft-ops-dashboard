@@ -21,7 +21,9 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-sf-50 dark:bg-gray-950 overflow-hidden">
+    <div className="relative flex h-screen bg-gradient-to-br from-sf-50 via-sf-50/60 to-sfteal-50/40 dark:from-gray-950 dark:via-gray-950 dark:to-gray-900 overflow-hidden">
+      {/* Unified brand accent strip across the very top of the app shell */}
+      <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-sf-500 via-sfteal-400 to-sfpurple-500 z-40 shadow-[0_1px_8px_rgba(1,118,211,0.35)]" />
       <Sidebar open={sidebarOpen} />
       <div className="flex flex-col flex-1 overflow-hidden">
         <Header onToggleSidebar={toggleSidebar} />
