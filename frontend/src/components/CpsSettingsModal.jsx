@@ -112,7 +112,7 @@ function AddServerForm({ prefilledUrl = '', prefilledBgId = '', prefilledBgName 
       <div className="flex justify-end gap-2">
         {onCancel && <button onClick={onCancel} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Cancel</button>}
         <button onClick={handleSave} disabled={saving}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-gray-900 rounded-lg disabled:opacity-50 transition-colors">
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 transition-colors">
           {saving ? <><RefreshCw size={11} className="animate-spin" /> Saving…</>
             : saved ? <><Check size={11} className="text-emerald-700" /> Saved</>
             : <><Key size={11} /> Save Credentials</>}
@@ -210,7 +210,7 @@ export default function CpsSettingsModal({ onClose, prefilledUrl = '', prefilled
                     <Globe size={28} className="text-gray-400" />
                     <p className="text-slate-500 text-sm">No URL-keyed credentials yet</p>
                     <button onClick={() => setShowAddForm(true)}
-                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-gray-900 rounded-lg transition-colors">
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
                       <Plus size={11} /> Add CPS Server
                     </button>
                   </div>

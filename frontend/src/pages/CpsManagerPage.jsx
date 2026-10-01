@@ -125,7 +125,7 @@ function SaveDiffModal({ pendingChanges, originalProps, mergedProps, isProd, onC
           </button>
           <button onClick={onConfirm} disabled={saving}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${
-              isProd ? 'bg-red-600 hover:bg-red-500 text-gray-900' : 'bg-cyan-700 hover:bg-cyan-600 text-gray-900'
+              isProd ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-cyan-700 hover:bg-cyan-600 text-white'
             }`}>
             {saving
               ? <><RefreshCw size={13} className="animate-spin" /> Saving…</>
@@ -1077,7 +1077,7 @@ export default function CpsManagerPage() {
                 <button onClick={() => {
                   setPendingChanges({ added: pendingDraft.added || {}, modified: pendingDraft.modified || {}, deleted: new Set(pendingDraft.deleted || []) });
                   setPendingDraft(null);
-                }} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-gray-900 rounded-lg transition-colors">
+                }} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors">
                   Restore Draft
                 </button>
                 <button onClick={() => { try { localStorage.removeItem(pendingDraft.draftKey); } catch {} setPendingDraft(null); }}
@@ -1224,7 +1224,7 @@ export default function CpsManagerPage() {
             {cpsKey} · {cpsEnv} · {cpsBaseUrl.split('/')[2]}
           </p>
           <button onClick={loadProperties} disabled={!canLoad}
-            className="flex items-center gap-2 px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-gray-900 text-sm font-medium rounded-xl transition-colors disabled:opacity-50">
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50">
             <RefreshCw size={13} /> Load Properties
           </button>
         </div>
@@ -1455,7 +1455,7 @@ export function PropertyTable({
                 : 'Enter search text above'}
             </span>
             <button onClick={applyFindReplace} disabled={findMatches.length === 0 || !findText.trim()}
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-gray-900 rounded-lg disabled:opacity-40 transition-colors">
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded-lg disabled:opacity-40 transition-colors">
               Replace All ({findMatches.length})
             </button>
           </div>
@@ -1481,7 +1481,7 @@ export function PropertyTable({
         <button onClick={() => setShowFindReplace(s => !s)}
           className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
             showFindReplace
-              ? 'bg-indigo-700/40 border-indigo-300/60 text-indigo-200'
+              ? 'bg-indigo-100 border-indigo-300/60 text-indigo-700'
               : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-indigo-700 hover:border-indigo-300/50'
           }`}>
           <Search size={11} /> Find & Replace
@@ -1490,7 +1490,7 @@ export function PropertyTable({
         <div className="relative">
           <button onClick={() => setShowCopyMenu(s => !s)}
             className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
-              copyDone ? 'bg-emerald-700/40 border-emerald-300/60 text-emerald-200'
+              copyDone ? 'bg-emerald-100 border-emerald-300/60 text-emerald-700'
               : showCopyMenu ? 'bg-gray-200/40 border-gray-300 text-gray-700'
               : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900'
             }`}>
@@ -1526,7 +1526,7 @@ export function PropertyTable({
           onClick={() => setShowBulkAdd(s => !s)}
           className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
             showBulkAdd
-              ? 'bg-purple-700/40 border-purple-300/60 text-purple-200'
+              ? 'bg-purple-100 border-purple-300/60 text-purple-700'
               : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-purple-700 hover:border-purple-300/50'
           }`}
         >
@@ -1546,7 +1546,7 @@ export function PropertyTable({
             </button>
             <button onClick={onSave} disabled={saving}
               className={`flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg disabled:opacity-50 transition-colors ${
-                isProd ? 'bg-red-600 hover:bg-red-500 text-gray-900' : 'bg-cyan-700 hover:bg-cyan-600 text-gray-900'
+                isProd ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-cyan-700 hover:bg-cyan-600 text-white'
               }`}>
               {saving
                 ? <><RefreshCw size={11} className="animate-spin" /> Saving…</>
@@ -1596,7 +1596,7 @@ export function PropertyTable({
               <button
                 onClick={applyBulk}
                 disabled={bulkParsed.length === 0}
-                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-gray-900 rounded-lg disabled:opacity-40 transition-colors"
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded-lg disabled:opacity-40 transition-colors"
               >
                 <Plus size={11} /> Add {bulkParsed.length > 0 ? `${bulkParsed.length} ` : ''}Properties
               </button>
@@ -1950,7 +1950,7 @@ export function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd
               </button>
               <button onClick={saveGroup} disabled={saving}
                 className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg transition-colors disabled:opacity-50 ${
-                  isProd ? 'bg-red-600 hover:bg-red-500 text-gray-900' : 'bg-orange-700 hover:bg-orange-600 text-gray-900'
+                  isProd ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-orange-700 hover:bg-orange-600 text-white'
                 }`}>
                 {saving ? <><RefreshCw size={9} className="animate-spin" /> Saving…</> : <><Save size={9} /> Save</>}
               </button>
@@ -2003,7 +2003,7 @@ export function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd
               <button
                 onClick={deleteGroup}
                 disabled={deleting || deleteConfirmText.trim() !== group.key}
-                className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 bg-red-600 hover:bg-red-500 text-gray-900 rounded-lg disabled:opacity-50 transition-colors"
+                className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg disabled:opacity-50 transition-colors"
               >
                 {deleting ? <><RefreshCw size={9} className="animate-spin" /> Deleting…</> : <><Trash2 size={9} /> Confirm Delete</>}
               </button>
@@ -2014,7 +2014,7 @@ export function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd
               <button
                 onClick={deleteGroup}
                 disabled={deleting}
-                className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 bg-red-600 hover:bg-red-500 text-gray-900 rounded-lg disabled:opacity-50 transition-colors"
+                className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg disabled:opacity-50 transition-colors"
               >
                 {deleting ? <><RefreshCw size={9} className="animate-spin" /> Deleting…</> : <><Trash2 size={9} /> Delete</>}
               </button>

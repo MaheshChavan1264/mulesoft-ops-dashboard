@@ -442,9 +442,9 @@ export default function GlobalCpsManagerPage() {
       {!hasGlobalCredentials ? (
         <div
           style={{
-            background: 'radial-gradient(ellipse at top, rgba(79, 70, 229, 0.15) 0%, rgba(15, 23, 42, 0.9) 60%, #0f172a 100%)',
-            boxShadow: '0 20px 40px -15px rgba(0,0,0,0.5)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'radial-gradient(ellipse at top, rgba(79, 70, 229, 0.08) 0%, #ffffff 60%)',
+            boxShadow: '0 20px 40px -15px rgba(0,0,0,0.1)',
+            border: '1px solid rgba(0, 0, 0, 0.08)',
           }}
           className="rounded-[2rem] p-12 lg:p-16 text-center flex flex-col items-center justify-center mx-auto max-w-3xl mt-12 mb-20"
         >
@@ -479,10 +479,10 @@ export default function GlobalCpsManagerPage() {
           
           <div
             style={{
-              border: '1px dashed rgba(255, 255, 255, 0.15)',
-              backgroundColor: 'rgba(255, 255, 255, 0.02)'
+              border: '1px dashed rgba(0, 0, 0, 0.15)',
+              backgroundColor: 'rgba(0, 0, 0, 0.015)'
             }}
-            className="w-full max-w-lg rounded-2xl p-10 flex flex-col items-center justify-center transition-all hover:bg-white/5 cursor-pointer group"
+            className="w-full max-w-lg rounded-2xl p-10 flex flex-col items-center justify-center transition-all hover:bg-black/[0.03] cursor-pointer group"
             onClick={() => fileInputRef.current?.click()}
           >
             <button
@@ -491,7 +491,7 @@ export default function GlobalCpsManagerPage() {
                 background: 'linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)',
                 boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 14px 0 rgba(37,99,235,0.39)',
               }}
-              className="flex items-center gap-2.5 px-6 py-3 text-sm font-medium text-gray-900 rounded-lg transition-transform active:scale-95 group-hover:brightness-110 mb-4"
+              className="flex items-center gap-2.5 px-6 py-3 text-sm font-medium text-white rounded-lg transition-transform active:scale-95 group-hover:brightness-110 mb-4"
             >
               <Upload size={16} />
               Browse Files
@@ -634,7 +634,7 @@ export default function GlobalCpsManagerPage() {
                 <button
                   onClick={() => fetchProperties(false)}
                   disabled={loading || !queryKeys.trim()}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 text-sm font-medium rounded-lg transition-colors shadow-lg shadow-indigo-900/20 h-[42px]"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-indigo-900/20 h-[42px]"
                 >
                   {loading && !loadedParams ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
                   Load Properties
@@ -643,7 +643,7 @@ export default function GlobalCpsManagerPage() {
                   <button
                     onClick={() => fetchProperties(true)}
                     disabled={loading}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-gray-900 text-sm font-medium rounded-lg transition-colors shadow-lg shadow-cyan-900/20 h-[42px]"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-cyan-900/20 h-[42px]"
                   >
                     <RefreshCw size={16} className={loading && loadedParams ? "animate-spin" : ""} />
                     Refresh
@@ -653,7 +653,7 @@ export default function GlobalCpsManagerPage() {
             </div>
             
             {showOverrides && (
-              <div className="bg-gray-950/50 border border-gray-200 rounded-xl p-5 space-y-5">
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-5">
                 <h3 className="text-sm font-semibold text-gray-600 flex items-center gap-2">
                   <Settings size={14} className="text-indigo-600" /> Advanced Request Overrides
                 </h3>

@@ -49,7 +49,7 @@ function Highlight({ text, terms }) {
     <span>
       {parts.map((part, i) =>
         pattern.test(part)
-          ? <mark key={i} className="bg-yellow-400/30 text-yellow-200 rounded-sm px-0.5 not-italic">{part}</mark>
+          ? <mark key={i} className="bg-yellow-300/60 text-yellow-900 rounded-sm px-0.5 not-italic">{part}</mark>
           : part
       )}
     </span>
@@ -1141,7 +1141,7 @@ export default function GlobalSearchPage() {
           {/* Feature 3: Cancel button during search */}
           {loading
             ? <button onClick={cancelSearch}
-                className="flex items-center gap-2 px-5 py-3 bg-red-800 hover:bg-red-700 text-gray-900 text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
+                className="flex items-center gap-2 px-5 py-3 bg-red-800 hover:bg-red-700 text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
                 <X size={14} /> Cancel
               </button>
             : (
@@ -1153,7 +1153,7 @@ export default function GlobalSearchPage() {
                   </button>
                 )}
                 <button onClick={runSearch} disabled={!query.trim() || !selCount}
-                  className="flex items-center gap-2 px-5 py-3 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
+                  className="flex items-center gap-2 px-5 py-3 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
                   <Search size={14} /> Search
                 </button>
               </>
@@ -1164,14 +1164,14 @@ export default function GlobalSearchPage() {
           <div className="flex items-center gap-1 bg-gray-100/60 border border-gray-300/40 rounded-lg p-0.5">
             {[['value','Search Values'], ['key','Search Keys']].map(([mode, label]) => (
               <button key={mode} onClick={() => setSearchMode(mode)}
-                className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${searchMode === mode ? 'bg-cyan-700 text-gray-900' : 'text-slate-500 hover:text-gray-600'}`}>
+                className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${searchMode === mode ? 'bg-cyan-700 text-white' : 'text-slate-500 hover:text-gray-600'}`}>
                 {label}
               </button>
             ))}
           </div>
           <div className="flex items-center gap-1 bg-gray-100/60 border border-gray-300/40 rounded-lg p-0.5">
             <button onClick={() => setExactMatch(!exactMatch)}
-              className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${exactMatch ? 'bg-cyan-700 text-gray-900' : 'text-slate-500 hover:text-gray-600'}`}>
+              className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${exactMatch ? 'bg-cyan-700 text-white' : 'text-slate-500 hover:text-gray-600'}`}>
               Exact Match (Case Insensitive)
             </button>
           </div>
@@ -1308,11 +1308,11 @@ export default function GlobalSearchPage() {
             {/* Feature 2: group-by-app / group-by-term toggles (mutually exclusive) */}
             <div className="flex items-center gap-2">
               <button onClick={() => { setGroupByApp(v => !v); setGroupByTerm(false); }}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByApp ? 'bg-cyan-700/30 border-cyan-300/60 text-cyan-700' : 'bg-gray-100/60 border-gray-300/40 text-gray-500 hover:text-gray-600'}`}>
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByApp ? 'bg-cyan-100 border-cyan-300/60 text-cyan-700' : 'bg-gray-100/60 border-gray-300/40 text-gray-500 hover:text-gray-600'}`}>
                 <Building2 size={11} /> {groupByApp ? 'Grouped by App' : 'Group by App'}
               </button>
               <button onClick={() => { setGroupByTerm(v => !v); setGroupByApp(false); }}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByTerm ? 'bg-purple-700/30 border-purple-300/60 text-purple-700' : 'bg-gray-100/60 border-gray-300/40 text-gray-500 hover:text-gray-600'}`}>
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByTerm ? 'bg-purple-100 border-purple-300/60 text-purple-700' : 'bg-gray-100/60 border-gray-300/40 text-gray-500 hover:text-gray-600'}`}>
                 <Hash size={11} /> {groupByTerm ? 'Grouped by Term' : 'Group by Term'}
               </button>
               {results.length > 0 && (
@@ -1567,7 +1567,7 @@ export default function GlobalSearchPage() {
                                                           </span>
                                                           <button
                                                             onClick={() => { const r = appRows[0]; if (r.bgOrgId && r.envId && r.appId) navigate(`/applications/${r.bgOrgId}/${r.envId}/${r.appId}`); }}
-                                                            className="text-[10px] font-mono text-cyan-700 hover:text-cyan-200 font-medium hover:underline underline-offset-2 truncate">
+                                                            className="text-[10px] font-mono text-cyan-700 hover:text-cyan-900 font-medium hover:underline underline-offset-2 truncate">
                                                             {appName}
                                                           </button>
                                                           <span className="text-[9px] text-gray-400 flex-shrink-0">{appRows[0].chEnv}</span>
@@ -1669,7 +1669,7 @@ export default function GlobalSearchPage() {
                           className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100/30 transition-colors">
                           <div className="flex items-center gap-3 min-w-0">
                             <button onClick={e => { e.stopPropagation(); if (first.bgOrgId && first.envId && first.appId) navigate(`/applications/${first.bgOrgId}/${first.envId}/${first.appId}`); }}
-                              className="text-sm font-semibold text-cyan-700 hover:text-cyan-200 font-mono truncate transition-colors" title="Open Application Detail">
+                              className="text-sm font-semibold text-cyan-700 hover:text-cyan-900 font-mono truncate transition-colors" title="Open Application Detail">
                               {appName}
                             </button>
                             <span className="text-[10px] text-slate-500">{first.chEnv}</span>
@@ -1733,7 +1733,7 @@ export default function GlobalSearchPage() {
                           <td className="px-3 py-3">
                             <div className="flex items-center gap-1 group/cell">
                               <button onClick={() => { if (row.bgOrgId && row.envId && row.appId) navigate(`/applications/${row.bgOrgId}/${row.envId}/${row.appId}`); }}
-                                className="text-xs font-mono text-cyan-700 hover:text-cyan-200 font-medium hover:underline underline-offset-2 text-left transition-colors" title="Open Application Detail">
+                                className="text-xs font-mono text-cyan-700 hover:text-cyan-900 font-medium hover:underline underline-offset-2 text-left transition-colors" title="Open Application Detail">
                                 {row.appName}
                               </button>
                               <CopyBtn text={row.appName} />

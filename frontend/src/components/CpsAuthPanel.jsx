@@ -187,7 +187,7 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
               onClick={() => setReplaceMode(opt.value)}
               className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${
                 replaceMode === opt.value
-                  ? opt.value ? 'bg-red-700 text-gray-900' : 'bg-cyan-700 text-gray-900'
+                  ? opt.value ? 'bg-red-700 text-white' : 'bg-cyan-700 text-white'
                   : 'text-gray-500 hover:text-gray-900'
               }`}
             >
@@ -355,7 +355,7 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
         <button
           onClick={handleSave}
           disabled={saving || allowedClientIds.length === 0}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 text-gray-900 rounded-lg disabled:opacity-50 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg disabled:opacity-50 transition-colors"
         >
           {saving
             ? <><RefreshCw size={13} className="animate-spin" /> Saving…</>
