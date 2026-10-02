@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, ChevronDown, ChevronRight, CheckCircle2, XCircle,
   AlertCircle, Globe, ShieldCheck, ArrowLeft, Download, RefreshCw,
-  UploadCloud, X, Lock, Terminal, Check, History, Trash2
+  UploadCloud, X, Lock, Terminal, Check, History, Trash2, Clock, Zap
 } from 'lucide-react';
 import api from '../services/api';
 import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId, downloadCsv } from '../utils/appUtils';
@@ -12,6 +12,32 @@ import PostmanJsonViewer from '../components/PostmanJsonViewer';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Premium status-pill styling, keyed by ping result status.
+// Kept local to this page so the shared PING_STATUS_CONFIG (used elsewhere)
+// is untouched while this view gets a richer gradient/badge treatment.
+const STATUS_PILL = {
+  SUCCESS: {
+    Icon: CheckCircle2,
+    cls: 'text-sfgreen-700 dark:text-sfgreen-300 bg-sfgreen-50 dark:bg-sfgreen-500/10 border-sfgreen-200/70 dark:border-sfgreen-400/20',
+    dot: 'bg-sfgreen-500',
+  },
+  PARTIAL: {
+    Icon: AlertCircle,
+    cls: 'text-sforange-700 dark:text-sforange-300 bg-sforange-50 dark:bg-sforange-500/10 border-sforange-200/70 dark:border-sforange-400/20',
+    dot: 'bg-sforange-500',
+  },
+  FAILED: {
+    Icon: XCircle,
+    cls: 'text-sfred-700 dark:text-sfred-300 bg-sfred-50 dark:bg-sfred-500/10 border-sfred-200/70 dark:border-sfred-400/20',
+    dot: 'bg-sfred-500',
+  },
+  SKIPPED_CONTRACT_PENDING: {
+    Icon: Lock,
+    cls: 'text-sforange-700 dark:text-sforange-300 bg-sforange-50 dark:bg-sforange-500/10 border-sforange-200/70 dark:border-sforange-400/20',
+    dot: 'bg-sforange-500',
+  },
+};
 
 // ─── Result Row (Feature 1: retry button) ────────────────────────────────────
 
@@ -47,33 +73,33 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
     <>
       <tr
         onClick={() => result && setExpandedId(isExpanded ? null : rowKey)}
-        className={`border-t border-gray-200 transition-colors ${result ? 'cursor-pointer hover:bg-gray-100/30' : 'hover:bg-gray-100/20'}`}>
+        className={`border-t border-gray-100 dark:border-gray-700/50 transition-colors ${result ? 'cursor-pointer hover:bg-sf-50/40 dark:hover:bg-sf-500/[0.04]' : 'hover:bg-gray-50/60 dark:hover:bg-gray-800/30'}`}>
         {/* Row number */}
-        <td className="px-3 py-3 text-center text-gray-500 text-xs font-mono select-none w-8">
+        <td className="px-3 py-3 text-center text-gray-400 dark:text-gray-500 text-xs font-mono select-none w-8">
           {rowNum}
         </td>
         {/* App name */}
         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_BADGE[app.environment?.type] || 'bg-gray-400'}`} />
+          <div className="flex items-center gap-2.5">
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ring-2 ring-white dark:ring-gray-900 ${ENV_BADGE[app.environment?.type] || 'bg-gray-400'}`} />
             <div>
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => app._bgId && app.environment?.id && navigate(`/applications/${app._bgId}/${app.environment.id}/${app.id}`)}
                   title="Open application detail"
-                  className="text-gray-900 text-sm font-medium hover:text-cyan-700 transition-colors text-left">
+                  className="text-gray-900 dark:text-gray-100 text-sm font-semibold hover:text-sf-600 dark:hover:text-sf-400 transition-colors text-left">
                   {app.name}
                 </button>
                 {autoResolved && (
                   <span title={`Auto-resolved: ${autoResolved.apiInstanceName} → ${autoResolved.contractApp}`}
-                    className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-emerald-50 border border-emerald-300/40 text-emerald-600 rounded font-medium">
+                    className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 bg-sfgreen-50 dark:bg-sfgreen-500/10 border border-sfgreen-300/40 dark:border-sfgreen-400/20 text-sfgreen-600 dark:text-sfgreen-400 rounded-full">
                     🔑 auto
                   </span>
                 )}
               </div>
-              <p className="text-gray-500 text-xs">{app.environment?.name}</p>
+              <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{app.environment?.name}</p>
               {result?._jwtError && (
-                <p className="text-[10px] text-red-600/70 mt-0.5">{result._jwtError}</p>
+                <p className="text-[10px] text-sfred-600/80 dark:text-sfred-400/80 mt-0.5">{result._jwtError}</p>
               )}
             </div>
           </div>
@@ -81,7 +107,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
 
         {/* Type */}
         <td className="px-3 py-3">
-          <span className={`text-xs px-2 py-0.5 rounded font-medium ${isCH1 ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${isCH1 ? 'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-600 dark:text-sfpurple-400 border-sfpurple-200/60 dark:border-sfpurple-400/20' : 'bg-sf-50 dark:bg-sf-500/10 text-sf-600 dark:text-sf-400 border-sf-200/60 dark:border-sf-400/20'}`}>
             {isCH1 ? 'CH1' : 'CH2'}
           </span>
         </td>
@@ -89,70 +115,70 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
         {/* Ping status */}
         <td className="px-3 py-3">
           {retrying ? (
-            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold text-cyan-600 bg-cyan-50 border-cyan-300/40">
+            <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-semibold text-sf-600 dark:text-sf-400 bg-sf-50 dark:bg-sf-500/10 border-sf-300/40 dark:border-sf-400/20">
               <RefreshCw size={10} className="animate-spin" /> Retrying…
             </span>
           ) : contractApproved ? (
             /* Contract was approved — show green "Approved" badge */
-            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold bg-emerald-50 text-emerald-600 border-emerald-300/40">
-              ✅ Approved — Ping Ready
+            <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-semibold bg-sfgreen-50 dark:bg-sfgreen-500/10 text-sfgreen-700 dark:text-sfgreen-300 border-sfgreen-300/40 dark:border-sfgreen-400/20">
+              <CheckCircle2 size={11} /> Approved — Ping Ready
             </span>
           ) : cfg ? (
-            <div className="space-y-0.5">
-              <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border font-semibold ${cfg.cls}`}>
+            <div className="space-y-1">
+              <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-semibold ${(STATUS_PILL[result.status] || STATUS_PILL.FAILED).cls}`}>
                 <span className="relative flex h-1.5 w-1.5 flex-shrink-0">
-                  {cfg.ping && <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${cfg.dot}`} />}
-                  <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${cfg.dot}`} />
+                  {cfg.ping && <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${(STATUS_PILL[result.status] || STATUS_PILL.FAILED).dot}`} />}
+                  <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${(STATUS_PILL[result.status] || STATUS_PILL.FAILED).dot}`} />
                 </span>
                 {cfg.label}
               </span>
               {/* Show short reason inline for FAILED / SKIPPED rows */}
               {result.error && (result.status === 'FAILED' || result.status === 'SKIPPED_CONTRACT_PENDING') && (
-                <p className="text-[10px] text-gray-500 max-w-[200px] leading-tight">
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 max-w-[200px] leading-tight">
                   {result.error.length > 80 ? result.error.slice(0, 77) + '…' : result.error}
                 </p>
               )}
               {/* JWT auto-used badge */}
               {result._jwtUsed && (
-                <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-300/40 text-indigo-600 rounded font-medium">
+                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 bg-sfpurple-50 dark:bg-sfpurple-500/10 border border-sfpurple-300/40 dark:border-sfpurple-400/20 text-sfpurple-600 dark:text-sfpurple-400 rounded-full">
                   <Lock size={8} /> JWT auto
                 </span>
               )}
               {/* JWT may be needed hint */}
               {result.status === 'PARTIAL' && !result._jwtUsed && (result.httpStatus === 401 || result.httpStatus === 400) && (
-                <span className="inline-flex items-center gap-0.5 text-[9px] text-indigo-600/60">
+                <span className="inline-flex items-center gap-0.5 text-[9px] text-sfpurple-500/70 dark:text-sfpurple-400/70">
                   <Lock size={8} /> may need JWT
                 </span>
               )}
             </div>
-          ) : <span className="text-gray-500 text-xs">—</span>}
+          ) : <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>}
         </td>
 
         {/* Active Endpoint */}
         <td className="px-3 py-3 max-w-xs">
           {result?.activeEndpoint ? (
-            <span className="font-mono text-xs text-cyan-700/90 truncate block" title={result.activeEndpoint}>
+            <span className="inline-block font-mono text-[11px] text-sf-700 dark:text-sf-400 bg-sf-50/60 dark:bg-sf-500/10 border border-sf-200/50 dark:border-sf-400/15 rounded-md px-1.5 py-0.5 truncate max-w-full" title={result.activeEndpoint}>
               {result.activeEndpoint}
             </span>
-          ) : <span className="text-gray-500 text-xs">—</span>}
+          ) : <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>}
         </td>
 
         {/* HTTP */}
         <td className="px-3 py-3 text-center">
           {result?.httpStatus != null ? (
-            <span className={`font-mono font-bold text-sm ${result.httpStatus < 300 ? 'text-emerald-600' : result.httpStatus < 500 ? 'text-yellow-600' : 'text-red-600'}`}>
+            <span className={`inline-flex font-mono font-bold text-xs px-2 py-0.5 rounded-full border ${result.httpStatus < 300 ? 'text-sfgreen-700 dark:text-sfgreen-300 bg-sfgreen-50 dark:bg-sfgreen-500/10 border-sfgreen-200/60 dark:border-sfgreen-400/20' : result.httpStatus < 500 ? 'text-sforange-700 dark:text-sforange-300 bg-sforange-50 dark:bg-sforange-500/10 border-sforange-200/60 dark:border-sforange-400/20' : 'text-sfred-700 dark:text-sfred-300 bg-sfred-50 dark:bg-sfred-500/10 border-sfred-200/60 dark:border-sfred-400/20'}`}>
               {result.httpStatus}
             </span>
-          ) : <span className="text-gray-500 text-xs">—</span>}
+          ) : <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>}
         </td>
 
         {/* Latency */}
         <td className="px-3 py-3 text-right">
           {result?.responseTimeMs != null ? (
-            <span className={`font-mono font-semibold text-sm ${latencyColor(result.responseTimeMs)}`}>
-              {result.responseTimeMs}ms
+            <span className={`inline-flex items-center gap-1 font-mono font-semibold text-xs ${latencyColor(result.responseTimeMs)}`}>
+              <Zap size={10} className="flex-shrink-0" />{result.responseTimeMs}ms
             </span>
-          ) : <span className="text-gray-500 text-xs">—</span>}
+          ) : <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>}
         </td>
 
         {/* Actions: retry + expand */}
@@ -220,7 +246,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               </button>
             )}
             {result && (
-              <span className="text-gray-500 p-1" title={isExpanded ? 'Click row to collapse' : 'Click row to expand'}>
+              <span className={`flex items-center justify-center w-6 h-6 rounded-lg transition-colors ${isExpanded ? 'bg-sf-100 dark:bg-sf-500/20 text-sf-600 dark:text-sf-400' : 'text-gray-400 dark:text-gray-500'}`} title={isExpanded ? 'Click row to collapse' : 'Click row to expand'}>
                 {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               </span>
             )}
@@ -230,45 +256,45 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
 
       {/* Expanded detail */}
       {isExpanded && result && (
-        <tr className="border-t border-gray-200/40 bg-white/40">
-          <td colSpan={8} className="px-6 py-4">
-            <div className="space-y-3 text-sm">
+        <tr className="border-t border-gray-100 dark:border-gray-700/50 bg-gray-50/60 dark:bg-gray-900/30">
+          <td colSpan={8} className="px-6 py-5">
+            <div className="space-y-4 text-sm rounded-xl border border-gray-200/70 dark:border-gray-700/50 bg-white/80 dark:bg-gray-800/50 backdrop-blur-sm p-4 shadow-sm">
               {result._jwtUsed && (
-                <div className="flex items-center gap-2 bg-indigo-50/30 border border-indigo-200/40 rounded-lg px-3 py-2 text-indigo-600 text-xs">
+                <div className="flex items-center gap-2 bg-sfpurple-50/60 dark:bg-sfpurple-500/10 border border-sfpurple-200/50 dark:border-sfpurple-400/20 rounded-lg px-3 py-2 text-sfpurple-700 dark:text-sfpurple-300 text-xs">
                   <Lock size={12} className="flex-shrink-0" />
                   JWT Bearer token was auto-fetched from CPS and used for this ping
                 </div>
               )}
               {autoResolved && (
                 <div className="flex items-start gap-3">
-                  <ShieldCheck size={13} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-sfgreen-50 dark:bg-sfgreen-500/15 text-sfgreen-600 dark:text-sfgreen-400 flex-shrink-0"><ShieldCheck size={13} /></span>
                   <div>
-                    <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">Credentials (Auto-resolved)</span>
-                    <p className="text-emerald-600/90 text-xs mt-0.5">
-                      API Manager: <span className="font-medium">{autoResolved.apiInstanceName}</span>
-                      {' · '}Contract: <span className="font-medium">{autoResolved.contractApp}</span>
+                    <span className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider">Credentials (Auto-resolved)</span>
+                    <p className="text-sfgreen-700 dark:text-sfgreen-300 text-xs mt-0.5">
+                      API Manager: <span className="font-semibold">{autoResolved.apiInstanceName}</span>
+                      {' · '}Contract: <span className="font-semibold">{autoResolved.contractApp}</span>
                       {' · '}client_id: <span className="font-mono">{autoResolved.clientId?.slice(0, 8)}…</span>
                     </p>
                   </div>
                 </div>
               )}
               <div className="flex items-start gap-3">
-                <Globe size={13} className="text-gray-500 flex-shrink-0 mt-0.5" />
+                <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-sf-50 dark:bg-sf-500/15 text-sf-600 dark:text-sf-400 flex-shrink-0"><Globe size={13} /></span>
                 <div>
-                  <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">Full Endpoint</span>
-                  <p className="font-mono text-xs text-cyan-700 break-all mt-0.5">{result.activeEndpoint || '—'}</p>
+                  <span className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider">Full Endpoint</span>
+                  <p className="font-mono text-xs text-sf-700 dark:text-sf-400 break-all mt-0.5">{result.activeEndpoint || '—'}</p>
                 </div>
               </div>
               {result.error && (
                 <div className="flex items-start gap-3">
-                  {contractApproved
-                    ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0 mt-0.5" />
-                    : <XCircle size={13} className="text-red-600 flex-shrink-0 mt-0.5" />}
+                  <span className={`flex items-center justify-center w-6 h-6 rounded-lg flex-shrink-0 ${contractApproved ? 'bg-sfgreen-50 dark:bg-sfgreen-500/15 text-sfgreen-600 dark:text-sfgreen-400' : 'bg-sfred-50 dark:bg-sfred-500/15 text-sfred-600 dark:text-sfred-400'}`}>
+                    {contractApproved ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                  </span>
                   <div>
-                    <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">
+                    <span className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider">
                       {contractApproved ? 'Status' : 'Error'}
                     </span>
-                    <p className={`text-xs mt-0.5 break-all ${contractApproved ? 'text-emerald-600' : 'text-red-600'}`}>
+                    <p className={`text-xs mt-0.5 break-all ${contractApproved ? 'text-sfgreen-700 dark:text-sfgreen-300' : 'text-sfred-600 dark:text-sfred-400'}`}>
                       {result.error}
                     </p>
                   </div>
@@ -285,11 +311,11 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                       return (
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">Endpoint Health</span>
+                            <span className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider">Endpoint Health</span>
                             <div className="flex items-center gap-2 text-[10px]">
-                              <span className="text-emerald-600 font-semibold">✓ {ok}</span>
-                              {endpoints.length - ok > 0 && <span className="text-red-600 font-semibold">✗ {endpoints.length - ok}</span>}
-                              {summary?.serviceName && <span className="text-gray-500 font-mono">{summary.serviceName}</span>}
+                              <span className="text-sfgreen-600 dark:text-sfgreen-400 font-bold">✓ {ok}</span>
+                              {endpoints.length - ok > 0 && <span className="text-sfred-600 dark:text-sfred-400 font-bold">✗ {endpoints.length - ok}</span>}
+                              {summary?.serviceName && <span className="text-gray-400 dark:text-gray-500 font-mono">{summary.serviceName}</span>}
                             </div>
                           </div>
                           <div className="space-y-1">
@@ -297,15 +323,15 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                               if (!ep) return null;
                               const isOk = (ep.status || '').toLowerCase() === 'success';
                               return (
-                                <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border ${isOk ? 'bg-emerald-50/20 border-emerald-200/30' : 'bg-red-50/20 border-red-200/30'}`}>
-                                  <span className="text-[11px] flex-shrink-0 mt-0.5">{isOk ? '✅' : '❌'}</span>
+                                <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border ${isOk ? 'bg-sfgreen-50/40 dark:bg-sfgreen-500/5 border-sfgreen-200/40 dark:border-sfgreen-400/15' : 'bg-sfred-50/40 dark:bg-sfred-500/5 border-sfred-200/40 dark:border-sfred-400/15'}`}>
+                                  {isOk ? <CheckCircle2 size={12} className="text-sfgreen-600 dark:text-sfgreen-400 flex-shrink-0 mt-0.5" /> : <XCircle size={12} className="text-sfred-600 dark:text-sfred-400 flex-shrink-0 mt-0.5" />}
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-medium text-gray-700">{ep.serviceName}</span>
-                                      {ep.endpointName && <span className="text-[10px] text-gray-500">· {ep.endpointName}</span>}
+                                      <span className="font-semibold text-gray-700 dark:text-gray-200">{ep.serviceName}</span>
+                                      {ep.endpointName && <span className="text-[10px] text-gray-400 dark:text-gray-500">· {ep.endpointName}</span>}
                                     </div>
-                                    {ep.apiUser && <p className="text-[10px] text-gray-500 font-mono mt-0.5">{ep.apiUser}</p>}
-                                    <p className={`text-[10px] mt-0.5 ${isOk ? 'text-emerald-600/70' : 'text-red-600/70'}`}>
+                                    {ep.apiUser && <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono mt-0.5">{ep.apiUser}</p>}
+                                    <p className={`text-[10px] mt-0.5 ${isOk ? 'text-sfgreen-600/80 dark:text-sfgreen-400/80' : 'text-sfred-600/80 dark:text-sfred-400/80'}`}>
                                       {ep.message}{ep.domain ? ` · ${ep.domain}` : ''}
                                     </p>
                                   </div>
@@ -318,7 +344,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                     })()}
                     {/* Full raw JSON — always visible */}
                     <div>
-                      <span className="text-gray-500 text-xs font-medium uppercase tracking-wider block mb-1.5">Response Body</span>
+                      <span className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider block mb-1.5">Response Body</span>
                       <PostmanJsonViewer data={result.payload} maxHeight="400px" />
                     </div>
                   </div>
@@ -326,25 +352,25 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               })()}
               {result.attempts?.length > 0 && (
                 <div>
-                  <span className="text-gray-500 text-xs font-medium uppercase tracking-wider block mb-1.5">
+                  <span className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider block mb-1.5">
                     Attempt Log — {result.attempts.length} path{result.attempts.length !== 1 ? 's' : ''} tried
                   </span>
-                  <table className="w-full text-xs border-collapse">
+                  <table className="w-full text-xs border-collapse rounded-lg overflow-hidden border border-gray-200/60 dark:border-gray-700/50">
                     <thead>
-                      <tr className="bg-gray-100/60">
-                        <th className="px-3 py-2 text-left text-gray-500 font-medium">URL</th>
-                        <th className="px-3 py-2 text-left text-gray-500 font-medium w-32">Result</th>
-                        <th className="px-3 py-2 text-right text-gray-500 font-medium w-24">Latency</th>
+                      <tr className="bg-gray-100/80 dark:bg-gray-900/50">
+                        <th className="px-3 py-2 text-left text-gray-500 dark:text-gray-400 font-semibold">URL</th>
+                        <th className="px-3 py-2 text-left text-gray-500 dark:text-gray-400 font-semibold w-32">Result</th>
+                        <th className="px-3 py-2 text-right text-gray-500 dark:text-gray-400 font-semibold w-24">Latency</th>
                       </tr>
                     </thead>
                     <tbody>
                       {result.attempts.map((a, i) => (
-                        <tr key={i} className="border-t border-gray-200/40 hover:bg-gray-100/20">
-                          <td className="px-3 py-2 font-mono text-gray-600 break-all">{a.url}</td>
+                        <tr key={i} className="border-t border-gray-200/40 dark:border-gray-700/40 hover:bg-gray-100/40 dark:hover:bg-gray-800/40">
+                          <td className="px-3 py-2 font-mono text-gray-600 dark:text-gray-300 break-all">{a.url}</td>
                           <td className="px-3 py-2">
                             {a.error
-                              ? <span className="text-red-600 text-[11px]">{a.error}</span>
-                              : <span className={`font-bold ${a.httpStatus < 300 ? 'text-emerald-600' : a.httpStatus < 500 ? 'text-yellow-600' : 'text-red-600'}`}>HTTP {a.httpStatus}</span>}
+                              ? <span className="text-sfred-600 dark:text-sfred-400 text-[11px]">{a.error}</span>
+                              : <span className={`font-bold ${a.httpStatus < 300 ? 'text-sfgreen-600 dark:text-sfgreen-400' : a.httpStatus < 500 ? 'text-sforange-600 dark:text-sforange-400' : 'text-sfred-600 dark:text-sfred-400'}`}>HTTP {a.httpStatus}</span>}
                           </td>
                           <td className={`px-3 py-2 font-mono text-right ${latencyColor(a.responseTimeMs)}`}>
                             {a.responseTimeMs != null ? `${a.responseTimeMs}ms` : '—'}
@@ -397,105 +423,114 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
   return (
     <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <History size={20} className="text-indigo-600" /> Ping Test History
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {globalHistory.length} recorded ping test results in this session
-            {historyLoading && <RefreshCw size={12} className="inline animate-spin ml-2 text-indigo-600" />}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {globalHistory.length > 0 && (
-            <button onClick={exportHistoryCsv}
-              className="group/exp flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfgreen-600 dark:text-sfgreen-400 bg-white dark:bg-gray-800 hover:text-sfgreen-700 dark:hover:text-sfgreen-300 border border-gray-200 dark:border-gray-700 hover:border-sfgreen-200/70 dark:hover:border-sfgreen-400/30 shadow-sm hover:shadow-md transition-all">
-              <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfgreen-50 dark:bg-sfgreen-500/15 group-hover/exp:bg-sfgreen-100 dark:group-hover/exp:bg-sfgreen-500/25 text-sfgreen-600 dark:text-sfgreen-400 flex-shrink-0 transition-colors"><Download size={11} /></span>
-              Export CSV
+      <div className="relative overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/50 backdrop-blur-md shadow-lg shadow-gray-900/5 dark:shadow-black/20 px-6 py-5">
+        <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-sfpurple-50/80 dark:from-sfpurple-500/[0.07] to-transparent pointer-events-none" />
+        <div className="relative flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-gradient-to-br from-sfpurple-500 to-sfpurple-600 shadow-lg shadow-sfpurple-500/30">
+              <History size={18} className="text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Ping Test History</h1>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5 flex items-center gap-1.5">
+                {globalHistory.length} recorded ping test results in this session
+                {historyLoading && <RefreshCw size={12} className="animate-spin text-sfpurple-500 dark:text-sfpurple-400" />}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {globalHistory.length > 0 && (
+              <button onClick={exportHistoryCsv}
+                className="group/exp flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfgreen-600 dark:text-sfgreen-400 bg-white dark:bg-gray-800 hover:text-sfgreen-700 dark:hover:text-sfgreen-300 border border-gray-200 dark:border-gray-700 hover:border-sfgreen-200/70 dark:hover:border-sfgreen-400/30 shadow-sm hover:shadow-md transition-all">
+                <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfgreen-50 dark:bg-sfgreen-500/15 group-hover/exp:bg-sfgreen-100 dark:group-hover/exp:bg-sfgreen-500/25 text-sfgreen-600 dark:text-sfgreen-400 flex-shrink-0 transition-colors"><Download size={11} /></span>
+                Export CSV
+              </button>
+            )}
+            {globalHistory.length > 0 && (
+              <button onClick={onClear}
+                className="group/clr flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfred-600 dark:text-sfred-400 bg-white dark:bg-gray-800 hover:text-sfred-700 dark:hover:text-sfred-300 border border-gray-200 dark:border-gray-700 hover:border-sfred-200/70 dark:hover:border-sfred-400/30 shadow-sm hover:shadow-md transition-all">
+                <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfred-50 dark:bg-sfred-500/15 group-hover/clr:bg-sfred-100 dark:group-hover/clr:bg-sfred-500/25 text-sfred-600 dark:text-sfred-400 flex-shrink-0 transition-colors"><Trash2 size={11} /></span>
+                Clear History
+              </button>
+            )}
+            <button onClick={onClose}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors">
+              <ArrowLeft size={13} /> Back to Results
             </button>
-          )}
-          {globalHistory.length > 0 && (
-            <button onClick={onClear}
-              className="group/clr flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfred-600 dark:text-sfred-400 bg-white dark:bg-gray-800 hover:text-sfred-700 dark:hover:text-sfred-300 border border-gray-200 dark:border-gray-700 hover:border-sfred-200/70 dark:hover:border-sfred-400/30 shadow-sm hover:shadow-md transition-all">
-              <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfred-50 dark:bg-sfred-500/15 group-hover/clr:bg-sfred-100 dark:group-hover/clr:bg-sfred-500/25 text-sfred-600 dark:text-sfred-400 flex-shrink-0 transition-colors"><Trash2 size={11} /></span>
-              Clear History
-            </button>
-          )}
-          <button onClick={onClose}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors">
-            <ArrowLeft size={13} /> Back to Results
-          </button>
+          </div>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xl">
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/50 backdrop-blur-md shadow-lg shadow-gray-900/5 dark:shadow-black/20 overflow-hidden">
         {globalHistory.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center text-slate-500 space-y-2">
-            <History size={32} className="opacity-20 mb-2" />
-            <p className="text-sm">No ping test history available yet.</p>
-            <p className="text-xs text-gray-400">Run a batch ping or ping individual apps to generate history.</p>
+          <div className="flex flex-col items-center justify-center py-16 text-center space-y-2">
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-1">
+              <History size={24} className="text-gray-400 dark:text-gray-500" />
+            </div>
+            <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">No ping test history available yet.</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">Run a batch ping or ping individual apps to generate history.</p>
           </div>
         ) : (
           <div className="overflow-x-auto max-h-[75vh]">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-100/95 text-gray-500 text-xs uppercase tracking-wider backdrop-blur-sm">
-                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 w-44 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Timestamp</th>
-                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Application</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Environment</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Type</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Status</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">HTTP Code</th>
-                  <th className="px-3 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Active Endpoint</th>
-                  <th className="px-3 py-3 font-medium text-right sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Latency</th>
-                  <th className="px-4 py-3 font-medium text-left sticky top-0 bg-gray-100/95 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Credentials</th>
+                <tr className="bg-gray-50/95 dark:bg-gray-900/90 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider backdrop-blur-sm">
+                  <th className="px-4 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 w-44 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Timestamp</th>
+                  <th className="px-4 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Application</th>
+                  <th className="px-3 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Environment</th>
+                  <th className="px-3 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Type</th>
+                  <th className="px-3 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Status</th>
+                  <th className="px-3 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">HTTP Code</th>
+                  <th className="px-3 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Active Endpoint</th>
+                  <th className="px-3 py-3 font-semibold text-right sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Latency</th>
+                  <th className="px-4 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Credentials</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200/60">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
                 {globalHistory.map((entry, i) => {
                   const isOk = entry.status === 'SUCCESS';
                   const isPartial = entry.status === 'PARTIAL';
-                  const statusConfig = STATUS_CONFIG[entry.status] || { label: entry.status, cls: 'text-gray-500 bg-white/50' };
-                  
+                  const statusConfig = STATUS_PILL[entry.status] || { Icon: XCircle, cls: 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700' };
+                  const statusLabel = (STATUS_CONFIG[entry.status] || {}).label || entry.status;
+
                   return (
                     <React.Fragment key={entry.id || i}>
-                      <tr className="hover:bg-gray-100/40 transition-colors">
-                        <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500 font-mono">
+                      <tr className="hover:bg-sf-50/40 dark:hover:bg-sf-500/[0.04] transition-colors">
+                        <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-400 dark:text-gray-500 font-mono">
                           {new Date(entry.timestamp).toLocaleString()}
                         </td>
-                        <td className="px-4 py-3 font-medium text-gray-700">
+                        <td className="px-4 py-3 font-semibold text-gray-800 dark:text-gray-200">
                           {entry.appName || '—'}
                         </td>
-                        <td className="px-3 py-3 text-xs text-gray-600">
+                        <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">
                           {entry.env_name || '—'}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap">
                           {entry.target_type ? (
-                            <span className="text-[10px] font-semibold text-gray-500 bg-gray-100/80 px-2 py-0.5 rounded border border-gray-300">
+                            <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-700">
                               {entry.target_type}
                             </span>
                           ) : '—'}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${statusConfig.cls}`}>
-                            {isOk ? <CheckCircle2 size={10} /> : isPartial ? <AlertCircle size={10} /> : <XCircle size={10} />}
-                            {statusConfig.label}
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusConfig.cls}`}>
+                            <statusConfig.Icon size={10} />
+                            {statusLabel}
                           </span>
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap">
                           {entry.http_status ? (
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                              entry.http_status >= 200 && entry.http_status < 300 ? 'bg-emerald-50/40 text-emerald-600 border border-emerald-200/30' :
-                              entry.http_status >= 400 && entry.http_status < 500 ? 'bg-yellow-50/40 text-yellow-600 border border-yellow-200/30' :
-                              'bg-red-50/40 text-red-600 border border-red-200/30'
+                            <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full border ${
+                              entry.http_status >= 200 && entry.http_status < 300 ? 'bg-sfgreen-50 dark:bg-sfgreen-500/10 text-sfgreen-700 dark:text-sfgreen-300 border-sfgreen-200/60 dark:border-sfgreen-400/20' :
+                              entry.http_status >= 400 && entry.http_status < 500 ? 'bg-sforange-50 dark:bg-sforange-500/10 text-sforange-700 dark:text-sforange-300 border-sforange-200/60 dark:border-sforange-400/20' :
+                              'bg-sfred-50 dark:bg-sfred-500/10 text-sfred-700 dark:text-sfred-300 border-sfred-200/60 dark:border-sfred-400/20'
                             }`}>
                               {entry.http_status}
                             </span>
                           ) : '—'}
                         </td>
-                        <td className="px-3 py-3 font-mono text-xs text-cyan-600/90 truncate max-w-xs" title={entry.endpoint}>
+                        <td className="px-3 py-3 font-mono text-xs text-sf-600 dark:text-sf-400 truncate max-w-xs" title={entry.endpoint}>
                           {entry.endpoint || '—'}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-right font-mono text-xs">
@@ -503,18 +538,18 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                             <span className={latencyColor(entry.responseTimeMs)}>{entry.responseTimeMs}ms</span>
                           ) : '—'}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-[10px] text-gray-500">
+                        <td className="px-4 py-3 whitespace-nowrap text-[10px] text-gray-400 dark:text-gray-500">
                           {entry.credentials || '—'}
                         </td>
                       </tr>
                       {(entry.error || entry.payload) && (
-                        <tr className="bg-white/20">
+                        <tr className="bg-gray-50/40 dark:bg-gray-900/20">
                           <td colSpan={9} className="px-4 py-2 pb-4">
-                            <div className="pl-4 border-l-2 border-gray-300/50 space-y-2">
-                              {entry.error && <p className="text-xs text-red-600">{entry.error}</p>}
+                            <div className="pl-4 border-l-2 border-sf-200 dark:border-sf-500/30 space-y-2">
+                              {entry.error && <p className="text-xs text-sfred-600 dark:text-sfred-400">{entry.error}</p>}
                               {entry.payload && (
                                 <div>
-                                  <span className="text-[10px] font-bold tracking-wider text-gray-500 uppercase block mb-1">Response</span>
+                                  <span className="text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase block mb-1">Response</span>
                                   <PostmanJsonViewer data={entry.payload} maxHeight="160px" />
                                 </div>
                               )}
@@ -1110,16 +1145,22 @@ export default function PingTestPage() {
   if (!hasResults && apps.length === 0) {
     return (
       <div className="space-y-5">
-        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-          <Activity size={20} className="text-cyan-600" /> Ping Test Results
-        </h1>
-        <div className="flex flex-col items-center justify-center py-24 gap-5 bg-white border border-gray-200 rounded-xl">
-          <Activity size={48} className="text-gray-500" />
-          <div className="text-center space-y-2">
-            <p className="text-gray-900 font-medium">No ping results yet</p>
-            <p className="text-gray-500 text-sm">Run a bulk ping test from the <strong>Applications</strong> page or view past history.</p>
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2.5">
+            <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-sf-500 to-sf-600 shadow-md shadow-sf-500/30"><Activity size={16} className="text-white" /></span>
+            Ping Test Results
+          </h1>
+        </div>
+        <div className="relative overflow-hidden flex flex-col items-center justify-center py-24 gap-5 rounded-2xl border border-gray-200 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/50 backdrop-blur-md shadow-lg shadow-gray-900/5 dark:shadow-black/20">
+          <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-sf-50/80 dark:from-sf-500/[0.06] to-transparent pointer-events-none" />
+          <div className="relative w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+            <Activity size={28} className="text-gray-400 dark:text-gray-500" />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="relative text-center space-y-1.5">
+            <p className="text-gray-900 dark:text-gray-100 font-semibold">No ping results yet</p>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">Run a bulk ping test from the <strong>Applications</strong> page or view past history.</p>
+          </div>
+          <div className="relative flex items-center gap-3">
             <button onClick={() => navigate('/applications')}
               className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 bg-gradient-to-b from-sf-500 to-sf-600 hover:from-sf-400 hover:to-sf-500 text-white shadow-md shadow-sf-500/30 hover:shadow-lg hover:shadow-sf-500/40 ring-1 ring-inset ring-white/20">
               <ArrowLeft size={14} /> Go to Applications
@@ -1140,26 +1181,36 @@ export default function PingTestPage() {
       <input ref={csvInputRef} type="file" accept=".csv,text/csv" onChange={handleCsvUpload} className="hidden" />
 
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <Activity size={20} className="text-cyan-600" /> Ping Test Results
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {done} apps tested
-            {done > 0 && (<span className="ml-2">
-              · <span className="text-emerald-600">{successCount} ✓</span>
-              {partialCount > 0 && <span className="text-yellow-600 ml-1">{partialCount} ~</span>}
-              {failedCount  > 0 && <span className="text-red-600 ml-1">{failedCount} ✗</span>}
-            </span>)}
-            {autoResolvedCount > 0 && <span className="ml-2 text-emerald-600/70 text-xs">· 🔑 {autoResolvedCount} auto-creds</span>}
-            {/* Feature 1.8: show when the batch was tested */}
-            {testedAt && (
-              <span className="ml-2 text-gray-500 text-xs">
-                · Tested at {new Date(testedAt).toLocaleTimeString()}
-              </span>
-            )}
-          </p>
+      <div className="relative overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/50 backdrop-blur-md shadow-lg shadow-gray-900/5 dark:shadow-black/20 px-6 py-5">
+        <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-sf-50/80 dark:from-sf-500/[0.07] to-transparent pointer-events-none" />
+        <div className="relative flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 rounded-2xl bg-gradient-to-br from-sf-500 to-sf-600 shadow-lg shadow-sf-500/30">
+            <Activity size={18} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Ping Test Results</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5 flex items-center flex-wrap gap-x-1">
+              {done} apps tested
+              {done > 0 && (<span className="inline-flex items-center gap-1.5 ml-1">
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="text-sfgreen-600 dark:text-sfgreen-400 font-semibold">{successCount} ✓</span>
+                {partialCount > 0 && <span className="text-sforange-600 dark:text-sforange-400 font-semibold">{partialCount} ~</span>}
+                {failedCount  > 0 && <span className="text-sfred-600 dark:text-sfred-400 font-semibold">{failedCount} ✗</span>}
+              </span>)}
+              {autoResolvedCount > 0 && (
+                <span className="inline-flex items-center gap-1 ml-1 text-sfgreen-600/80 dark:text-sfgreen-400/80 text-xs">
+                  <span className="text-gray-300 dark:text-gray-600">·</span> 🔑 {autoResolvedCount} auto-creds
+                </span>
+              )}
+              {/* Feature 1.8: show when the batch was tested */}
+              {testedAt && (
+                <span className="inline-flex items-center gap-1 ml-1 text-gray-400 dark:text-gray-500 text-xs">
+                  <span className="text-gray-300 dark:text-gray-600">·</span> <Clock size={10} /> Tested at {new Date(testedAt).toLocaleTimeString()}
+                </span>
+              )}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Re-resolve credentials for apps without auto-creds.
@@ -1231,23 +1282,24 @@ export default function PingTestPage() {
             <ArrowLeft size={13} /> Back to Applications
           </button>
         </div>
+        </div>
       </div>
 
       {/* Feature 2: CSV match banner */}
       {csvMatchedNames !== null && (
-        <div className={`flex items-center justify-between flex-wrap gap-3 px-4 py-3 rounded-xl border text-sm ${
+        <div className={`relative overflow-hidden flex items-center justify-between flex-wrap gap-3 px-5 py-3.5 rounded-2xl border backdrop-blur-md shadow-lg shadow-gray-900/5 dark:shadow-black/20 text-sm ${
           csvMatchedApps.length > 0
-            ? 'bg-blue-50/30 border-blue-200/50'
-            : 'bg-white border-gray-200'
+            ? 'bg-sf-50/60 dark:bg-sf-500/10 border-sf-200/70 dark:border-sf-400/20'
+            : 'bg-white/70 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700/60'
         }`}>
           <div className="flex items-center gap-3">
-            <UploadCloud size={14} className="text-blue-600 flex-shrink-0" />
-            <span className="text-gray-600 text-xs">
-              <span className="font-mono text-gray-500">{csvFileName}</span>
+            <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-sf-100 dark:bg-sf-500/20 text-sf-600 dark:text-sf-400 flex-shrink-0"><UploadCloud size={14} /></span>
+            <span className="text-gray-600 dark:text-gray-300 text-xs">
+              <span className="font-mono text-gray-500 dark:text-gray-400">{csvFileName}</span>
               {' — '}
               {csvMatchedApps.length > 0
-                ? <span className="text-blue-700 font-semibold">{csvMatchedApps.length} app{csvMatchedApps.length !== 1 ? 's' : ''} matched from CSV</span>
-                : <span className="text-gray-500">No apps matched</span>}
+                ? <span className="text-sf-700 dark:text-sf-300 font-semibold">{csvMatchedApps.length} app{csvMatchedApps.length !== 1 ? 's' : ''} matched from CSV</span>
+                : <span className="text-gray-500 dark:text-gray-400">No apps matched</span>}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -1260,7 +1312,7 @@ export default function PingTestPage() {
               </button>
             )}
             <button onClick={() => { setCsvMatchedNames(null); setCsvFileName(''); }}
-              className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded-lg transition-colors">
+              className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1.5 rounded-lg transition-colors">
               <X size={14} />
             </button>
           </div>
@@ -1269,14 +1321,14 @@ export default function PingTestPage() {
 
       {/* Summary + toggle */}
       {hasResults && (
-        <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-3 bg-white border border-gray-200 rounded-xl text-sm">
+        <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-3.5 rounded-2xl border border-gray-200 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/50 backdrop-blur-md shadow-lg shadow-gray-900/5 dark:shadow-black/20 text-sm">
           <div className="flex items-center gap-4">
-            <span className="text-gray-500 font-medium">{done} tested</span>
-            <span className="text-emerald-600 font-semibold">✓ {successCount} healthy</span>
-            {partialCount > 0 && <span className="text-yellow-600 font-semibold">~ {partialCount} partial</span>}
-            {failedCount  > 0 && <span className="text-red-600 font-semibold">✗ {failedCount} failed</span>}
+            <span className="text-gray-500 dark:text-gray-400 font-medium">{done} tested</span>
+            <span className="inline-flex items-center gap-1 text-sfgreen-600 dark:text-sfgreen-400 font-semibold"><CheckCircle2 size={12} /> {successCount} healthy</span>
+            {partialCount > 0 && <span className="inline-flex items-center gap-1 text-sforange-600 dark:text-sforange-400 font-semibold"><AlertCircle size={12} /> {partialCount} partial</span>}
+            {failedCount  > 0 && <span className="inline-flex items-center gap-1 text-sfred-600 dark:text-sfred-400 font-semibold"><XCircle size={12} /> {failedCount} failed</span>}
             {autoResolvedCount > 0 && (
-              <span className="flex items-center gap-1 text-emerald-600/70 text-xs font-medium">
+              <span className="flex items-center gap-1 text-sfgreen-600/80 dark:text-sfgreen-400/80 text-xs font-medium">
                 <ShieldCheck size={11} /> {autoResolvedCount} auto-creds
               </span>
             )}
@@ -1284,12 +1336,12 @@ export default function PingTestPage() {
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             {/* Status filter chips */}
             {[
-              { key: 'ALL',               label: 'All',                count: null,                  cls: 'text-gray-500 border-gray-300 hover:border-slate-500' },
-              { key: 'SUCCESS',           label: '✓ Healthy',          count: successCount,          cls: 'text-emerald-600 border-emerald-200/50 hover:border-emerald-300' },
-              { key: 'PARTIAL',           label: '~ Partial',          count: partialCount,          cls: 'text-yellow-600 border-yellow-200/50 hover:border-yellow-300' },
-              { key: 'FAILED',            label: '✗ Failed',           count: failedCount,           cls: 'text-red-600 border-red-200/50 hover:border-red-300' },
-              { key: 'CONTRACT_PENDING',  label: '🔑 Pending',         count: pendingContractCount,  cls: 'text-orange-600 border-orange-200/50 hover:border-orange-300' },
-              { key: 'CONTRACT_APPROVED', label: '✅ Approved',         count: approvedContractCount, cls: 'text-emerald-700 border-emerald-300/50 hover:border-emerald-500' },
+              { key: 'ALL',               label: 'All',           count: null,                  cls: 'text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500' },
+              { key: 'SUCCESS',           label: 'Healthy',       count: successCount,          cls: 'text-sfgreen-600 dark:text-sfgreen-400 border-sfgreen-200/60 dark:border-sfgreen-400/20 hover:border-sfgreen-300 dark:hover:border-sfgreen-400/40' },
+              { key: 'PARTIAL',           label: 'Partial',       count: partialCount,          cls: 'text-sforange-600 dark:text-sforange-400 border-sforange-200/60 dark:border-sforange-400/20 hover:border-sforange-300 dark:hover:border-sforange-400/40' },
+              { key: 'FAILED',            label: 'Failed',        count: failedCount,           cls: 'text-sfred-600 dark:text-sfred-400 border-sfred-200/60 dark:border-sfred-400/20 hover:border-sfred-300 dark:hover:border-sfred-400/40' },
+              { key: 'CONTRACT_PENDING',  label: '🔑 Pending',    count: pendingContractCount,  cls: 'text-sforange-600 dark:text-sforange-400 border-sforange-200/60 dark:border-sforange-400/20 hover:border-sforange-300 dark:hover:border-sforange-400/40' },
+              { key: 'CONTRACT_APPROVED', label: '✅ Approved',   count: approvedContractCount, cls: 'text-sfgreen-700 dark:text-sfgreen-300 border-sfgreen-300/60 dark:border-sfgreen-400/30 hover:border-sfgreen-500 dark:hover:border-sfgreen-400/60' },
             ].filter(f => f.key === 'ALL' || f.count > 0).map(f => (
               <button key={f.key} onClick={() => setStatusFilter(f.key)}
                 className={`text-xs px-2.5 py-1 rounded-lg border font-semibold transition-all ${f.cls} ${statusFilter === f.key ? 'shadow-sm ring-1 ring-inset ring-current bg-white dark:bg-gray-800' : 'bg-transparent hover:bg-white/60 dark:hover:bg-gray-800/60'}`}>
@@ -1308,19 +1360,19 @@ export default function PingTestPage() {
 
       {/* Results table */}
       {displayApps.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/50 backdrop-blur-md shadow-lg shadow-gray-900/5 dark:shadow-black/20 overflow-hidden">
           <table className="w-full text-sm">
             {/* Feature 23: sticky App Name + Status columns */}
             <thead>
-              <tr className="bg-gray-100/95 text-gray-500 text-xs uppercase tracking-wider backdrop-blur-sm">
-                <th className="px-3 py-3 font-medium text-center w-8 sticky left-0 z-20 bg-gray-100/95">#</th>
-                <th className="text-left px-4 py-3 font-medium sticky left-8 z-20 bg-gray-100/95 shadow-[2px_0_8px_rgba(0,0,0,0.3)]">Application</th>
-                <th className="text-left px-3 py-3 font-medium">Type</th>
-                <th className="text-left px-3 py-3 font-medium sticky left-64 z-20 bg-gray-100/95 shadow-[2px_0_8px_rgba(0,0,0,0.2)]">Status</th>
-                <th className="text-left px-3 py-3 font-medium">Active Endpoint</th>
-                <th className="text-center px-3 py-3 font-medium">HTTP</th>
-                <th className="text-right px-3 py-3 font-medium">Latency</th>
-                <th className="px-3 py-3 w-16 text-center font-medium">Actions</th>
+              <tr className="bg-gray-50/95 dark:bg-gray-900/90 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider backdrop-blur-sm">
+                <th className="px-3 py-3 font-semibold text-center w-8 sticky left-0 z-20 bg-gray-50/95 dark:bg-gray-900/90">#</th>
+                <th className="text-left px-4 py-3 font-semibold sticky left-8 z-20 bg-gray-50/95 dark:bg-gray-900/90 shadow-[2px_0_8px_rgba(0,0,0,0.08)]">Application</th>
+                <th className="text-left px-3 py-3 font-semibold">Type</th>
+                <th className="text-left px-3 py-3 font-semibold sticky left-64 z-20 bg-gray-50/95 dark:bg-gray-900/90 shadow-[2px_0_8px_rgba(0,0,0,0.06)]">Status</th>
+                <th className="text-left px-3 py-3 font-semibold">Active Endpoint</th>
+                <th className="text-center px-3 py-3 font-semibold">HTTP</th>
+                <th className="text-right px-3 py-3 font-semibold">Latency</th>
+                <th className="px-3 py-3 w-16 text-center font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
