@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { CredentialStoreProvider } from './context/CredentialStoreContext';
 import { CpsCredentialStoreProvider } from './context/CpsCredentialStoreContext';
 import { ToastProvider } from './context/ToastContext';
@@ -21,7 +22,7 @@ const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-950">
+      <div className="flex items-center justify-center h-screen bg-sf-50 dark:bg-gray-950">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
       </div>
     );
@@ -31,6 +32,7 @@ const ProtectedRoute = ({ children }) => {
 
 export default function App() {
   return (
+    <ThemeProvider>
     <ToastProvider>
     <NotificationProvider>
     <CpsCredentialStoreProvider>
@@ -65,5 +67,6 @@ export default function App() {
     </CpsCredentialStoreProvider>
     </NotificationProvider>
     </ToastProvider>
+    </ThemeProvider>
   );
 }

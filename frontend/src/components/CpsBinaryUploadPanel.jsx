@@ -116,10 +116,10 @@ export default function CpsBinaryUploadPanel({
 
   const extColor = (filename) => {
     const e = ext(filename);
-    if (['.jks', '.p12', '.pfx'].includes(e)) return 'bg-blue-950/30 text-blue-300 border-blue-800/40';
-    if (['.pem', '.crt', '.cer', '.der', '.key'].includes(e)) return 'bg-green-950/30 text-green-300 border-green-800/40';
-    if (['.gpg', '.pgp'].includes(e)) return 'bg-purple-950/30 text-purple-300 border-purple-800/40';
-    return 'bg-gray-800/60 text-gray-400 border-gray-700/40';
+    if (['.jks', '.p12', '.pfx'].includes(e)) return 'bg-blue-50/30 text-blue-700 border-blue-200/40';
+    if (['.pem', '.crt', '.cer', '.der', '.key'].includes(e)) return 'bg-green-50/30 text-green-700 border-green-200/40';
+    if (['.gpg', '.pgp'].includes(e)) return 'bg-purple-50/30 text-purple-700 border-purple-200/40';
+    return 'bg-gray-100/60 text-gray-500 border-gray-300/40';
   };
 
   return (
@@ -132,12 +132,12 @@ export default function CpsBinaryUploadPanel({
           </p>
           <div className="space-y-1.5">
             {existingKeys.map((key) => (
-              <div key={key} className="flex items-center justify-between bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-2">
+              <div key={key} className="flex items-center justify-between bg-gray-100/40 border border-gray-300/30 rounded-lg px-3 py-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <FileArchive size={12} className="text-gray-500 flex-shrink-0" />
-                  <span className="text-xs text-gray-200 font-mono truncate">{key}</span>
+                  <span className="text-xs text-gray-700 font-mono truncate">{key}</span>
                   {uploadedFiles.includes(key) && (
-                    <span className="flex items-center gap-1 text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-700/40 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                    <span className="flex items-center gap-1 text-[9px] text-emerald-600 bg-emerald-50 border border-emerald-300/40 px-1.5 py-0.5 rounded-full flex-shrink-0">
                       <CheckCircle size={8} /> Uploaded
                     </span>
                   )}
@@ -148,7 +148,7 @@ export default function CpsBinaryUploadPanel({
                   </span>
                   <button
                     onClick={() => { setFileNameOverride(key); fileInputRef.current?.click(); }}
-                    className="text-[10px] text-blue-400 hover:text-blue-300 bg-blue-950/30 border border-blue-800/40 px-2 py-0.5 rounded transition-colors"
+                    className="text-[10px] text-blue-600 hover:text-blue-700 bg-blue-50/30 border border-blue-200/40 px-2 py-0.5 rounded transition-colors"
                   >
                     Replace
                   </button>
@@ -171,29 +171,29 @@ export default function CpsBinaryUploadPanel({
           onClick={() => !selectedFile && fileInputRef.current?.click()}
           className={`border-2 border-dashed rounded-xl px-4 py-6 text-center transition-colors cursor-pointer ${
             selectedFile
-              ? 'border-emerald-700/50 bg-emerald-950/10'
-              : 'border-gray-700/60 hover:border-gray-600 bg-gray-800/20'
+              ? 'border-emerald-300/50 bg-emerald-50/10'
+              : 'border-gray-300/60 hover:border-gray-300 bg-gray-100/20'
           }`}
         >
           {selectedFile ? (
             <div className="flex items-center justify-center gap-3">
-              <FileArchive size={20} className="text-emerald-400 flex-shrink-0" />
+              <FileArchive size={20} className="text-emerald-600 flex-shrink-0" />
               <div className="text-left">
-                <p className="text-sm text-white font-medium">{selectedFile.name}</p>
-                <p className="text-xs text-gray-400">{(selectedFile.size / 1024).toFixed(1)} KB · ready to upload</p>
+                <p className="text-sm text-gray-900 font-medium">{selectedFile.name}</p>
+                <p className="text-xs text-gray-500">{(selectedFile.size / 1024).toFixed(1)} KB · ready to upload</p>
               </div>
               <button
                 onClick={e => { e.stopPropagation(); setSelectedFile(null); setFileNameOverride(''); }}
-                className="text-gray-500 hover:text-gray-300 ml-2"
+                className="text-gray-500 hover:text-gray-900 ml-2"
               >
                 <X size={14} />
               </button>
             </div>
           ) : (
             <div>
-              <Upload size={24} className="text-gray-600 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">Drop file here or click to browse</p>
-              <p className="text-[10px] text-gray-600 mt-1">.jks · .pem · .gpg · .crt · .p12 and other binary assets</p>
+              <Upload size={24} className="text-gray-500 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">Drop file here or click to browse</p>
+              <p className="text-[10px] text-gray-500 mt-1">.jks · .pem · .gpg · .crt · .p12 and other binary assets</p>
             </div>
           )}
         </div>
@@ -208,7 +208,7 @@ export default function CpsBinaryUploadPanel({
               <input
                 value={fileNameOverride}
                 onChange={e => setFileNameOverride(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-blue-600/50"
+                className="w-full bg-gray-100 border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 font-mono focus:outline-none focus:border-blue-300/50"
               />
             </div>
             <div>
@@ -216,20 +216,20 @@ export default function CpsBinaryUploadPanel({
               <input
                 value={environment}
                 readOnly
-                className="w-full bg-gray-800/40 border border-gray-700/50 rounded-lg px-3 py-1.5 text-xs text-gray-400 font-mono cursor-not-allowed"
+                className="w-full bg-gray-100/40 border border-gray-300/50 rounded-lg px-3 py-1.5 text-xs text-gray-500 font-mono cursor-not-allowed"
               />
             </div>
           </div>
         )}
 
         {isProd && selectedFile && (
-          <div className="mt-2 flex items-center gap-1.5 text-[10px] text-red-400">
+          <div className="mt-2 flex items-center gap-1.5 text-[10px] text-red-600">
             <AlertTriangle size={10} /> Uploading to PRODUCTION CPS
           </div>
         )}
 
         {error && (
-          <div className="mt-2 flex items-center gap-2 bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2 text-red-400 text-xs">
+          <div className="mt-2 flex items-center gap-2 bg-red-50/30 border border-red-200/40 rounded-lg px-3 py-2 text-red-600 text-xs">
             <AlertTriangle size={11} className="flex-shrink-0" /> {error}
           </div>
         )}
@@ -239,7 +239,7 @@ export default function CpsBinaryUploadPanel({
             <button
               onClick={handleUpload}
               disabled={uploading || !fileNameOverride.trim()}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-gray-900 rounded-lg disabled:opacity-50 transition-colors"
             >
               {uploading
                 ? <><RefreshCw size={13} className="animate-spin" /> Uploading…</>

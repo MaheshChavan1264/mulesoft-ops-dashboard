@@ -14,8 +14,8 @@ const CopyBtn = ({ text }) => {
   const [done, setDone] = useState(false);
   return (
     <button onClick={() => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }}
-      className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-500 hover:text-slate-300 transition-all flex-shrink-0">
-      {done ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+      className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-500 hover:text-gray-600 transition-all flex-shrink-0">
+      {done ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
     </button>
   );
 };
@@ -32,9 +32,9 @@ const CopyAllBtn = ({ values = [] }) => {
     <button
       onClick={copy}
       title={`Copy all ${values.length} unique value${values.length !== 1 ? 's' : ''} for this term`}
-      className="flex items-center gap-1 px-3 py-3 text-[10px] text-slate-500 hover:text-purple-300 border-l border-slate-800/40 transition-colors flex-shrink-0 font-medium">
+      className="flex items-center gap-1 px-3 py-3 text-[10px] text-slate-500 hover:text-purple-700 border-l border-gray-200/40 transition-colors flex-shrink-0 font-medium">
       {done
-        ? <><Check size={10} className="text-emerald-400" /> Copied</>
+        ? <><Check size={10} className="text-emerald-600" /> Copied</>
         : <><Copy size={10} /> {values.length}</>}
     </button>
   );
@@ -49,7 +49,7 @@ function Highlight({ text, terms }) {
     <span>
       {parts.map((part, i) =>
         pattern.test(part)
-          ? <mark key={i} className="bg-yellow-400/30 text-yellow-200 rounded-sm px-0.5 not-italic">{part}</mark>
+          ? <mark key={i} className="bg-yellow-300/60 text-yellow-900 rounded-sm px-0.5 not-italic">{part}</mark>
           : part
       )}
     </span>
@@ -259,46 +259,46 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
   const sandboxCount = allEnvs.filter(e => e.envType !== 'production').length;
 
   return (
-    <div className="border border-slate-700/50 rounded-xl overflow-hidden">
+    <div className="border border-gray-300/50 rounded-xl overflow-hidden">
       {/* Quick-select shortcuts */}
       {!loading && allEnvs.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap px-3 py-2 border-b border-slate-700/50 bg-slate-800/20">
-          <span className="text-[9px] text-slate-600 uppercase tracking-wider font-bold flex-shrink-0">Quick select:</span>
+        <div className="flex items-center gap-2 flex-wrap px-3 py-2 border-b border-gray-300/50 bg-gray-100/20">
+          <span className="text-[9px] text-gray-400 uppercase tracking-wider font-bold flex-shrink-0">Quick select:</span>
           {prodCount > 0 && (
             <button onClick={() => selectByType('production')}
-              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border bg-green-950/40 text-green-400 border-green-800/50 hover:bg-green-950/70 transition-colors font-medium">
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border bg-green-50/40 text-green-600 border-green-200/50 hover:bg-green-50/70 transition-colors font-medium">
               ● All Production ({prodCount})
             </button>
           )}
           {sandboxCount > 0 && (
             <button onClick={() => selectByType('sandbox')}
-              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border bg-yellow-950/40 text-yellow-400 border-yellow-800/50 hover:bg-yellow-950/70 transition-colors font-medium">
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border bg-yellow-50/40 text-yellow-600 border-yellow-200/50 hover:bg-yellow-50/70 transition-colors font-medium">
               ● All Sandbox ({sandboxCount})
             </button>
           )}
           <div className="ml-auto flex items-center gap-2">
             <span className="text-[10px] text-slate-500">{selections.size}/{allEnvs.length} selected</span>
             {selections.size > 0 && (
-              <button onClick={clearAll} className="text-[10px] text-red-500/70 hover:text-red-400 transition-colors">Clear all</button>
+              <button onClick={clearAll} className="text-[10px] text-red-500/70 hover:text-red-600 transition-colors">Clear all</button>
             )}
           </div>
         </div>
       )}
 
       {/* Search bar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700/50 bg-slate-800/40">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-300/50 bg-gray-100/40">
         <Search size={11} className="text-slate-500 flex-shrink-0" />
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search BG or environment…"
-          className="flex-1 bg-transparent text-xs text-slate-200 placeholder-slate-600 focus:outline-none min-w-0"
+          className="flex-1 bg-transparent text-xs text-gray-700 placeholder-gray-400 focus:outline-none min-w-0"
         />
         {search && (
-          <button onClick={() => setSearch('')} className="text-slate-500 hover:text-slate-300 text-xs flex-shrink-0">✕</button>
+          <button onClick={() => setSearch('')} className="text-slate-500 hover:text-gray-600 text-xs flex-shrink-0">✕</button>
         )}
         {search && visibleEnvs.length > 0 && (
-          <button onClick={selectAll} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium flex-shrink-0 border-l border-slate-700/60 pl-2">
+          <button onClick={selectAll} className="text-[10px] text-cyan-600 hover:text-cyan-700 font-medium flex-shrink-0 border-l border-gray-300/60 pl-2">
             Select {visibleEnvs.length}
           </button>
         )}
@@ -310,7 +310,7 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
           <RefreshCw size={12} className="animate-spin" /> Loading environments…
         </div>
       ) : grouped.length === 0 ? (
-        <div className="py-6 text-center text-slate-600 text-xs">
+        <div className="py-6 text-center text-gray-400 text-xs">
           {search ? `No environments match "${search}"` : 'No environments available'}
         </div>
       ) : (
@@ -324,19 +324,19 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
                 {/* BG group header — click to select/deselect all envs in this BG */}
                 <div
                   onClick={() => toggleBg(bgId, envs)}
-                  className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer bg-slate-800/50 border-b border-slate-700/40 hover:bg-slate-800/70 transition-colors group`}
+                  className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer bg-gray-100/50 border-b border-gray-300/40 hover:bg-gray-100/70 transition-colors group`}
                 >
                   <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                    allBgSelected ? 'bg-cyan-600 border-cyan-500' :
-                    someBgSelected ? 'bg-cyan-900/60 border-cyan-600' :
-                    'border-slate-600 group-hover:border-cyan-500'
+                    allBgSelected ? 'bg-cyan-500 border-cyan-400' :
+                    someBgSelected ? 'bg-cyan-100/60 border-cyan-300' :
+                    'border-gray-300 group-hover:border-cyan-500'
                   }`}>
                     {allBgSelected && <Check size={8} className="text-white" />}
-                    {someBgSelected && <span className="text-cyan-400 text-[8px] font-bold leading-none">–</span>}
+                    {someBgSelected && <span className="text-cyan-600 text-[8px] font-bold leading-none">–</span>}
                   </div>
                   <Building2 size={10} className="text-slate-500 flex-shrink-0" />
-                  <span className="text-[10px] font-semibold text-slate-400 flex-1 truncate">{bgName}</span>
-                  <span className="text-[9px] text-slate-600">{envs.length} env{envs.length !== 1 ? 's' : ''}</span>
+                  <span className="text-[10px] font-semibold text-gray-500 flex-1 truncate">{bgName}</span>
+                  <span className="text-[9px] text-gray-400">{envs.length} env{envs.length !== 1 ? 's' : ''}</span>
                 </div>
                 {/* Env rows for this BG */}
                 {envs.map(env => {
@@ -347,14 +347,14 @@ function BgEnvSelector({ businessGroups, onSelectionsChange }) {
                     <div
                       key={key}
                       onClick={() => toggle(env.bgId, env.envId)}
-                      className={`flex items-center gap-3 pl-8 pr-3 py-2 cursor-pointer transition-colors border-b border-slate-800/30 last:border-0 ${isChecked ? 'bg-cyan-950/20' : 'hover:bg-slate-800/30'}`}
+                      className={`flex items-center gap-3 pl-8 pr-3 py-2 cursor-pointer transition-colors border-b border-gray-200/30 last:border-0 ${isChecked ? 'bg-cyan-50/20' : 'hover:bg-gray-100/30'}`}
                     >
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-cyan-600 border-cyan-500' : 'border-slate-600 hover:border-cyan-500'}`}>
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-cyan-500 border-cyan-400' : 'border-gray-300 hover:border-cyan-500'}`}>
                         {isChecked && <Check size={9} className="text-white" />}
                       </div>
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
-                      <span className={`text-xs flex-1 ${isChecked ? 'text-white font-medium' : 'text-slate-300'}`}>{env.envName}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${isProd ? 'bg-green-900/40 text-green-500' : 'bg-yellow-900/40 text-yellow-500'}`}>
+                      <span className={`text-xs flex-1 ${isChecked ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>{env.envName}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${isProd ? 'bg-green-100/40 text-green-500' : 'bg-yellow-100/40 text-yellow-500'}`}>
                         {env.envType || 'sandbox'}
                       </span>
                     </div>
@@ -1067,29 +1067,29 @@ export default function GlobalSearchPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-white flex items-center gap-2"><Users size={20} className="text-cyan-400" /> Global Search</h1>
+        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Users size={20} className="text-cyan-600" /> Global Search</h1>
         <p className="text-slate-500 text-sm mt-1">Search for a username across all app CPS non-secure & secure properties</p>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl overflow-hidden">
+      <div className="bg-white/50 border border-gray-200/60 rounded-2xl overflow-hidden">
         {/* Header — always visible, click anywhere to toggle */}
         <button
           onClick={() => setSelectorCollapsed(v => !v)}
-          className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-800/30 transition-colors">
+          className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-100/30 transition-colors">
           <div className="flex items-center gap-2">
             <ChevronDown
               size={14}
               className={`text-slate-500 transition-transform flex-shrink-0 ${selectorCollapsed ? '-rotate-90' : ''}`}
             />
-            <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Business Groups & Environments</p>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Business Groups & Environments</p>
           </div>
           {selCount > 0 && (
-            <span className="text-[10px] text-cyan-400 font-medium flex-shrink-0">
+            <span className="text-[10px] text-cyan-600 font-medium flex-shrink-0">
               {selCount} env{selCount !== 1 ? 's' : ''} across {new Set(bgEnvSelections.map(s => s.bgId)).size} BG{new Set(bgEnvSelections.map(s => s.bgId)).size !== 1 ? 's' : ''} selected
             </span>
           )}
           {selCount === 0 && (
-            <span className="text-[10px] text-slate-600 flex-shrink-0">
+            <span className="text-[10px] text-gray-400 flex-shrink-0">
               {selectorCollapsed ? 'Click to expand' : 'Select environments…'}
             </span>
           )}
@@ -1097,7 +1097,7 @@ export default function GlobalSearchPage() {
 
         {/* Collapsible body */}
         {!selectorCollapsed && (
-          <div className="px-5 pb-4 space-y-3 border-t border-slate-800/40">
+          <div className="px-5 pb-4 space-y-3 border-t border-gray-200/40">
             <div className="pt-3">
               {bgsLoad
                 ? <div className="flex items-center gap-2 text-slate-500 text-xs py-2"><RefreshCw size={13} className="animate-spin" /> Loading…</div>
@@ -1108,7 +1108,7 @@ export default function GlobalSearchPage() {
               <div className="flex flex-wrap gap-1.5">
                 {bgEnvSelections.map(s => (
                   <span key={s.bgId + ':' + s.envId}
-                    className={'text-[10px] px-2 py-0.5 rounded-full border font-medium ' + (s.envType === 'production' ? 'bg-green-950/40 text-green-400 border-green-800/50' : 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50')}>
+                    className={'text-[10px] px-2 py-0.5 rounded-full border font-medium ' + (s.envType === 'production' ? 'bg-green-50/40 text-green-600 border-green-200/50' : 'bg-yellow-50/40 text-yellow-600 border-yellow-200/50')}>
                     {s.bgName} / {s.envName}
                   </span>
                 ))}
@@ -1119,10 +1119,10 @@ export default function GlobalSearchPage() {
 
         {/* Collapsed summary — show selected env pills in a compact single line */}
         {selectorCollapsed && selCount > 0 && (
-          <div className="px-5 pb-3 flex flex-wrap gap-1.5 border-t border-slate-800/30 pt-2">
+          <div className="px-5 pb-3 flex flex-wrap gap-1.5 border-t border-gray-200/30 pt-2">
             {bgEnvSelections.map(s => (
               <span key={s.bgId + ':' + s.envId}
-                className={'text-[10px] px-2 py-0.5 rounded-full border font-medium ' + (s.envType === 'production' ? 'bg-green-950/40 text-green-400 border-green-800/50' : 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50')}>
+                className={'text-[10px] px-2 py-0.5 rounded-full border font-medium ' + (s.envType === 'production' ? 'bg-green-50/40 text-green-600 border-green-200/50' : 'bg-yellow-50/40 text-yellow-600 border-yellow-200/50')}>
                 {s.bgName} / {s.envName}
               </span>
             ))}
@@ -1136,7 +1136,7 @@ export default function GlobalSearchPage() {
             <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
             <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && runSearch()}
               placeholder={searchMode === 'key' ? 'Enter property key name to find (e.g. db.username)…' : 'Enter username / email / value to search in CPS properties…'}
-              className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-600/50 focus:bg-slate-900" />
+              className="w-full bg-white/60 border border-gray-200/80 rounded-xl pl-10 pr-4 py-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-cyan-300/50 focus:bg-white" />
           </div>
           {/* Feature 3: Cancel button during search */}
           {loading
@@ -1148,7 +1148,7 @@ export default function GlobalSearchPage() {
               <>
                 {(query || results) && (
                   <button onClick={clearSearchState}
-                    className="flex items-center gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
+                    className="flex items-center gap-2 px-5 py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
                     <X size={14} /> Clear
                   </button>
                 )}
@@ -1161,21 +1161,21 @@ export default function GlobalSearchPage() {
         </div>
         {/* Feature 8: Search mode toggle + Feature 9: multi-term hint */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-1 bg-slate-800/60 border border-slate-700/40 rounded-lg p-0.5">
+          <div className="flex items-center gap-1 bg-gray-100/60 border border-gray-300/40 rounded-lg p-0.5">
             {[['value','Search Values'], ['key','Search Keys']].map(([mode, label]) => (
               <button key={mode} onClick={() => setSearchMode(mode)}
-                className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${searchMode === mode ? 'bg-cyan-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+                className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${searchMode === mode ? 'bg-cyan-700 text-white' : 'text-slate-500 hover:text-gray-600'}`}>
                 {label}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1 bg-slate-800/60 border border-slate-700/40 rounded-lg p-0.5">
+          <div className="flex items-center gap-1 bg-gray-100/60 border border-gray-300/40 rounded-lg p-0.5">
             <button onClick={() => setExactMatch(!exactMatch)}
-              className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${exactMatch ? 'bg-cyan-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+              className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${exactMatch ? 'bg-cyan-700 text-white' : 'text-slate-500 hover:text-gray-600'}`}>
               Exact Match (Case Insensitive)
             </button>
           </div>
-          <p className="text-[10px] text-slate-600">
+          <p className="text-[10px] text-gray-400">
             {searchMode === 'value'
               ? 'Tip: separate multiple terms with commas — e.g. john.doe, jane.smith'
               : 'Key mode: finds apps that have this property key configured (any value)'}
@@ -1184,23 +1184,23 @@ export default function GlobalSearchPage() {
       </div>
 
       {!hasCpsCreds && (
-        <div className="flex items-center gap-3 bg-yellow-950/20 border border-yellow-800/40 rounded-xl px-4 py-3 text-yellow-400/80 text-xs">
+        <div className="flex items-center gap-3 bg-yellow-50/20 border border-yellow-200/40 rounded-xl px-4 py-3 text-yellow-600/80 text-xs">
           <AlertTriangle size={13} className="flex-shrink-0" />
-          No CPS credentials imported — use the <strong className="text-yellow-300">CPS CSV import</strong> in the header to also search secure properties.
+          No CPS credentials imported — use the <strong className="text-yellow-700">CPS CSV import</strong> in the header to also search secure properties.
         </div>
       )}
 
       {/* Feature 1.9: informative empty state when no search has been run yet */}
       {results === null && !loading && (
-        <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl px-6 py-8 space-y-5">
+        <div className="bg-white/40 border border-gray-200/60 rounded-2xl px-6 py-8 space-y-5">
           <div className="flex items-start gap-4">
-            <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-800/30 flex-shrink-0">
-              <Users size={20} className="text-cyan-400" />
+            <div className="p-3 rounded-xl bg-cyan-50/40 border border-cyan-200/30 flex-shrink-0">
+              <Users size={20} className="text-cyan-600" />
             </div>
             <div>
-              <h3 className="text-white text-sm font-semibold">How Global Search works</h3>
-              <p className="text-slate-400 text-xs mt-1 leading-relaxed">
-                Searches for a username or email substring across <strong className="text-slate-300">CPS non-secure and secure properties</strong> for every app in the selected environments.
+              <h3 className="text-gray-900 text-sm font-semibold">How Global Search works</h3>
+              <p className="text-gray-500 text-xs mt-1 leading-relaxed">
+                Searches for a username or email substring across <strong className="text-gray-600">CPS non-secure and secure properties</strong> for every app in the selected environments.
                 Also scans ARM deployment properties (CloudHub environment variables) as a fallback.
               </p>
             </div>
@@ -1224,8 +1224,8 @@ export default function GlobalSearchPage() {
                 items: ['App name + environment + status', 'The exact property key containing the match', 'CPS secure group name (if secure)', 'Associated password value (plain text)'],
               },
             ].map(({ icon, title, items }) => (
-              <div key={title} className="bg-slate-800/30 border border-slate-700/40 rounded-xl p-4 space-y-2">
-                <p className="text-slate-300 text-xs font-semibold flex items-center gap-2">
+              <div key={title} className="bg-gray-100/30 border border-gray-300/40 rounded-xl p-4 space-y-2">
+                <p className="text-gray-600 text-xs font-semibold flex items-center gap-2">
                   <span>{icon}</span> {title}
                 </p>
                 <ul className="space-y-1">
@@ -1240,16 +1240,16 @@ export default function GlobalSearchPage() {
             ))}
           </div>
 
-          <p className="text-slate-600 text-[10px] text-center">
+          <p className="text-gray-400 text-[10px] text-center">
             💡 Tip: search for a partial email (e.g. <code className="text-slate-500">@company.com</code>) to find all service accounts, or an ldap username to locate where it's used across integrations.
           </p>
         </div>
       )}
 
       {loading && (
-        <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl px-5 py-6 flex flex-col items-center gap-3">
-          <RefreshCw size={22} className="animate-spin text-cyan-400" />
-          <p className="text-slate-300 text-sm font-medium">
+        <div className="bg-white/50 border border-gray-200/60 rounded-2xl px-5 py-6 flex flex-col items-center gap-3">
+          <RefreshCw size={22} className="animate-spin text-cyan-600" />
+          <p className="text-gray-600 text-sm font-medium">
             {progress.phase === 1 ? 'Phase 1 — Fetching app lists…' : 'Phase 2 — Scanning CPS properties…'}
           </p>
           {/* Feature 11: two-phase progress */}
@@ -1264,11 +1264,11 @@ export default function GlobalSearchPage() {
             <div className="flex items-center gap-4 text-xs text-slate-500">
               <span>Batch {progress.batchDone}/{progress.batchTotal}</span>
               <span>{progress.appsN} apps</span>
-              {results?.length > 0 && <span className="text-emerald-400/80">✓ {results.length} match{results.length !== 1 ? 'es' : ''} so far</span>}
+              {results?.length > 0 && <span className="text-emerald-600/80">✓ {results.length} match{results.length !== 1 ? 'es' : ''} so far</span>}
             </div>
           )}
           <div className="w-full max-w-xs">
-            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
               <div className="h-full bg-cyan-600 rounded-full transition-all duration-300" style={{ width:
                 progress.phase === 1 && progress.envsTotal > 0 ? `${Math.round((progress.envsDone / progress.envsTotal) * 50)}%`
                 : progress.phase === 2 && progress.batchTotal > 0 ? `${50 + Math.round((progress.batchDone / progress.batchTotal) * 50)}%`
@@ -1280,7 +1280,7 @@ export default function GlobalSearchPage() {
       )}
 
       {error && !loading && (
-        <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3 text-red-400 text-sm">
+        <div className="flex items-start gap-3 bg-red-50/30 border border-red-200/50 rounded-xl px-4 py-3 text-red-600 text-sm">
           <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" /><span>{error}</span>
         </div>
       )}
@@ -1289,7 +1289,7 @@ export default function GlobalSearchPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3 flex-wrap">
-              <span className={'text-xs px-2.5 py-1 rounded-full font-bold border ' + (results.length > 0 ? 'bg-emerald-950/50 text-emerald-300 border-emerald-700/50' : 'bg-slate-800/60 text-slate-500 border-slate-700/40')}>
+              <span className={'text-xs px-2.5 py-1 rounded-full font-bold border ' + (results.length > 0 ? 'bg-emerald-50/50 text-emerald-700 border-emerald-300/50' : 'bg-gray-100/60 text-slate-500 border-gray-300/40')}>
                 {results.length} match{results.length !== 1 ? 'es' : ''}
               </span>
             </div>
@@ -1298,7 +1298,7 @@ export default function GlobalSearchPage() {
               <div className="flex flex-wrap gap-2">
                 {envStats.map((s, i) => (
                   <span key={i} className={`text-[9px] px-2 py-0.5 rounded-full border font-mono ${
-                    s.withCps === 0 ? 'bg-yellow-950/30 text-yellow-500 border-yellow-800/40' : 'bg-slate-800/40 text-slate-500 border-slate-700/40'
+                    s.withCps === 0 ? 'bg-yellow-50/30 text-yellow-500 border-yellow-200/40' : 'bg-gray-100/40 text-slate-500 border-gray-300/40'
                   }`} title={`${s.bgName} / ${s.envName}: ${s.total} apps, ${s.withCps} with CPS config`}>
                     {s.bgName}/{s.envName}: {s.withCps}/{s.total} CPS
                   </span>
@@ -1308,23 +1308,23 @@ export default function GlobalSearchPage() {
             {/* Feature 2: group-by-app / group-by-term toggles (mutually exclusive) */}
             <div className="flex items-center gap-2">
               <button onClick={() => { setGroupByApp(v => !v); setGroupByTerm(false); }}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByApp ? 'bg-cyan-700/30 border-cyan-700/60 text-cyan-300' : 'bg-slate-800/60 border-slate-700/40 text-slate-400 hover:text-slate-300'}`}>
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByApp ? 'bg-cyan-100 border-cyan-300/60 text-cyan-700' : 'bg-gray-100/60 border-gray-300/40 text-gray-500 hover:text-gray-600'}`}>
                 <Building2 size={11} /> {groupByApp ? 'Grouped by App' : 'Group by App'}
               </button>
               <button onClick={() => { setGroupByTerm(v => !v); setGroupByApp(false); }}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByTerm ? 'bg-purple-700/30 border-purple-700/60 text-purple-300' : 'bg-slate-800/60 border-slate-700/40 text-slate-400 hover:text-slate-300'}`}>
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${groupByTerm ? 'bg-purple-100 border-purple-300/60 text-purple-700' : 'bg-gray-100/60 border-gray-300/40 text-gray-500 hover:text-gray-600'}`}>
                 <Hash size={11} /> {groupByTerm ? 'Grouped by Term' : 'Group by Term'}
               </button>
               {results.length > 0 && (
                 <button onClick={exportCsv}
-                  className="flex items-center gap-2 px-4 py-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 rounded-xl transition-colors font-medium">
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 border border-emerald-200/40 rounded-xl transition-colors font-medium">
                   <Download size={13} /> Export CSV
                 </button>
               )}
               {results.length > 0 && (
                 <button onClick={exportSummaryXlsx}
                   title="Export summary: Username | Secure Keys | Directly Connected APIs"
-                  className="flex items-center gap-2 px-4 py-2 text-sm text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 border border-cyan-800/40 rounded-xl transition-colors font-medium">
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-cyan-600 hover:text-cyan-700 bg-cyan-50/40 border border-cyan-200/40 rounded-xl transition-colors font-medium">
                   <Download size={13} /> Export Summary
                 </button>
               )}
@@ -1342,7 +1342,7 @@ export default function GlobalSearchPage() {
                 return (
                   <button
                     onClick={() => exportGroupedXlsx(tg, null, at, searchMode)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm text-purple-400 hover:text-purple-300 bg-purple-950/40 border border-purple-800/40 rounded-xl transition-colors font-medium">
+                    className="flex items-center gap-2 px-4 py-2 text-sm text-purple-600 hover:text-purple-700 bg-purple-50/40 border border-purple-200/40 rounded-xl transition-colors font-medium">
                     <Download size={13} /> Export XLSX
                   </button>
                 );
@@ -1351,33 +1351,33 @@ export default function GlobalSearchPage() {
           </div>
 
           {credentialErrors > 0 && (
-            <div className="flex items-start gap-3 bg-yellow-950/20 border border-yellow-800/40 rounded-xl px-4 py-3">
-              <AlertTriangle size={13} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 bg-yellow-50/20 border border-yellow-200/40 rounded-xl px-4 py-3">
+              <AlertTriangle size={13} className="text-yellow-600 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-yellow-300 text-xs font-semibold">
+                <p className="text-yellow-700 text-xs font-semibold">
                   {credentialErrors} app{credentialErrors !== 1 ? 's' : ''} not searched — missing CPS credentials
                 </p>
                 <p className="text-yellow-500/80 text-[10px] mt-0.5">
-                  These apps use a CPS server not covered by your uploaded credentials CSV. Upload a broader CSV via the <strong className="text-yellow-400">CPS CSV import</strong> button in the header to include them.
+                  These apps use a CPS server not covered by your uploaded credentials CSV. Upload a broader CSV via the <strong className="text-yellow-600">CPS CSV import</strong> button in the header to include them.
                 </p>
               </div>
             </div>
           )}
 
           {circuitBrokenUrls.length > 0 && (
-            <div className="flex items-start gap-3 bg-orange-950/20 border border-orange-800/40 rounded-xl px-4 py-3">
-              <AlertTriangle size={13} className="text-orange-400 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 bg-orange-50/20 border border-orange-200/40 rounded-xl px-4 py-3">
+              <AlertTriangle size={13} className="text-orange-600 flex-shrink-0 mt-0.5" />
               <div className="min-w-0">
-                <p className="text-orange-300 text-xs font-semibold">
+                <p className="text-orange-700 text-xs font-semibold">
                   {circuitBrokenUrls.length} CPS server{circuitBrokenUrls.length !== 1 ? 's' : ''} unreachable — apps on those servers were skipped (circuit breaker)
                 </p>
                 <p className="text-orange-500/80 text-[10px] mt-1">
                   After 3 consecutive timeouts the circuit breaker opened and remaining apps on these servers were skipped instantly.
-                  These URLs are cached in this browser session — press <strong className="text-orange-400">Clear</strong> to reset and retry them.
+                  These URLs are cached in this browser session — press <strong className="text-orange-600">Clear</strong> to reset and retry them.
                 </p>
                 <ul className="mt-1.5 space-y-0.5">
                   {circuitBrokenUrls.map(url => (
-                    <li key={url} className="text-[10px] font-mono text-orange-400/70 truncate">● {url}</li>
+                    <li key={url} className="text-[10px] font-mono text-orange-600/70 truncate">● {url}</li>
                   ))}
                 </ul>
               </div>
@@ -1385,9 +1385,9 @@ export default function GlobalSearchPage() {
           )}
 
           {results.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3 bg-slate-900/40 border border-slate-800/60 rounded-2xl">
-              <Users size={32} className="text-slate-700" />
-              <p className="text-slate-500 text-sm">No apps found with <span className="font-mono text-slate-400">"{query.trim()}"</span> in CPS properties</p>
+            <div className="flex flex-col items-center justify-center py-12 gap-3 bg-white/40 border border-gray-200/60 rounded-2xl">
+              <Users size={32} className="text-gray-400" />
+              <p className="text-slate-500 text-sm">No apps found with <span className="font-mono text-gray-500">"{query.trim()}"</span> in CPS properties</p>
             </div>
           ) : (() => {
             // Feature 9: derive active search terms for highlighting
@@ -1428,12 +1428,12 @@ export default function GlobalSearchPage() {
                   {/* ── Expand / Collapse All ────────────────────────────── */}
                   <div className="flex items-center justify-end gap-2 text-[10px]">
                     <button onClick={() => setExpandedTerms(new Set(nonEmptyTerms))}
-                      className="text-slate-500 hover:text-slate-300 transition-colors">
+                      className="text-slate-500 hover:text-gray-600 transition-colors">
                       Expand all
                     </button>
-                    <span className="text-slate-700">·</span>
+                    <span className="text-gray-400">·</span>
                     <button onClick={() => setExpandedTerms(new Set())}
-                      className="text-slate-500 hover:text-slate-300 transition-colors">
+                      className="text-slate-500 hover:text-gray-600 transition-colors">
                       Collapse all
                     </button>
                   </div>
@@ -1447,10 +1447,10 @@ export default function GlobalSearchPage() {
                     // 0-match term — shown as a dimmed "not found" row
                     if (!hasMatches) {
                       return (
-                        <div key={term} className="flex items-center gap-3 px-4 py-2.5 bg-slate-900/30 border border-slate-800/40 rounded-xl opacity-50">
-                          <Hash size={11} className="text-slate-600 flex-shrink-0" />
+                        <div key={term} className="flex items-center gap-3 px-4 py-2.5 bg-white/30 border border-gray-200/40 rounded-xl opacity-50">
+                          <Hash size={11} className="text-gray-400 flex-shrink-0" />
                           <span className="font-mono text-sm text-slate-500 font-semibold">{term}</span>
-                          <span className="text-[10px] text-slate-600 ml-1">— not found in any app</span>
+                          <span className="text-[10px] text-gray-400 ml-1">— not found in any app</span>
                         </div>
                       );
                     }
@@ -1466,24 +1466,24 @@ export default function GlobalSearchPage() {
                     const allValues = [...new Set(termRows.map(r => r.apiUser))];
 
                     return (
-                      <div key={term} className="bg-slate-900/50 border border-purple-900/30 rounded-xl overflow-hidden">
+                      <div key={term} className="bg-white/50 border border-purple-200/30 rounded-xl overflow-hidden">
                         {/* Term group header */}
-                        <div className="flex items-center gap-0 border-b border-slate-800/40">
+                        <div className="flex items-center gap-0 border-b border-gray-200/40">
                           <button
                             onClick={() => setExpandedTerms(prev => { const n = new Set(prev); n.has(term) ? n.delete(term) : n.add(term); return n; })}
-                            className="flex-1 flex items-center justify-between px-4 py-3 hover:bg-slate-800/30 transition-colors">
+                            className="flex-1 flex items-center justify-between px-4 py-3 hover:bg-gray-100/30 transition-colors">
                             <div className="flex items-center gap-3 min-w-0">
-                              <Hash size={12} className="text-purple-400 flex-shrink-0" />
-                              <span className="font-mono text-sm text-white font-semibold truncate">{term}</span>
+                              <Hash size={12} className="text-purple-600 flex-shrink-0" />
+                              <span className="font-mono text-sm text-gray-900 font-semibold truncate">{term}</span>
                               <span className="text-[10px] text-slate-500 flex-shrink-0 hidden sm:inline">
                                 {appMap.size} app{appMap.size !== 1 ? 's' : ''}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="text-xs text-purple-400 font-semibold">
+                              <span className="text-xs text-purple-600 font-semibold">
                                 {termRows.length} match{termRows.length !== 1 ? 'es' : ''}
                               </span>
-                              <ChevronDown size={13} className={`text-slate-600 transition-transform ${isExp ? '' : '-rotate-90'}`} />
+                              <ChevronDown size={13} className={`text-gray-400 transition-transform ${isExp ? '' : '-rotate-90'}`} />
                             </div>
                           </button>
                           {/* Copy all values for this term */}
@@ -1509,12 +1509,12 @@ export default function GlobalSearchPage() {
                                 const isProd = /prod/i.test(bgName);
                                 const dotCls = isProd ? 'bg-green-500' : 'bg-yellow-500';
                                 return (
-                                  <div key={bgName} className="border-t border-slate-800/40">
+                                  <div key={bgName} className="border-t border-gray-200/40">
                                     {/* BG sub-header */}
-                                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-800/40">
+                                    <div className="flex items-center gap-2 px-4 py-2 bg-gray-100/40">
                                       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotCls}`} />
-                                      <span className="text-[10px] font-semibold text-slate-200 flex-1 font-mono">{bgName}</span>
-                                      <span className="text-[9px] text-slate-600">
+                                      <span className="text-[10px] font-semibold text-gray-700 flex-1 font-mono">{bgName}</span>
+                                      <span className="text-[9px] text-gray-400">
                                         {bgAppMap.size} app{bgAppMap.size !== 1 ? 's' : ''} · {bgMatchCount} match{bgMatchCount !== 1 ? 'es' : ''}
                                       </span>
                                     </div>
@@ -1536,14 +1536,14 @@ export default function GlobalSearchPage() {
                                       return (
                                         <div>
                                           {sortedSk.map(([skName, skRows]) => (
-                                            <div key={skName} className="border-t border-slate-800/30">
+                                            <div key={skName} className="border-t border-gray-200/30">
                                               {/* Secure key sub-header */}
-                                              <div className="flex items-center gap-2 px-6 py-1.5 bg-slate-800/20">
+                                              <div className="flex items-center gap-2 px-6 py-1.5 bg-gray-100/20">
                                                 {skName === 'Non-Secure'
-                                                  ? <span className="flex items-center gap-1 text-[9px] font-semibold text-slate-500 bg-slate-800/50 border border-slate-700/30 px-1.5 py-0.5 rounded"><Key size={8} /> Non-Secure</span>
-                                                  : <span className="flex items-center gap-1 text-[9px] font-semibold text-orange-400/80 bg-orange-950/20 border border-orange-800/30 px-1.5 py-0.5 rounded"><Lock size={8} /> {skName}</span>
+                                                  ? <span className="flex items-center gap-1 text-[9px] font-semibold text-slate-500 bg-gray-100/50 border border-gray-300/30 px-1.5 py-0.5 rounded"><Key size={8} /> Non-Secure</span>
+                                                  : <span className="flex items-center gap-1 text-[9px] font-semibold text-orange-600/80 bg-orange-50/20 border border-orange-200/30 px-1.5 py-0.5 rounded"><Lock size={8} /> {skName}</span>
                                                 }
-                                                <span className="text-[9px] text-slate-600">{skRows.length} result{skRows.length !== 1 ? 's' : ''}</span>
+                                                <span className="text-[9px] text-gray-400">{skRows.length} result{skRows.length !== 1 ? 's' : ''}</span>
                                               </div>
                                               {/* Grouped by Integration Name within each SK section */}
                                               {(() => {
@@ -1553,36 +1553,36 @@ export default function GlobalSearchPage() {
                                                   skAppMap.get(row.appName).push(row);
                                                 });
                                                 return (
-                                                  <div className="divide-y divide-slate-800/20">
+                                                  <div className="divide-y divide-gray-200/20">
                                                     {[...skAppMap.entries()].map(([appName, appRows]) => (
-                                                      <div key={appName} className="px-6 py-2.5 hover:bg-slate-800/10">
+                                                      <div key={appName} className="px-6 py-2.5 hover:bg-gray-100/10">
                                                         {/* Integration name header */}
                                                         <div className="flex items-center gap-2 mb-2">
                                                           <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border flex-shrink-0 ${
                                                             appRows[0].chVersion === 'CloudHub 2.0'
-                                                              ? 'bg-blue-950/40 text-blue-400 border-blue-700/40'
-                                                              : 'bg-purple-950/40 text-purple-400 border-purple-700/40'
+                                                              ? 'bg-blue-50/40 text-blue-600 border-blue-300/40'
+                                                              : 'bg-purple-50/40 text-purple-600 border-purple-300/40'
                                                           }`}>
                                                             {appRows[0].chVersion === 'CloudHub 2.0' ? 'CH2' : 'CH1'}
                                                           </span>
                                                           <button
                                                             onClick={() => { const r = appRows[0]; if (r.bgOrgId && r.envId && r.appId) navigate(`/applications/${r.bgOrgId}/${r.envId}/${r.appId}`); }}
-                                                            className="text-[10px] font-mono text-cyan-300 hover:text-cyan-200 font-medium hover:underline underline-offset-2 truncate">
+                                                            className="text-[10px] font-mono text-cyan-700 hover:text-cyan-900 font-medium hover:underline underline-offset-2 truncate">
                                                             {appName}
                                                           </button>
-                                                          <span className="text-[9px] text-slate-600 flex-shrink-0">{appRows[0].chEnv}</span>
+                                                          <span className="text-[9px] text-gray-400 flex-shrink-0">{appRows[0].chEnv}</span>
                                                           {appRows[0].status && (
                                                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold flex-shrink-0 ${
                                                               appRows[0].status.toUpperCase() === 'RUNNING'
-                                                                ? 'bg-green-950/40 text-green-400 border-green-700/40'
+                                                                ? 'bg-green-50/40 text-green-600 border-green-300/40'
                                                                 : appRows[0].status.toUpperCase() === 'FAILED'
-                                                                ? 'bg-red-950/40 text-red-400 border-red-700/40'
-                                                                : 'bg-gray-800/60 text-gray-500 border-gray-600/40'
+                                                                ? 'bg-red-50/40 text-red-600 border-red-300/40'
+                                                                : 'bg-gray-100/60 text-gray-500 border-gray-300/40'
                                                             }`}>
                                                               {appRows[0].status}
                                                             </span>
                                                           )}
-                                                          <span className="text-[9px] text-slate-600 ml-auto flex-shrink-0">
+                                                          <span className="text-[9px] text-gray-400 ml-auto flex-shrink-0">
                                                             {appRows.length} prop{appRows.length !== 1 ? 's' : ''}
                                                           </span>
                                                         </div>
@@ -1590,7 +1590,7 @@ export default function GlobalSearchPage() {
                                                         <div className="overflow-x-auto pl-2">
                                                           <table className="w-full border-collapse">
                                                             <thead>
-                                                              <tr className="bg-slate-800/10 text-slate-600 text-[9px] uppercase tracking-wider border-b border-slate-800/30">
+                                                              <tr className="bg-gray-100/10 text-gray-400 text-[9px] uppercase tracking-wider border-b border-gray-200/30">
                                                                 <th className="px-2 py-1 text-left font-bold whitespace-nowrap">NS Key</th>
                                                                 <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Prefix</th>
                                                                 <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Property Key</th>
@@ -1600,18 +1600,18 @@ export default function GlobalSearchPage() {
                                                             </thead>
                                                             <tbody>
                                                               {appRows.map((row, ri) => (
-                                                                <tr key={ri} className="group border-b border-slate-800/20 hover:bg-slate-800/20 last:border-0">
-                                                                  <td className="px-2 py-1.5 text-[10px] font-mono text-slate-400 whitespace-nowrap">{row.nsKey}</td>
+                                                                <tr key={ri} className="group border-b border-gray-200/20 hover:bg-gray-100/20 last:border-0">
+                                                                  <td className="px-2 py-1.5 text-[10px] font-mono text-gray-500 whitespace-nowrap">{row.nsKey}</td>
                                                                   <td className="px-2 py-1.5 text-[10px] font-mono text-slate-500 whitespace-nowrap">{row.cpsPrefix}</td>
                                                                   <td className="px-2 py-1.5">
                                                                     <div className="flex items-center gap-1 group/cell">
-                                                                      <span className="text-[10px] font-mono text-cyan-300/80 whitespace-nowrap">{row.propKey}</span>
+                                                                      <span className="text-[10px] font-mono text-cyan-700/80 whitespace-nowrap">{row.propKey}</span>
                                                                       <CopyBtn text={row.propKey} />
                                                                     </div>
                                                                   </td>
                                                                   <td className="px-2 py-1.5">
                                                                     <div className="flex items-center gap-1 group/cell">
-                                                                      <span className="text-[10px] font-mono text-emerald-300/90 break-all max-w-[200px]">
+                                                                      <span className="text-[10px] font-mono text-emerald-700/90 break-all max-w-[200px]">
                                                                         <Highlight text={row.apiUser} terms={[term]} />
                                                                       </span>
                                                                       <CopyBtn text={row.apiUser} />
@@ -1619,7 +1619,7 @@ export default function GlobalSearchPage() {
                                                                   </td>
                                                                   <td className="px-2 py-1.5 whitespace-nowrap">
                                                                     <div className="flex items-center gap-1 group/cell">
-                                                                      <span className={`text-[10px] font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
+                                                                      <span className={`text-[10px] font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-700/90' : 'text-gray-400'}`}>{row.password}</span>
                                                                       {row.password && row.password !== '—' && !/^\*+$/.test(row.password) && <CopyBtn text={row.password} />}
                                                                     </div>
                                                                   </td>
@@ -1664,34 +1664,34 @@ export default function GlobalSearchPage() {
                   {[...appGroups.entries()].map(([appName, { row: first, rows }]) => {
                     const isExp = expandedApps.has(appName);
                     return (
-                      <div key={appName} className="bg-slate-900/50 border border-slate-800/60 rounded-xl overflow-hidden">
+                      <div key={appName} className="bg-white/50 border border-gray-200/60 rounded-xl overflow-hidden">
                         <button onClick={() => setExpandedApps(prev => { const n = new Set(prev); n.has(appName) ? n.delete(appName) : n.add(appName); return n; })}
-                          className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-800/30 transition-colors">
+                          className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100/30 transition-colors">
                           <div className="flex items-center gap-3 min-w-0">
                             <button onClick={e => { e.stopPropagation(); if (first.bgOrgId && first.envId && first.appId) navigate(`/applications/${first.bgOrgId}/${first.envId}/${first.appId}`); }}
-                              className="text-sm font-semibold text-cyan-300 hover:text-cyan-200 font-mono truncate transition-colors" title="Open Application Detail">
+                              className="text-sm font-semibold text-cyan-700 hover:text-cyan-900 font-mono truncate transition-colors" title="Open Application Detail">
                               {appName}
                             </button>
                             <span className="text-[10px] text-slate-500">{first.chEnv}</span>
-                            {first.status && <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold ${first.status.toUpperCase()==='RUNNING' ? 'bg-green-950/40 text-green-400 border-green-700/40' : 'bg-gray-800/60 text-gray-500 border-gray-600/40'}`}>{first.status}</span>}
+                            {first.status && <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold ${first.status.toUpperCase()==='RUNNING' ? 'bg-green-50/40 text-green-600 border-green-300/40' : 'bg-gray-100/60 text-gray-500 border-gray-300/40'}`}>{first.status}</span>}
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <span className="text-[10px] text-slate-500">{rows.length} match{rows.length !== 1 ? 'es' : ''}</span>
-                            <ChevronDown size={13} className={`text-slate-600 transition-transform ${isExp ? '' : '-rotate-90'}`} />
+                            <ChevronDown size={13} className={`text-gray-400 transition-transform ${isExp ? '' : '-rotate-90'}`} />
                           </div>
                         </button>
                         {isExp && (
-                          <div className="border-t border-slate-800/40 divide-y divide-slate-800/30">
+                          <div className="border-t border-gray-200/40 divide-y divide-gray-200/30">
                             {rows.map((row, ri) => (
-                              <div key={ri} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-800/20 text-xs">
+                              <div key={ri} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100/20 text-xs">
                                 <div className="flex items-center gap-1 min-w-0 flex-1">
-                                  <span className="font-mono text-cyan-300/80"><Highlight text={row.propKey} terms={activeTerms} /></span>
-                                  {row.secureKey ? <span className="text-[9px] text-orange-400 bg-orange-950/30 px-1 rounded ml-1">{row.secureKey}</span> : null}
+                                  <span className="font-mono text-cyan-700/80"><Highlight text={row.propKey} terms={activeTerms} /></span>
+                                  {row.secureKey ? <span className="text-[9px] text-orange-600 bg-orange-50/30 px-1 rounded ml-1">{row.secureKey}</span> : null}
                                 </div>
-                                <span className="font-mono text-emerald-300 break-all max-w-xs"><Highlight text={row.apiUser} terms={activeTerms} /></span>
+                                <span className="font-mono text-emerald-700 break-all max-w-xs"><Highlight text={row.apiUser} terms={activeTerms} /></span>
                                 <CopyBtn text={row.apiUser} />
                                 <div className="flex items-center gap-1 group/cell">
-                                  <span className={`font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
+                                  <span className={`font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-700/90' : 'text-gray-400'}`}>{row.password}</span>
                                   {row.password && row.password !== '—' && !/^\*+$/.test(row.password) && <CopyBtn text={row.password} />}
                                 </div>
                               </div>
@@ -1707,15 +1707,15 @@ export default function GlobalSearchPage() {
 
             // Flat table view (default)
             return (
-              <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl overflow-hidden">
+              <div className="bg-white/50 border border-gray-200/60 rounded-2xl overflow-hidden">
                 {/* Feature 15: sticky table + sortable headers */}
                 <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
                   <table className="w-full text-sm border-collapse">
                     <thead className="sticky top-0 z-10">
-                      <tr className="bg-slate-800/95 border-b border-slate-700/40 backdrop-blur-sm">
+                      <tr className="bg-gray-100/95 border-b border-gray-300/40 backdrop-blur-sm">
                         <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase w-8">#</th>
                         {[['chEnv','Environment'], ['chVersion','Type'], ['appName','App Name'], ['status','Status'], ['nsKey','CPS Key'], ['cpsPrefix','Prefix'], ['secureKey','Secure Group'], ['propKey','Property Key'], ['apiUser','Value'], ['password','Password']].map(([col, label]) => (
-                          <th key={col} className="px-3 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase whitespace-nowrap cursor-pointer hover:text-slate-300 select-none" onClick={() => toggleSort(col)}>
+                          <th key={col} className="px-3 py-3 text-left text-[10px] font-bold tracking-wider text-slate-500 uppercase whitespace-nowrap cursor-pointer hover:text-gray-600 select-none" onClick={() => toggleSort(col)}>
                             {label} <SortBtn col={col} />
                           </th>
                         ))}
@@ -1723,17 +1723,17 @@ export default function GlobalSearchPage() {
                     </thead>
                     <tbody>
                       {sortedResults.map((row, i) => (
-                        <tr key={i} className="group border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors last:border-0">
-                          <td className="px-3 py-3 text-xs text-slate-600 font-mono tabular-nums text-right select-none">{i + 1}</td>
-                          <td className="px-3 py-3 text-xs text-slate-300 whitespace-nowrap">{row.chEnv}</td>
+                        <tr key={i} className="group border-b border-gray-200/40 hover:bg-gray-100/30 transition-colors last:border-0">
+                          <td className="px-3 py-3 text-xs text-gray-400 font-mono tabular-nums text-right select-none">{i + 1}</td>
+                          <td className="px-3 py-3 text-xs text-gray-600 whitespace-nowrap">{row.chEnv}</td>
                           <td className="px-3 py-3 whitespace-nowrap">
-                            <span className={'text-[10px] px-2 py-0.5 rounded font-bold border ' + (row.chVersion === 'CloudHub 2.0' ? 'bg-blue-950/40 text-blue-300 border-blue-700/40' : 'bg-purple-950/40 text-purple-300 border-purple-700/40')}>{row.chVersion}</span>
+                            <span className={'text-[10px] px-2 py-0.5 rounded font-bold border ' + (row.chVersion === 'CloudHub 2.0' ? 'bg-blue-50/40 text-blue-700 border-blue-300/40' : 'bg-purple-50/40 text-purple-700 border-purple-300/40')}>{row.chVersion}</span>
                           </td>
                           {/* Feature 5: clickable app name */}
                           <td className="px-3 py-3">
                             <div className="flex items-center gap-1 group/cell">
                               <button onClick={() => { if (row.bgOrgId && row.envId && row.appId) navigate(`/applications/${row.bgOrgId}/${row.envId}/${row.appId}`); }}
-                                className="text-xs font-mono text-cyan-300 hover:text-cyan-200 font-medium hover:underline underline-offset-2 text-left transition-colors" title="Open Application Detail">
+                                className="text-xs font-mono text-cyan-700 hover:text-cyan-900 font-medium hover:underline underline-offset-2 text-left transition-colors" title="Open Application Detail">
                                 {row.appName}
                               </button>
                               <CopyBtn text={row.appName} />
@@ -1741,23 +1741,23 @@ export default function GlobalSearchPage() {
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap">
                             {row.status ? (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${row.status.toUpperCase()==='RUNNING' ? 'bg-green-950/40 text-green-400 border-green-700/40' : row.status.toUpperCase()==='STOPPED' ? 'bg-gray-800/60 text-gray-500 border-gray-600/40' : row.status.toUpperCase()==='FAILED' ? 'bg-red-950/40 text-red-400 border-red-700/40' : 'bg-yellow-950/40 text-yellow-400 border-yellow-700/40'}`}>{row.status.toUpperCase()}</span>
-                            ) : <span className="text-slate-700 text-[10px]">—</span>}
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${row.status.toUpperCase()==='RUNNING' ? 'bg-green-50/40 text-green-600 border-green-300/40' : row.status.toUpperCase()==='STOPPED' ? 'bg-gray-100/60 text-gray-500 border-gray-300/40' : row.status.toUpperCase()==='FAILED' ? 'bg-red-50/40 text-red-600 border-red-300/40' : 'bg-yellow-50/40 text-yellow-600 border-yellow-300/40'}`}>{row.status.toUpperCase()}</span>
+                            ) : <span className="text-gray-400 text-[10px]">—</span>}
                           </td>
-                          <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-slate-400">{row.nsKey}</span><CopyBtn text={row.nsKey} /></div></td>
-                          <td className="px-3 py-3 text-xs font-mono text-slate-400">{row.cpsPrefix}</td>
+                          <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-gray-500">{row.nsKey}</span><CopyBtn text={row.nsKey} /></div></td>
+                          <td className="px-3 py-3 text-xs font-mono text-gray-500">{row.cpsPrefix}</td>
                           <td className="px-3 py-3">
                             {row.secureKey
-                              ? <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-orange-950/40 text-orange-300 border-orange-700/40 font-mono"><Lock size={8} /> {row.secureKey}</span>
-                              : <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-slate-800/60 text-slate-500 border-slate-700/40"><Key size={8} /> non-secure</span>}
+                              ? <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-orange-50/40 text-orange-700 border-orange-300/40 font-mono"><Lock size={8} /> {row.secureKey}</span>
+                              : <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-gray-100/60 text-slate-500 border-gray-300/40"><Key size={8} /> non-secure</span>}
                           </td>
                           {/* Feature 1: highlight propKey */}
-                          <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-cyan-300"><Highlight text={row.propKey} terms={activeTerms} /></span><CopyBtn text={row.propKey} /></div></td>
+                          <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-cyan-700"><Highlight text={row.propKey} terms={activeTerms} /></span><CopyBtn text={row.propKey} /></div></td>
                           {/* Feature 1: highlight apiUser */}
-                          <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-emerald-300 break-all"><Highlight text={row.apiUser} terms={activeTerms} /></span><CopyBtn text={row.apiUser} /></div></td>
+                          <td className="px-3 py-3"><div className="flex items-center gap-1 group/cell"><span className="text-xs font-mono text-emerald-700 break-all"><Highlight text={row.apiUser} terms={activeTerms} /></span><CopyBtn text={row.apiUser} /></div></td>
                           <td className="px-3 py-3 text-xs">
                             <div className="flex items-center gap-1 group/cell">
-                              <span className={`font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-300/90' : 'text-slate-600'}`}>{row.password}</span>
+                              <span className={`font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-700/90' : 'text-gray-400'}`}>{row.password}</span>
                               {row.password && row.password !== '—' && !/^\*+$/.test(row.password) && <CopyBtn text={row.password} />}
                             </div>
                           </td>

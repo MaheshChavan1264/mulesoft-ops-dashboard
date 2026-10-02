@@ -96,21 +96,21 @@ export default function CpsCreateModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-emerald-950/50 border border-emerald-800/40">
-              <Database size={15} className="text-emerald-400" />
+            <div className="p-2 rounded-xl bg-emerald-50/50 border border-emerald-200/40">
+              <Database size={15} className="text-emerald-600" />
             </div>
             <div>
-              <h2 className="text-white font-semibold text-base">Create New CPS Project Entry</h2>
+              <h2 className="text-gray-900 font-semibold text-base">Create New CPS Project Entry</h2>
               <p className="text-gray-500 text-xs mt-0.5">
                 {environment} · {baseUrl?.replace(/^https?:\/\//, '').split('.')[0]}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-600 hover:text-gray-300 p-1">
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-900 p-1">
             <X size={16} />
           </button>
         </div>
@@ -119,9 +119,9 @@ export default function CpsCreateModal({
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {/* Production warning */}
           {isProd && (
-            <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3">
-              <AlertTriangle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-red-300 text-xs leading-relaxed">
+            <div className="flex items-start gap-3 bg-red-50/30 border border-red-200/50 rounded-xl px-4 py-3">
+              <AlertTriangle size={15} className="text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-red-700 text-xs leading-relaxed">
                 ⚠️ <strong>PRODUCTION</strong> — This will immediately create a new CPS project entry in the production environment. Changes take effect at the next app restart.
               </p>
             </div>
@@ -129,23 +129,23 @@ export default function CpsCreateModal({
 
           {/* Project Key */}
           <div>
-            <label className="block text-xs text-gray-400 font-medium uppercase tracking-wider mb-1.5">
-              Project Key <span className="text-red-400">*</span>
+            <label className="block text-xs text-gray-500 font-medium uppercase tracking-wider mb-1.5">
+              Project Key <span className="text-red-600">*</span>
             </label>
             <input
               value={projectKey}
               onChange={e => setProjectKey(e.target.value)}
               placeholder="e.g. my-api-name-v1-uw2-pd"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-gray-600 focus:outline-none focus:border-emerald-600/50"
+              className="w-full bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono placeholder-gray-400 focus:outline-none focus:border-emerald-300/50"
             />
-            <p className="text-[10px] text-gray-600 mt-1">
+            <p className="text-[10px] text-gray-500 mt-1">
               Must match the <code className="text-gray-500">cps.projectName</code> or <code className="text-gray-500">cloudhub.api.name</code> in the app deployment properties.
             </p>
           </div>
 
           {/* Property Type */}
           <div>
-            <label className="block text-xs text-gray-400 font-medium uppercase tracking-wider mb-1.5">Property Type</label>
+            <label className="block text-xs text-gray-500 font-medium uppercase tracking-wider mb-1.5">Property Type</label>
             <div className="flex gap-2">
               {[
                 { value: 'non-secure', label: 'Non-Secure' },
@@ -156,8 +156,8 @@ export default function CpsCreateModal({
                   onClick={() => setType(opt.value)}
                   className={`flex-1 text-xs py-2 px-3 rounded-lg border font-medium transition-all ${
                     type === opt.value
-                      ? 'bg-emerald-600/20 border-emerald-600/50 text-emerald-300'
-                      : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
+                      ? 'bg-emerald-100 border-emerald-300/50 text-emerald-700'
+                      : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900'
                   }`}
                 >
                   {opt.label}
@@ -169,12 +169,12 @@ export default function CpsCreateModal({
           {/* Initial Properties */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-gray-400 font-medium uppercase tracking-wider">
-                Initial Properties <span className="text-gray-600 normal-case font-normal">(optional)</span>
+              <label className="text-xs text-gray-500 font-medium uppercase tracking-wider">
+                Initial Properties <span className="text-gray-500 normal-case font-normal">(optional)</span>
               </label>
               <button
                 onClick={addRow}
-                className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 bg-emerald-950/30 border border-emerald-800/40 px-2 py-1 rounded-lg transition-colors"
+                className="flex items-center gap-1 text-[10px] text-emerald-600 hover:text-emerald-700 bg-emerald-50/30 border border-emerald-200/40 px-2 py-1 rounded-lg transition-colors"
               >
                 <Plus size={9} /> Add Row
               </button>
@@ -186,18 +186,18 @@ export default function CpsCreateModal({
                     value={row.key}
                     onChange={e => updateRow(i, 'key', e.target.value)}
                     placeholder="property.key"
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-emerald-600/50"
+                    className="flex-1 bg-gray-100 border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-emerald-300/50"
                   />
                   <input
                     value={row.value}
                     onChange={e => updateRow(i, 'value', e.target.value)}
                     placeholder="value"
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-emerald-600/50"
+                    className="flex-1 bg-gray-100 border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-700 font-mono placeholder-gray-400 focus:outline-none focus:border-emerald-300/50"
                   />
                   <button
                     onClick={() => removeRow(i)}
                     disabled={rows.length === 1}
-                    className="text-gray-600 hover:text-red-400 transition-colors p-1 rounded disabled:opacity-30"
+                    className="text-gray-500 hover:text-red-600 transition-colors p-1 rounded disabled:opacity-30"
                   >
                     <Trash2 size={12} />
                   </button>
@@ -213,9 +213,9 @@ export default function CpsCreateModal({
                 type="checkbox"
                 checked={prodConfirmed}
                 onChange={e => setProdConfirmed(e.target.checked)}
-                className="mt-0.5 rounded border-red-700 bg-red-950/30 text-red-500 focus:ring-red-500"
+                className="mt-0.5 rounded border-red-300 bg-red-50/30 text-red-500 focus:ring-red-500"
               />
-              <span className="text-xs text-red-400">
+              <span className="text-xs text-red-600">
                 I understand this will create a new entry in the <strong>PRODUCTION</strong> CPS server
               </span>
             </label>
@@ -223,7 +223,7 @@ export default function CpsCreateModal({
 
           {/* Error */}
           {error && (
-            <div className="flex items-center gap-2 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3 text-red-400 text-xs">
+            <div className="flex items-center gap-2 bg-red-50/30 border border-red-200/50 rounded-xl px-4 py-3 text-red-600 text-xs">
               <AlertTriangle size={12} className="flex-shrink-0" />
               {error}
             </div>
@@ -231,15 +231,15 @@ export default function CpsCreateModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-800 gap-3">
-          <p className="text-gray-600 text-xs">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 gap-3">
+          <p className="text-gray-500 text-xs">
             ⚠️ Changes take effect immediately
           </p>
           <div className="flex gap-3">
             <button
               onClick={onClose}
               disabled={saving}
-              className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
             >
               Cancel
             </button>

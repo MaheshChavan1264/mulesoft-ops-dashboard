@@ -153,21 +153,21 @@ export default function CpsImportModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-blue-950/50 border border-blue-800/40">
-              <Upload size={15} className="text-blue-400" />
+            <div className="p-2 rounded-xl bg-blue-50/50 border border-blue-200/40">
+              <Upload size={15} className="text-blue-600" />
             </div>
             <div>
-              <h2 className="text-white font-semibold text-base">Import Properties from CSV / JSON</h2>
+              <h2 className="text-gray-900 font-semibold text-base">Import Properties from CSV / JSON</h2>
               <p className="text-gray-500 text-xs mt-0.5">
                 {projectKey} · {environment}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-600 hover:text-gray-300">
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-900">
             <X size={16} />
           </button>
         </div>
@@ -175,9 +175,9 @@ export default function CpsImportModal({
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {/* Production warning */}
           {isProd && (
-            <div className="flex items-start gap-2 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3">
-              <AlertTriangle size={13} className="text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-red-300 text-xs">
+            <div className="flex items-start gap-2 bg-red-50/30 border border-red-200/50 rounded-xl px-4 py-3">
+              <AlertTriangle size={13} className="text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-red-700 text-xs">
                 <strong>PRODUCTION</strong> — imported properties will be applied immediately via PUT.
               </p>
             </div>
@@ -189,11 +189,11 @@ export default function CpsImportModal({
               onDrop={handleDrop}
               onDragOver={e => e.preventDefault()}
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-700/60 hover:border-gray-600 bg-gray-800/20 rounded-xl px-6 py-10 text-center cursor-pointer transition-colors"
+              className="border-2 border-dashed border-gray-300/60 hover:border-gray-300 bg-gray-100/20 rounded-xl px-6 py-10 text-center cursor-pointer transition-colors"
             >
-              <Upload size={28} className="text-gray-600 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">Drop CSV or JSON file here, or click to browse</p>
-              <p className="text-[10px] text-gray-600 mt-1">
+              <Upload size={28} className="text-gray-500 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">Drop CSV or JSON file here, or click to browse</p>
+              <p className="text-[10px] text-gray-500 mt-1">
                 CSV: <code>key,value</code> per line &nbsp;·&nbsp; JSON: <code>{"{ key: value }"}</code> object
               </p>
             </div>
@@ -203,7 +203,7 @@ export default function CpsImportModal({
 
           {/* Parse error */}
           {parseError && (
-            <div className="flex items-center gap-2 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3 text-red-400 text-xs">
+            <div className="flex items-center gap-2 bg-red-50/30 border border-red-200/50 rounded-xl px-4 py-3 text-red-600 text-xs">
               <AlertTriangle size={12} className="flex-shrink-0" /> {parseError}
             </div>
           )}
@@ -213,19 +213,19 @@ export default function CpsImportModal({
             <div className="space-y-4">
               {/* Stats */}
               <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex items-center gap-1.5 text-xs text-gray-400 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5">
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-100 border border-gray-300 rounded-lg px-3 py-1.5">
                   <FileText size={11} /> {fileName}
                 </div>
-                <span className="text-xs text-emerald-400 font-medium">{parsedRows.length} properties found</span>
+                <span className="text-xs text-emerald-600 font-medium">{parsedRows.length} properties found</span>
                 {conflicts.length > 0 && (
-                  <span className="text-xs text-yellow-400 font-medium">{conflicts.length} conflicts</span>
+                  <span className="text-xs text-yellow-600 font-medium">{conflicts.length} conflicts</span>
                 )}
                 {newKeys.length > 0 && (
-                  <span className="text-xs text-blue-400 font-medium">{newKeys.length} new keys</span>
+                  <span className="text-xs text-blue-600 font-medium">{newKeys.length} new keys</span>
                 )}
                 <button
                   onClick={() => { setParsedRows(null); setFileName(''); }}
-                  className="text-[10px] text-gray-500 hover:text-gray-300 underline ml-auto"
+                  className="text-[10px] text-gray-500 hover:text-gray-900 underline ml-auto"
                 >
                   Change file
                 </button>
@@ -233,20 +233,20 @@ export default function CpsImportModal({
 
               {/* Conflict handling */}
               {conflicts.length > 0 && (
-                <div className="bg-yellow-950/20 border border-yellow-800/40 rounded-xl px-4 py-3 space-y-2">
-                  <p className="text-xs text-yellow-400 font-medium">
+                <div className="bg-yellow-50/20 border border-yellow-200/40 rounded-xl px-4 py-3 space-y-2">
+                  <p className="text-xs text-yellow-600 font-medium">
                     {conflicts.length} properties already exist with different values. How to handle conflicts?
                   </p>
                   <div className="flex gap-2">
                     {[
-                      { value: 'overwrite', label: 'Overwrite existing', cls: 'bg-orange-600/20 border-orange-600/40 text-orange-300' },
-                      { value: 'skip', label: 'Skip conflicts', cls: 'bg-gray-700 border-gray-600 text-gray-300' },
+                      { value: 'overwrite', label: 'Overwrite existing', cls: 'bg-orange-100 border-orange-300/40 text-orange-700' },
+                      { value: 'skip', label: 'Skip conflicts', cls: 'bg-gray-200 border-gray-300 text-gray-600' },
                     ].map(opt => (
                       <button
                         key={opt.value}
                         onClick={() => setConflictMode(opt.value)}
                         className={`text-xs px-3 py-1 rounded-lg border font-medium transition-all ${
-                          conflictMode === opt.value ? opt.cls : 'bg-gray-800 border-gray-700 text-gray-500'
+                          conflictMode === opt.value ? opt.cls : 'bg-gray-100 border-gray-300 text-gray-500'
                         }`}
                       >
                         {conflictMode === opt.value && <Check size={10} className="inline mr-1" />}
@@ -258,8 +258,8 @@ export default function CpsImportModal({
               )}
 
               {/* Preview table */}
-              <div className="border border-gray-700/50 rounded-xl overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2 bg-gray-800/50 border-b border-gray-700/40">
+              <div className="border border-gray-300/50 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-gray-100/50 border-b border-gray-300/40">
                   <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Preview</span>
                   <span className="text-[10px] text-gray-500">{parsedRows.length} rows</span>
                 </div>
@@ -270,18 +270,18 @@ export default function CpsImportModal({
                     return (
                       <div
                         key={i}
-                        className={`flex items-center gap-3 px-3 py-2 border-b border-gray-800/30 last:border-0 ${
-                          isConflict ? 'bg-yellow-950/10' : isNew ? 'bg-emerald-950/10' : ''
+                        className={`flex items-center gap-3 px-3 py-2 border-b border-gray-200/30 last:border-0 ${
+                          isConflict ? 'bg-yellow-50/10' : isNew ? 'bg-emerald-50/10' : ''
                         }`}
                       >
                         <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold flex-shrink-0 ${
-                          isConflict ? 'bg-yellow-500/20 text-yellow-400' :
-                          isNew ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-700/60 text-gray-500'
+                          isConflict ? 'bg-yellow-100 text-yellow-600' :
+                          isNew ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-200/60 text-gray-500'
                         }`}>
                           {isConflict ? 'CONFLICT' : isNew ? 'NEW' : 'UPDATE'}
                         </span>
-                        <span className="font-mono text-[10px] text-gray-300 truncate w-48">{row.key}</span>
-                        <span className="font-mono text-[10px] text-gray-400 truncate flex-1">{row.value || '(empty)'}</span>
+                        <span className="font-mono text-[10px] text-gray-600 truncate w-48">{row.key}</span>
+                        <span className="font-mono text-[10px] text-gray-500 truncate flex-1">{row.value || '(empty)'}</span>
                       </div>
                     );
                   })}
@@ -292,15 +292,15 @@ export default function CpsImportModal({
 
           {/* Import error */}
           {importError && (
-            <div className="flex items-center gap-2 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3 text-red-400 text-xs">
+            <div className="flex items-center gap-2 bg-red-50/30 border border-red-200/50 rounded-xl px-4 py-3 text-red-600 text-xs">
               <AlertTriangle size={12} className="flex-shrink-0" /> {importError}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-800 gap-3 flex-shrink-0">
-          <p className="text-gray-600 text-xs">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 gap-3 flex-shrink-0">
+          <p className="text-gray-500 text-xs">
             {parsedRows
               ? `${conflictMode === 'overwrite' ? parsedRows.length : parsedRows.length - conflicts.length} properties will be imported`
               : 'Select a CSV or JSON file to continue'}
@@ -309,7 +309,7 @@ export default function CpsImportModal({
             <button
               onClick={onClose}
               disabled={importing}
-              className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
             >
               Cancel
             </button>

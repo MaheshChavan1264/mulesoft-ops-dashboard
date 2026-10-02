@@ -123,18 +123,18 @@ function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
   };
 
   return (
-    <div className="border border-gray-700/50 rounded-xl overflow-hidden">
+    <div className="border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden">
       {/* Env search input */}
-      <div className="relative border-b border-gray-700/50">
-        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+      <div className="relative border-b border-gray-200 dark:border-gray-700">
+        <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
         <input
           value={envSearch}
           onChange={e => setEnvSearch(e.target.value)}
           placeholder="Search environments…"
-          className="w-full bg-gray-800/40 pl-8 pr-3 py-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:bg-gray-800/60"
+          className="w-full bg-gray-50 dark:bg-gray-900/40 pl-10 pr-9 py-2.5 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:bg-white dark:focus:bg-gray-900 transition-colors"
         />
         {envSearch && (
-          <button onClick={() => setEnvSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">✕</button>
+          <button onClick={() => setEnvSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-xs transition-colors">✕</button>
         )}
       </div>
       <div style={{ maxHeight: '12rem', overflowY: 'auto' }}>
@@ -146,37 +146,37 @@ function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
         // Hide BG if search active and no matching envs (and not still loading)
         if (searchLo && envs.length === 0 && !loadingE) return null;
         return (
-          <div key={bg.id} className="border-b border-gray-800/40 last:border-0">
-            <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-gray-800/30 transition-colors">
+          <div key={bg.id} className="border-b border-gray-100 dark:border-gray-700/60 last:border-0">
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
               <div onClick={() => toggleBg(bg.id)}
-                className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 cursor-pointer transition-colors ${isChecked ? 'bg-blue-600 border-blue-500' : 'border-gray-600 hover:border-blue-500'}`}>
+                className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center flex-shrink-0 cursor-pointer transition-all ${isChecked ? 'bg-blue-600 border-blue-500 shadow-sm shadow-blue-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-blue-500'}`}>
                 {isChecked && <span className="text-white text-[10px] font-bold">✓</span>}
               </div>
-              <Building2 size={12} className={isChecked ? 'text-blue-400' : 'text-gray-600'} />
-              <span className={`text-xs font-medium flex-1 ${isChecked ? 'text-white' : 'text-gray-400'}`}>{bg.name}</span>
-              {!bg.parentId && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded-full">ROOT</span>}
-              <button onClick={() => toggleBgExpand(bg.id)} className="text-gray-600 hover:text-gray-300 p-0.5 rounded transition-colors">
-                <ChevronRight size={12} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+              <Building2 size={13} className={isChecked ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} />
+              <span className={`text-sm flex-1 truncate ${isChecked ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{bg.name}</span>
+              {!bg.parentId && <span className="text-[9px] font-bold bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 px-1.5 py-0.5 rounded-full">ROOT</span>}
+              <button onClick={() => toggleBgExpand(bg.id)} className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <ChevronRight size={13} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
               </button>
             </div>
             {isExpanded && (
-              <div className="bg-gray-900/40">
+              <div className="bg-gray-50/60 dark:bg-gray-900/20">
                 {loadingE ? (
-                  <div className="flex items-center gap-2 px-8 py-2 text-gray-600 text-xs"><RefreshCw size={11} className="animate-spin" /> Loading environments…</div>
+                  <div className="flex items-center gap-2 px-9 py-2.5 text-gray-400 dark:text-gray-500 text-xs"><RefreshCw size={12} className="animate-spin" /> Loading environments…</div>
                 ) : envs.length === 0 ? (
-                  <div className="px-8 py-2 text-gray-700 text-xs">No environments</div>
+                  <div className="px-9 py-2.5 text-gray-400 dark:text-gray-500 text-xs">No environments</div>
                 ) : envs.map(env => {
                   const envChecked = isEnvSelected(bg.id, env.id);
                   const isProd = env.type === 'production';
                   return (
                     <div key={env.id} onClick={() => toggleEnv(bg.id, env.id)}
-                      className="flex items-center gap-2 px-8 py-2 hover:bg-gray-800/20 cursor-pointer transition-colors">
-                      <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${envChecked ? 'bg-blue-600 border-blue-500' : 'border-gray-600 hover:border-blue-500'}`}>
+                      className="flex items-center gap-2.5 px-9 py-2 hover:bg-gray-100/60 dark:hover:bg-gray-700/30 cursor-pointer transition-colors">
+                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${envChecked ? 'bg-blue-600 border-blue-500 shadow-sm shadow-blue-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-blue-500'}`}>
                         {envChecked && <span className="text-white text-[9px] font-bold">✓</span>}
                       </div>
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
-                      <span className={`text-xs flex-1 ${envChecked ? 'text-gray-200' : 'text-gray-500'}`}>{env.name}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isProd ? 'bg-green-900/40 text-green-500' : 'bg-yellow-900/40 text-yellow-500'}`}>{env.type}</span>
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                      <span className={`text-xs flex-1 truncate ${envChecked ? 'text-gray-700 dark:text-gray-300 font-semibold' : 'text-gray-500 dark:text-gray-400'}`}>{env.name}</span>
+                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${isProd ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' : 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300'}`}>{env.type}</span>
                     </div>
                   );
                 })}
@@ -454,24 +454,25 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
   const canExport = usePreselected ? passedApps?.length > 0 : bgEnvSelections.length > 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl shadow-2xl mx-4 max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700/80 rounded-3xl w-full max-w-2xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-emerald-950/50 border border-emerald-800/40">
-              <FileSpreadsheet size={15} className="text-emerald-400" />
+        <div className="relative flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-700/60 flex-shrink-0">
+          <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-emerald-50/80 dark:from-emerald-500/[0.07] to-transparent pointer-events-none" />
+          <div className="relative flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-emerald-100 dark:bg-emerald-500/15 shadow-sm">
+              <FileSpreadsheet size={18} className="text-emerald-600 dark:text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-white font-semibold text-base">Export CPS Properties</h2>
-              <p className="text-gray-500 text-xs mt-0.5">
+              <h2 className="text-gray-900 dark:text-gray-100 font-bold text-base">Export CPS Properties</h2>
+              <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">
                 {usePreselected
                   ? `Exporting ${passedApps.length} selected app${passedApps.length !== 1 ? 's' : ''}`
                   : 'Select Business Groups and Environments to export'}
               </p>
             </div>
           </div>
-          <button onClick={onClose} disabled={status === 'running'} className="text-gray-600 hover:text-gray-300 p-1 disabled:opacity-30">
+          <button onClick={onClose} disabled={status === 'running'} className="relative text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1.5 rounded-xl transition-colors disabled:opacity-30 flex-shrink-0">
             <X size={18} />
           </button>
         </div>
@@ -481,17 +482,19 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
 
           {/* Pre-selected apps banner + toggle */}
           {(status === 'idle' || status === 'error') && hasPreselected && (
-            <div className="flex items-center justify-between gap-3 bg-blue-950/30 border border-blue-800/40 rounded-xl px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Zap size={13} className="text-blue-400 flex-shrink-0" />
-                <span className="text-blue-300 text-xs font-medium">
+            <div className="flex items-center justify-between gap-3 bg-gradient-to-br from-blue-50 to-blue-50/40 dark:from-blue-500/10 dark:to-blue-500/5 border border-blue-200/60 dark:border-blue-400/20 rounded-2xl px-4 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex items-center justify-center w-7 h-7 rounded-xl bg-blue-100 dark:bg-blue-500/20 flex-shrink-0">
+                  <Zap size={13} className="text-blue-600 dark:text-blue-400" />
+                </span>
+                <span className="text-blue-700 dark:text-blue-300 text-xs font-semibold">
                   {passedApps.length} app{passedApps.length !== 1 ? 's' : ''} pre-selected from Applications page
                 </span>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={() => setUsePreselected(!usePreselected)}
-                  className={'text-[10px] px-2.5 py-1 rounded-lg border font-medium transition-colors ' + (usePreselected ? 'bg-blue-600/30 border-blue-600/50 text-blue-300' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200')}>
+                  className={'text-[11px] px-3 py-1.5 rounded-lg border font-semibold transition-all ' + (usePreselected ? 'bg-blue-600 border-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100')}>
                   {usePreselected ? '✓ Use Selected Apps' : 'Use BG/Env Selector'}
                 </button>
               </div>
@@ -500,13 +503,13 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
 
           {/* BG + Env selector (only when not using preselected) */}
           {(status === 'idle' || status === 'error') && !usePreselected && (
-            <div className="space-y-2">
-              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                <Layers size={11} /> Business Groups & Environments
+            <div className="space-y-2.5">
+              <p className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <Layers size={12} /> Business Groups & Environments
               </p>
               <BgEnvSelector selectedBgId={bgOrgId} selectedEnvId={selectedEnvId} onSelectionsChange={setBgEnvSelections} />
               {bgEnvSelections.length > 0 && (
-                <p className="text-blue-400 text-[10px]">
+                <p className="text-blue-600 dark:text-blue-400 text-[11px] font-medium">
                   {bgEnvSelections.length} environment{bgEnvSelections.length !== 1 ? 's' : ''} selected across {[...new Set(bgEnvSelections.map(s => s.bgId))].length} BG{[...new Set(bgEnvSelections.map(s => s.bgId))].length !== 1 ? 's' : ''}
                 </p>
               )}
@@ -515,33 +518,33 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
 
           {/* CPS Server Config */}
           {(status === 'idle' || status === 'error') && (
-            <div className="space-y-3 bg-gray-800/30 border border-gray-700/40 rounded-xl p-4">
+            <div className="space-y-3 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700/60 rounded-2xl p-4">
               <div className="flex items-center justify-between">
-                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                  <Globe size={11} /> CPS Server Configuration
+                <p className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <Globe size={12} /> CPS Server Configuration
                 </p>
                 <div className="flex items-center gap-2">
-                  {autoDetecting && <span className="flex items-center gap-1 text-[10px] text-blue-400"><RefreshCw size={9} className="animate-spin" /> Detecting…</span>}
-                  {autoDetected && !autoDetecting && <span className="flex items-center gap-1 text-[10px] text-emerald-400"><Zap size={9} /> Auto-detected</span>}
-                  {hasCpsCreds && <span className="flex items-center gap-1 text-[10px] text-emerald-400/70"><Key size={9} /> CSV creds loaded</span>}
+                  {autoDetecting && <span className="flex items-center gap-1 text-[10px] font-medium text-blue-600 dark:text-blue-400"><RefreshCw size={9} className="animate-spin" /> Detecting…</span>}
+                  {autoDetected && !autoDetecting && <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"><Zap size={9} /> Auto-detected</span>}
+                  {hasCpsCreds && <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600/70 dark:text-emerald-400/70"><Key size={9} /> CSV creds loaded</span>}
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Base URL <span className="normal-case text-gray-600">(optional — auto-detected per app)</span></label>
+                  <label className="block text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold mb-1.5">CPS Base URL <span className="normal-case font-medium text-gray-400 dark:text-gray-500">(optional — auto-detected per app)</span></label>
                   <input value={cpsBaseUrl} onChange={e => { setCpsBaseUrl(e.target.value); setAutoDetected(false); }}
                     placeholder="Auto-detected from app properties…"
-                    className="w-full bg-gray-900/80 border border-gray-700/60 rounded-lg px-3 py-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-600/50 font-mono" />
+                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 font-mono transition-all" />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">CPS Env Override <span className="normal-case text-gray-600">(optional)</span></label>
+                  <label className="block text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold mb-1.5">CPS Env Override <span className="normal-case font-medium text-gray-400 dark:text-gray-500">(optional)</span></label>
                   <input value={cpsEnv} onChange={e => setCpsEnv(e.target.value)}
                     placeholder="prod / uat (auto per app)"
-                    className="w-full bg-gray-900/80 border border-gray-700/60 rounded-lg px-3 py-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-600/50 font-mono" />
+                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 font-mono transition-all" />
                 </div>
               </div>
               {!cpsBaseUrl && !autoDetecting && (
-                <p className="text-[10px] text-yellow-600/80">
+                <p className="text-[10px] font-medium text-amber-600 dark:text-amber-400">
                   ⚠ No CPS URL set — each app will use its own <code>cps.configServerBaseUrl</code> from deployment properties.
                 </p>
               )}
@@ -550,44 +553,44 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
 
           {/* Format selector */}
           {status === 'idle' && (
-            <div className="space-y-2">
-              <p className="text-gray-500 text-[10px] uppercase tracking-wider font-medium">Export Format</p>
-              <div className="flex gap-2">
+            <div className="space-y-2.5">
+              <p className="text-gray-400 dark:text-gray-500 text-[10px] uppercase tracking-wider font-bold">Export Format</p>
+              <div className="flex gap-2.5">
                 <button
                   onClick={() => setExportFormat('excel')}
-                  className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+                  className={`flex items-center gap-2 flex-1 px-3.5 py-3 rounded-xl border text-xs font-semibold transition-all ${
                     exportFormat === 'excel'
-                      ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-300'
-                      : 'bg-gray-800/40 border-gray-700/40 text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300/70 dark:border-emerald-400/30 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                      : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:border-gray-300 dark:hover:border-gray-600'
                   }`}>
-                  <FileSpreadsheet size={13} /> Excel (.xlsx)
-                  <span className="ml-auto text-[9px] opacity-60">4 sheets</span>
+                  <FileSpreadsheet size={14} /> Excel (.xlsx)
+                  <span className="ml-auto text-[9px] opacity-60 font-medium">4 sheets</span>
                 </button>
                 <button
                   onClick={() => setExportFormat('json')}
-                  className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+                  className={`flex items-center gap-2 flex-1 px-3.5 py-3 rounded-xl border text-xs font-semibold transition-all ${
                     exportFormat === 'json'
-                      ? 'bg-blue-950/40 border-blue-700/60 text-blue-300'
-                      : 'bg-gray-800/40 border-gray-700/40 text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                      ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-300/70 dark:border-blue-400/30 text-blue-700 dark:text-blue-300 shadow-sm'
+                      : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:border-gray-300 dark:hover:border-gray-600'
                   }`}>
-                  <FileJson size={13} /> JSON (.json)
-                  <span className="ml-auto text-[9px] opacity-60">raw props</span>
+                  <FileJson size={14} /> JSON (.json)
+                  <span className="ml-auto text-[9px] opacity-60 font-medium">raw props</span>
                 </button>
               </div>
               {exportFormat === 'excel' && (
                 <div className="space-y-1 mt-1">
                   {['AllPropertiesCatalog', 'Host_APIUsersCatalog', 'ScheduleCatalog', 'StaticIPsCatalog'].map(s => (
-                    <div key={s} className="flex items-center gap-2 bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-1.5">
-                      <ChevronRight size={10} className="text-gray-600 flex-shrink-0" />
-                      <span className="text-gray-300 text-xs font-mono">{s}</span>
+                    <div key={s} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700/50 rounded-lg px-3 py-1.5">
+                      <ChevronRight size={10} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
+                      <span className="text-gray-600 dark:text-gray-300 text-xs font-mono">{s}</span>
                     </div>
                   ))}
-                  <p className="text-gray-700 text-[10px]">⚠ Sensitive values masked as <code>****</code></p>
+                  <p className="text-gray-400 dark:text-gray-500 text-[10px]">⚠ Sensitive values masked as <code>****</code></p>
                 </div>
               )}
               {exportFormat === 'json' && (
-                <p className="text-gray-600 text-[10px] pl-1">
-                  Exports raw CPS non-secure properties as <code className="text-gray-500">{`{ appName: { key: value } }`}</code> per app.
+                <p className="text-gray-400 dark:text-gray-500 text-[10px] pl-1">
+                  Exports raw CPS non-secure properties as <code className="text-gray-500 dark:text-gray-400">{`{ appName: { key: value } }`}</code> per app.
                 </p>
               )}
             </div>
@@ -597,53 +600,53 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
           {(status === 'running' || status === 'done') && (
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-400">
+                <span className="font-medium text-gray-500 dark:text-gray-400">
                   {status === 'done' ? 'Export complete!' : `Fetching ${progress.current}/${progress.total} apps in parallel…`}
                 </span>
-                <span className={'font-medium ' + (status === 'done' ? 'text-emerald-400' : 'text-blue-400')}>{progressPct}%</span>
+                <span className={'font-bold ' + (status === 'done' ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400')}>{progressPct}%</span>
               </div>
-              <div className="w-full bg-gray-800 rounded-full h-2">
-                <div className={'h-2 rounded-full transition-all duration-300 ' + (status === 'done' ? 'bg-emerald-500' : 'bg-blue-500')} style={{ width: `${progressPct}%` }} />
+              <div className="w-full bg-gray-100 dark:bg-gray-700/60 rounded-full h-2 overflow-hidden">
+                <div className={'h-2 rounded-full transition-all duration-300 ' + (status === 'done' ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-blue-400 to-blue-500')} style={{ width: `${progressPct}%` }} />
               </div>
               {progress.label && status === 'running' && (
-                <p className="text-gray-500 text-[10px] font-mono truncate">⚡ {progress.label}</p>
+                <p className="text-gray-400 dark:text-gray-500 text-[10px] font-mono truncate">⚡ {progress.label}</p>
               )}
               {status === 'done' && (
-                <div className="flex items-center gap-2 text-emerald-400 text-sm"><CheckCircle size={16} /> File downloaded successfully!</div>
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-sm font-semibold"><CheckCircle size={16} /> File downloaded successfully!</div>
               )}
             </div>
           )}
 
           {/* Error */}
           {status === 'error' && (
-            <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-4 py-3">
-              <AlertTriangle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 bg-red-50 dark:bg-red-500/10 border border-red-200/70 dark:border-red-400/30 rounded-2xl px-4 py-3.5">
+              <AlertTriangle size={16} className="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-red-300 text-sm font-medium">Export failed</p>
-                <p className="text-red-500/80 text-xs mt-0.5">{errorMsg}</p>
+                <p className="text-red-700 dark:text-red-300 text-sm font-semibold">Export failed</p>
+                <p className="text-red-500/90 dark:text-red-400/80 text-xs mt-0.5">{errorMsg}</p>
               </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-800 gap-3 flex-shrink-0">
-          <p className="text-gray-600 text-xs">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-gray-700/60 gap-3 flex-shrink-0 bg-gray-50/50 dark:bg-gray-900/30">
+          <p className="text-gray-400 dark:text-gray-500 text-xs font-medium">
             {usePreselected
               ? `${passedApps?.length || 0} app${(passedApps?.length || 0) !== 1 ? 's' : ''} selected`
               : bgEnvSelections.length > 0 ? `${bgEnvSelections.length} env${bgEnvSelections.length !== 1 ? 's' : ''} selected` : 'No selection'}
           </p>
-          <div className="flex gap-3">
+          <div className="flex gap-2.5">
             <button onClick={onClose} disabled={status === 'running'}
-              className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50">
+              className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors disabled:opacity-50">
               {status === 'done' ? 'Close' : 'Cancel'}
             </button>
             {status !== 'done' && (
               <button onClick={handleExport} disabled={status === 'running' || !canExport}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 transition-colors ${
+                className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-xl disabled:opacity-50 shadow-md ring-1 ring-inset ring-white/20 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 ${
                   exportFormat === 'json'
-                    ? 'bg-blue-600 hover:bg-blue-500'
-                    : 'bg-emerald-600 hover:bg-emerald-500'
+                    ? 'bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40'
+                    : 'bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 shadow-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/40'
                 }`}>
                 {status === 'running'
                   ? <><RefreshCw size={13} className="animate-spin" /> Exporting…</>
@@ -655,7 +658,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
               </button>
             )}
             {status === 'done' && (
-              <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+              <button onClick={handleExport} className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl transition-colors">
                 <Download size={13} /> Download Again
               </button>
             )}

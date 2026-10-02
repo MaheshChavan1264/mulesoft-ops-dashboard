@@ -32,7 +32,7 @@ export default function CopyBtn({ text, fade = true, size = 11, className = '' }
   };
 
   const baseClass = [
-    'p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-700/60 transition-all flex-shrink-0',
+    'p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200/60 transition-all flex-shrink-0',
     fade ? 'opacity-0 group-hover:opacity-100' : '',
     className,
   ].filter(Boolean).join(' ');
@@ -40,7 +40,7 @@ export default function CopyBtn({ text, fade = true, size = 11, className = '' }
   return (
     <button onClick={handleClick} title="Copy" className={baseClass}>
       {done
-        ? <Check size={size} className="text-emerald-400" />
+        ? <Check size={size} className="text-emerald-600" />
         : <Copy size={size} />}
     </button>
   );

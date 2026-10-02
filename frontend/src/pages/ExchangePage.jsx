@@ -24,29 +24,29 @@ const ASSET_TYPES = [
 ];
 
 const typeColor = (type) => ({
-  'rest-api':          'bg-blue-500/20 text-blue-400',
-  'soap-api':          'bg-purple-500/20 text-purple-400',
-  'http-api':          'bg-cyan-500/20 text-cyan-400',
-  'mule-application':  'bg-green-500/20 text-green-400',
-  'mule-plugin':       'bg-orange-500/20 text-orange-400',
-  template:            'bg-yellow-500/20 text-yellow-400',
-  example:             'bg-pink-500/20 text-pink-400',
-}[type] || 'bg-gray-500/20 text-gray-400');
+  'rest-api':          'bg-blue-100 text-blue-600',
+  'soap-api':          'bg-purple-100 text-purple-600',
+  'http-api':          'bg-cyan-100 text-cyan-600',
+  'mule-application':  'bg-green-100 text-green-600',
+  'mule-plugin':       'bg-orange-100 text-orange-600',
+  template:            'bg-yellow-100 text-yellow-600',
+  example:             'bg-pink-100 text-pink-600',
+}[type] || 'bg-gray-100 text-gray-500');
 
 const METHOD_COLOR = {
-  GET:    'bg-blue-950/40 text-blue-300 border-blue-700/40',
-  POST:   'bg-green-950/40 text-green-300 border-green-700/40',
-  PUT:    'bg-yellow-950/40 text-yellow-300 border-yellow-700/40',
-  DELETE: 'bg-red-950/40 text-red-300 border-red-700/40',
-  PATCH:  'bg-orange-950/40 text-orange-300 border-orange-700/40',
+  GET:    'bg-blue-50/40 text-blue-700 border-blue-300/40',
+  POST:   'bg-green-50/40 text-green-700 border-green-300/40',
+  PUT:    'bg-yellow-50/40 text-yellow-700 border-yellow-300/40',
+  DELETE: 'bg-red-50/40 text-red-700 border-red-300/40',
+  PATCH:  'bg-orange-50/40 text-orange-700 border-orange-300/40',
 };
 
 function CopyBtn({ text }) {
   const [done, setDone] = useState(false);
   return (
     <button onClick={() => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }}
-      className="text-gray-600 hover:text-gray-300 p-0.5 transition-colors">
-      {done ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+      className="text-gray-500 hover:text-gray-900 p-0.5 transition-colors">
+      {done ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
     </button>
   );
 }
@@ -174,10 +174,10 @@ export default function ExchangePage() {
   const filterActive = filteredBgs.length < allBgs.length;
 
   const bgOptions = [
-    { value: '', label: 'All Organizations', tag: `${filteredBgs.length}`, tagColor: 'bg-gray-700 text-gray-300' },
+    { value: '', label: 'All Organizations', tag: `${filteredBgs.length}`, tagColor: 'bg-gray-200 text-gray-600' },
     ...filteredBgs.map(g => ({
       value: g.id, label: g.name, indent: !!g.parentId,
-      tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400'
+      tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-100 text-blue-600'
     }))
   ];
 
@@ -198,10 +198,10 @@ export default function ExchangePage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white">Exchange Assets</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Browse in <span className="text-blue-400">{selectedBgName}</span>
-            {total > 0 && <span className="text-gray-600 ml-1">— {total} total</span>}
+          <h1 className="text-xl font-bold text-gray-900">Exchange Assets</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Browse in <span className="text-blue-600">{selectedBgName}</span>
+            {total > 0 && <span className="text-gray-500 ml-1">— {total} total</span>}
           </p>
         </div>
       </div>
@@ -218,7 +218,7 @@ export default function ExchangePage() {
         {/* BG Filter button */}
         <button onClick={() => setShowBgFilter(true)}
           className={`flex items-center gap-1.5 text-xs px-2.5 py-2 rounded-lg border transition-all ${
-            filterActive ? 'bg-blue-600/20 border-blue-600/50 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
+            filterActive ? 'bg-blue-100 border-blue-300/50 text-blue-600' : 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900'
           }`}>
           <SlidersHorizontal size={12} />
           {filterActive ? `${filteredBgs.length}/${allBgs.length} BGs` : 'Filter BGs'}
@@ -228,15 +228,15 @@ export default function ExchangePage() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search assets..."
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+            className="w-full bg-white border border-gray-300 rounded-lg pl-9 pr-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500" />
         </div>
         {/* Type filter */}
         <select value={assetType} onChange={e => setAssetType(e.target.value)}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+          className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500">
           {ASSET_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
         <button onClick={() => { setOffset(0); loadAssets(0); }}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg transition-colors">
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 px-3 py-2 rounded-lg transition-colors">
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
@@ -245,24 +245,24 @@ export default function ExchangePage() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
 
         {/* ── Asset list (2/5) ─────────────────────────────── */}
-        <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
-            <h3 className="text-white font-semibold text-sm">
+        <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+            <h3 className="text-gray-900 font-semibold text-sm">
               Assets {total > 0 && (
-                <span className="text-gray-400 font-normal text-xs ml-1">
+                <span className="text-gray-500 font-normal text-xs ml-1">
                   ({assets.length}{total > assets.length ? ` of ${total}` : ''})
                 </span>
               )}
             </h3>
             {totalPages > 1 && (
-              <div className="flex items-center gap-1 text-sm text-gray-400">
+              <div className="flex items-center gap-1 text-sm text-gray-500">
                 <button onClick={() => { const n = Math.max(0, offset - LIMIT); setOffset(n); loadAssets(n); }}
-                  disabled={offset === 0} className="p-1 hover:text-white disabled:opacity-30">
+                  disabled={offset === 0} className="p-1 hover:text-gray-900 disabled:opacity-30">
                   <ChevronLeft size={15} />
                 </button>
                 <span className="text-xs">{currentPage}/{totalPages}</span>
                 <button onClick={() => { const n = offset + LIMIT; setOffset(n); loadAssets(n); }}
-                  disabled={currentPage >= totalPages} className="p-1 hover:text-white disabled:opacity-30">
+                  disabled={currentPage >= totalPages} className="p-1 hover:text-gray-900 disabled:opacity-30">
                   <ChevronRight size={15} />
                 </button>
               </div>
@@ -274,25 +274,25 @@ export default function ExchangePage() {
               <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-500" />
             </div>
           ) : (
-            <div className="divide-y divide-gray-800 overflow-y-auto flex-1 max-h-[640px]">
+            <div className="divide-y divide-gray-200 overflow-y-auto flex-1 max-h-[640px]">
               {assets.map((asset, i) => (
                 <button key={`${asset.groupId}-${asset.assetId}-${i}`}
                   onClick={() => selectAsset(asset)}
-                  className={`w-full flex items-start gap-3 px-4 py-3.5 hover:bg-gray-800/50 text-left transition-colors ${
+                  className={`w-full flex items-start gap-3 px-4 py-3.5 hover:bg-gray-100/50 text-left transition-colors ${
                     selected?.assetId === asset.assetId && selected?.groupId === asset.groupId
                       ? 'bg-blue-600/10 border-l-2 border-blue-500' : ''
                   }`}>
-                  <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Package size={13} className="text-blue-400" />
+                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Package size={13} className="text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-white text-sm font-medium truncate">{asset.name || asset.assetId}</p>
+                      <p className="text-gray-900 text-sm font-medium truncate">{asset.name || asset.assetId}</p>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${typeColor(asset.type)}`}>
                         {asset.type}
                       </span>
                     </div>
-                    <p className="text-gray-600 text-[10px] mt-0.5 truncate font-mono">{asset.assetId}</p>
+                    <p className="text-gray-500 text-[10px] mt-0.5 truncate font-mono">{asset.assetId}</p>
                     {asset.description && (
                       <p className="text-gray-500 text-xs mt-0.5 line-clamp-1">{asset.description}</p>
                     )}
@@ -310,36 +310,36 @@ export default function ExchangePage() {
         </div>
 
         {/* ── Asset Detail panel (3/5) ─────────────────────── */}
-        <div className="lg:col-span-3 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex flex-col min-h-[500px]">
+        <div className="lg:col-span-3 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col min-h-[500px]">
           {!selected ? (
             <div className="flex flex-col items-center justify-center flex-1 py-24 gap-3 text-gray-500 text-sm">
-              <Package size={40} className="text-gray-700" />
+              <Package size={40} className="text-gray-500" />
               <p>Select an asset to view details</p>
             </div>
           ) : (
             <>
               {/* Detail header */}
-              <div className="px-5 py-4 border-b border-gray-800 flex-shrink-0">
+              <div className="px-5 py-4 border-b border-gray-200 flex-shrink-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-white font-bold text-base">{selected.name || selected.assetId}</h3>
+                      <h3 className="text-gray-900 font-bold text-base">{selected.name || selected.assetId}</h3>
                       <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${typeColor(selected.type)}`}>
                         {selected.type}
                       </span>
                       <span className={`text-[10px] px-2 py-0.5 rounded border font-medium ${
                         selected.status === 'published'
-                          ? 'bg-emerald-950/40 text-emerald-400 border-emerald-700/40'
-                          : 'bg-yellow-950/40 text-yellow-400 border-yellow-700/40'
+                          ? 'bg-emerald-50/40 text-emerald-600 border-emerald-300/40'
+                          : 'bg-yellow-50/40 text-yellow-600 border-yellow-300/40'
                       }`}>{selected.status || 'published'}</span>
                     </div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="font-mono text-xs text-gray-500">{selected.assetId}</span>
-                      <span className="text-gray-700 text-xs">·</span>
+                      <span className="text-gray-500 text-xs">·</span>
                       <span className="text-xs text-gray-500">v{selected.version}</span>
                       {selected.minMuleVersion && (
                         <>
-                          <span className="text-gray-700 text-xs">·</span>
+                          <span className="text-gray-500 text-xs">·</span>
                           <span className="text-xs text-gray-500">Min Mule: {selected.minMuleVersion}</span>
                         </>
                       )}
@@ -347,13 +347,13 @@ export default function ExchangePage() {
                   </div>
                   <a href={`https://anypoint.mulesoft.com/exchange/${selected.groupId}/${selected.assetId}/`}
                     target="_blank" rel="noreferrer"
-                    className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 flex-shrink-0 border border-blue-800/40 px-2.5 py-1.5 rounded-lg bg-blue-950/20 transition-colors">
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 flex-shrink-0 border border-blue-200/40 px-2.5 py-1.5 rounded-lg bg-blue-50/20 transition-colors">
                     <ExternalLink size={12} /> Open in Exchange
                   </a>
                 </div>
 
                 {/* Tab bar */}
-                <div className="flex gap-1 mt-3 bg-gray-800/50 rounded-lg p-0.5 w-fit">
+                <div className="flex gap-1 mt-3 bg-gray-100/50 rounded-lg p-0.5 w-fit">
                   {[
                     { id: 'overview', label: 'Overview', icon: Globe },
                     ...(['rest-api', 'http-api'].includes(selected.type) ? [{ id: 'api', label: 'API Spec', icon: Code2 }] : []),
@@ -361,11 +361,11 @@ export default function ExchangePage() {
                   ].map(t => (
                     <button key={t.id} onClick={() => setDetailTab(t.id)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                        detailTab === t.id ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-gray-200'
+                        detailTab === t.id ? 'bg-gray-200 text-gray-900 shadow' : 'text-gray-500 hover:text-gray-900'
                       }`}>
                       <t.icon size={11} /> {t.label}
                       {t.id === 'api' && pingSpec?.allEndpoints?.length > 0 && (
-                        <span className="bg-blue-500/30 text-blue-300 text-[9px] px-1 rounded">{pingSpec.allEndpoints.length}</span>
+                        <span className="bg-blue-500/30 text-blue-700 text-[9px] px-1 rounded">{pingSpec.allEndpoints.length}</span>
                       )}
                     </button>
                   ))}
@@ -385,7 +385,7 @@ export default function ExchangePage() {
                   {(selected.description || assetDetail?.description) && (
                     <div>
                       <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1.5">Description</p>
-                      <p className="text-gray-300 text-sm leading-relaxed">
+                      <p className="text-gray-600 text-sm leading-relaxed">
                         {assetDetail?.description || selected.description}
                       </p>
                     </div>
@@ -404,10 +404,10 @@ export default function ExchangePage() {
                       { label: 'Created', value: selected.createdAt ? new Date(selected.createdAt).toLocaleDateString() : null },
                       { label: 'Updated', value: selected.updatedAt ? new Date(selected.updatedAt).toLocaleDateString() : null },
                     ].filter(r => r.value).map(({ label, value, mono, copy }) => (
-                      <div key={label} className="bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-2.5">
+                      <div key={label} className="bg-gray-100/40 border border-gray-300/30 rounded-lg px-3 py-2.5">
                         <p className="text-[9px] text-gray-500 uppercase tracking-wider font-bold mb-0.5">{label}</p>
                         <div className="flex items-center gap-1">
-                          <p className={`text-xs break-all ${mono ? 'font-mono text-gray-300' : 'text-white'}`}>{value}</p>
+                          <p className={`text-xs break-all ${mono ? 'font-mono text-gray-600' : 'text-gray-900'}`}>{value}</p>
                           {copy && <CopyBtn text={String(value)} />}
                         </div>
                       </div>
@@ -422,7 +422,7 @@ export default function ExchangePage() {
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {(assetDetail?.labels || selected.labels || []).map((l, i) => (
-                          <span key={i} className="bg-gray-800 text-gray-300 text-xs px-2 py-0.5 rounded border border-gray-700/50">{l}</span>
+                          <span key={i} className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded border border-gray-300/50">{l}</span>
                         ))}
                       </div>
                     </div>
@@ -434,7 +434,7 @@ export default function ExchangePage() {
                       <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1.5">Categories</p>
                       <div className="flex flex-wrap gap-1.5">
                         {assetDetail.categories.map((c, i) => (
-                          <span key={i} className="bg-blue-950/30 text-blue-300 text-xs px-2 py-0.5 rounded border border-blue-800/40">
+                          <span key={i} className="bg-blue-50/30 text-blue-700 text-xs px-2 py-0.5 rounded border border-blue-200/40">
                             {c.key}: {c.value}
                           </span>
                         ))}
@@ -448,18 +448,18 @@ export default function ExchangePage() {
                       <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1.5 flex items-center gap-1">
                         <User size={10} /> Contact
                       </p>
-                      <div className="bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-2">
-                        {assetDetail.contactName && <p className="text-white text-sm">{assetDetail.contactName}</p>}
-                        {assetDetail.contactEmail && <p className="text-blue-400 text-xs">{assetDetail.contactEmail}</p>}
+                      <div className="bg-gray-100/40 border border-gray-300/30 rounded-lg px-3 py-2">
+                        {assetDetail.contactName && <p className="text-gray-900 text-sm">{assetDetail.contactName}</p>}
+                        {assetDetail.contactEmail && <p className="text-blue-600 text-xs">{assetDetail.contactEmail}</p>}
                       </div>
                     </div>
                   )}
 
                   {/* Portal link */}
-                  <div className="pt-2 border-t border-gray-800">
+                  <div className="pt-2 border-t border-gray-200">
                     <a href={`https://anypoint.mulesoft.com/exchange/${selected.groupId}/${selected.assetId}/${selected.version}/`}
                       target="_blank" rel="noreferrer"
-                      className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                      className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 transition-colors">
                       <Link2 size={11} /> View full documentation on Exchange
                     </a>
                   </div>
@@ -479,11 +479,11 @@ export default function ExchangePage() {
                     <>
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-white text-sm font-semibold">{pingSpec.assetName}</p>
+                          <p className="text-gray-900 text-sm font-semibold">{pingSpec.assetName}</p>
                           <p className="text-gray-500 text-xs mt-0.5">
                             {pingSpec.specType?.toUpperCase()} · {pingSpec.allEndpoints?.length ?? 0} endpoints
                             {pingSpec.pingEndpoints?.length > 0 && (
-                              <span className="ml-2 text-emerald-400 font-medium">· {pingSpec.pingEndpoints.length} ping/health endpoints</span>
+                              <span className="ml-2 text-emerald-600 font-medium">· {pingSpec.pingEndpoints.length} ping/health endpoints</span>
                             )}
                           </p>
                         </div>
@@ -494,23 +494,23 @@ export default function ExchangePage() {
                           {pingSpec.allEndpoints.map((ep, i) => {
                             const isPing = pingSpec.pingEndpoints?.some(p => p.path === ep.path && p.method === ep.method);
                             return (
-                              <div key={i} className={`rounded-lg border px-3 py-2.5 ${isPing ? 'bg-emerald-950/15 border-emerald-800/40' : 'bg-gray-800/40 border-gray-700/30'}`}>
+                              <div key={i} className={`rounded-lg border px-3 py-2.5 ${isPing ? 'bg-emerald-50/15 border-emerald-200/40' : 'bg-gray-100/40 border-gray-300/30'}`}>
                                 <div className="flex items-center gap-2.5 flex-wrap">
-                                  <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${METHOD_COLOR[ep.method] || 'bg-gray-800/60 text-gray-300 border-gray-700/40'}`}>
+                                  <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${METHOD_COLOR[ep.method] || 'bg-gray-100/60 text-gray-600 border-gray-300/40'}`}>
                                     {ep.method}
                                   </span>
-                                  <span className={`font-mono text-xs ${isPing ? 'text-emerald-300' : 'text-gray-200'}`}>{ep.path}</span>
+                                  <span className={`font-mono text-xs ${isPing ? 'text-emerald-700' : 'text-gray-700'}`}>{ep.path}</span>
                                   {isPing && <span className="text-[9px] text-emerald-500 font-medium">● health</span>}
                                   {ep.description && <span className="text-gray-500 text-[10px] ml-auto truncate max-w-xs">{ep.description}</span>}
                                 </div>
                                 {ep.queryParams?.length > 0 && (
                                   <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                                    <span className="text-[9px] text-gray-600 uppercase font-bold">Query:</span>
+                                    <span className="text-[9px] text-gray-500 uppercase font-bold">Query:</span>
                                     {ep.queryParams.map(p => (
                                       <span key={p.name} title={p.description}
                                         className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${
-                                          p.required ? 'bg-orange-950/30 text-orange-300 border-orange-700/40'
-                                                     : 'bg-gray-800/60 text-gray-500 border-gray-700/40'
+                                          p.required ? 'bg-orange-50/30 text-orange-700 border-orange-300/40'
+                                                     : 'bg-gray-100/60 text-gray-500 border-gray-300/40'
                                         }`}>
                                         {p.name}{p.required ? '*' : ''}
                                       </span>
@@ -522,9 +522,9 @@ export default function ExchangePage() {
                           })}
                         </div>
                       ) : !pingSpecLoading && (
-                        <div className="flex items-start gap-3 bg-gray-800/40 border border-gray-700/30 rounded-xl px-4 py-3">
-                          <AlertTriangle size={14} className="text-yellow-400 flex-shrink-0 mt-0.5" />
-                          <p className="text-gray-400 text-xs">
+                        <div className="flex items-start gap-3 bg-gray-100/40 border border-gray-300/30 rounded-xl px-4 py-3">
+                          <AlertTriangle size={14} className="text-yellow-600 flex-shrink-0 mt-0.5" />
+                          <p className="text-gray-500 text-xs">
                             No endpoints found in spec. The backend server may need to be restarted to apply the latest spec parsing fixes.
                           </p>
                         </div>
@@ -545,14 +545,14 @@ export default function ExchangePage() {
                     <div className="space-y-2">
                       <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Available Files</p>
                       {assetDetail.files.map((f, i) => (
-                        <div key={i} className="flex items-center justify-between bg-gray-800/40 border border-gray-700/30 rounded-lg px-3 py-2.5">
+                        <div key={i} className="flex items-center justify-between bg-gray-100/40 border border-gray-300/30 rounded-lg px-3 py-2.5">
                           <div>
-                            <p className="text-white text-xs font-medium">{f.classifier || f.packaging || '—'}</p>
+                            <p className="text-gray-900 text-xs font-medium">{f.classifier || f.packaging || '—'}</p>
                             <p className="text-gray-500 text-[10px] font-mono">{f.packaging}</p>
                           </div>
                           {f.externalLink && (
                             <a href={f.externalLink} target="_blank" rel="noreferrer"
-                              className="text-blue-400 hover:text-blue-300 text-[10px] flex items-center gap-1 border border-blue-800/40 px-2 py-1 rounded bg-blue-950/20">
+                              className="text-blue-600 hover:text-blue-700 text-[10px] flex items-center gap-1 border border-blue-200/40 px-2 py-1 rounded bg-blue-50/20">
                               <ExternalLink size={10} /> Download
                             </a>
                           )}

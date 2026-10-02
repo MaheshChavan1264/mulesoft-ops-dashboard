@@ -9,7 +9,7 @@ export default function EmptyState({ icon, title, description, action }) {
         </div>
       )}
       {title && (
-        <p className="text-base font-semibold text-gray-300 mb-1">{title}</p>
+        <p className="text-base font-semibold text-gray-600 mb-1">{title}</p>
       )}
       {description && (
         <p className="text-sm text-gray-500 max-w-sm leading-relaxed">{description}</p>

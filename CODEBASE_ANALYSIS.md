@@ -1,9 +1,11 @@
 # MuleSoft Integration Dashboard — Complete Codebase Analysis
 
-> **Generated:** September 2026
+> **Generated:** September 2026 · **Updated:** January 2026
 > **Repository:** `mastanpanasala/mulesoft-ops-dashboard`
-> **Last Commit:** `9e4480ee00c53731902a6219961162af2374e0af`
+> **Branch:** `salesforce-theme`
 > **Analysis Scope:** All source files in `backend/` and `frontend/`
+>
+> **Note:** The Topology / Dependency Graph feature (`topologyController.js`, `dependencyGraphService.js`, the `/api/topology` route, `TopologyPage.jsx`, `DependencyGraph.jsx`, and the `@xyflow/react` dependency) described in earlier versions of this document was removed from the codebase (commit `4e78abe "topology removed"`). All references to it have been removed below to match the current source tree.
 
 ---
 
@@ -44,6 +46,8 @@ The **MuleSoft Integration Dashboard** is an internal full-stack web application
 | **CPS Comparison** | Side-by-side diff of CPS property sets across environments |
 | **User Search** | Platform user discovery across all Business Groups |
 
+> Note: an earlier **Dependency Mapping** objective (visual topology graph) existed in a previous iteration of this app and has since been removed.
+
 ### Application Details
 
 - **Name:** `mulesoft-dashboard-backend` / `mulesoft-dashboard-frontend`
@@ -63,7 +67,7 @@ The **MuleSoft Integration Dashboard** is an internal full-stack web application
 │  React Router v7  ·  TailwindCSS (dark theme, bg-gray-950)     │
 │  Axios + SWR in-memory cache (3-min fresh / 20-min stale)      │
 │  Context API: Auth, Toast, Notification, Credentials           │
-│  @xyflow/react  ·  xlsx  ·  Lucide React icons  ·  cronstrue   │
+│  xlsx  ·  Lucide React icons  ·  cronstrue                     │
 └──────────────────────────────┬──────────────────────────────────┘
                                │ HTTP/JSON  (:5000)
                                │ Cookie: express-session
@@ -121,7 +125,6 @@ The **MuleSoft Integration Dashboard** is an internal full-stack web application
 | `react-dom` | ^18.2.0 | DOM rendering |
 | `react-router-dom` | ^7.18.3 | Client-side routing (v7) |
 | `axios` | ^1.6.0 | HTTP client (to backend) |
-| `@xyflow/react` | ^12.11.6 | Topology / dependency graph visualization |
 | `xlsx` | ^0.18.5 | Excel export (CPS comparison, bulk CPS export) |
 | `lucide-react` | ^0.303.0 | Icon library |
 | `cronstrue` | ^3.27.0 | Human-readable cron expressions |
@@ -149,8 +152,7 @@ mulesoft-dashboard/
 │   ├── data/                       ← SQLite session DB (git-ignored)
 │   └── src/
 │       ├── server.js               ← Express app entry point
-│       ├── controllers/
-│       │   └── topologyController.js
+│       ├── controllers/            ← (currently empty)
 │       ├── middleware/
 │       │   └── authMiddleware.js   ← Session auth guard
 │       ├── routes/
@@ -162,10 +164,8 @@ mulesoft-dashboard/
 │       │   ├── exchange.js         ← Exchange asset search
 │       │   ├── metrics.js          ← Application metrics
 │       │   ├── cps.js              ← CPS CRUD (largest route file)
-│       │   ├── health.js           ← Ping test + credential resolution
-│       │   └── topology.js         ← Dependency graph
-│       ├── services/
-│       │   └── dependencyGraphService.js  ← Topology computation engine
+│       │   └── health.js           ← Ping test + credential resolution
+│       ├── services/                ← (currently empty)
 │       └── utils/
 │           ├── anypointClient.js   ← Axios factory for Anypoint API
 │           ├── appHelpers.js       ← Application data helpers
@@ -185,7 +185,7 @@ mulesoft-dashboard/
         ├── main.jsx                ← React DOM entry
         ├── index.css               ← Global styles
         │
-        ├── pages/                  ← 11 top-level pages
+        ├── pages/                  ← 10 top-level pages
         │   ├── LoginPage.jsx
         │   ├── ApplicationsPage.jsx
         │   ├── ApplicationDetailPage.jsx
@@ -195,10 +195,9 @@ mulesoft-dashboard/
         │   ├── CpsManagerPage.jsx
         │   ├── CpsComparisonPage.jsx
         │   ├── GlobalCpsManagerPage.jsx
-        │   ├── TopologyPage.jsx
         │   └── GlobalSearchPage.jsx
         │
-        ├── components/             ← 27 reusable components
+        ├── components/             ← 28 reusable components
         │   ├── Layout.jsx          ← App shell (sidebar + content)
         │   ├── Sidebar.jsx
         │   ├── Header.jsx
@@ -209,7 +208,6 @@ mulesoft-dashboard/
         │   ├── Select.jsx
         │   ├── Tooltip.jsx
         │   ├── CopyBtn.jsx
-        │   ├── DependencyGraph.jsx
         │   ├── PingTestPanel.jsx
         │   ├── PingResultCard.jsx
         │   ├── AttemptLog.jsx
@@ -271,7 +269,7 @@ The Express application bootstraps with these responsibilities in order:
 5. **Body parsing** — 1MB limit globally; 50MB for `/api/cps` routes (large property payloads)
 6. **Session middleware** — 24-hour cookie, `httpOnly: true`, `sameSite: lax`, `secure: true` in production
 7. **Rate limiting** — 20 auth requests per 15 minutes per IP (production only)
-8. **Route mounting** — 10 route groups under `/api/`
+8. **Route mounting** — 9 route groups under `/api/`
 9. **Global error handler** — 4-parameter Express error middleware catches all `next(err)` calls
 
 **Key configuration:**
@@ -403,34 +401,12 @@ Additional endpoints:
 | `apis.js` | `GET /api/apis/:orgId/:envId` — API Manager instances |
 | `exchange.js` | `GET /api/exchange/search` — Exchange asset search |
 | `metrics.js` | `GET /api/metrics/:orgId/:envId/:appId` — App metrics |
-| `topology.js` | `GET /api/topology` — dependency graph |
 
-### 5.4 Controllers
+### 5.4 Controllers & Services
 
-#### `topologyController.js`
-Orchestrates topology graph generation:
-- Delegates to `dependencyGraphService.buildFullTopology()`
-- Receives: `orgId`, `envId`, `cpsBaseUrl`, `cpsEnvironment` from query params
-- Returns graph with `nodes[]` and `edges[]`
-- Supports filtered sub-graphs: `getBackwardTree()` and `getForwardTree()`
+The `backend/src/controllers/` and `backend/src/services/` directories currently contain no files. A previous iteration of the app had a `topologyController.js` and `dependencyGraphService.js` here (dependency-graph/topology computation engine); this was removed (commit `4e78abe`) along with the `/api/topology` route and its frontend page.
 
-### 5.5 Services
-
-#### `dependencyGraphService.js` — Topology Engine
-
-The `DependencyGraphService` class builds the inter-application dependency graph by:
-
-1. **Fetching all apps** — queries both CH1 and CH2 APIs for the given org/env
-2. **Fetching CPS properties in batches** — calls `/api/v2/properties/non-secure/all` in batches of 20
-3. **Classifying nodes** — detects API-led layer from app name:
-   - `XAPI` — contains `xapi` or `exp-`
-   - `PAPI` — contains `papi` or `prc-`
-   - `SAPI` — contains `sapi` or `sys-`
-   - `EXTERNAL` — anything else (external services)
-4. **Extracting dependencies** — scans properties ending in `.host`, `.url`, `.endpoint`, `.domain`; normalizes the value (strips protocol, path, port) and matches against known app names; unmatched values become `EXTERNAL` nodes
-5. **Tree traversal** — `getBackwardTree()` (reverse BFS: who calls this app?) and `getForwardTree()` (forward BFS: what does this app call?)
-
-### 5.6 Utilities
+### 5.5 Utilities
 
 | File | Purpose |
 |---|---|
@@ -473,7 +449,6 @@ ToastProvider
 | `/user-search` | `GlobalSearchPage` | Yes |
 | `/cps-manager` | `CpsManagerPage` | Yes |
 | `/global-cps-manager` | `GlobalCpsManagerPage` | Yes |
-| `/topology` | `TopologyPage` | Yes |
 
 **`ProtectedRoute` component:** Shows a centered spinner while `AuthContext.loading === true`, redirects to `/login` if `user` is falsy.
 
@@ -564,9 +539,6 @@ Compares CPS property sets side-by-side across 2–4 environments for the same a
 #### `GlobalCpsManagerPage.jsx`
 Cross-BG, cross-environment CPS manager. Allows managing CPS properties for apps across multiple Business Groups simultaneously. Includes the `GlobalCpsCsvUpload` component for bulk credential management.
 
-#### `TopologyPage.jsx`
-Visual dependency graph powered by `@xyflow/react`. Nodes colored by API-led layer (XAPI/PAPI/SAPI/EXTERNAL). Edges labeled with the CPS property key that references the dependency. Supports forward and backward tree filtering for impact analysis.
-
 #### `GlobalSearchPage.jsx`
 Search Anypoint Platform users by name or email. Fans out across all BGs. Shows user details, roles, and BG membership. Copy user ID and email buttons.
 
@@ -619,11 +591,6 @@ Search Anypoint Platform users by name or email. Fans out across all BGs. Shows 
 | `EnvFilterModal.jsx` | Multi-select Environment visibility filter |
 | `CredentialImportButton.jsx` | CSV import for Ping credentials |
 | `GlobalCpsCsvUpload.jsx` | Bulk CSV upload for CPS credentials (multi-BG) |
-
-#### Visualization Component
-| Component | Role |
-|---|---|
-| `DependencyGraph.jsx` | `@xyflow/react` wrapper — renders topology nodes and edges with custom node types and edge labels |
 
 ### 6.5 Services Layer
 
@@ -762,14 +729,7 @@ Complete mock data sets for demo mode: mock user, orgs, environments, apps, app 
 - Bulk credential CSV upload via `GlobalCpsCsvUpload`
 - Manage properties across multiple BGs from one interface
 
-### Feature 10 — Topology / Dependency Graph
-- Visualizes inter-application dependencies as a directed graph
-- Node classification: XAPI (experience), PAPI (process), SAPI (system), EXTERNAL
-- Edge labels: CPS property key that references the dependency
-- Forward tree: what does app A call?
-- Backward tree: what calls app A? (impact analysis)
-- Built with `@xyflow/react` (React Flow v12)
-- Powered by scanning CPS non-secure properties for `.host`, `.url`, `.endpoint`, `.domain` keys
+> **Removed feature:** Topology / Dependency Graph (directed graph of inter-app dependencies, built with `@xyflow/react`) existed in a prior iteration and was removed from the codebase.
 
 ### Feature 11 — User Search
 - Search platform users by name or email across all BGs
@@ -951,21 +911,6 @@ On 401 / COULD NOT ACCESS:
   → collect all session entries starting with "{normalizedUrl}::"
   → retry in batches of 5
   → promote working credential to priority 1 + 2
-```
-
-### Topology Build Flow
-```
-TopologyPage:
-  GET /api/topology?orgId&envId&cpsBaseUrl&cpsEnvironment
-  → dependencyGraphService.buildFullTopology()
-    → fetchAllAppsForEnv() → CH1 + CH2 app lists
-    → fetchCpsPropertiesBatch() → non-secure/all for batch of 20 apps
-    → classifyNode(name) → XAPI/PAPI/SAPI/EXTERNAL
-    → extractDependencies(props) → scan *.host/*.url/*.endpoint/*.domain
-    → match normalized value against known app names
-    → unmatched → EXTERNAL node
-  → return { nodes[], edges[] }
-  → DependencyGraph component → @xyflow/react render
 ```
 
 ---
@@ -1153,6 +1098,7 @@ localStorage.removeItem('mulesoft_demo_mode')
 | `Header.jsx` | `AuthContext`, `ToastContext` |
 | `PingTestPage`, `PingTestPanel` | `CredentialStoreContext`, `AuthContext` |
 | `CpsManagerPage`, `GlobalCpsManagerPage` | `CpsCredentialStoreContext`, `AuthContext`, `ToastContext` |
+| `GlobalSearchPage` | `AuthContext`, `ToastContext` |
 | `CpsCredentialImportButton` | `CpsCredentialStoreContext` |
 | `CredentialImportButton` | `CredentialStoreContext` |
 | All pages with mutations | `ToastContext`, `NotificationContext` |
@@ -1188,9 +1134,6 @@ PingTestPage
   │   └── PingResultCard
   │       └── AttemptLog
   └── CredentialImportButton
-
-TopologyPage
-  └── DependencyGraph (@xyflow/react)
 
 CpsComparisonPage
   ├── Select, Skeleton
@@ -1281,4 +1224,4 @@ This prevents accidental production config changes without blocking legitimate u
 
 *End of Codebase Analysis — MuleSoft Integration Dashboard v1.0*
 
-*Document covers: 2 package manifests, 1 entry point, 1 middleware, 10 route files, 1 controller, 1 service, 6 backend utilities, 1 root component, 11 pages, 27 components, 5 context providers, 7 service files, 8 utility files.*
+*Document covers: 2 package manifests, 1 entry point, 1 middleware, 9 route files, 0 controllers, 0 services (both dirs empty — topology feature removed), 6 backend utilities, 1 root component, 10 pages, 28 components, 5 context providers, 7 service files, 8 utility files.*

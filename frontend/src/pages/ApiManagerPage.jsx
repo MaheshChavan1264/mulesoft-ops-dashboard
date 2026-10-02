@@ -9,7 +9,7 @@ import api from '../services/api';
 import { ENV_BADGE } from '../utils/appUtils';
 import { getCachedSWR, setCached } from '../services/apiCache';
 
-const ENV_TAG_COLOR = { production: 'bg-green-500/20 text-green-400', sandbox: 'bg-yellow-500/20 text-yellow-400' };
+const ENV_TAG_COLOR = { production: 'bg-green-100 text-green-600', sandbox: 'bg-yellow-100 text-yellow-600' };
 
 // Cache TTL constants
 const ENV_CACHE_MS  = 10 * 60 * 1000;  // 10 min — env lists are stable
@@ -71,21 +71,21 @@ function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
   const isApproved = status === 'ACTIVE' || status === 'APPROVED';
 
   const statusIcon =
-    isApproved ? <CheckCircle size={12} className="text-green-400 flex-shrink-0" /> :
-    status === 'REVOKED' ? <XCircle size={12} className="text-red-400 flex-shrink-0" /> :
-    isPending ? <Clock size={12} className="text-yellow-400 flex-shrink-0" /> :
-    <AlertCircle size={12} className="text-gray-400 flex-shrink-0" />;
+    isApproved ? <CheckCircle size={12} className="text-green-600 flex-shrink-0" /> :
+    status === 'REVOKED' ? <XCircle size={12} className="text-red-600 flex-shrink-0" /> :
+    isPending ? <Clock size={12} className="text-yellow-600 flex-shrink-0" /> :
+    <AlertCircle size={12} className="text-gray-500 flex-shrink-0" />;
 
   const statusColor =
-    isApproved ? 'text-green-400 bg-green-500/10 border-green-700/40' :
-    status === 'REVOKED' ? 'text-red-400 bg-red-500/10 border-red-700/40' :
-    isPending ? 'text-yellow-400 bg-yellow-500/10 border-yellow-700/40' :
-    'text-gray-400 bg-gray-700/30 border-gray-600/40';
+    isApproved ? 'text-green-600 bg-green-50 border-green-300/40' :
+    status === 'REVOKED' ? 'text-red-600 bg-red-50 border-red-300/40' :
+    isPending ? 'text-yellow-600 bg-yellow-50 border-yellow-300/40' :
+    'text-gray-500 bg-gray-200/30 border-gray-300/40';
 
   return (
-    <div key={c.id || i} className="px-5 py-3 hover:bg-gray-800/30 transition-colors">
+    <div key={c.id || i} className="px-5 py-3 hover:bg-gray-100/30 transition-colors">
       <div className="flex items-start justify-between gap-3 mb-2">
-        <p className="text-white text-sm font-medium truncate">{appName}</p>
+        <p className="text-gray-900 text-sm font-medium truncate">{appName}</p>
         <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-semibold flex-shrink-0 ${statusColor}`}>
           {statusIcon}{status.replace('_', ' ')}
         </span>
@@ -93,7 +93,7 @@ function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <span className="text-gray-500 text-[10px] w-16 flex-shrink-0">Client ID</span>
-          <span className="font-mono text-[10px] bg-gray-800 px-1.5 py-0.5 rounded text-gray-300 break-all select-all">
+          <span className="font-mono text-[10px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 break-all select-all">
             {clientId || '—'}
           </span>
         </div>
@@ -105,40 +105,40 @@ function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
         )}
         <div className="flex items-center gap-2 flex-wrap pt-0.5">
           {tierName && (
-            <span className="text-blue-400 text-[10px] bg-blue-500/10 border border-blue-700/40 px-1.5 py-0.5 rounded">{tierName}</span>
+            <span className="text-blue-600 text-[10px] bg-blue-50 border border-blue-300/40 px-1.5 py-0.5 rounded">{tierName}</span>
           )}
-          {created && <span className="text-gray-600 text-[10px]">{created}</span>}
+          {created && <span className="text-gray-500 text-[10px]">{created}</span>}
         </div>
       </div>
 
-      <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-800/60">
+      <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200/60">
         {/* ── Status action buttons (left) ─────────────────────────── */}
         <div className="flex gap-2 min-h-[24px] items-center">
           {loading && <RefreshCw size={12} className="animate-spin text-gray-500" />}
 
           {!loading && isPending && (
             <>
-              <button onClick={() => handleUpdate('APPROVED')} className="text-[10px] uppercase font-bold tracking-wider bg-green-900/40 text-green-400 border border-green-700/50 hover:bg-green-800/60 px-3 py-1 rounded transition-colors">Approve</button>
-              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-900/40 text-red-400 border border-red-700/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Reject</button>
+              <button onClick={() => handleUpdate('APPROVED')} className="text-[10px] uppercase font-bold tracking-wider bg-green-100/40 text-green-600 border border-green-300/50 hover:bg-green-800/60 px-3 py-1 rounded transition-colors">Approve</button>
+              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-100/40 text-red-600 border border-red-300/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Reject</button>
             </>
           )}
 
           {!loading && isApproved && !confirmRevoke && (
-            <button onClick={() => setConfirmRevoke(true)} className="text-[10px] uppercase font-bold tracking-wider bg-red-900/40 text-red-400 border border-red-700/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Revoke</button>
+            <button onClick={() => setConfirmRevoke(true)} className="text-[10px] uppercase font-bold tracking-wider bg-red-100/40 text-red-600 border border-red-300/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Revoke</button>
           )}
 
           {!loading && confirmRevoke && (
             <div className="flex gap-2 items-center">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-red-400 flex items-center gap-1">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-red-600 flex items-center gap-1">
                 <AlertCircle size={10} /> Revoke this contract?
               </span>
-              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-600 text-white hover:bg-red-500 px-3 py-1 rounded transition-colors">Yes, Revoke</button>
-              <button onClick={() => setConfirmRevoke(false)} className="text-[10px] uppercase font-bold tracking-wider text-gray-400 hover:text-white px-2 py-1 rounded transition-colors">Cancel</button>
+              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-600 text-gray-900 hover:bg-red-500 px-3 py-1 rounded transition-colors">Yes, Revoke</button>
+              <button onClick={() => setConfirmRevoke(false)} className="text-[10px] uppercase font-bold tracking-wider text-gray-500 hover:text-gray-900 px-2 py-1 rounded transition-colors">Cancel</button>
             </div>
           )}
 
           {!loading && status === 'REVOKED' && (
-            <button onClick={() => handleUpdate('ACTIVE')} className="text-[10px] uppercase font-bold tracking-wider bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700 px-3 py-1 rounded transition-colors">Restore</button>
+            <button onClick={() => handleUpdate('ACTIVE')} className="text-[10px] uppercase font-bold tracking-wider bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200 px-3 py-1 rounded transition-colors">Restore</button>
           )}
         </div>
 
@@ -148,18 +148,18 @@ function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
             <RefreshCw size={12} className="animate-spin text-gray-500" />
           ) : confirmDelete ? (
             <div className="flex gap-1.5 items-center">
-              <span className="text-[10px] font-bold text-red-400 flex items-center gap-1">
+              <span className="text-[10px] font-bold text-red-600 flex items-center gap-1">
                 <Trash2 size={10} /> Delete permanently?
               </span>
               <button
                 onClick={handleDelete}
-                className="text-[10px] uppercase font-bold tracking-wider bg-red-700 text-white hover:bg-red-600 px-2 py-0.5 rounded transition-colors"
+                className="text-[10px] uppercase font-bold tracking-wider bg-red-700 text-gray-900 hover:bg-red-600 px-2 py-0.5 rounded transition-colors"
               >
                 Yes
               </button>
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="text-[10px] uppercase font-bold tracking-wider text-gray-400 hover:text-white px-2 py-0.5 rounded transition-colors"
+                className="text-[10px] uppercase font-bold tracking-wider text-gray-500 hover:text-gray-900 px-2 py-0.5 rounded transition-colors"
               >
                 Cancel
               </button>
@@ -168,7 +168,7 @@ function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
             <button
               onClick={() => { setConfirmRevoke(false); setConfirmDelete(true); }}
               title="Delete contract permanently"
-              className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-gray-800 text-gray-400 border border-gray-700 hover:bg-red-900/40 hover:text-red-400 hover:border-red-700/50 px-2 py-1 rounded transition-colors"
+              className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-gray-100 text-gray-500 border border-gray-300 hover:bg-red-100/40 hover:text-red-600 hover:border-red-300/50 px-2 py-1 rounded transition-colors"
             >
               <Trash2 size={11} /> Delete
             </button>
@@ -190,14 +190,14 @@ function PolicyCard({ p, i }) {
   return (
     <div key={p.id || i} className="px-5 py-2.5">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-white text-sm font-medium capitalize">{policyName.replace(/-/g, ' ')}</p>
-        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold flex-shrink-0 ${p.disabled ? 'text-red-400 bg-red-500/10 border-red-700/40' : 'text-green-400 bg-green-500/10 border-green-700/40'}`}>
+        <p className="text-gray-900 text-sm font-medium capitalize">{policyName.replace(/-/g, ' ')}</p>
+        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold flex-shrink-0 ${p.disabled ? 'text-red-600 bg-red-50 border-red-300/40' : 'text-green-600 bg-green-50 border-green-300/40'}`}>
           {p.disabled ? 'Disabled' : 'Active'}
         </span>
       </div>
       <div className="flex items-center gap-2 mt-0.5">
         <p className="text-gray-500 text-xs font-mono">{policyName}</p>
-        {policyVersion && <span className="text-gray-600 text-[10px]">v{policyVersion}</span>}
+        {policyVersion && <span className="text-gray-500 text-[10px]">v{policyVersion}</span>}
       </div>
     </div>
   );
@@ -579,14 +579,14 @@ export default function ApiManagerPage() {
       value: '__all__',
       label: 'All Business Groups',
       tag: `${visibleGroups.length}`,
-      tagColor: 'bg-gray-700 text-gray-300',
+      tagColor: 'bg-gray-200 text-gray-600',
     },
     ...visibleGroups.map(g => ({
       value: g.id,
       label: g.name,
       indent: !!g.parentId,
       tag: !g.parentId ? 'Root' : undefined,
-      tagColor: 'bg-blue-500/20 text-blue-400',
+      tagColor: 'bg-blue-100 text-blue-600',
     })),
   ];
 
@@ -595,7 +595,7 @@ export default function ApiManagerPage() {
       value: '',
       label: 'All Environments',
       tag: environments.length > 0 ? `${environments.length}` : undefined,
-      tagColor: 'bg-gray-700 text-gray-300',
+      tagColor: 'bg-gray-200 text-gray-600',
     },
     ...environments.map(e => ({
       value: e.id,
@@ -603,7 +603,7 @@ export default function ApiManagerPage() {
       badge: true,
       badgeColor: ENV_BADGE[e.type] || 'bg-gray-400',
       tag: e.type,
-      tagColor: ENV_TAG_COLOR[e.type] || 'bg-gray-700 text-gray-400',
+      tagColor: ENV_TAG_COLOR[e.type] || 'bg-gray-200 text-gray-500',
     })),
   ];
 
@@ -639,19 +639,19 @@ export default function ApiManagerPage() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white">API Manager</h1>
-          <p className="text-gray-400 text-sm mt-1">
+          <h1 className="text-xl font-bold text-gray-900">API Manager</h1>
+          <p className="text-gray-500 text-sm mt-1">
             Managed API instances in{' '}
-            <span className="text-blue-400">{selectedBgName}</span>
+            <span className="text-blue-600">{selectedBgName}</span>
             {selectedEnvName && (
-              <> · <span className="text-blue-400">{selectedEnvName}</span></>
+              <> · <span className="text-blue-600">{selectedEnvName}</span></>
             )}
           </p>
         </div>
         <button
           onClick={loadApis}
           disabled={loading || !selectedBg}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg disabled:opacity-50"
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 px-3 py-2 rounded-lg disabled:opacity-50"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
@@ -664,17 +664,6 @@ export default function ApiManagerPage() {
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium flex-1">Business Group</p>
-            <button
-              onClick={() => setShowBgFilter(true)}
-              className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border transition-all ${
-                filterActive
-                  ? 'bg-blue-600/20 border-blue-600/50 text-blue-400'
-                  : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              <SlidersHorizontal size={9} />
-              {filterActive ? `${visibleGroups.length}/${allBusinessGroups.length}` : 'Filter'}
-            </button>
           </div>
           <Select
             value={selectedBg}
@@ -685,7 +674,7 @@ export default function ApiManagerPage() {
             disabled={bgLoading}
           />
           {filterActive && (
-            <p className="text-[9px] text-blue-400 mt-0.5 pl-1">
+            <p className="text-[9px] text-blue-600 mt-0.5 pl-1">
               {visibleGroups.length}/{allBusinessGroups.length} shown
             </p>
           )}
@@ -696,7 +685,7 @@ export default function ApiManagerPage() {
           <div className="flex items-center gap-2 mb-1.5">
             <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium flex-1">Environment</p>
             {envFilterActive && (
-              <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border bg-green-600/20 border-green-600/50 text-green-400">
+              <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border bg-green-100 border-green-300/50 text-green-600">
                 <Globe size={9} /> Global filter
               </span>
             )}
@@ -713,7 +702,7 @@ export default function ApiManagerPage() {
             searchable={environments.length > 5}
           />
           {envFilterActive && (
-            <p className="text-[9px] text-green-400 mt-0.5 pl-1">
+            <p className="text-[9px] text-green-600 mt-0.5 pl-1">
               {environments.length} env{environments.length !== 1 ? 's' : ''} from global filter
             </p>
           )}
@@ -728,7 +717,7 @@ export default function ApiManagerPage() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by API name, asset ID, or instance ID…"
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+              className="w-full bg-white border border-gray-300 rounded-lg pl-9 pr-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500"
             />
           </div>
         </div>
@@ -736,7 +725,7 @@ export default function ApiManagerPage() {
 
       {/* ── Error banner ───────────────────────────────────────────────────── */}
       {error && (
-        <div className="bg-yellow-950/20 border border-yellow-800/40 rounded-xl px-4 py-3 text-yellow-400 text-sm">
+        <div className="bg-yellow-50/20 border border-yellow-200/40 rounded-xl px-4 py-3 text-yellow-600 text-sm">
           {error}
         </div>
       )}
@@ -745,9 +734,9 @@ export default function ApiManagerPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* ── API Instance List ─────────────────────────────────────────────── */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
-            <h3 className="text-white font-semibold">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="text-gray-900 font-semibold">
               API Instances ({filtered.length})
             </h3>
             {apis.length > filtered.length && (
@@ -760,26 +749,26 @@ export default function ApiManagerPage() {
               <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-500" />
             </div>
           ) : (
-            <div className="divide-y divide-gray-800 max-h-[500px] overflow-y-auto">
+            <div className="divide-y divide-gray-200 max-h-[500px] overflow-y-auto">
               {filtered.map(a => (
                 <button
                   key={`${a.id}-${a.assetId}`}
                   onClick={() => selectApi(a)}
-                  className={`w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-800/50 text-left transition-colors ${
+                  className={`w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-100/50 text-left transition-colors ${
                     selectedApi?.id === a.id ? 'bg-blue-600/10 border-l-2 border-blue-500' : ''
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <ShieldCheck size={15} className="text-blue-400 flex-shrink-0" />
+                    <ShieldCheck size={15} className="text-blue-600 flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-white text-sm font-medium truncate">
+                      <p className="text-gray-900 text-sm font-medium truncate">
                         {a.assetId || a.name || a.label}
                       </p>
                       <p className="text-gray-500 text-xs">
                         v{a.assetVersion || a.productVersion || '—'} · ID: {a.id}
                         {/* Show env name when viewing across multiple envs */}
                         {!selectedEnv && a.environmentId && environments.length > 1 && (
-                          <> · <span className="text-gray-600">
+                          <> · <span className="text-gray-500">
                             {environments.find(e => e.id === a.environmentId)?.name || a.environmentId}
                           </span></>
                         )}
@@ -788,7 +777,7 @@ export default function ApiManagerPage() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <StatusBadge status={a.status || 'active'} />
-                    <ChevronRight size={13} className="text-gray-600" />
+                    <ChevronRight size={13} className="text-gray-500" />
                   </div>
                 </button>
               ))}
@@ -807,24 +796,24 @@ export default function ApiManagerPage() {
         </div>
 
         {/* ── API Detail Panel ──────────────────────────────────────────────── */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden overflow-y-auto max-h-[700px]">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden overflow-y-auto max-h-[700px]">
           {selectedApi ? (
             <>
               {/* Detail header */}
-              <div className="px-5 py-3 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
-                <h3 className="text-white font-semibold">
+              <div className="px-5 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <h3 className="text-gray-900 font-semibold">
                   {selectedApi.assetId || selectedApi.name}
                 </h3>
-                <p className="text-gray-400 text-xs mt-0.5">
+                <p className="text-gray-500 text-xs mt-0.5">
                   Version {selectedApi.assetVersion || selectedApi.productVersion || '—'}
                   {selectedApi.instanceLabel && (
-                    <span className="ml-2 text-blue-400">· {selectedApi.instanceLabel}</span>
+                    <span className="ml-2 text-blue-600">· {selectedApi.instanceLabel}</span>
                   )}
                 </p>
               </div>
 
               {/* Key-value metadata */}
-              <div className="p-5 space-y-2.5 text-sm border-b border-gray-800">
+              <div className="p-5 space-y-2.5 text-sm border-b border-gray-200">
                 {[
                   ['API ID', selectedApi.id],
                   ['Group ID', selectedApi.groupId || '—'],
@@ -838,23 +827,23 @@ export default function ApiManagerPage() {
                   ['Status', selectedApi.status || 'active'],
                 ].map(([label, val]) => (
                   <div key={label} className="flex items-start justify-between gap-4">
-                    <span className="text-gray-400 flex-shrink-0 w-28">{label}</span>
-                    <span className="text-white text-right font-mono text-xs break-all">{String(val)}</span>
+                    <span className="text-gray-500 flex-shrink-0 w-28">{label}</span>
+                    <span className="text-gray-900 text-right font-mono text-xs break-all">{String(val)}</span>
                   </div>
                 ))}
               </div>
 
               {/* Policies */}
-              <div className="border-b border-gray-800">
+              <div className="border-b border-gray-200">
                 <div className="px-5 py-2.5 flex items-center justify-between">
-                  <h4 className="text-white text-sm font-semibold">
+                  <h4 className="text-gray-900 text-sm font-semibold">
                     Policies ({policies.length})
                   </h4>
                 </div>
                 {policies.length === 0 ? (
                   <p className="px-5 pb-4 text-gray-500 text-xs">No policies applied.</p>
                 ) : (
-                  <div className="divide-y divide-gray-800/60">
+                  <div className="divide-y divide-gray-200/60">
                     {policies.map((p, i) => (
                       <PolicyCard key={p.id || i} p={p} i={i} />
                     ))}
@@ -865,7 +854,7 @@ export default function ApiManagerPage() {
               {/* Contracts */}
               <div>
                 <div className="px-5 py-2.5 flex items-center justify-between">
-                  <h4 className="text-white text-sm font-semibold">
+                  <h4 className="text-gray-900 text-sm font-semibold">
                     Contracts ({contracts.length})
                   </h4>
                   {contractsLoading && (
@@ -879,7 +868,7 @@ export default function ApiManagerPage() {
                 ) : contracts.length === 0 ? (
                   <p className="px-5 pb-4 text-gray-500 text-xs">No contracts found.</p>
                 ) : (
-                  <div className="divide-y divide-gray-800/60">
+                  <div className="divide-y divide-gray-200/60">
                     {contracts.map((c, i) => (
                       <ContractCard
                         key={c.id || i}
@@ -896,7 +885,7 @@ export default function ApiManagerPage() {
           ) : (
             /* Empty state — no API selected */
             <div className="flex flex-col items-center justify-center h-full py-20 text-center px-6">
-              <ShieldCheck size={32} className="text-gray-700 mb-3" />
+              <ShieldCheck size={32} className="text-gray-500 mb-3" />
               <p className="text-gray-500 text-sm">Select an API instance to view details.</p>
             </div>
           )}

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCredentialStore } from '../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, ChevronRight, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud, ExternalLink, Database } from 'lucide-react';
+import { Search, RefreshCw, ChevronRight, AlertTriangle, X, SlidersHorizontal, FileSpreadsheet, Activity, CheckCircle2, XCircle, Clock, ShieldCheck, UploadCloud, ExternalLink, Database, Check } from 'lucide-react';
 import CredentialImportButton from '../components/CredentialImportButton';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
@@ -20,8 +20,8 @@ import { findOAuth2Url, flattenCpsResponse } from '../utils/cpsHelpers';
 import * as XLSX from 'xlsx';
 
 const ENV_TAG_COLOR = {
-  production: 'bg-green-500/20 text-green-400',
-  sandbox: 'bg-yellow-500/20 text-yellow-400'
+  production: 'bg-sfgreen-100 text-sfgreen-600',
+  sandbox: 'bg-sforange-100 text-sforange-600'
 };
 
 /* ── Open app in Anypoint Platform ────────────────────────── */
@@ -83,28 +83,28 @@ function ConfirmModal({ state, onConfirm, onCancel, loading }) {
   const dangerous = action === 'stop';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
         <div className="flex items-start gap-4">
-          <div className={`p-2.5 rounded-xl flex-shrink-0 border ${dangerous ? 'bg-red-950/60 border-red-800/40' : 'bg-blue-950/60 border-blue-800/40'}`}>
-            <AlertTriangle size={18} className={dangerous ? 'text-red-400' : 'text-blue-400'} />
+          <div className={`p-3 rounded-2xl flex-shrink-0 ${dangerous ? 'bg-red-50 dark:bg-red-500/10' : 'bg-sf-50 dark:bg-sf-500/10'}`}>
+            <AlertTriangle size={20} className={dangerous ? 'text-red-600 dark:text-red-400' : 'text-sf-600 dark:text-sf-400'} />
           </div>
           <div className="flex-1">
-            <h3 className="text-white font-semibold text-base mb-1">{label} Application?</h3>
-            <p className="text-gray-400 text-sm">
-              Are you sure you want to <span className="font-medium text-white">{label.toLowerCase()}</span>{' '}
-              <span className="font-mono text-blue-300 text-xs bg-blue-950/40 px-1.5 py-0.5 rounded">{app.name}</span>?
+            <h3 className="text-gray-900 dark:text-gray-100 font-bold text-base mb-1">{label} Application?</h3>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
+              Are you sure you want to <span className="font-semibold text-gray-900 dark:text-gray-100">{label.toLowerCase()}</span>{' '}
+              <span className="font-mono text-sf-700 dark:text-sf-300 text-xs bg-sf-50 dark:bg-sf-500/15 px-1.5 py-0.5 rounded-md">{app.name}</span>?
             </p>
-            {dangerous && <p className="text-red-400/80 text-xs mt-2">⚠ This will stop all running flows and connections.</p>}
+            {dangerous && <p className="text-red-600 dark:text-red-400 text-xs mt-2 font-medium">⚠ This will stop all running flows and connections.</p>}
           </div>
-          <button onClick={onCancel} className="text-gray-600 hover:text-gray-300 flex-shrink-0"><X size={16} /></button>
+          <button onClick={onCancel} className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex-shrink-0 transition-colors"><X size={16} /></button>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg disabled:opacity-50 transition-colors">
+            className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl disabled:opacity-50 transition-colors">
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${bulkCls}`}>
+            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 ${bulkCls}`}>
             {loading
               ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
               : <><Icon size={13} /> Confirm {label}</>}
@@ -125,25 +125,25 @@ function BulkConfirmModal({ state, onConfirm, onCancel, loading, results }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl mx-4">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl mx-4">
         <div className="flex items-start gap-4 mb-4">
-          <div className={`p-2.5 rounded-xl flex-shrink-0 border ${dangerous ? 'bg-red-950/60 border-red-800/40' : 'bg-blue-950/60 border-blue-800/40'}`}>
-            <AlertTriangle size={18} className={dangerous ? 'text-red-400' : 'text-blue-400'} />
+          <div className={`p-3 rounded-2xl flex-shrink-0 ${dangerous ? 'bg-red-50 dark:bg-red-500/10' : 'bg-sf-50 dark:bg-sf-500/10'}`}>
+            <AlertTriangle size={20} className={dangerous ? 'text-red-600 dark:text-red-400' : 'text-sf-600 dark:text-sf-400'} />
           </div>
           <div className="flex-1">
-            <h3 className="text-white font-semibold text-base mb-1">
+            <h3 className="text-gray-900 dark:text-gray-100 font-bold text-base mb-1">
               {isDone ? 'Results' : `${label} ${apps.length} Application${apps.length !== 1 ? 's' : ''}?`}
             </h3>
             {!isDone && (
-              <p className="text-gray-400 text-sm">
-                This will <span className="text-white font-medium">{label.toLowerCase()}</span> the following applications:
+              <p className="text-gray-500 dark:text-gray-400 text-sm">
+                This will <span className="text-gray-900 dark:text-gray-100 font-semibold">{label.toLowerCase()}</span> the following applications:
               </p>
             )}
             {dangerous && !isDone && (
-              <p className="text-red-400/80 text-xs mt-1">⚠ This will stop all running flows and connections for each app.</p>
+              <p className="text-red-600 dark:text-red-400 text-xs mt-1 font-medium">⚠ This will stop all running flows and connections for each app.</p>
             )}
           </div>
-          <button onClick={onCancel} disabled={loading} className="text-gray-600 hover:text-gray-300 flex-shrink-0">
+          <button onClick={onCancel} disabled={loading} className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex-shrink-0 transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -153,21 +153,21 @@ function BulkConfirmModal({ state, onConfirm, onCancel, loading, results }) {
           {apps.map((app) => {
             const r = results?.[app.id];
             return (
-              <div key={app.id} className="flex items-center justify-between bg-gray-800/60 border border-gray-700/40 rounded-lg px-3 py-2 gap-2">
+              <div key={app.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2.5 gap-2">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_BADGE[app.environment?.type] || 'bg-gray-400'}`} />
-                  <span className="text-gray-200 text-xs font-medium truncate">{app.name}</span>
-                  <span className="text-gray-600 text-xs flex-shrink-0 hidden sm:inline">({app.environment?.name})</span>
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ring-2 ring-white dark:ring-gray-800 ${ENV_BADGE[app.environment?.type] || 'bg-gray-400'}`} />
+                  <span className="text-gray-700 dark:text-gray-300 text-xs font-semibold truncate">{app.name}</span>
+                  <span className="text-gray-400 dark:text-gray-500 text-xs flex-shrink-0 hidden sm:inline">({app.environment?.name})</span>
                 </div>
                 <div className="flex-shrink-0">
                   {r ? (
                     r.success
-                      ? <span className="text-emerald-400 text-xs font-medium">✓ Done</span>
-                      : <span className="text-red-400 text-xs font-medium" title={r.error}>✗ Failed</span>
+                      ? <span className="text-emerald-600 dark:text-emerald-400 text-xs font-semibold">✓ Done</span>
+                      : <span className="text-red-600 dark:text-red-400 text-xs font-semibold" title={r.error}>✗ Failed</span>
                   ) : loading ? (
-                    <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-400 block" />
+                    <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-sf-400 block" />
                   ) : (
-                    <span className="text-gray-600 text-xs">Pending</span>
+                    <span className="text-gray-400 dark:text-gray-500 text-xs">Pending</span>
                   )}
                 </div>
               </div>
@@ -178,11 +178,11 @@ function BulkConfirmModal({ state, onConfirm, onCancel, loading, results }) {
         {/* Summary when done */}
         {isDone && (
           <div className="flex gap-3 mb-4 text-xs">
-            <span className="text-emerald-400 font-medium">
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
               ✓ {Object.values(results).filter((r) => r.success).length} succeeded
             </span>
             {Object.values(results).filter((r) => !r.success).length > 0 && (
-              <span className="text-red-400 font-medium">
+              <span className="text-red-600 dark:text-red-400 font-semibold">
                 ✗ {Object.values(results).filter((r) => !r.success).length} failed
               </span>
             )}
@@ -191,12 +191,12 @@ function BulkConfirmModal({ state, onConfirm, onCancel, loading, results }) {
 
         <div className="flex justify-end gap-3">
           <button onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg disabled:opacity-50 transition-colors">
+            className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl disabled:opacity-50 transition-colors">
             {isDone ? 'Close' : 'Cancel'}
           </button>
           {!isDone && (
             <button onClick={onConfirm} disabled={loading}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${bulkCls}`}>
+              className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 ${bulkCls}`}>
               {loading
                 ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> Working…</>
                 : <><Icon size={13} /> {label} All {apps.length}</>}
@@ -615,52 +615,57 @@ function BulkPingModal({ apps, onClose }) {
   const partial = Object.values(results).filter(r => r.status === 'PARTIAL').length;
   const failed = Object.values(results).filter(r => r.status === 'FAILED').length;
 
-  const latencyColor = ms => !ms ? 'text-gray-500' : ms < 300 ? 'text-green-400' : ms < 1000 ? 'text-yellow-400' : 'text-red-400';
+  const latencyColor = ms => !ms ? 'text-gray-500' : ms < 300 ? 'text-sfgreen-600' : ms < 1000 ? 'text-sforange-600' : 'text-sfred-600';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700/80 rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <Activity size={16} className="text-cyan-400" />
-            <span className="text-white font-semibold">Bulk Ping Test</span>
-            <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">{apps.length} apps</span>
+        <div className="relative flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-700/60 flex-shrink-0">
+          <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-teal-50/80 dark:from-teal-500/[0.07] to-transparent pointer-events-none" />
+          <div className="relative flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-teal-100 dark:bg-teal-500/15 shadow-sm">
+              <Activity size={18} className="text-teal-600 dark:text-teal-400" />
+            </div>
+            <div>
+              <h2 className="text-gray-900 dark:text-gray-100 font-bold text-base">Bulk Ping Test</h2>
+              <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{apps.length} application{apps.length !== 1 ? 's' : ''} selected</p>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="relative flex items-center gap-2 flex-shrink-0">
             <CredentialImportButton compact />
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-300"><X size={16} /></button>
+            <button onClick={onClose} className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1.5 rounded-xl transition-colors"><X size={16} /></button>
           </div>
         </div>
 
         {/* Credential inputs */}
-        <div className="px-6 py-4 border-b border-gray-800 flex-shrink-0 space-y-3">
+        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700/60 flex-shrink-0 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium block mb-1">
-                client_id <span className="normal-case text-gray-600">(overrides auto)</span>
+              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold block mb-1.5">
+                client_id <span className="normal-case font-medium text-gray-400 dark:text-gray-500">(overrides auto)</span>
               </label>
               <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="leave blank to auto-resolve"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
+                className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 transition-all" />
             </div>
             <div>
-              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium block mb-1">client_secret</label>
+              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold block mb-1.5">client_secret</label>
               <div className="relative">
                 <input value={clientSecret} onChange={e => setClientSecret(e.target.value)} type={showSecret ? 'text' : 'password'} placeholder="optional"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 pr-8 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
-                <button onClick={() => setShowSecret(!showSecret)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">{showSecret ? '🙈' : '👁'}</button>
+                  className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 pr-8 text-xs text-gray-700 dark:text-gray-300 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 transition-all" />
+                <button onClick={() => setShowSecret(!showSecret)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-xs transition-colors">{showSecret ? '🙈' : '👁'}</button>
               </div>
             </div>
             <div>
-              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium block mb-1">x-transaction-id</label>
+              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold block mb-1.5">x-transaction-id</label>
               <input value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="smokeTest"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-600/50" />
+                className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 transition-all" />
             </div>
           </div>
           {/* Credential import status */}
           {hasCredentials && !clientId.trim() && (
-            <div className="flex items-center gap-1.5 text-[10px] text-emerald-400/80">
-              <ShieldCheck size={10} />
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              <ShieldCheck size={11} />
               Credentials CSV loaded — will auto-resolve per app from API Manager
             </div>
           )}
@@ -668,29 +673,29 @@ function BulkPingModal({ apps, onClose }) {
 
         {/* Resolving banner */}
         {resolving && (
-          <div className="px-6 py-2 border-b border-gray-800 flex items-center gap-2 text-xs text-emerald-400 flex-shrink-0">
-            <RefreshCw size={11} className="animate-spin" />
+          <div className="px-6 py-2.5 border-b border-gray-100 dark:border-gray-700/60 flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400 flex-shrink-0 bg-emerald-50/40 dark:bg-emerald-500/5">
+            <RefreshCw size={12} className="animate-spin" />
             Resolving credentials from API Manager…
           </div>
         )}
 
         {/* Progress summary */}
         {done > 0 && (
-          <div className="px-6 py-3 border-b border-gray-800 flex items-center gap-4 text-xs flex-shrink-0">
-            <span className="text-gray-500">{done}/{apps.length} tested</span>
-            {success > 0 && <span className="text-green-400 font-medium">✓ {success} healthy</span>}
-            {partial > 0 && <span className="text-yellow-400 font-medium">~ {partial} partial</span>}
-            {failed > 0 && <span className="text-red-400 font-medium">✗ {failed} failed</span>}
+          <div className="px-6 py-3 border-b border-gray-100 dark:border-gray-700/60 flex items-center gap-2.5 text-xs flex-shrink-0 flex-wrap">
+            <span className="font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/60 px-2 py-1 rounded-lg">{done}/{apps.length} tested</span>
+            {success > 0 && <span className="font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded-lg">✓ {success} healthy</span>}
+            {partial > 0 && <span className="font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg">~ {partial} partial</span>}
+            {failed > 0 && <span className="font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 px-2 py-1 rounded-lg">✗ {failed} failed</span>}
             {Object.keys(autoResolvedMap).length > 0 && (
-              <span className="flex items-center gap-1 text-emerald-400/70 font-medium">
-                <ShieldCheck size={10} />{Object.keys(autoResolvedMap).length} auto-creds
+              <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
+                <ShieldCheck size={11} className="text-emerald-500" />{Object.keys(autoResolvedMap).length} auto-creds
               </span>
             )}
           </div>
         )}
 
         {/* Results list — each app gets a full PingResultCard */}
-        <div className="overflow-y-auto flex-1 p-4 space-y-3">
+        <div className="overflow-y-auto flex-1 p-4 space-y-3 bg-gray-50/40 dark:bg-gray-900/20">
           {apps.map(app => (
             <PingResultCard
               key={app.id}
@@ -703,12 +708,12 @@ function BulkPingModal({ apps, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-800 flex items-center justify-between flex-shrink-0">
-          <p className="text-gray-600 text-xs">Pings /api/v1/ping → /api/v2/ping → /api/ping → /ping in order</p>
-          <div className="flex items-center gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg">Close</button>
+        <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700/60 flex items-center justify-between flex-shrink-0 bg-white dark:bg-gray-800 gap-3">
+          <p className="text-gray-400 dark:text-gray-500 text-[11px] hidden sm:block">Pings /api/v1/ping → /api/v2/ping → /api/ping → /ping in order</p>
+          <div className="flex items-center gap-2.5 ml-auto">
+            <button onClick={onClose} className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors">Close</button>
             <button onClick={runAll} disabled={running || resolving}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded-lg">
+              className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-gradient-to-b from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl shadow-md shadow-teal-500/30 hover:shadow-lg hover:shadow-teal-500/40 ring-1 ring-inset ring-white/20 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0">
               {resolving ? <><RefreshCw size={13} className="animate-spin" /> Resolving…</> : running ? <><RefreshCw size={13} className="animate-spin" /> Running…</> : <><Activity size={13} /> Run All Pings</>}
             </button>
           </div>
@@ -799,104 +804,110 @@ function ExportAppsModal({ apps, allBusinessGroups, environments, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-lg shadow-2xl mx-4 flex flex-col max-h-[88vh]">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700/80 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[88vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet size={16} className="text-violet-400" />
-            <h3 className="text-white font-semibold">Export Applications</h3>
+        <div className="relative flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-700/60 flex-shrink-0">
+          <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-purple-50/80 dark:from-purple-500/[0.07] to-transparent pointer-events-none" />
+          <div className="relative flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-purple-100 dark:bg-purple-500/15 shadow-sm">
+              <FileSpreadsheet size={18} className="text-purple-600 dark:text-purple-400" />
+            </div>
+            <div>
+              <h3 className="text-gray-900 dark:text-gray-100 font-bold text-base">Export Applications</h3>
+              <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">Download as an Excel workbook</p>
+            </div>
           </div>
-          <button onClick={onClose} className="text-gray-600 hover:text-gray-300"><X size={16} /></button>
+          <button onClick={onClose} className="relative text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1.5 rounded-xl transition-colors flex-shrink-0"><X size={16} /></button>
         </div>
 
-        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-5">
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
 
           {/* ── Business Groups ── */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+            <div className="flex items-center justify-between mb-2.5">
+              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold">
                 Business Groups
-                <span className="ml-1.5 text-gray-600 normal-case">({selBgIds.size}/{globalBgs.length} selected)</span>
+                <span className="ml-1.5 text-gray-400 dark:text-gray-500 normal-case font-medium">({selBgIds.size}/{globalBgs.length} selected)</span>
               </label>
               <button
                 onClick={() => setSelBgIds(allBgsChecked ? new Set() : new Set(globalBgs.map(g => g.id)))}
-                className="text-[9px] text-violet-400 hover:text-violet-300 transition-colors">
+                className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors">
                 {allBgsChecked ? 'Deselect All' : 'Select All'}
               </button>
             </div>
             {globalBgs.length > 6 && (
               <div className="relative mb-2">
-                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
                 <input value={bgSearch} onChange={e => setBgSearch(e.target.value)} placeholder="Filter BGs…"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500/50" />
+                  className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl pl-9 pr-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/15 transition-all" />
               </div>
             )}
-            <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1">
+            <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1 rounded-xl border border-gray-100 dark:border-gray-700/50 p-1">
               {filteredBgs.map(g => (
                 <button key={g.id} onClick={() => toggleBg(g.id)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-800/50 transition-colors text-left">
-                  <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                    selBgIds.has(g.id) ? 'bg-violet-600 border-violet-500' : 'border-gray-600 hover:border-violet-500'
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors text-left">
+                  <div className={`w-[18px] h-[18px] rounded-md border flex-shrink-0 flex items-center justify-center transition-all ${
+                    selBgIds.has(g.id) ? 'bg-purple-600 border-purple-500 shadow-sm shadow-purple-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-purple-500'
                   }`}>
-                    {selBgIds.has(g.id) && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+                    {selBgIds.has(g.id) && <Check size={11} className="text-white" />}
                   </div>
                   {g.parentId && <span className="w-3 flex-shrink-0" />}
-                  <span className="text-sm text-gray-300 truncate flex-1">{g.name}</span>
+                  <span className={`text-sm truncate flex-1 ${selBgIds.has(g.id) ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{g.name}</span>
                   {!g.parentId && (
-                    <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded flex-shrink-0">Root</span>
+                    <span className="text-[9px] bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 px-1.5 py-0.5 rounded-full flex-shrink-0 font-bold">Root</span>
                   )}
                 </button>
               ))}
               {filteredBgs.length === 0 && (
-                <p className="text-xs text-gray-600 px-3 py-2">No BGs match</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No BGs match</p>
               )}
             </div>
           </div>
 
           {/* ── Environments (each = one sheet tab) ── */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+            <div className="flex items-center justify-between mb-2.5">
+              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold">
                 Environments
-                <span className="ml-1 text-gray-600 normal-case">— each selected env = one sheet</span>
+                <span className="ml-1 text-gray-400 dark:text-gray-500 normal-case font-medium">— each = one sheet</span>
               </label>
               <button
                 onClick={() => setSelEnvIds(allEnvsChecked ? new Set() : new Set(availableEnvs.map(e => e.id)))}
-                className="text-[9px] text-violet-400 hover:text-violet-300 transition-colors">
+                className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors">
                 {allEnvsChecked ? 'Deselect All' : 'Select All'}
               </button>
             </div>
             {availableEnvs.length > 6 && (
               <div className="relative mb-2">
-                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
                 <input value={envSearch} onChange={e => setEnvSearch(e.target.value)} placeholder="Filter environments…"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500/50" />
+                  className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl pl-9 pr-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/15 transition-all" />
               </div>
             )}
-            <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1">
+            <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1 rounded-xl border border-gray-100 dark:border-gray-700/50 p-1">
               {availableEnvs.length === 0 ? (
-                <p className="text-xs text-gray-600 px-3 py-2">No environments found for selected BGs</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No environments found for selected BGs</p>
               ) : filteredEnvs.length === 0 ? (
-                <p className="text-xs text-gray-600 px-3 py-2">No environments match</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No environments match</p>
               ) : (
                 filteredEnvs.map(e => {
                   const isProd = e.type === 'production';
                   const count  = envCounts[e.id] || 0;
                   return (
                     <button key={e.id} onClick={() => toggleEnv(e.id)}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-800/50 transition-colors text-left">
-                      <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                        selEnvIds.has(e.id) ? 'bg-violet-600 border-violet-500' : 'border-gray-600 hover:border-violet-500'
+                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors text-left">
+                      <div className={`w-[18px] h-[18px] rounded-md border flex-shrink-0 flex items-center justify-center transition-all ${
+                        selEnvIds.has(e.id) ? 'bg-purple-600 border-purple-500 shadow-sm shadow-purple-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-purple-500'
                       }`}>
-                        {selEnvIds.has(e.id) && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+                        {selEnvIds.has(e.id) && <Check size={11} className="text-white" />}
                       </div>
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
-                      <span className="text-sm text-gray-300 flex-1 truncate">{e.name}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${
-                        isProd ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                      <span className={`text-sm flex-1 truncate ${selEnvIds.has(e.id) ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{e.name}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full flex-shrink-0 font-bold ${
+                        isProd ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300'
                       }`}>{e.type}</span>
                       {selEnvIds.has(e.id) && count > 0 && (
-                        <span className="text-[9px] text-gray-600 flex-shrink-0 tabular-nums">{count} apps</span>
+                        <span className="text-[9px] font-semibold text-gray-400 dark:text-gray-500 flex-shrink-0 tabular-nums">{count} apps</span>
                       )}
                     </button>
                   );
@@ -906,29 +917,29 @@ function ExportAppsModal({ apps, allBusinessGroups, environments, onClose }) {
           </div>
 
           {/* ── Preview ── */}
-          <div className="bg-gray-800/40 border border-gray-700/40 rounded-lg px-4 py-3">
-            <p className="text-sm text-gray-400">
-              <span className="text-violet-300 font-semibold text-base">{exportApps.length}</span>
+          <div className="bg-gradient-to-br from-purple-50 to-purple-50/40 dark:from-purple-500/10 dark:to-purple-500/5 border border-purple-200/60 dark:border-purple-400/20 rounded-2xl px-4 py-3.5">
+            <p className="text-sm text-gray-700 dark:text-gray-300">
+              <span className="text-purple-700 dark:text-purple-300 font-bold text-lg">{exportApps.length}</span>
               {' '}app{exportApps.length !== 1 ? 's' : ''} across{' '}
-              <span className="text-violet-300 font-semibold">{selectedEnvCount}</span>
+              <span className="text-purple-700 dark:text-purple-300 font-bold text-lg">{selectedEnvCount}</span>
               {' '}sheet{selectedEnvCount !== 1 ? 's' : ''}
             </p>
-            <p className="text-xs text-gray-600 mt-0.5">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Columns per sheet: Integration Name · Mule Version · Status · Deployment Type
             </p>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-800 flex-shrink-0">
+        <div className="flex justify-end gap-2.5 px-6 py-4 border-t border-gray-100 dark:border-gray-700/60 flex-shrink-0 bg-gray-50/50 dark:bg-gray-900/30">
           <button onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+            className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors">
             Cancel
           </button>
           <button onClick={doExport} disabled={exportApps.length === 0}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-violet-700 hover:bg-violet-600 disabled:opacity-40 text-white rounded-lg transition-colors">
-            <FileSpreadsheet size={13} />
-            Export{exportApps.length > 0 ? ` (${exportApps.length} apps · ${selectedEnvCount} sheets)` : ''}
+            className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-gradient-to-b from-purple-500 to-purple-600 hover:from-purple-400 hover:to-purple-500 disabled:opacity-40 text-white rounded-xl shadow-md shadow-purple-500/30 hover:shadow-lg hover:shadow-purple-500/40 ring-1 ring-inset ring-white/20 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0">
+            <FileSpreadsheet size={14} />
+            Export{exportApps.length > 0 ? ` (${exportApps.length} · ${selectedEnvCount} sheets)` : ''}
           </button>
         </div>
       </div>
@@ -1109,8 +1120,8 @@ export default function ApplicationsPage() {
   };
 
   const SortIcon = ({ col }) => {
-    if (sortColumn !== col) return <span className="text-gray-700 ml-0.5">⇅</span>;
-    return <span className="text-blue-400 ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+    if (sortColumn !== col) return <span className="text-gray-300 dark:text-gray-600 ml-0.5">⇅</span>;
+    return <span className="text-sf-600 dark:text-sf-400 ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>;
   };
 
   /**
@@ -1546,10 +1557,10 @@ export default function ApplicationsPage() {
   const envFilterActive = visibleEnvs.length < environments.length;
 
   const bgOptions = [
-    { value: '__all__', label: 'All Organizations', tag: `${visibleGroups.length}`, tagColor: 'bg-gray-700 text-gray-300' },
+    { value: '__all__', label: 'All Organizations', tag: `${visibleGroups.length}`, tagColor: 'bg-gray-200 text-gray-600' },
     ...visibleGroups.map((g) => ({
       value: g.id, label: g.name, indent: !!g.parentId,
-      tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-blue-500/20 text-blue-400'
+      tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-sf-100 text-sf-600'
     })),
   ];
 
@@ -1558,7 +1569,7 @@ export default function ApplicationsPage() {
     ...visibleEnvs.map((e) => ({
       value: e.id, label: e.name, badge: true,
       badgeColor: ENV_BADGE[e.type] || 'bg-gray-400',
-      tag: e.type, tagColor: ENV_TAG_COLOR[e.type] || 'bg-gray-700 text-gray-400'
+      tag: e.type, tagColor: ENV_TAG_COLOR[e.type] || 'bg-gray-200 text-gray-500'
     }))
   ];
 
@@ -1566,15 +1577,15 @@ export default function ApplicationsPage() {
   const statusOptions = [
     { value: '', label: 'All Statuses' },
     ...[
-      { value: 'RUNNING',           label: 'Running',   badgeColor: 'bg-green-400' },
-      { value: 'APPLIED',           label: 'Applied',   badgeColor: 'bg-cyan-400' },
-      { value: 'FAILED',            label: 'Failed',    badgeColor: 'bg-red-400' },
+      { value: 'RUNNING',           label: 'Running',   badgeColor: 'bg-sfgreen-400' },
+      { value: 'APPLIED',           label: 'Applied',   badgeColor: 'bg-sfteal-400' },
+      { value: 'FAILED',            label: 'Failed',    badgeColor: 'bg-sfred-400' },
       { value: 'STOPPED',           label: 'Stopped',   badgeColor: 'bg-gray-400' },
-      { value: 'DEPLOYING',         label: 'Deploying', badgeColor: 'bg-blue-400' },
-      { value: 'UPDATING',          label: 'Updating',  badgeColor: 'bg-purple-400' },
-      { value: 'STARTING',          label: 'Starting',  badgeColor: 'bg-blue-300' },
-      { value: 'STOPPING',          label: 'Stopping',  badgeColor: 'bg-orange-400' },
-      { value: 'PARTIALLY_STARTED', label: 'Partial',   badgeColor: 'bg-yellow-400' },
+      { value: 'DEPLOYING',         label: 'Deploying', badgeColor: 'bg-sf-400' },
+      { value: 'UPDATING',          label: 'Updating',  badgeColor: 'bg-sfpurple-400' },
+      { value: 'STARTING',          label: 'Starting',  badgeColor: 'bg-sf-300' },
+      { value: 'STOPPING',          label: 'Stopping',  badgeColor: 'bg-sforange-400' },
+      { value: 'PARTIALLY_STARTED', label: 'Partial',   badgeColor: 'bg-sforange-400' },
     ].map(s => ({
       ...s,
       badge: true,
@@ -1586,8 +1597,8 @@ export default function ApplicationsPage() {
 
   const typeOptions = [
     { value: '', label: 'All Deployment Types' },
-    { value: 'CloudHub 2.0', label: 'CloudHub 2.0', tag: 'CH2', tagColor: 'bg-blue-500/20 text-blue-400' },
-    { value: 'CloudHub 1.0', label: 'CloudHub 1.0', tag: 'CH1', tagColor: 'bg-purple-500/20 text-purple-400' }
+    { value: 'CloudHub 2.0', label: 'CloudHub 2.0', tag: 'CH2', tagColor: 'bg-sf-100 text-sf-600' },
+    { value: 'CloudHub 1.0', label: 'CloudHub 1.0', tag: 'CH1', tagColor: 'bg-sfpurple-100 text-sfpurple-600' }
   ];
 
   const selectedBgName = selectedBg === '__all__'
@@ -1653,23 +1664,32 @@ export default function ApplicationsPage() {
         <div className="flex items-center gap-3 flex-wrap min-w-0 flex-1">
           {/* Inline CSV banner — only when a CSV is uploaded */}
           {csvMatchedNames !== null && (
-            <div className={`flex items-center gap-2 flex-wrap px-3 py-1.5 rounded-lg border text-xs ${
-              selectedIds.size > 0 ? 'bg-blue-950/30 border-blue-800/50' : 'bg-gray-800/60 border-gray-700/50'
+            <div className={`group relative flex items-center gap-2.5 flex-wrap pl-1 pr-3 py-1.5 rounded-2xl border transition-all ${
+              selectedIds.size > 0
+                ? 'bg-gradient-to-r from-sf-50 via-sf-50/60 to-transparent dark:from-sf-500/10 dark:via-sf-500/5 border-sf-200/70 dark:border-sf-400/30 shadow-sm'
+                : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700'
             }`}>
-              <UploadCloud size={12} className="text-blue-400 flex-shrink-0" />
-              <span className="font-mono text-[10px] text-gray-500 max-w-[120px] truncate">{csvFileName}</span>
-              {selectedIds.size > 0
-                ? <span className="text-blue-300 font-semibold text-[10px]">{selectedIds.size} matched</span>
-                : <span className="text-gray-500 text-[10px]">no match</span>}
+              <span className={`flex items-center justify-center w-7 h-7 rounded-xl flex-shrink-0 ${
+                selectedIds.size > 0 ? 'bg-sf-600 text-white shadow-sm shadow-sf-500/30' : 'bg-gray-200/70 dark:bg-gray-700/70 text-gray-500 dark:text-gray-400'
+              }`}>
+                <UploadCloud size={13} />
+              </span>
+              <div className="flex flex-col leading-tight">
+                <span className="font-mono text-[10px] text-gray-500 dark:text-gray-400 max-w-[120px] truncate">{csvFileName}</span>
+                {selectedIds.size > 0
+                  ? <span className="text-sf-700 dark:text-sf-300 font-bold text-[11px]">{selectedIds.size} matched</span>
+                  : <span className="text-gray-400 dark:text-gray-500 text-[10px]">no match</span>}
+              </div>
               {csvMatchedNames.length > 0 && (
-                <span className="text-gray-600 text-[10px]">({csvMatchedNames.length} in CSV)</span>
+                <span className="text-[10px] text-gray-400 dark:text-gray-500">({csvMatchedNames.length} in CSV)</span>
               )}
+              <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 flex-shrink-0" />
               {/* Match mode */}
-              <div className="flex items-center gap-0.5 bg-gray-800/60 border border-gray-700/50 rounded p-0.5">
+              <div className="flex items-center gap-0.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5 shadow-sm">
                 {[['exact', 'Exact'], ['fuzzy', '~']].map(([mode, label]) => (
                   <button key={mode} onClick={() => setCsvMatchMode(mode)}
-                    className={`text-[9px] px-1.5 py-0.5 rounded font-medium transition-all ${
-                      csvMatchMode === mode ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'
+                    className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold transition-all ${
+                      csvMatchMode === mode ? 'bg-sf-600 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
                     }`}>
                     {label}
                   </button>
@@ -1684,15 +1704,19 @@ export default function ApplicationsPage() {
                   <>
                     <div className="relative" ref={csvEnvDropRef}>
                       <button onClick={() => setCsvEnvDropOpen(o => !o)}
-                        className="flex items-center gap-1 text-[9px] bg-gray-800/60 border border-gray-700/50 rounded px-2 py-1 font-medium text-gray-400 hover:text-gray-200 hover:border-blue-600/50 transition-colors">
+                        className={`flex items-center gap-1 text-[9px] font-semibold rounded-lg px-2 py-1 border transition-colors ${
+                          csvEnvFilter.size > 0
+                            ? 'bg-sf-50 dark:bg-sf-500/10 border-sf-200/70 dark:border-sf-400/30 text-sf-700 dark:text-sf-300'
+                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-sf-300/60 dark:hover:border-sf-400/40 hover:text-sf-700 dark:hover:text-sf-300'
+                        }`}>
                         {dropLabel}
-                        <span className={`text-gray-600 transition-transform inline-block ${csvEnvDropOpen ? 'rotate-180' : ''}`}>▾</span>
+                        <span className={`transition-transform inline-block ${csvEnvDropOpen ? 'rotate-180' : ''}`}>▾</span>
                       </button>
                       {csvEnvDropOpen && (
-                        <div className="absolute top-full left-0 mt-1 z-30 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl min-w-[11rem] overflow-hidden">
-                          <div className="px-2 pt-2 pb-1 border-b border-gray-800/60">
+                        <div className="absolute top-full left-0 mt-1.5 z-30 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl min-w-[11rem] overflow-hidden">
+                          <div className="px-2 pt-2 pb-1 border-b border-gray-100 dark:border-gray-700">
                             <div className="relative">
-                              <Search size={9} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                              <Search size={9} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
                               <input autoFocus placeholder="Search…"
                                 onChange={e => {
                                   const q = e.target.value.toLowerCase();
@@ -1700,7 +1724,7 @@ export default function ApplicationsPage() {
                                     el.style.display = el.dataset.envName.includes(q) ? '' : 'none';
                                   });
                                 }}
-                                className="w-full bg-gray-800 border border-gray-700/50 rounded pl-5 pr-2 py-1 text-[9px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500/50"
+                                className="w-full bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg pl-5 pr-2 py-1 text-[9px] text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sf-500/50"
                               />
                             </div>
                           </div>
@@ -1711,34 +1735,34 @@ export default function ApplicationsPage() {
                               return (
                                 <button key={env.id} data-env-name={env.name.toLowerCase()}
                                   onClick={() => setCsvEnvFilter(prev => { const n = new Set(prev); n.has(env.id) ? n.delete(env.id) : n.add(env.id); return n; })}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-800/50 transition-colors text-left">
-                                  <div className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${isSel ? 'bg-blue-600 border-blue-500' : 'border-gray-600'}`}>
+                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left">
+                                  <div className={`w-3.5 h-3.5 rounded-md border flex-shrink-0 flex items-center justify-center transition-colors ${isSel ? 'bg-sf-500 border-sf-400' : 'border-gray-300 dark:border-gray-600'}`}>
                                     {isSel && <span className="text-white text-[7px] font-bold leading-none">✓</span>}
                                   </div>
-                                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isProd ? 'bg-green-400' : 'bg-yellow-400'}`} />
-                                  <span className="text-[9px] text-gray-300">{env.name}</span>
+                                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isProd ? 'bg-sfgreen-400' : 'bg-sforange-400'}`} />
+                                  <span className="text-[9px] text-gray-600 dark:text-gray-300">{env.name}</span>
                                 </button>
                               );
                             })}
                           </div>
                           {csvEnvFilter.size > 0 && (
-                            <div className="px-3 py-1.5 border-t border-gray-800/60">
+                            <div className="px-3 py-1.5 border-t border-gray-100 dark:border-gray-700">
                               <button onClick={() => { setCsvEnvFilter(new Set()); setCsvEnvDropOpen(false); }}
-                                className="text-[9px] text-gray-600 hover:text-gray-400">Clear</button>
+                                className="text-[9px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">Clear</button>
                             </div>
                           )}
                         </div>
                       )}
                     </div>
                     {selNames.length > 0 && (
-                      <span className="text-[9px] text-blue-300/80 font-medium truncate max-w-[140px]">{selNames.join(', ')}</span>
+                      <span className="text-[9px] text-sf-700/80 dark:text-sf-300/80 font-medium truncate max-w-[140px]">{selNames.join(', ')}</span>
                     )}
                   </>
                 );
               })()}
               {/* Close CSV */}
               <button onClick={() => { setCsvMatchedNames(null); setCsvFileName(''); setSelectedIds(new Set()); setCsvEnvFilter(new Set()); }}
-                className="text-gray-600 hover:text-gray-300 ml-0.5 flex-shrink-0 transition-colors">
+                className="flex items-center justify-center w-5 h-5 rounded-lg text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 flex-shrink-0 transition-colors">
                 <X size={12} />
               </button>
             </div>
@@ -1750,19 +1774,19 @@ export default function ApplicationsPage() {
           {/* Bulk actions — shown before Upload CSV when apps are selected */}
           {selectedApps.length > 0 && (
             <>
-              <span className="text-[10px] text-blue-300 font-semibold">{selectedApps.length} sel</span>
+              <span className="text-[11px] text-sf-700 dark:text-sf-300 font-bold px-2 py-1 rounded-lg bg-sf-50 dark:bg-sf-500/10">{selectedApps.length} sel</span>
               <button onClick={() => setSelectedIds(new Set())}
-                className="text-[9px] text-blue-500 hover:text-blue-300 underline underline-offset-2">Clear</button>
+                className="text-[10px] text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 underline underline-offset-2 transition-colors">Clear</button>
               {bulkActions.map(action => {
                 const { Icon, label, bulkCls } = ACTION_CONFIG[action];
                 return (
                   <button key={action} onClick={() => requestBulkAction(action)}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${bulkCls}`}>
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] ${bulkCls}`}>
                     <Icon size={13} /> {label}
                   </button>
                 );
               })}
-              <span className="w-px h-5 bg-gray-700 mx-1 flex-shrink-0" />
+              <span className="w-px h-6 bg-gradient-to-b from-transparent via-gray-200 dark:via-gray-700 to-transparent mx-1 flex-shrink-0" />
             </>
           )}
           {/* Hidden CSV file input */}
@@ -1770,30 +1794,42 @@ export default function ApplicationsPage() {
           {/* CSV upload button */}
           <button onClick={() => csvInputRef.current?.click()}
             title="Upload a CSV of app names to auto-select matching apps"
-            className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 bg-blue-950/40 hover:bg-blue-950/60 border border-blue-800/50 px-3 py-2 rounded-lg transition-colors">
-            <UploadCloud size={14} /> Upload CSV
+            className="group/tool flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 hover:text-sf-700 dark:hover:text-sf-300 border border-gray-200 dark:border-gray-700 hover:border-sf-200/70 dark:hover:border-sf-400/30 px-3 py-2 rounded-xl shadow-sm hover:shadow-md transition-all">
+            <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-gray-100 dark:bg-gray-700 group-hover/tool:bg-sf-100 dark:group-hover/tool:bg-sf-500/20 text-gray-500 dark:text-gray-400 group-hover/tool:text-sf-600 dark:group-hover/tool:text-sf-400 flex-shrink-0 transition-colors">
+              <UploadCloud size={12} />
+            </span>
+            Upload CSV
           </button>
           <button onClick={() => setShowBulkPing(true)} disabled={loading || filtered.length === 0}
             title={selectedApps.length > 0 ? `Ping ${selectedApps.length} selected apps` : 'Ping all visible apps'}
-            className="flex items-center gap-2 text-sm text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 hover:bg-cyan-950/60 border border-cyan-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
-            <Activity size={14} />
+            className="group/tool flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 hover:text-sfteal-700 dark:hover:text-sfteal-300 border border-gray-200 dark:border-gray-700 hover:border-sfteal-200/70 dark:hover:border-sfteal-400/30 px-3 py-2 rounded-xl shadow-sm hover:shadow-md disabled:opacity-40 disabled:shadow-none disabled:hover:shadow-none transition-all">
+            <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-gray-100 dark:bg-gray-700 group-hover/tool:bg-sfteal-100 dark:group-hover/tool:bg-sfteal-500/20 text-gray-500 dark:text-gray-400 group-hover/tool:text-sfteal-600 dark:group-hover/tool:text-sfteal-400 flex-shrink-0 transition-colors">
+              <Activity size={12} />
+            </span>
             {selectedApps.length > 0 ? `Ping (${selectedApps.length})` : 'Ping Test'}
           </button>
           <button
             onClick={() => setShowExportApps(true)}
             disabled={loading || apps.length === 0}
             title="Export apps to Excel — choose Business Group and Environment"
-            className="flex items-center gap-2 text-sm text-violet-400 hover:text-violet-300 bg-violet-950/40 hover:bg-violet-950/60 border border-violet-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
-            <FileSpreadsheet size={14} /> Export Apps
+            className="group/tool flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 hover:text-sfpurple-700 dark:hover:text-sfpurple-300 border border-gray-200 dark:border-gray-700 hover:border-sfpurple-200/70 dark:hover:border-sfpurple-400/30 px-3 py-2 rounded-xl shadow-sm hover:shadow-md disabled:opacity-40 disabled:shadow-none disabled:hover:shadow-none transition-all">
+            <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-gray-100 dark:bg-gray-700 group-hover/tool:bg-sfpurple-100 dark:group-hover/tool:bg-sfpurple-500/20 text-gray-500 dark:text-gray-400 group-hover/tool:text-sfpurple-600 dark:group-hover/tool:text-sfpurple-400 flex-shrink-0 transition-colors">
+              <FileSpreadsheet size={12} />
+            </span>
+            Export Apps
           </button>
           <button onClick={() => setShowExport(true)} disabled={loading || apps.length === 0}
             title={selectedApps.length > 0 ? `Export CPS for ${selectedApps.length} selected apps` : 'Export CPS Properties to Excel'}
-            className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/50 px-3 py-2 rounded-lg disabled:opacity-40 transition-colors">
-            <FileSpreadsheet size={14} /> {selectedApps.length > 0 ? `Export CPS (${selectedApps.length})` : 'Export CPS'}
+            className="group/tool flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 hover:text-sfgreen-700 dark:hover:text-sfgreen-300 border border-gray-200 dark:border-gray-700 hover:border-sfgreen-200/70 dark:hover:border-sfgreen-400/30 px-3 py-2 rounded-xl shadow-sm hover:shadow-md disabled:opacity-40 disabled:shadow-none disabled:hover:shadow-none transition-all">
+            <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-gray-100 dark:bg-gray-700 group-hover/tool:bg-sfgreen-100 dark:group-hover/tool:bg-sfgreen-500/20 text-gray-500 dark:text-gray-400 group-hover/tool:text-sfgreen-600 dark:group-hover/tool:text-sfgreen-400 flex-shrink-0 transition-colors">
+              <FileSpreadsheet size={12} />
+            </span>
+            {selectedApps.length > 0 ? `Export CPS (${selectedApps.length})` : 'Export CPS'}
           </button>
           <button onClick={() => loadApps(selectedBg, true)} disabled={loading || bgLoading}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white bg-gray-800 px-3 py-2 rounded-lg disabled:opacity-50">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+            title="Refresh application list"
+            className="flex items-center justify-center w-9 h-9 rounded-xl text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md disabled:opacity-50 transition-all">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
@@ -1801,7 +1837,7 @@ export default function ApplicationsPage() {
       {/* Single-app toast */}
       {actionResult && (
         <div className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm ${
-          actionResult.success ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300' : 'bg-red-950/40 border-red-800/50 text-red-300'
+          actionResult.success ? 'bg-sfgreen-50/40 border-sfgreen-200/50 text-sfgreen-700' : 'bg-sfred-50/40 border-sfred-200/50 text-sfred-700'
         }`}>
           <span>{actionResult.message}</span>
           <button onClick={() => setActionResult(null)} className="ml-4 opacity-60 hover:opacity-100"><X size={14} /></button>
@@ -1809,18 +1845,27 @@ export default function ApplicationsPage() {
       )}
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">{error}</div>
+        <div className="flex items-center gap-2.5 bg-red-50 dark:bg-red-500/10 border border-red-200/80 dark:border-red-400/30 rounded-2xl px-4 py-3 text-red-700 dark:text-red-300 text-sm shadow-sm">
+          <AlertTriangle size={15} className="flex-shrink-0" />
+          {error}
+        </div>
       )}
 
       {/* Filters row — Search, BG, Env, Status, Type (no labels) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {/* Search */}
         <div className="sm:col-span-2 lg:col-span-1">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <div className="relative group">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 group-focus-within:text-sf-500 pointer-events-none transition-colors" />
             <input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Application name…"
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+              placeholder="Search applications…"
+              className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 shadow-sm focus:outline-none focus:border-sf-500 dark:focus:border-sf-400 focus:ring-2 focus:ring-sf-500/15 dark:focus:ring-sf-400/15 transition-all" />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+                <X size={13} />
+              </button>
+            )}
           </div>
         </div>
         {/* BG selector */}
@@ -1843,7 +1888,7 @@ export default function ApplicationsPage() {
             disabled={bgLoading}
           />
           {filterActive && (
-            <p className="text-[9px] text-blue-400 mt-0.5 pl-1">
+            <p className="text-[10px] text-sf-600 dark:text-sf-400 font-medium mt-1 pl-1">
               {visibleGroups.length}/{allBusinessGroups.length} shown
             </p>
           )}
@@ -1856,10 +1901,10 @@ export default function ApplicationsPage() {
 
       {loading ? (
         /* Feature 1.1: skeleton table rows matching the real table structure */
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border border-gray-200 dark:border-white/[0.07] rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)] overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-800/50 text-gray-400 text-xs uppercase tracking-wider">
+              <tr className="bg-gray-50 dark:bg-gray-900/40 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider">
                 <th className="px-4 py-3 w-10" />
                 <th className="text-left px-4 py-3">Application</th>
                 <th className="text-left px-4 py-3">Status</th>
@@ -1872,69 +1917,69 @@ export default function ApplicationsPage() {
             </thead>
             <tbody>
               {[...Array(8)].map((_, i) => (
-                <tr key={i} className="border-t border-gray-800 animate-pulse">
-                  <td className="px-4 py-3.5"><div className="w-4 h-4 rounded bg-gray-800" /></td>
+                <tr key={i} className="border-t border-gray-100 dark:border-gray-700/60 animate-pulse">
+                  <td className="px-4 py-3.5"><div className="w-4 h-4 rounded bg-gray-100 dark:bg-gray-700" /></td>
                   <td className="px-4 py-3.5">
                     <div className="flex items-center gap-2">
-                      <div className="h-3 rounded bg-gray-800" style={{ width: `${100 + (i % 5) * 30}px` }} />
+                      <div className="h-3 rounded bg-gray-100 dark:bg-gray-700" style={{ width: `${100 + (i % 5) * 30}px` }} />
                     </div>
                   </td>
-                  <td className="px-4 py-3.5"><div className="h-5 w-20 rounded-full bg-gray-800" /></td>
+                  <td className="px-4 py-3.5"><div className="h-5 w-20 rounded-full bg-gray-100 dark:bg-gray-700" /></td>
                   <td className="px-4 py-3.5">
                     <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full bg-gray-700" />
-                      <div className="h-3 w-24 rounded bg-gray-800" />
+                      <div className="w-2 h-2 rounded-full bg-gray-200 dark:bg-gray-600" />
+                      <div className="h-3 w-24 rounded bg-gray-100 dark:bg-gray-700" />
                     </div>
                   </td>
-                  <td className="px-4 py-3.5"><div className="h-5 w-24 rounded bg-gray-800" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3 w-16 rounded bg-gray-800" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3 w-20 rounded bg-gray-800" /></td>
-                  <td className="px-4 py-3.5"><div className="h-6 w-14 rounded-lg bg-gray-800 mx-auto" /></td>
+                  <td className="px-4 py-3.5"><div className="h-5 w-24 rounded bg-gray-100 dark:bg-gray-700" /></td>
+                  <td className="px-4 py-3.5"><div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-700" /></td>
+                  <td className="px-4 py-3.5"><div className="h-3 w-20 rounded bg-gray-100 dark:bg-gray-700" /></td>
+                  <td className="px-4 py-3.5"><div className="h-6 w-14 rounded-lg bg-gray-100 dark:bg-gray-700 mx-auto" /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="relative bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border border-gray-200 dark:border-white/[0.07] rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)] overflow-hidden">
           {/* Feature 6: overflow-y-auto on this inner div makes sticky thead work.
               The outer div keeps overflow-hidden for border-radius clipping. */}
           <div className="overflow-y-auto max-h-[72vh]">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-gray-800/95 text-gray-400 text-xs uppercase tracking-wider backdrop-blur-sm">
+              <tr className="bg-gray-50/95 dark:bg-gray-900/95 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider backdrop-blur-sm border-b border-gray-200 dark:border-white/[0.08]">
                 {/* Select-all checkbox */}
-                <th className="px-4 py-3 w-10" onClick={toggleAll}>
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-colors ${
-                    allSelected ? 'bg-blue-600 border-blue-500' : someSelected ? 'bg-blue-900/60 border-blue-600' : 'border-gray-600 hover:border-blue-500'
+                <th className="px-4 py-3.5 w-10" onClick={toggleAll}>
+                  <div className={`w-4 h-4 rounded-md border flex items-center justify-center cursor-pointer transition-all ${
+                    allSelected ? 'bg-sf-600 border-sf-500 shadow-sm shadow-sf-500/30' : someSelected ? 'bg-sf-100 dark:bg-sf-500/20 border-sf-300 dark:border-sf-400/40' : 'border-gray-300 dark:border-gray-600 hover:border-sf-500'
                   }`}>
                     {allSelected && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
-                    {someSelected && <span className="text-blue-400 text-[10px] font-bold leading-none">–</span>}
+                    {someSelected && <span className="text-sf-600 dark:text-sf-400 text-[10px] font-bold leading-none">–</span>}
                   </div>
                 </th>
                 {/* Feature 1: sortable column headers */}
-                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('name')}>
+                <th className="text-left px-4 py-3.5 font-semibold cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 select-none transition-colors" onClick={() => handleSort('name')}>
                   Application <SortIcon col="name" />
                 </th>
-                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('status')}>
+                <th className="text-left px-4 py-3.5 font-semibold cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 select-none transition-colors" onClick={() => handleSort('status')}>
                   Status <SortIcon col="status" />
                 </th>
-                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('environment')}>
+                <th className="text-left px-4 py-3.5 font-semibold cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 select-none transition-colors" onClick={() => handleSort('environment')}>
                   Environment <SortIcon col="environment" />
                 </th>
-                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('type')}>
+                <th className="text-left px-4 py-3.5 font-semibold cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 select-none transition-colors" onClick={() => handleSort('type')}>
                   Type <SortIcon col="type" />
                 </th>
-                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('muleVersion')}>
+                <th className="text-left px-4 py-3.5 font-semibold cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 select-none transition-colors" onClick={() => handleSort('muleVersion')}>
                   Mule Version <SortIcon col="muleVersion" />
                 </th>
-                <th className="text-left px-4 py-3 font-medium cursor-pointer hover:text-white select-none" onClick={() => handleSort('lastModified')}>
+                <th className="text-left px-4 py-3.5 font-semibold cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 select-none transition-colors" onClick={() => handleSort('lastModified')}>
                   Last Modified <SortIcon col="lastModified" />
                 </th>
-                <th className="px-4 py-3 font-medium text-center">Actions</th>
+                <th className="px-4 py-3.5 font-semibold text-center">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
               {paginatedItems.map((app, idx) => {
                 const actions = availableActions(app.status);
                 const isActing = !!actionLoading[app.id];
@@ -1942,79 +1987,79 @@ export default function ApplicationsPage() {
 
                 return (
                   <tr key={`${app.id}-${idx}`}
-                    className={`border-t border-gray-800 hover:bg-gray-800/30 cursor-pointer transition-colors ${isChecked ? 'bg-blue-950/20' : (() => {
+                    className={`group hover:bg-sf-50/40 dark:hover:bg-sf-500/[0.08] cursor-pointer transition-colors ${isChecked ? 'bg-sf-50/60 dark:bg-sf-500/[0.12]' : (() => {
                       const st = (app.status || '').toUpperCase();
-                      if (st === 'FAILED')    return 'border-l-2 border-l-red-600 bg-red-950/10';
-                      if (st === 'DEPLOYING') return 'border-l-2 border-l-blue-500/60 bg-blue-950/5';
-                      if (st === 'UPDATING')  return 'border-l-2 border-l-purple-500/60 bg-purple-950/5';
-                      if (st === 'STARTING')  return 'border-l-2 border-l-blue-400/50';
-                      if (st === 'STOPPING')  return 'border-l-2 border-l-orange-500/50';
-                      if (st === 'STOPPED')   return 'border-l-2 border-l-gray-600/30';
-                      return '';
+                      if (st === 'FAILED')    return 'border-l-2 border-l-red-500 bg-red-50/30 dark:bg-red-500/[0.08]';
+                      if (st === 'DEPLOYING') return 'border-l-2 border-l-blue-400 bg-blue-50/20 dark:bg-blue-500/[0.07]';
+                      if (st === 'UPDATING')  return 'border-l-2 border-l-purple-400 bg-purple-50/20 dark:bg-purple-500/[0.07]';
+                      if (st === 'STARTING')  return 'border-l-2 border-l-blue-300';
+                      if (st === 'STOPPING')  return 'border-l-2 border-l-orange-400';
+                      if (st === 'STOPPED')   return 'border-l-2 border-l-gray-200 dark:border-l-gray-700';
+                      return 'border-l-2 border-l-transparent';
                     })()}`}
                     onClick={() => navigate(`/applications/${app._bgId || (selectedBg !== '__all__' ? selectedBg : orgId)}/${app.environment?.id}/${app.id}`)}>
                     {/* Checkbox */}
-                    <td className="px-4 py-3" onClick={(e) => toggleRow(e, app.id)}>
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-colors ${
-                        isChecked ? 'bg-blue-600 border-blue-500' : 'border-gray-600 hover:border-blue-500'
+                    <td className="px-4 py-3.5" onClick={(e) => toggleRow(e, app.id)}>
+                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center cursor-pointer transition-all ${
+                        isChecked ? 'bg-sf-600 border-sf-500 shadow-sm shadow-sf-500/30' : 'border-gray-300 dark:border-gray-600 hover:border-sf-500 group-hover:border-sf-400'
                       }`}>
                         {isChecked && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        <span className="text-white font-medium">{app.name}</span>
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-900 dark:text-gray-100 font-semibold">{app.name}</span>
                         <CopyBtn text={app.name} fade={false} />
                         <button
                           type="button"
                           title={`Open in Anypoint Platform${app.environment?.name ? ` — ${app.environment.name}` : ''} (app name copied to clipboard)`}
                           onClick={(e) => openInAnypoint(e, app, selectedBg !== '__all__' ? selectedBg : orgId)}
-                          className="ml-0.5 text-gray-500 hover:text-blue-400 transition-colors flex-shrink-0"
+                          className="ml-0.5 text-gray-400 dark:text-gray-500 hover:text-sf-600 dark:hover:text-sf-400 transition-colors flex-shrink-0"
                         >
                           <ExternalLink size={11} />
                         </button>
                       </div>
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={app.status} /></td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5"><StatusBadge status={app.status} /></td>
+                    <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ENV_BADGE[app.environment?.type] || 'bg-gray-400'}`} />
-                        <span className="text-gray-300">{app.environment?.name}</span>
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ring-2 ring-white dark:ring-gray-800 ${ENV_BADGE[app.environment?.type] || 'bg-gray-400'}`} />
+                        <span className="text-gray-600 dark:text-gray-400">{app.environment?.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                        app.deploymentType === 'CloudHub 2.0' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
+                    <td className="px-4 py-3.5">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-md font-semibold ${
+                        app.deploymentType === 'CloudHub 2.0' ? 'bg-sf-50 text-sf-700 dark:bg-sf-500/15 dark:text-sf-300' : 'bg-sfpurple-50 text-sfpurple-700 dark:bg-sfpurple-500/15 dark:text-sfpurple-300'
                       }`}>{app.deploymentType}</span>
                     </td>
-                    <td className="px-4 py-3 text-gray-400 font-mono text-xs">{app.muleVersion || '—'}</td>
-                    <td className="px-4 py-3 text-xs">
+                    <td className="px-4 py-3.5 text-gray-500 dark:text-gray-400 font-mono text-xs">{app.muleVersion || '—'}</td>
+                    <td className="px-4 py-3.5 text-xs">
                       {app.lastModifiedDate
-                        ? <span className="text-gray-400 tabular-nums whitespace-nowrap">
+                        ? <span className="text-gray-500 dark:text-gray-400 tabular-nums whitespace-nowrap">
                             {new Date(app.lastModifiedDate).toLocaleString(undefined, {
                               year: 'numeric', month: 'short', day: '2-digit',
                               hour: '2-digit', minute: '2-digit', hour12: false,
                             })}
                           </span>
-                        : <span className="text-gray-700">—</span>}
+                        : <span className="text-gray-400 dark:text-gray-500">—</span>}
                     </td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1">
                         {isActing ? (
-                          <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400" />
+                          <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-sf-400" />
                         ) : actions.length > 0 ? (
                           actions.map((action) => {
                             const { Icon, label, btnCls } = ACTION_CONFIG[action];
                             return (
                               <button key={action} title={label}
                                 onClick={(e) => requestAction(e, app, action)}
-                                className={`p-1.5 rounded-lg border transition-all ${btnCls}`}>
+                                className={`p-1.5 rounded-xl border transition-all duration-200 hover:scale-105 active:scale-95 ${btnCls}`}>
                                 <Icon size={13} />
                               </button>
                             );
                           })
                         ) : (
-                          <ChevronRight size={14} className="text-gray-600" />
+                          <ChevronRight size={14} className="text-gray-400 dark:text-gray-500" />
                         )}
                         {/* CPS Manager shortcut */}
                         <button
@@ -2032,7 +2077,7 @@ export default function ApplicationsPage() {
                               },
                             });
                           }}
-                          className="p-1.5 rounded-lg border text-gray-500 hover:text-cyan-400 border-gray-700/50 hover:border-cyan-700/60 hover:bg-cyan-950/30 transition-all">
+                          className="p-1.5 rounded-lg border text-gray-400 dark:text-gray-500 hover:text-sfteal-600 dark:hover:text-sfteal-400 border-gray-200 dark:border-gray-700 hover:border-sfteal-300/60 dark:hover:border-sfteal-400/30 hover:bg-sfteal-50 dark:hover:bg-sfteal-500/10 hover:shadow-sm transition-all">
                           <Database size={13} />
                         </button>
                       </div>
@@ -2042,10 +2087,17 @@ export default function ApplicationsPage() {
               })}
               {displayFiltered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-gray-500">
-                    {apps.length === 0
-                      ? `No applications found in ${selectedBgName}.`
-                      : 'No applications match your filters.'}
+                  <td colSpan={8} className="px-5 py-16 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center mb-1">
+                        <Search size={20} className="text-gray-400 dark:text-gray-500" />
+                      </div>
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">
+                        {apps.length === 0
+                          ? `No applications found in ${selectedBgName}.`
+                          : 'No applications match your filters.'}
+                      </p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -2057,11 +2109,11 @@ export default function ApplicationsPage() {
 
       {/* Pagination controls */}
       {!loading && filtered.length > 0 && (
-        <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center justify-between flex-wrap gap-3 px-1">
           {/* Left: selected + total info */}
-          <div className="flex items-center gap-2 text-xs text-gray-600">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             {selectedApps.length > 0 && (
-              <span className="text-blue-400 font-medium">{selectedApps.length} selected ·</span>
+              <span className="text-sf-700 dark:text-sf-300 font-bold px-2 py-0.5 rounded-lg bg-sf-50 dark:bg-sf-500/10">{selectedApps.length} selected</span>
             )}
             <span>
               {displayFiltered.length === apps.length
@@ -2073,17 +2125,17 @@ export default function ApplicationsPage() {
           {/* Right: page-size picker + prev/next */}
           <div className="flex items-center gap-3">
             {/* Page size selector */}
-            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
               <span>Rows</span>
-              <div className="flex items-center gap-0.5 bg-gray-800/70 border border-gray-700/60 rounded-lg p-0.5">
+              <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-0.5">
                 {[25, 50, 100, 200].map(size => (
                   <button
                     key={size}
                     onClick={() => { setPageSize(size); setCurrentPage(1); }}
-                    className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all ${
                       pageSize === size
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/60'
+                        ? 'bg-white dark:bg-gray-900 text-sf-700 dark:text-sf-300 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                     }`}
                   >
                     {size}
@@ -2094,11 +2146,11 @@ export default function ApplicationsPage() {
 
             {/* Page navigation */}
             {totalPages > 1 && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => setCurrentPage(1)}
                   disabled={currentPage === 1}
-                  className="px-2 py-1 text-[10px] text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="px-2 py-1.5 text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed shadow-sm transition-all"
                   title="First page"
                 >
                   «
@@ -2106,7 +2158,7 @@ export default function ApplicationsPage() {
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-2.5 py-1 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed shadow-sm transition-all"
                 >
                   ‹
                 </button>
@@ -2129,15 +2181,15 @@ export default function ApplicationsPage() {
                     }
                     return pages.map((p, i) =>
                       p === '...' ? (
-                        <span key={`ellipsis-${i}`} className="px-1.5 text-[10px] text-gray-600">…</span>
+                        <span key={`ellipsis-${i}`} className="px-1.5 text-[10px] text-gray-400 dark:text-gray-500">…</span>
                       ) : (
                         <button
                           key={p}
                           onClick={() => setCurrentPage(p)}
-                          className={`min-w-[26px] h-[26px] text-[10px] font-medium rounded transition-all ${
+                          className={`min-w-[28px] h-[28px] text-[10px] font-semibold rounded-lg transition-all ${
                             currentPage === p
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60'
+                              ? 'bg-sf-600 text-white shadow-sm shadow-sf-500/30'
+                              : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 shadow-sm'
                           }`}
                         >
                           {p}
@@ -2150,21 +2202,21 @@ export default function ApplicationsPage() {
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-2.5 py-1 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed shadow-sm transition-all"
                 >
                   ›
                 </button>
                 <button
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={currentPage === totalPages}
-                  className="px-2 py-1 text-[10px] text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700/60 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="px-2 py-1.5 text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed shadow-sm transition-all"
                   title="Last page"
                 >
                   »
                 </button>
 
                 {/* Compact page range label */}
-                <span className="text-[10px] text-gray-600 ml-1 tabular-nums whitespace-nowrap">
+                <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-1 tabular-nums whitespace-nowrap">
                   {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, displayFiltered.length)} of {displayFiltered.length}
                 </span>
               </div>
