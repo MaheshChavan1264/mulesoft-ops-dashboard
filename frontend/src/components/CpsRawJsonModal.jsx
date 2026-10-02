@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, AlertTriangle, Save, AlignLeft, ChevronUp, ChevronDown, Search, RefreshCw } from 'lucide-react';
+import { X, AlertTriangle, Save, AlignLeft, ChevronUp, ChevronDown, Search, RefreshCw, Maximize2, Minimize2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 /* ═══════════════════════════════════════════════════
@@ -142,6 +142,7 @@ export default function CpsRawJsonModal({
   const [matchCase,       setMatchCase]       = useState(false);
   const [activeMatchIdx,  setActiveMatchIdx]  = useState(0);
   const [showReplace,     setShowReplace]     = useState(false);
+  const [isFullscreen,    setIsFullscreen]    = useState(false);
 
   const { isDark } = useTheme();
   const PM = isDark ? DARK_PM : LIGHT_PM;
@@ -154,6 +155,7 @@ export default function CpsRawJsonModal({
     if (isOpen) {
       setJsonText(JSON.stringify(initialJson, null, 2));
       setError(''); setFindText(''); setReplaceText(''); setActiveMatchIdx(0);
+      setIsFullscreen(false);
     }
   }, [isOpen, initialJson]);
 
@@ -296,16 +298,16 @@ export default function CpsRawJsonModal({
       position: 'fixed', inset: 0, zIndex: 100,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: PM.overlay,
-      padding: '16px',
+      padding: isFullscreen ? 0 : '16px',
     }}>
       <div style={{
         background: PM.bg,
-        border: `1px solid ${PM.border}`,
-        borderRadius: '8px',
-        width: '100%', maxWidth: '920px',
-        maxHeight: '92vh', height: '84vh',
+        border: isFullscreen ? 'none' : `1px solid ${PM.border}`,
+        borderRadius: isFullscreen ? 0 : '8px',
+        width: '100%', maxWidth: isFullscreen ? '100%' : '920px',
+        maxHeight: isFullscreen ? '100vh' : '92vh', height: isFullscreen ? '100vh' : '84vh',
         display: 'flex', flexDirection: 'column',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.12)',
+        boxShadow: isFullscreen ? 'none' : '0 20px 60px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.12)',
         overflow: 'hidden',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       }}>
@@ -349,6 +351,19 @@ export default function CpsRawJsonModal({
           {/* Right: title + close */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '11px', color: PM.textMuted }}>{title}</span>
+            <button
+              onClick={() => setIsFullscreen(v => !v)}
+              title={isFullscreen ? 'Exit full page' : 'Expand to full page'}
+              style={{
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: PM.textMuted, padding: '3px', borderRadius: '3px',
+                display: 'flex', alignItems: 'center', transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = PM.text; e.currentTarget.style.background = PM.border; }}
+              onMouseLeave={e => { e.currentTarget.style.color = PM.textMuted; e.currentTarget.style.background = 'transparent'; }}
+            >
+              {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </button>
             <button
               onClick={onClose}
               style={{

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Copy, Check } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Copy, Check, Maximize2, Minimize2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 /**
@@ -94,6 +95,7 @@ export default function PostmanJsonViewer({ data, maxHeight = '600px' }) {
   const tokens = useMemo(() => tokenizeJSON(jsonText), [jsonText]);
   const lineCount = useMemo(() => jsonText.split('\n').length || 1, [jsonText]);
   const [copied, setCopied] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(jsonText);
@@ -101,17 +103,22 @@ export default function PostmanJsonViewer({ data, maxHeight = '600px' }) {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  return (
+  const editorMaxHeight = isFullscreen ? 'calc(100vh - 36px)' : maxHeight;
+
+  const content = (
     <div style={{
-      border: `1px solid ${PM.border}`,
-      borderRadius: '8px',
+      border: isFullscreen ? 'none' : `1px solid ${PM.border}`,
+      borderRadius: isFullscreen ? 0 : '8px',
       overflow: 'hidden',
+      height: isFullscreen ? '100vh' : undefined,
+      display: isFullscreen ? 'flex' : undefined,
+      flexDirection: isFullscreen ? 'column' : undefined,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     }}>
       {/* Tab bar */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 14px', height: '36px',
+        padding: '0 14px', height: '36px', flexShrink: 0,
         background: PM.toolbarBg,
         borderBottom: `1px solid ${PM.border}`,
       }}>
@@ -124,21 +131,35 @@ export default function PostmanJsonViewer({ data, maxHeight = '600px' }) {
             border: '1px solid rgba(255,108,55,0.3)', fontWeight: 700, letterSpacing: '0.04em',
           }}>READ ONLY</span>
         </div>
-        <button
-          onClick={handleCopy}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '5px',
-            background: 'transparent', border: `1px solid ${PM.border}`, borderRadius: '4px',
-            padding: '4px 10px', fontSize: '11px', fontWeight: 500,
-            color: copied ? PM.jsonNumber : PM.textMuted, cursor: 'pointer', transition: 'all 0.15s',
-          }}
-        >
-          {copied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            onClick={handleCopy}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px',
+              background: 'transparent', border: `1px solid ${PM.border}`, borderRadius: '4px',
+              padding: '4px 10px', fontSize: '11px', fontWeight: 500,
+              color: copied ? PM.jsonNumber : PM.textMuted, cursor: 'pointer', transition: 'all 0.15s',
+            }}
+          >
+            {copied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+          </button>
+          <button
+            onClick={() => setIsFullscreen(v => !v)}
+            title={isFullscreen ? 'Exit full page' : 'Expand to full page'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px',
+              background: 'transparent', border: `1px solid ${PM.border}`, borderRadius: '4px',
+              padding: '4px 8px', fontSize: '11px', fontWeight: 500,
+              color: PM.textMuted, cursor: 'pointer', transition: 'all 0.15s',
+            }}
+          >
+            {isFullscreen ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+          </button>
+        </div>
       </div>
 
       {/* Editor */}
-      <div style={{ display: 'flex', background: PM.bg, maxHeight, overflow: 'auto' }}>
+      <div style={{ display: 'flex', background: PM.bg, maxHeight: editorMaxHeight, flex: isFullscreen ? 1 : undefined, overflow: 'auto' }}>
         {/* Line numbers gutter */}
         <div style={{
           flexShrink: 0, width: '44px',
@@ -176,5 +197,17 @@ export default function PostmanJsonViewer({ data, maxHeight = '600px' }) {
         </pre>
       </div>
     </div>
+  );
+
+  if (!isFullscreen) return content;
+
+  return createPortal(
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: PM.bg,
+    }}>
+      {content}
+    </div>,
+    document.body
   );
 }
