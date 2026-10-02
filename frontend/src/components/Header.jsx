@@ -181,6 +181,7 @@ export default function Header({ onToggleSidebar }) {
   };
 
   const visibleBgsCount = applyBgFilter(allBgs).length;
+  const visibleEnvsCount = applyEnvFilter(allEnvs).length;
 
   const displayName = user?.firstName
     ? `${user.firstName} ${user.lastName || ''}`.trim()
@@ -287,6 +288,9 @@ export default function Header({ onToggleSidebar }) {
                 : <Globe size={11} />}
             </span>
             <span className="hidden sm:inline text-xs">Env</span>
+            {envFilterActive && allEnvs.length > 0 && (
+              <span className="text-[10px] font-bold px-1 rounded bg-sfgreen-600/10 dark:bg-sfgreen-400/15">{visibleEnvsCount}/{allEnvs.length}</span>
+            )}
             {envFilterActive && (
               <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-sfgreen-500 ring-2 ring-white dark:ring-gray-900" />
             )}

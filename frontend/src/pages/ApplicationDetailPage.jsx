@@ -1112,25 +1112,25 @@ export default function ApplicationDetailPage() {
   return (
     <div className="space-y-6 min-h-screen">
       {/* Feature 3: Breadcrumb navigation */}
-      <nav className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
+      <nav className="flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500 flex-wrap">
         <button onClick={() => navigate('/applications')}
-          className="hover:text-gray-600 transition-colors">Applications</button>
+          className="hover:text-sf-600 dark:hover:text-sf-400 transition-colors">Applications</button>
         {bgName && (
           <>
             <span>/</span>
-            <span className="text-gray-400">{bgName}</span>
+            <span className="text-gray-400 dark:text-gray-500">{bgName}</span>
           </>
         )}
         {(resolvedEnvName || app.environment?.name) && (
           <>
             <span>/</span>
-            <span className={`font-medium ${app.environment?.type === 'production' ? 'text-green-500/70' : 'text-yellow-500/70'}`}>
+            <span className={`font-medium ${app.environment?.type === 'production' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
               {resolvedEnvName || app.environment?.name}
             </span>
           </>
         )}
         <span>/</span>
-        <span className="text-gray-600 font-medium truncate max-w-xs">{app.name}</span>
+        <span className="text-gray-600 dark:text-gray-300 font-medium truncate max-w-xs">{app.name}</span>
       </nav>
 
       {showCpsSettings && <CpsSettingsModal

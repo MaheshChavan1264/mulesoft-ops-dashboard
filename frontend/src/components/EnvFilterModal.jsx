@@ -258,7 +258,12 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
               <SlidersHorizontal size={18} className="text-emerald-600 dark:text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-gray-900 dark:text-gray-100 font-bold text-base">Environment Filter</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-gray-900 dark:text-gray-100 font-bold text-base">Environment Filter</h2>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-400/30">
+                  {selected.size} selected
+                </span>
+              </div>
               <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">Choose which environments appear in dropdowns</p>
             </div>
           </div>
@@ -407,7 +412,7 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
             >
               {saved
                 ? <><Check size={14} /> Saved</>
-                : <><SlidersHorizontal size={14} /> Apply Filter</>}
+                : <><SlidersHorizontal size={14} /> Apply Filter ({selected.size})</>}
             </button>
           </div>
         </div>
