@@ -165,12 +165,12 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               <button
                 onClick={() => onCheckContract(app)}
                 title="Check if the contract has been approved in API Manager"
-                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-orange-600 hover:text-orange-700 hover:bg-orange-50/40 border border-orange-200/40 transition-colors font-medium whitespace-nowrap">
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg font-semibold whitespace-nowrap text-sforange-600 dark:text-sforange-400 hover:text-sforange-700 dark:hover:text-sforange-300 bg-sforange-50/70 dark:bg-sforange-500/10 hover:bg-sforange-100 dark:hover:bg-sforange-500/20 border border-sforange-200/60 dark:border-sforange-400/20 shadow-sm hover:shadow transition-all">
                 🔑 Check
               </button>
             )}
             {isPendingContract && checkingContract && (
-              <span className="text-[10px] text-orange-600/70 flex items-center gap-1">
+              <span className="text-[10px] text-sforange-600/80 dark:text-sforange-400/80 flex items-center gap-1">
                 <RefreshCw size={9} className="animate-spin" /> Checking…
               </span>
             )}
@@ -179,7 +179,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               <button
                 onClick={() => onRetry(app)}
                 title="Run ping test with resolved credentials"
-                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50/40 border border-emerald-200/40 transition-colors font-medium whitespace-nowrap">
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg font-semibold whitespace-nowrap text-sfgreen-600 dark:text-sfgreen-400 hover:text-sfgreen-700 dark:hover:text-sfgreen-300 bg-sfgreen-50/70 dark:bg-sfgreen-500/10 hover:bg-sfgreen-100 dark:hover:bg-sfgreen-500/20 border border-sfgreen-200/60 dark:border-sfgreen-400/20 shadow-sm hover:shadow transition-all">
                 <RefreshCw size={10} /> Ping
               </button>
             )}
@@ -190,7 +190,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 onClick={() => onGetJwt(app)}
                 disabled={jwtLoading}
                 title="Fetch JWT token from CPS and retry ping"
-                className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/40 border border-indigo-200/40 transition-colors font-medium whitespace-nowrap disabled:opacity-50">
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg font-semibold whitespace-nowrap disabled:opacity-50 text-sfpurple-600 dark:text-sfpurple-400 hover:text-sfpurple-700 dark:hover:text-sfpurple-300 bg-sfpurple-50/70 dark:bg-sfpurple-500/10 hover:bg-sfpurple-100 dark:hover:bg-sfpurple-500/20 border border-sfpurple-200/60 dark:border-sfpurple-400/20 shadow-sm hover:shadow transition-all">
                 {jwtLoading ? <RefreshCw size={9} className="animate-spin" /> : <Lock size={9} />} JWT
               </button>
             )}
@@ -199,7 +199,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               <button
                 onClick={() => onRetry(app)}
                 title="Retry ping for this app"
-                className="p-1 rounded text-red-600 hover:text-red-700 hover:bg-red-50/40 transition-colors">
+                className="p-1.5 rounded-lg text-sfred-600 dark:text-sfred-400 hover:text-sfred-700 dark:hover:text-sfred-300 hover:bg-sfred-50 dark:hover:bg-sfred-500/10 transition-colors">
                 <RefreshCw size={13} />
               </button>
             )}
@@ -215,8 +215,8 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                   }
                 }}
                 title="Copy cURL for this endpoint"
-                className="p-1 rounded text-gray-500 hover:text-gray-900 hover:bg-gray-100/60 transition-colors">
-                {copiedCurl ? <Check size={12} className="text-emerald-600" /> : <Terminal size={12} />}
+                className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-sf-700 dark:hover:text-sf-300 hover:bg-sf-50 dark:hover:bg-sf-500/10 transition-colors">
+                {copiedCurl ? <Check size={12} className="text-sfgreen-600 dark:text-sfgreen-400" /> : <Terminal size={12} />}
               </button>
             )}
             {result && (
@@ -410,18 +410,20 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
         <div className="flex items-center gap-2 flex-wrap">
           {globalHistory.length > 0 && (
             <button onClick={exportHistoryCsv}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 border border-emerald-200/50 rounded-lg transition-colors">
-              <Download size={13} /> Export CSV
+              className="group/exp flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfgreen-600 dark:text-sfgreen-400 bg-white dark:bg-gray-800 hover:text-sfgreen-700 dark:hover:text-sfgreen-300 border border-gray-200 dark:border-gray-700 hover:border-sfgreen-200/70 dark:hover:border-sfgreen-400/30 shadow-sm hover:shadow-md transition-all">
+              <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfgreen-50 dark:bg-sfgreen-500/15 group-hover/exp:bg-sfgreen-100 dark:group-hover/exp:bg-sfgreen-500/25 text-sfgreen-600 dark:text-sfgreen-400 flex-shrink-0 transition-colors"><Download size={11} /></span>
+              Export CSV
             </button>
           )}
           {globalHistory.length > 0 && (
             <button onClick={onClear}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 bg-red-50/40 border border-red-200/50 rounded-lg transition-colors">
-              <Trash2 size={13} /> Clear History
+              className="group/clr flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfred-600 dark:text-sfred-400 bg-white dark:bg-gray-800 hover:text-sfred-700 dark:hover:text-sfred-300 border border-gray-200 dark:border-gray-700 hover:border-sfred-200/70 dark:hover:border-sfred-400/30 shadow-sm hover:shadow-md transition-all">
+              <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfred-50 dark:bg-sfred-500/15 group-hover/clr:bg-sfred-100 dark:group-hover/clr:bg-sfred-500/25 text-sfred-600 dark:text-sfred-400 flex-shrink-0 transition-colors"><Trash2 size={11} /></span>
+              Clear History
             </button>
           )}
           <button onClick={onClose}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 rounded-lg transition-colors">
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors">
             <ArrowLeft size={13} /> Back to Results
           </button>
         </div>
@@ -1119,11 +1121,11 @@ export default function PingTestPage() {
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => navigate('/applications')}
-              className="flex items-center gap-2 px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-sm font-medium rounded-lg transition-colors">
+              className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 bg-gradient-to-b from-sf-500 to-sf-600 hover:from-sf-400 hover:to-sf-500 text-white shadow-md shadow-sf-500/30 hover:shadow-lg hover:shadow-sf-500/40 ring-1 ring-inset ring-white/20">
               <ArrowLeft size={14} /> Go to Applications
             </button>
             <button onClick={() => setShowHistoryView(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-600 hover:text-gray-900 text-sm font-medium rounded-lg transition-colors">
+              className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors">
               <History size={14} /> View History
             </button>
           </div>
@@ -1166,7 +1168,7 @@ export default function PingTestPage() {
           {unresolvedApps.length > 0 && (
             <button onClick={resolveUnresolved} disabled={resolvingAll}
               title={`Auto-resolve credentials for ${unresolvedApps.length} app${unresolvedApps.length !== 1 ? 's' : ''} that have no credentials yet`}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 hover:bg-emerald-50/60 border border-emerald-200/50 rounded-lg disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 bg-gradient-to-b from-sfteal-500 to-sfteal-600 hover:from-sfteal-400 hover:to-sfteal-500 text-white shadow-md shadow-sfteal-500/30 hover:shadow-lg hover:shadow-sfteal-500/40 ring-1 ring-inset ring-white/20">
               <ShieldCheck size={13} className={resolvingAll ? 'animate-spin' : ''} />
               {resolvingAll ? 'Resolving…' : `Re-resolve Creds (${unresolvedApps.length})`}
             </button>
@@ -1175,7 +1177,7 @@ export default function PingTestPage() {
           {failedCount > 0 && (
             <button onClick={retryAllFailed} disabled={retryingAll}
               title={`Retry all ${failedCount} failed ping test${failedCount !== 1 ? 's' : ''}`}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 bg-red-50/40 hover:bg-red-50/60 border border-red-200/50 rounded-lg disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 bg-gradient-to-b from-sfred-500 to-sfred-600 hover:from-sfred-400 hover:to-sfred-500 text-white shadow-md shadow-sfred-500/30 hover:shadow-lg hover:shadow-sfred-500/40 ring-1 ring-inset ring-white/20">
               <RefreshCw size={13} className={retryingAll ? 'animate-spin' : ''} />
               {retryingAll ? 'Retrying…' : `Retry Failed (${failedCount})`}
             </button>
@@ -1184,7 +1186,7 @@ export default function PingTestPage() {
           {approvedContractCount > 0 && (
             <button onClick={pingAllApproved} disabled={pingingAllApproved}
               title={`Ping all ${approvedContractCount} approved app${approvedContractCount !== 1 ? 's' : ''}`}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 hover:bg-emerald-50/60 border border-emerald-200/50 rounded-lg disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 bg-gradient-to-b from-sfgreen-500 to-sfgreen-600 hover:from-sfgreen-400 hover:to-sfgreen-500 text-white shadow-md shadow-sfgreen-500/30 hover:shadow-lg hover:shadow-sfgreen-500/40 ring-1 ring-inset ring-white/20">
               <Activity size={13} className={pingingAllApproved ? 'animate-pulse' : ''} />
               {pingingAllApproved ? 'Pinging…' : `Ping Approved (${approvedContractCount})`}
             </button>
@@ -1193,7 +1195,7 @@ export default function PingTestPage() {
           {pendingContractCount > 0 && (
             <button onClick={checkAllContracts} disabled={checkingAll}
               title={`Check contract approval for ${pendingContractCount} pending app${pendingContractCount !== 1 ? 's' : ''}`}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-orange-600 hover:text-orange-700 bg-orange-50/40 hover:bg-orange-50/60 border border-orange-200/50 rounded-lg disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 bg-gradient-to-b from-sforange-500 to-sforange-600 hover:from-sforange-400 hover:to-sforange-500 text-white shadow-md shadow-sforange-500/30 hover:shadow-lg hover:shadow-sforange-500/40 ring-1 ring-inset ring-white/20">
               <RefreshCw size={13} className={checkingAll ? 'animate-spin' : ''} />
               {checkingAll ? 'Checking…' : `Check Contracts (${pendingContractCount})`}
             </button>
@@ -1201,27 +1203,31 @@ export default function PingTestPage() {
           {/* Feature 2: CSV Upload button */}
           <button onClick={() => csvInputRef.current?.click()}
             title="Upload a CSV of app names to batch-ping"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-700 bg-blue-50/40 hover:bg-blue-50/60 border border-blue-200/50 rounded-lg transition-colors">
-            <UploadCloud size={13} /> Upload CSV
+            className="group/csv flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sf-600 dark:text-sf-400 bg-white dark:bg-gray-800 hover:text-sf-700 dark:hover:text-sf-300 border border-gray-200 dark:border-gray-700 hover:border-sf-200/70 dark:hover:border-sf-400/30 shadow-sm hover:shadow-md transition-all">
+            <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sf-50 dark:bg-sf-500/15 group-hover/csv:bg-sf-100 dark:group-hover/csv:bg-sf-500/25 text-sf-600 dark:text-sf-400 flex-shrink-0 transition-colors"><UploadCloud size={11} /></span>
+            Upload CSV
           </button>
           {hasResults && (
             <button onClick={exportCsv}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 border border-emerald-200/50 rounded-lg transition-colors">
-              <Download size={13} /> Export CSV
+              className="group/exp flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfgreen-600 dark:text-sfgreen-400 bg-white dark:bg-gray-800 hover:text-sfgreen-700 dark:hover:text-sfgreen-300 border border-gray-200 dark:border-gray-700 hover:border-sfgreen-200/70 dark:hover:border-sfgreen-400/30 shadow-sm hover:shadow-md transition-all">
+              <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfgreen-50 dark:bg-sfgreen-500/15 group-hover/exp:bg-sfgreen-100 dark:group-hover/exp:bg-sfgreen-500/25 text-sfgreen-600 dark:text-sfgreen-400 flex-shrink-0 transition-colors"><Download size={11} /></span>
+              Export CSV
             </button>
           )}
           {hasResults && (
             <button onClick={clearResults}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 bg-red-50/40 border border-red-200/50 rounded-lg transition-colors">
-              <X size={13} /> Clear Results
+              className="group/clr flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfred-600 dark:text-sfred-400 bg-white dark:bg-gray-800 hover:text-sfred-700 dark:hover:text-sfred-300 border border-gray-200 dark:border-gray-700 hover:border-sfred-200/70 dark:hover:border-sfred-400/30 shadow-sm hover:shadow-md transition-all">
+              <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfred-50 dark:bg-sfred-500/15 group-hover/clr:bg-sfred-100 dark:group-hover/clr:bg-sfred-500/25 text-sfred-600 dark:text-sfred-400 flex-shrink-0 transition-colors"><X size={11} /></span>
+              Clear Results
             </button>
           )}
           <button onClick={() => setShowHistoryView(true)}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-indigo-600 hover:text-indigo-700 bg-indigo-50/40 border border-indigo-200/50 rounded-lg transition-colors">
-            <History size={13} /> View History
+            className="group/hist flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfpurple-600 dark:text-sfpurple-400 bg-white dark:bg-gray-800 hover:text-sfpurple-700 dark:hover:text-sfpurple-300 border border-gray-200 dark:border-gray-700 hover:border-sfpurple-200/70 dark:hover:border-sfpurple-400/30 shadow-sm hover:shadow-md transition-all">
+            <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfpurple-50 dark:bg-sfpurple-500/15 group-hover/hist:bg-sfpurple-100 dark:group-hover/hist:bg-sfpurple-500/25 text-sfpurple-600 dark:text-sfpurple-400 flex-shrink-0 transition-colors"><History size={11} /></span>
+            View History
           </button>
           <button onClick={() => navigate('/applications')}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 rounded-lg transition-colors">
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors">
             <ArrowLeft size={13} /> Back to Applications
           </button>
         </div>
@@ -1247,14 +1253,14 @@ export default function PingTestPage() {
           <div className="flex items-center gap-2">
             {csvMatchedApps.length > 0 && (
               <button onClick={runBatchPing} disabled={batchRunning}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white rounded-lg transition-colors font-medium">
+                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg disabled:opacity-50 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 bg-gradient-to-b from-sf-500 to-sf-600 hover:from-sf-400 hover:to-sf-500 text-white shadow-sm shadow-sf-500/30 hover:shadow-md hover:shadow-sf-500/40 ring-1 ring-inset ring-white/20">
                 {batchRunning
                   ? <><RefreshCw size={10} className="animate-spin" /> Running…</>
                   : <><Activity size={10} /> Run Batch Ping ({csvMatchedApps.length})</>}
               </button>
             )}
             <button onClick={() => { setCsvMatchedNames(null); setCsvFileName(''); }}
-              className="text-gray-500 hover:text-gray-900 transition-colors">
+              className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded-lg transition-colors">
               <X size={14} />
             </button>
           </div>
@@ -1286,13 +1292,13 @@ export default function PingTestPage() {
               { key: 'CONTRACT_APPROVED', label: '✅ Approved',         count: approvedContractCount, cls: 'text-emerald-700 border-emerald-300/50 hover:border-emerald-500' },
             ].filter(f => f.key === 'ALL' || f.count > 0).map(f => (
               <button key={f.key} onClick={() => setStatusFilter(f.key)}
-                className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${f.cls} ${statusFilter === f.key ? 'bg-gray-100/80 ring-1 ring-inset ring-current' : 'bg-transparent'}`}>
+                className={`text-xs px-2.5 py-1 rounded-lg border font-semibold transition-all ${f.cls} ${statusFilter === f.key ? 'shadow-sm ring-1 ring-inset ring-current bg-white dark:bg-gray-800' : 'bg-transparent hover:bg-white/60 dark:hover:bg-gray-800/60'}`}>
                 {f.label}{f.count != null ? ` (${f.count})` : ''}
               </button>
             ))}
             <button onClick={() => setShowAll(v => !v)}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${
-                showAll ? 'bg-gray-100 border-gray-300 text-gray-500 hover:text-gray-900' : 'bg-cyan-100 border-cyan-300/60 text-cyan-700'
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
+                showAll ? 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100' : 'bg-gradient-to-b from-sf-500 to-sf-600 border-sf-500 text-white shadow-sm shadow-sf-500/30'
               }`}>
               {showAll ? 'Show tested only' : `✓ Showing tested (${done})`}
             </button>
