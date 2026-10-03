@@ -16,7 +16,7 @@
 import api from './api';
 import { setCached } from './apiCache';
 import { CK } from './cacheKeys';
-import { applyBgFilter } from '../components/BgFilterModal';
+import { applyBgFilter } from '../components/shared/BgFilterModal';
 
 const BG_STALE_MS  = 30 * 60 * 1000;   // BGs: 30 min (rarely change)
 const APP_STALE_MS = 20 * 60 * 1000;   // Apps: 20 min eviction (mirrors ApplicationsPage APP_STALE_MS)

@@ -15,6 +15,28 @@ import { isDemoMode } from '../utils/demoMode.js';
 // from concurrent requests all returning 401 simultaneously.
 let _redirecting = false;
 
+// How long to suppress further redirect attempts after one fires, so that if
+// the user navigates back (without a full page reload) and their session has
+// expired again, the redirect fires again rather than staying stuck.
+const REDIRECT_COOLDOWN_MS = 5000;
+
+// Endpoints that return 401 for per-resource access issues (not session
+// expiry) — don't redirect to login for those; let the caller handle the
+// rejection instead.
+const NO_REDIRECT_PATH_PATTERNS = [
+  '/applications/summary', // BG access check (per-BG access)
+  '/environments/',        // env fetch for __all__ or restricted BG
+  '/cps/',                 // CPS credential issues
+  '/exchange/',            // Exchange asset access
+  '/apis/',                // API Manager access
+];
+
+const goToLogin = () => {
+  _redirecting = true;
+  setTimeout(() => { _redirecting = false; }, REDIRECT_COOLDOWN_MS);
+  window.location.href = '/login';
+};
+
 const axiosClient = axios.create({
   baseURL: '/api',
   withCredentials: true,
@@ -26,38 +48,28 @@ axiosClient.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401 && !isDemoMode() && !_redirecting) {
       const url = error.config?.url || '';
-      // Some endpoints return 401 for per-resource access issues (not session expiry).
-      // Don't redirect to login for those — let the caller handle the rejection.
-      const skipRedirect =
-        url.includes('/applications/summary') ||  // BG access check (per-BG access)
-        url.includes('/environments/')         ||  // env fetch for __all__ or restricted BG
-        url.startsWith('/environments/')       ||  // same
-        url.includes('/cps/')                  ||  // CPS credential issues
-        url.includes('/exchange/')             ||  // Exchange asset access
-        url.includes('/apis/');                    // API Manager access
+      const skipRedirect = NO_REDIRECT_PATH_PATTERNS.some((p) => url.includes(p));
 
       if (!skipRedirect) {
-        _redirecting = true;
-        // Reset after 5 s so that if the user navigates back (without a full
-        // page reload) and their session has expired again, the redirect fires.
-        setTimeout(() => { _redirecting = false; }, 5000);
-        window.location.href = '/login';
-      } else {
+        goToLogin();
+      } else if (!_redirecting) {
         // For skip-redirect URLs the 401 might be a per-resource access issue
         // OR a fully-expired session (e.g. server restarted while tab was open).
-        // Do a lightweight session check and redirect to login only if the session
-        // is truly gone, leaving per-resource 401s for the caller to handle.
-        if (!_redirecting) {
-          axios.get('/api/auth/session', { withCredentials: true })
-            .then(r => {
-              if (!r.data?.authenticated && !_redirecting) {
-                _redirecting = true;
-                setTimeout(() => { _redirecting = false; }, 5000);
-                window.location.href = '/login';
-              }
-            })
-            .catch(() => { /* server unreachable — don't redirect */ });
-        }
+        // Do a lightweight session check and redirect to login only if the
+        // session is truly gone, leaving per-resource 401s for the caller to
+        // handle.
+        axios.get('/api/auth/session', { withCredentials: true })
+          .then((r) => {
+            if (!r.data?.authenticated && !_redirecting) goToLogin();
+          })
+          .catch((sessionCheckError) => {
+            // Distinguish "server actually told us we're unauthenticated"
+            // (a response came back, just a bad one) from "the request never
+            // reached the server at all" (network error / timeout — in that
+            // case we must NOT redirect, since the user may simply be
+            // offline or the backend may be mid-restart).
+            if (sessionCheckError.response && !_redirecting) goToLogin();
+          });
       }
     }
     return Promise.reject(error);

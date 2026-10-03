@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Eye, EyeOff, Key, User, Zap, Link2, Info, Sun, Moon, ShieldCheck, Activity, GitCompare, Database } from 'lucide-react';
+import { getErrorMessage } from '../services/http';
 
 const TABS = [
   { id: 'app', label: 'Connected App' },
@@ -47,7 +48,7 @@ export default function LoginPage() {
       }
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Authentication failed.');
+      setError(getErrorMessage(err, 'Authentication failed.'));
     } finally {
       setLoading(false);
     }

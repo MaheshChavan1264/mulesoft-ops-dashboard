@@ -1,0 +1,303 @@
+import React from 'react';
+import { Clock, Zap, Activity, Key, RefreshCw, X, Search } from 'lucide-react';
+import cronstrue from 'cronstrue';
+import api from '../../../services/api';
+import { GlassCard, StatTile, PulseDot, MetaTag, getNextCronRun } from '../shared';
+
+/**
+ * InfrastructureTab — ApplicationDetailPage's "Schedulers" (Infrastructure) tab.
+ *
+ * Extracted from pages/ApplicationDetailPage.jsx — see
+ * FRONTEND_ARCHITECTURE_REVIEW.md §4 "god component" finding.
+ */
+export default function InfrastructureTab({
+  allSchedulers, schedulers, isRunning, rStatus,
+  cpsSchedulerProps, setCpsSchedulerProps, cpsBaseUrl, effectiveCpsKey, effectiveCpsEnv, orgId,
+  cpsSecureSchedulerLoading, setCpsSecureSchedulerLoading,
+  triggerResult, setTriggerResult,
+  schedulerSearch, setSchedulerSearch,
+  allProps, cpsData,
+  triggerLoadingSet, setSchedulerConfirmKey,
+}) {
+  const enabledCount = allSchedulers.filter(s => s.enabled !== false).length;
+  const disabledCount = allSchedulers.length - enabledCount;
+  const hasUnresolved = allSchedulers.some(s => {
+    const expr = s.expression || s.schedule?.expression || '';
+    if (!expr.startsWith('${')) return false;
+    const propName = expr.slice(2, -1);
+    return !cpsSchedulerProps[propName] && !cpsSchedulerProps[propName.toLowerCase()] && !allProps[propName];
+  });
+
+  return (
+    <div className="space-y-5">
+      {/* Stat tiles */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatTile icon={Clock} label="Total Schedulers" accent="purple" value={allSchedulers.length} />
+        <StatTile icon={Zap} label="Enabled" accent="emerald" value={enabledCount} sub={disabledCount > 0 ? `${disabledCount} disabled` : undefined} />
+        <StatTile icon={Activity} label="App State" accent={isRunning ? 'emerald' : 'amber'} value={isRunning ? 'Running' : (rStatus || 'Unknown')} sub={isRunning ? 'Schedulers can fire' : 'Triggers unavailable'} />
+      </div>
+
+      <GlassCard icon={Clock} title="Scheduled Flows" count={allSchedulers.length} accent="purple" noPad>
+        {/* Show "Get Cron Expressions" button when there are unresolved ${...} placeholders
+            and CPS is configured for this app (even if cps.secure.properties wasn't auto-discovered) */}
+        {hasUnresolved && cpsBaseUrl && (
+          <div className="px-5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-sfpurple-50/50 dark:bg-sfpurple-500/5">
+            <p className="text-[10px] text-sfpurple-600 dark:text-sfpurple-400 flex items-center gap-1.5 font-medium">
+              <Key size={9} /> Some cron expressions may be in CPS properties
+            </p>
+            <button
+              disabled={cpsSecureSchedulerLoading}
+              onClick={async () => {
+                setCpsSecureSchedulerLoading(true);
+                try {
+                  // Step 1: If cps.secure.properties key is not yet known, fetch non-secure to discover it
+                  let secureKeys = cpsSchedulerProps['cps.secure.properties'];
+                  if (!secureKeys) {
+                    try {
+                      const nsRes = await api.get('/cps/fetch', {
+                        params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: effectiveCpsKey, environment: effectiveCpsEnv, bgOrgId: orgId }
+                      });
+                      const data = nsRes.data;
+                      let flat = {};
+                      if (Array.isArray(data?.responses)) data.responses.forEach(r => Object.assign(flat, r.properties || {}));
+                      else if (Array.isArray(data)) data.forEach(r => { if (r?.properties) Object.assign(flat, r.properties); });
+                      else if (data && typeof data === 'object') {
+                        const fv = Object.values(data)[0];
+                        flat = (fv && typeof fv === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
+                      }
+                      if (Object.keys(flat).length > 0) {
+                        setCpsSchedulerProps(prev => ({ ...prev, ...flat }));
+                        secureKeys = flat['cps.secure.properties'];
+                      }
+                    } catch { /* continue */ }
+                  }
+                  if (!secureKeys) { setCpsSecureSchedulerLoading(false); return; }
+                  // Step 2: Fetch secure properties using the discovered keys
+                  const sr = await api.get('/cps/fetch', {
+                    params: { baseUrl: cpsBaseUrl, type: 'secure', environment: effectiveCpsEnv, keys: secureKeys, bgOrgId: orgId }
+                  });
+                  const data = sr.data;
+                  const groups = Array.isArray(data?.responses) ? data.responses
+                    : Array.isArray(data?.properties) ? data.properties
+                    : Array.isArray(data) ? data : [];
+                  const merged = {};
+                  groups.forEach(g => Object.assign(merged, g.properties || {}));
+                  if (Object.keys(merged).length > 0) setCpsSchedulerProps(prev => ({ ...prev, ...merged }));
+                } catch { /* silently fail — button stays visible for retry */ }
+                setCpsSecureSchedulerLoading(false);
+              }}
+              className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 bg-sfpurple-100 dark:bg-sfpurple-500/15 border border-sfpurple-200/60 dark:border-sfpurple-400/20 text-sfpurple-700 dark:text-sfpurple-300 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 rounded-lg transition-all disabled:opacity-50 font-semibold flex-shrink-0">
+              {cpsSecureSchedulerLoading
+                ? <><RefreshCw size={9} className="animate-spin" /> Loading…</>
+                : <><Key size={9} /> Get Cron Expressions</>}
+            </button>
+          </div>
+        )}
+        {/* Trigger result toast inside the scheduler card */}
+        {triggerResult && (
+          <div className={`mx-5 mt-3 flex items-center justify-between px-4 py-2.5 rounded-xl border text-xs ${
+            triggerResult.success
+              ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300'
+              : 'bg-red-50 dark:bg-red-500/10 border-red-200/60 dark:border-red-400/20 text-red-700 dark:text-red-300'
+          }`}>
+            <span>{triggerResult.message}</span>
+            <button onClick={() => setTriggerResult(null)} className="ml-3 opacity-60 hover:opacity-100 flex-shrink-0"><X size={12} /></button>
+          </div>
+        )}
+        {allSchedulers.length>0 && (
+          <div className="px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+            <div className="relative">
+              <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none"/>
+              <input
+                value={schedulerSearch}
+                onChange={(e) => setSchedulerSearch(e.target.value)}
+                placeholder="Filter by flow name or cron…"
+                className="w-full bg-gray-50/70 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/60 rounded-xl pl-8 pr-4 py-2.5 text-xs text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfpurple-400 dark:focus:border-sfpurple-500 focus:ring-2 focus:ring-sfpurple-500/10 focus:bg-white dark:focus:bg-gray-800 transition-all"
+              />
+              {schedulerSearch && (
+                <button onClick={() => setSchedulerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xs">✕</button>
+              )}
+            </div>
+            {schedulerSearch && (
+              <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5">
+                Showing {schedulers.length} of {allSchedulers.length} scheduler{allSchedulers.length !== 1 ? 's' : ''}
+              </p>
+            )}
+          </div>
+        )}
+        {allSchedulers.length>0 ? (
+          <div className="p-4 space-y-3">
+            {schedulers.map((s,i) => {
+              // CH2 uses s.schedule.expression; CH1 uses s.schedule.cronExpression or s.expression
+              const rawCron = s.schedule?.cronExpression ||
+                              s.schedule?.expression ||
+                              s.expression ||
+                              s.cronExpression;
+              // Scheduler-configured timezone (CH2 returns this in schedule.timeZone)
+              const rawTz = s.schedule?.timeZone || s.schedule?.timezone || s.timeZone || s.timezone || null;
+              // Resolve ${...} placeholders in timezone value (same as cron expression)
+              const schedulerTz = rawTz?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
+                allProps[propName] ||
+                allProps[propName.toLowerCase()] ||
+                cpsSchedulerProps[propName] ||
+                cpsSchedulerProps[propName.toLowerCase()] ||
+                cpsData?.nonSecure?.[propName] ||
+                match
+              ) || null;
+              // Resolve ${propName} placeholders: check runtime props first, then CPS props
+              const resolvedCron = rawCron?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
+                allProps[propName] ||
+                allProps[propName.toLowerCase()] ||
+                cpsSchedulerProps[propName] ||
+                cpsSchedulerProps[propName.toLowerCase()] ||
+                cpsData?.nonSecure?.[propName] ||
+                match
+              );
+              const isUnresolvedPlaceholder = rawCron?.startsWith('${') && resolvedCron === rawCron;
+              const wasResolved = rawCron !== resolvedCron;
+              const cron = resolvedCron; // display the resolved value
+              let decodedCron = '';
+              if (cron && !isUnresolvedPlaceholder) {
+                try {
+                  decodedCron = cronstrue.toString(cron, { throwExceptionOnParseError: true });
+                } catch (e) {
+                  // ignore parsing errors (e.g. non-standard crons)
+                }
+              }
+              // Compute next run from cron expression (works for both CH1 and CH2 since
+              // the Anypoint Platform schedulers API does not return nextRun reliably).
+              // Only compute for ENABLED schedulers — a disabled scheduler has no next run.
+              const active = s.enabled!==false;
+              const computedNextRun = (cron && !isUnresolvedPlaceholder && active) ? getNextCronRun(cron) : null;
+              // CH2 fixed-frequency: s.schedule.frequency; CH1: s.frequency or s.schedule.period
+              const freq = s.frequency ||
+                           s.schedule?.frequency ||
+                           (s.schedule?.period > 0 ? s.schedule.period : null);
+              const timeUnit = s.timeUnit || s.schedule?.timeUnit;
+              const flowName = s.flow||s.flowName||s.name;
+              const schedulerKey = s.name || s.schedulerName || s.flow || s.flowName || `scheduler-${i}`;
+              const isTriggering = triggerLoadingSet.has(schedulerKey);
+
+              // Lastrun lookup
+              const lastRunCandidates = [
+                s.lastRun, s.schedule?.lastRun, s.status?.lastRun,
+                s.lastRunAt, s.schedule?.lastRunAt, s.status?.lastRunAt,
+                s.lastFireAt, s.schedule?.lastFireAt, s.status?.lastFireAt,
+                s.lastFiredAt, s.schedule?.lastFiredAt, s.status?.lastFiredAt,
+                s.lastFired, s.schedule?.lastFired, s.status?.lastFired,
+                s.lastRunTime, s.schedule?.lastRunTime, s.status?.lastRunTime,
+                s.lastExecution, s.schedule?.lastExecution, s.status?.lastExecution,
+                s.lastTriggerTime, s.schedule?.lastTriggerTime, s.stats?.lastRun,
+                s.trigger?.lastFireTime, s.meta?.lastRun,
+              ];
+              const lastRunRaw = lastRunCandidates.find(v => v != null && v !== 0 && v !== '');
+              let lastRunNode;
+              if (!lastRunRaw) {
+                lastRunNode = <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>;
+              } else {
+                const d = new Date(lastRunRaw);
+                const valid = !isNaN(d.getTime()) && d.getFullYear() > 1970;
+                lastRunNode = valid ? (
+                  <>
+                    <span className="text-gray-600 dark:text-gray-300 text-xs font-mono">{d.toLocaleDateString()}</span>
+                    <p className="text-gray-400 dark:text-gray-500 text-[10px] font-mono">{d.toLocaleTimeString()}</p>
+                  </>
+                ) : <span className="text-gray-500 dark:text-gray-400 text-xs font-mono">{String(lastRunRaw)}</span>;
+              }
+
+              return (
+                <div key={i} className={`group relative rounded-2xl border bg-white/70 dark:bg-gray-900/40 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden ${active ? 'border-gray-200/70 dark:border-gray-700/60' : 'border-gray-200/50 dark:border-gray-800/60 opacity-70'}`}>
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${active ? 'bg-gradient-to-b from-sfpurple-400 to-sfpurple-600' : 'bg-gray-300 dark:bg-gray-700'}`} />
+                  <div className="flex flex-wrap items-center gap-4 px-5 py-4 pl-6">
+                    {/* Flow identity */}
+                    <div className="flex items-center gap-2.5 min-w-[160px] flex-shrink-0">
+                      <PulseDot active={active}/>
+                      <div className="min-w-0">
+                        <p className="text-gray-800 dark:text-gray-100 text-sm font-semibold font-mono break-all leading-tight">{flowName}</p>
+                        <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-md font-semibold mt-1 ${active?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400':'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}>
+                          {active?'Enabled':'Disabled'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Cron / frequency */}
+                    <div className="flex-1 min-w-[200px]">
+                      {cron && !isUnresolvedPlaceholder ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <MetaTag color="cyan">{cron}</MetaTag>
+                            {schedulerTz && <span className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {schedulerTz}</span>}
+                          </div>
+                          {decodedCron && (
+                            <p className="text-[12px] text-gray-600 dark:text-gray-300 font-medium">{decodedCron}</p>
+                          )}
+                          {wasResolved && (
+                            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono" title="Property placeholder resolved from app properties">{rawCron}</p>
+                          )}
+                        </div>
+                      ) : isUnresolvedPlaceholder ? (
+                        <div className="space-y-1">
+                          <MetaTag color="gray">{rawCron}</MetaTag>
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400">⚠ property not in runtime props — check CPS</p>
+                          {schedulerTz && <p className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {schedulerTz}</p>}
+                        </div>
+                      ) : freq ? (
+                        <div className="space-y-1">
+                          <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
+                          {schedulerTz && <p className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {schedulerTz}</p>}
+                        </div>
+                      ) : <span className="text-gray-400 dark:text-gray-600 text-xs">No schedule info</span>}
+                    </div>
+
+                    {/* Last run */}
+                    <div className="flex-shrink-0 min-w-[90px]">
+                      <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1">Last Run</p>
+                      {lastRunNode}
+                    </div>
+
+                    {/* Next run */}
+                    <div className="flex-shrink-0 min-w-[90px]">
+                      <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1">Next Run</p>
+                      {computedNextRun ? (
+                        <>
+                          <span className="text-sfpurple-700 dark:text-sfpurple-300 text-xs font-mono font-semibold">{computedNextRun.toLocaleDateString()}</span>
+                          <p className="text-sfpurple-500 dark:text-sfpurple-400 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
+                        </>
+                      ) : freq ? (
+                        <span className="text-gray-400 dark:text-gray-600 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>
+                      )}
+                    </div>
+
+                    {/* Action */}
+                    <div className="flex-shrink-0 ml-auto">
+                      <button
+                        onClick={() => setSchedulerConfirmKey(schedulerKey)}
+                        disabled={isTriggering || !isRunning}
+                        title={!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`}
+                        className="flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 hover:shadow-md hover:shadow-sfpurple-500/30">
+                        {isTriggering
+                          ? <><RefreshCw size={11} className="animate-spin" /> Running…</>
+                          : <><Zap size={11} /> Run Now</>}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : schedulerSearch ? (
+          <div className="px-5 py-10 text-center text-gray-500 dark:text-gray-400 text-sm">No schedulers match <span className="text-gray-700 dark:text-gray-300 font-mono">"{schedulerSearch}"</span></div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-14 gap-3 text-center">
+            <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-sfpurple-100 dark:bg-sfpurple-500/10">
+              <Clock size={24} className="text-sfpurple-500 dark:text-sfpurple-400" />
+            </div>
+            <p className="text-gray-400 dark:text-gray-500 text-sm">No schedulers configured for this application</p>
+          </div>
+        )}
+      </GlassCard>
+    </div>
+  );
+}

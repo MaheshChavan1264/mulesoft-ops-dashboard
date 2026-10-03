@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import { parseCsvToCredentialMap } from '../utils/csvCredentialStore';
+import React, { createContext, useContext, useMemo } from 'react';
+import { useCredentialMapStore } from '../hooks/useCredentialMapStore';
 
 const CredentialStoreContext = createContext(null);
 
@@ -18,72 +18,34 @@ const CredentialStoreContext = createContext(null);
  *   - On logout, the AuthContext should call clearCredentials() (or the
  *     React tree unmount handles it automatically).
  *
- * CSV parsing is handled by the shared parseCsvToCredentialMap utility
- * (utils/csvCredentialStore.js) so the logic stays in sync with
- * CpsCredentialStoreContext.
+ * The Map/loadedCount state machine and its accessor callbacks live in the
+ * shared useCredentialMapStore hook so this context stays in sync with
+ * CpsCredentialStoreContext instead of maintaining an independent copy of
+ * the same logic.
  */
 export function CredentialStoreProvider({ children }) {
-  // Map<string clientId, string clientSecret> — in-memory only
-  const [credentialMap, setCredentialMap] = useState(new Map());
-  const [loadedCount, setLoadedCount] = useState(0);
+  const store = useCredentialMapStore();
 
-  /**
-   * Parse a CSV text string and populate the credential map.
-   * Returns the number of credential pairs loaded.
-   */
-  const loadFromCsv = useCallback((text) => {
-    const map = parseCsvToCredentialMap(text);
-    setCredentialMap(map);
-    setLoadedCount(map.size);
-    return map.size;
-  }, []);
-
-  /** Wipe all credentials from memory immediately. */
-  const clearCredentials = useCallback(() => {
-    setCredentialMap(new Map());
-    setLoadedCount(0);
-  }, []);
-
-  /** Look up the secret for a given clientId. Returns null if not found. */
-  const getSecret = useCallback(
-    (clientId) => credentialMap.get(clientId) ?? null,
-    [credentialMap]
-  );
-
-  /** Returns true if we have a secret stored for this clientId. */
-  const hasCredential = useCallback(
-    (clientId) => credentialMap.has(clientId),
-    [credentialMap]
-  );
-
-  /**
-   * Given an array of candidate clientIds (returned by the backend's
-   * /auto-credentials endpoint), find the first one whose secret we hold.
-   * Returns { clientId, clientSecret } or null.
-   */
-  const resolveFromCandidates = useCallback(
-    (candidates = []) => {
-      for (const id of candidates) {
-        const secret = credentialMap.get(id);
-        if (secret) return { clientId: id, clientSecret: secret };
-      }
-      return null;
-    },
-    [credentialMap]
-  );
+  const value = useMemo(() => ({
+    loadedCount: store.loadedCount,
+    hasCredentials: store.hasCredentials,
+    loadFromCsv: store.loadFromCsv,
+    clearCredentials: store.clearCredentials,
+    getSecret: store.getSecret,
+    hasCredential: store.hasCredential,
+    resolveFromCandidates: store.resolveFromCandidates,
+  }), [
+    store.loadedCount,
+    store.hasCredentials,
+    store.loadFromCsv,
+    store.clearCredentials,
+    store.getSecret,
+    store.hasCredential,
+    store.resolveFromCandidates,
+  ]);
 
   return (
-    <CredentialStoreContext.Provider
-      value={{
-        loadedCount,
-        hasCredentials: loadedCount > 0,
-        loadFromCsv,
-        clearCredentials,
-        getSecret,
-        hasCredential,
-        resolveFromCandidates,
-      }}
-    >
+    <CredentialStoreContext.Provider value={value}>
       {children}
     </CredentialStoreContext.Provider>
   );

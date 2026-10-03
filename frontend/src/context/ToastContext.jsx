@@ -1,22 +1,8 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import { X, CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import ToastContainer from '../components/ui/ToastContainer';
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 const ToastContext = createContext(null);
-
-const ICONS = {
-  success: <CheckCircle2 size={15} className="text-emerald-400 flex-shrink-0" />,
-  error:   <XCircle     size={15} className="text-red-400 flex-shrink-0" />,
-  warning: <AlertTriangle size={14} className="text-yellow-400 flex-shrink-0" />,
-  info:    <Info        size={15} className="text-blue-400 flex-shrink-0" />,
-};
-
-const STYLES = {
-  success: 'bg-emerald-950/80 border-emerald-700/60 text-emerald-200',
-  error:   'bg-red-950/80    border-red-700/60    text-red-200',
-  warning: 'bg-yellow-950/80 border-yellow-700/60 text-yellow-200',
-  info:    'bg-blue-950/80   border-blue-700/60   text-blue-200',
-};
 
 let _nextId = 1;
 
@@ -43,27 +29,12 @@ export function ToastProvider({ children }) {
     return id;
   }, [dismiss]);
 
+  const value = useMemo(() => ({ showToast, dismiss }), [showToast, dismiss]);
+
   return (
-    <ToastContext.Provider value={{ showToast, dismiss }}>
+    <ToastContext.Provider value={value}>
       {children}
-      {/* Toast container — fixed bottom-right */}
-      <div className="fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 items-end pointer-events-none">
-        {toasts.map(t => (
-          <div
-            key={t.id}
-            className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl text-sm max-w-sm animate-in slide-in-from-right duration-300 ${STYLES[t.type] || STYLES.info}`}
-          >
-            {ICONS[t.type] || ICONS.info}
-            <span className="flex-1 leading-snug">{t.message}</span>
-            <button
-              onClick={() => dismiss(t.id)}
-              className="ml-1 opacity-50 hover:opacity-100 transition-opacity flex-shrink-0"
-            >
-              <X size={13} />
-            </button>
-          </div>
-        ))}
-      </div>
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </ToastContext.Provider>
   );
 }

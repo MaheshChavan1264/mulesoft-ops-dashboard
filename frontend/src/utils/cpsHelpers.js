@@ -14,8 +14,17 @@
  * application detail object.
  *
  * Merges properties from all ARM sources in the same priority order used
- * by the Mule application at runtime:
- *   mule.agent.application.properties.service → target.deploymentSettings → top-level
+ * by the Mule application at runtime (lowest → highest priority):
+ *   app.application.properties → application.configuration.properties →
+ *   deploymentSettings.runtimeProperties → top-level appDetail.properties →
+ *   mule.agent.application.properties.service → deploymentSettings.properties →
+ *   deploymentSettings.environmentVariables
+ *
+ * Also tries several known historical key-name variants for each field and,
+ * as a last resort for the base URL, scans every property for a value that
+ * looks like a CPS/config-server URL — this mirrors the broader fallback
+ * logic that previously only existed in GlobalSearchPage.jsx, so every page
+ * now resolves CPS config identically instead of drifting per-page.
  *
  * @param {object} appDetail  Raw response from /applications/cloudhub2 or /cloudhub1
  * @returns {{
@@ -28,26 +37,77 @@
 export function extractCpsConfig(appDetail) {
   if (!appDetail) return { cpsBaseUrl: '', cpsKey: '', cpsEnv: '', cpsClientId: '' };
 
-  const ds      = appDetail.target?.deploymentSettings || {};
-  const appCfg  = appDetail.application?.configuration || {};
+  const ds       = appDetail.target?.deploymentSettings || {};
+  const appCfg   = appDetail.application?.configuration || {};
   const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
+
   const rp = {
+    // Lower-priority fallback sources — only fill gaps the sources below
+    // don't already cover.
+    ...(appDetail.application?.properties || {}),
+    ...(appCfg.properties || {}),
+    ...(ds.runtimeProperties || {}),
+    // Original canonical sources (unchanged priority/order).
     ...appDetail.properties,
     ...(propsSvc.properties || {}),
     ...(ds.properties || {}),
     ...(ds.environmentVariables || ds.environmentVars || {}),
   };
 
+  let cpsBaseUrl =
+    rp['cps.configServerBaseUrl'] || rp['config.server.base.url'] ||
+    rp['cps.baseUrl'] || rp['cps.base.url'] || rp['cps.server.url'] ||
+    rp['cps.url'] || rp['anypoint.config.server.baseUrl'] ||
+    rp['config.server.url'] || rp['configserver.url'] || rp['cloudconfig.url'] || '';
+
+  if (!cpsBaseUrl) {
+    // Scan every property for a value that looks like a CPS/config-server URL.
+    const CPS_KEY_HINT = /cps|config[.\-_]?server|configserver|cloud[.\-_]?config/i;
+    for (const [key, val] of Object.entries(rp)) {
+      if (typeof val === 'string' && /^https?:\/\//i.test(val) && CPS_KEY_HINT.test(key)) {
+        cpsBaseUrl = val;
+        break;
+      }
+    }
+  }
+
   return {
-    cpsBaseUrl:  rp['cps.configServerBaseUrl'] || rp['config.server.base.url'] || '',
-    cpsKey:      rp['cps.projectName']          || rp['cloudhub.api.name']       || appDetail.name || '',
-    cpsEnv:      rp['cps.prefix']               || rp['cps.environment']          || '',
-    cpsClientId: rp['cps.clientId'] || rp['cps.client_id'] ||
-                 rp['cps.client.id'] || rp['cps.apiClientId'] || '',
+    cpsBaseUrl,
+    cpsKey:
+      rp['cps.projectName'] || rp['cloudhub.api.name'] || rp['cps.appName'] ||
+      rp['cps.app.name'] || rp['api.name'] || appDetail.name || '',
+    cpsEnv:
+      rp['cps.prefix'] || rp['cps.environment'] || rp['cps.env'] ||
+      rp['environment'] || rp['deployment.env'] || '',
+    cpsClientId:
+      rp['cps.clientId'] || rp['cps.client_id'] || rp['cps.client.id'] ||
+      rp['cps.apiClientId'] || rp['cps.api.clientId'] || '',
   };
 }
 
 // ── CPS response normalisation ────────────────────────────────────────────────
+
+/**
+ * Detect and return the "array of CPS entries" shape inside a raw CPS
+ * response, or `null` if the response isn't array-shaped (e.g. it's already
+ * a flat `{k:v}` map). Each entry generally looks like `{ key, properties }`.
+ *
+ * Shared by `flattenCpsResponse` (below) and `utils/exportCps.js`'s
+ * multi-secure-group extraction, so both call sites agree on exactly which
+ * raw shapes count as "array of entries" instead of drifting independently.
+ *
+ * @param {any} data  Raw CPS response body
+ * @returns {Array|null}
+ */
+export function extractCpsResponseEntries(data) {
+  if (!data) return null;
+  if (Array.isArray(data?.responses)) return data.responses;
+  if (Array.isArray(data?.properties) && data.properties.every?.(p => p && typeof p === 'object' && 'key' in p)) {
+    return data.properties;
+  }
+  if (Array.isArray(data)) return data;
+  return null;
+}
 
 /**
  * Flatten a CPS API response (any of the several shapes the server returns)
@@ -66,11 +126,7 @@ export function extractCpsConfig(appDetail) {
 export function flattenCpsResponse(data, appKey) {
   if (!data) return {};
 
-  // Shape 1 / 2: responses or array with { properties } entries
-  const arr = Array.isArray(data?.responses) ? data.responses
-    : Array.isArray(data?.properties) && data.properties.every?.(p => p && typeof p === 'object' && 'key' in p) ? data.properties
-    : Array.isArray(data) ? data
-    : null;
+  const arr = extractCpsResponseEntries(data);
 
   if (arr) {
     const flat = {};

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 
 /**
  * Feature 8: Notification bell context.
@@ -32,10 +32,15 @@ export function NotificationProvider({ children }) {
 
   const clearAll = useCallback(() => setNotifications([]), []);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
+
+  const value = useMemo(
+    () => ({ notifications, addNotification, markAllRead, dismiss, clearAll, unreadCount }),
+    [notifications, addNotification, markAllRead, dismiss, clearAll, unreadCount]
+  );
 
   return (
-    <NotificationContext.Provider value={{ notifications, addNotification, markAllRead, dismiss, clearAll, unreadCount }}>
+    <NotificationContext.Provider value={value}>
       {children}
     </NotificationContext.Provider>
   );

@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import api, { isDemoMode, enableDemoMode, disableDemoMode } from '../services/api';
-import { MOCK_USER } from '../services/mockData.js';
+import { MOCK_USER } from '../services/mocks/mockData.js';
 import { clearCache } from '../services/apiCache';
 import { warmCache } from '../services/prefetch';
 
@@ -12,23 +12,7 @@ export const AuthProvider = ({ children }) => {
   const [orgName, setOrgName] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    checkSession();
-
-    // Recheck session when the user switches back to this tab.
-    // This handles the "server restarted while tab was open" case:
-    // the React state still shows the user as logged in but the backend
-    // session is gone — the visibility change triggers a re-validation.
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        checkSession();
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const checkSession = async () => {
+  const checkSession = useCallback(async () => {
     try {
       if (isDemoMode()) {
         setUser(MOCK_USER);
@@ -57,55 +41,74 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const applyResult = (data) => {
+  useEffect(() => {
+    checkSession();
+
+    // Recheck session when the user switches back to this tab.
+    // This handles the "server restarted while tab was open" case:
+    // the React state still shows the user as logged in but the backend
+    // session is gone — the visibility change triggers a re-validation.
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkSession();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [checkSession]);
+
+  const applyResult = useCallback((data) => {
     setUser(data.user);
     setOrgId(data.orgId);
     setOrgName(data.orgName);
-  };
+  }, []);
 
-  const login = async (username, password) => {
+  const login = useCallback(async (username, password) => {
     const res = await api.post('/auth/login', { username, password });
     applyResult(res.data);
     warmCache(res.data.orgId); // fire-and-forget background prefetch
     return res.data;
-  };
+  }, [applyResult]);
 
-  const tokenLogin = async (token) => {
+  const tokenLogin = useCallback(async (token) => {
     const res = await api.post('/auth/token-login', { token });
     applyResult(res.data);
     warmCache(res.data.orgId); // fire-and-forget background prefetch
     return res.data;
-  };
+  }, [applyResult]);
 
-  const connectedAppLogin = async (clientId, clientSecret) => {
+  const connectedAppLogin = useCallback(async (clientId, clientSecret) => {
     const res = await api.post('/auth/connected-app-login', { clientId, clientSecret });
     applyResult(res.data);
     warmCache(res.data.orgId); // fire-and-forget background prefetch
     return res.data;
-  };
+  }, [applyResult]);
 
-  const demoLogin = () => {
+  const demoLogin = useCallback(() => {
     enableDemoMode();
     setUser(MOCK_USER);
     setOrgId('demo-org-001');
     setOrgName('Demo Organization');
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     disableDemoMode();
     await api.post('/auth/logout');
     clearCache(); // flush stale data so next user never sees previous session
     setUser(null);
     setOrgId(null);
     setOrgName(null);
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, orgId, orgName, loading, login, tokenLogin, connectedAppLogin, demoLogin, logout }),
+    [user, orgId, orgName, loading, login, tokenLogin, connectedAppLogin, demoLogin, logout]
+  );
 
   return (
-    <AuthContext.Provider
-      value={{ user, orgId, orgName, loading, login, tokenLogin, connectedAppLogin, demoLogin, logout }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

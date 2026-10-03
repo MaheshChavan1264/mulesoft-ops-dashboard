@@ -57,7 +57,12 @@ export default {
           50: '#fdecee', 100: '#fbd0d4', 200: '#f49aa3', 300: '#ea6873',
           400: '#e0394a', 500: '#ba0517', 600: '#950412', 700: '#74030e',
           800: '#52020a', 900: '#330106', 950: '#1f0003'
-        }
+        },
+        // Near-black console/terminal background used for raw payload/log
+        // `<pre>` blocks (PingResultCard, AttemptLog) — deliberately not
+        // theme-aware (always dark, like a real terminal). Named here
+        // instead of inlining the hex at each call site.
+        terminal: '#0B0F17'
       }
     }
   },

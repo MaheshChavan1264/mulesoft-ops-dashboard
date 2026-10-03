@@ -1,5 +1,7 @@
-import * as XLSX from 'xlsx';
 import api from '../services/api';
+import { extractCpsResponseEntries, flattenCpsResponse, normaliseCpsUrl } from './cpsHelpers';
+import { rowsToWorksheet, writeWorkbook } from './xlsxExport';
+import { getErrorMessage } from '../services/http';
 
 const SECRET_PATTERNS = /password|secret|passwd|token|credential|\.key$|keypassword|keystorepassword|truststore\.password|ssl\.password|msk\.password/i;
 
@@ -53,12 +55,8 @@ function extractHostsSecure(props) {
 }
 
 function normalisePropsArray(raw, appKey) {
-  if (Array.isArray(raw)) return raw;
-  if (Array.isArray(raw?.responses)) return raw.responses;
-  if (Array.isArray(raw?.properties)) {
-    // Could be wrapper or flat array of entries
-    return raw.properties.every(p => p.key) ? raw.properties : [{ key: appKey, properties: raw.properties }];
-  }
+  const arr = extractCpsResponseEntries(raw);
+  if (arr) return arr;
   if (raw && typeof raw === 'object') {
     return [{ key: appKey, properties: raw }];
   }
@@ -152,13 +150,25 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   const effectiveCpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
   if (!effectiveCpsBaseUrl) throw new Error(`No CPS URL in runtime properties for "${app.name}"`);
 
-  const normUrl = effectiveCpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+  const normUrl = normaliseCpsUrl(effectiveCpsBaseUrl);
 
   // ── Per-app credential resolution ────────────────────────────────────────
   // Strategy 1: get the specific cps.clientId from ARM props → look up secret in CSV
   // Strategy 2 (fallback): masked / not in CSV → post all CSV creds as url::clientId entries
   const cpsClientId = allProps['cps.clientId'] || allProps['cps.client_id'] ||
                       allProps['cps.client.id'] || allProps['cps.apiClientId'] || '';
+
+  // Post every loaded CSV credential pair as a `${normUrl}::${clientId}` fallback
+  // entry — shared by both the "specific clientId not in CSV" and the
+  // "clientId masked/absent" branches below (previously duplicated verbatim).
+  const postAllCredentialsFallback = async () => {
+    if (!getAllCredentials) return;
+    const allCreds = getAllCredentials();
+    if (!allCreds.length) return;
+    const credMap = {};
+    for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
+    try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
+  };
 
   if (cpsClientId && !isMasked(cpsClientId) && getCredential) {
     const secret = getCredential(cpsClientId);
@@ -176,23 +186,13 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
         }
       }
       try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
-    } else if (getAllCredentials) {
+    } else {
       // Specific clientId not in CSV — fall back to all credentials
-      const allCreds = getAllCredentials();
-      if (allCreds.length) {
-        const credMap = {};
-        for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
-        try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
-      }
+      await postAllCredentialsFallback();
     }
-  } else if (getAllCredentials) {
+  } else {
     // clientId is masked or absent — post all as url::clientId fallback entries
-    const allCreds = getAllCredentials();
-    if (allCreds.length) {
-      const credMap = {};
-      for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
-      try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
-    }
+    await postAllCredentialsFallback();
   }
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -203,15 +203,9 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   }});
   const nsRaw = nsRes.data;
 
-  // Debug: log raw response to console
-  console.log(`[CPS Export] app="${app.name}" key="${cpsKey}" env="${cpsEnv}" rawResponse:`, JSON.stringify(nsRaw).substring(0, 500));
+  const flatNs = flattenCpsResponse(nsRaw, cpsKey);
 
-  const arr = normalisePropsArray(nsRaw, cpsKey);
-  const match = arr.find(p => p.key === cpsKey) || arr[0];
-  const inner = match?.properties || match;
-  let flatNs = (inner && typeof inner === 'object' && !Array.isArray(inner)) ? inner : {};
-
-  // If flatNs is still empty, the response structure is unexpected — store raw response for debugging
+  // If flatNs is empty, the response structure is unexpected — store raw response for debugging
   if (Object.keys(flatNs).length === 0) {
     throw new Error(`Empty properties for "${cpsKey}". Raw response: ${JSON.stringify(nsRaw).substring(0, 300)}`);
   }
@@ -313,7 +307,7 @@ function buildErrorRow(app, e, allPropsRows, hostApiRows) {
   const environment = app._envName || app.environment?.name || '—';
   const cloudhubVersion = app.deploymentType === 'CloudHub 2.0' ? 'CloudHub 2.0' : 'CloudHub 1.0';
   const appStatus = app.status || '—';
-  const msg = `ERROR: ${e.response?.data?.error || e.message}`;
+  const msg = `ERROR: ${getErrorMessage(e)}`;
   allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', properties: msg, splunkAccessKeyId: '' });
   hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', hostsSecure: '', apiUsers: '', notAccessible: msg });
 }
@@ -379,33 +373,42 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
     }
   }
 
-  // ── Export as Excel (.xlsx) with 3 sheets ─────────────────────────────
-  const wb = XLSX.utils.book_new();
-
-  const ws1 = XLSX.utils.json_to_sheet(allPropsRows, {
-    header: ['environment', 'apiName', 'cloudhubVersion', 'splunkAccessKeyId', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties']
-  });
-  XLSX.utils.book_append_sheet(wb, ws1, 'AllPropertiesCatalog');
-
-  const ws2 = XLSX.utils.json_to_sheet(hostApiRows, {
-    header: ['environment', 'apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
-  });
-  XLSX.utils.book_append_sheet(wb, ws2, 'Host_APIUsersCatalog');
-
-  const ws3 = XLSX.utils.json_to_sheet(scheduleRows, {
-    header: ['environment', 'apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod']
-  });
-  XLSX.utils.book_append_sheet(wb, ws3, 'ScheduleCatalog');
-
-  // Sheet 4: StaticIPsCatalog — one row per app, includes env + CloudHub version + status
-  const ws4 = XLSX.utils.json_to_sheet(staticIPsRows, {
-    header: ['apiName', 'environment', 'cloudhubVersion', 'appStatus', 'staticIPsEnabled', 'staticIPs']
-  });
-  XLSX.utils.book_append_sheet(wb, ws4, 'StaticIPsCatalog');
+  // ── Export as Excel (.xlsx) with 4 sheets ─────────────────────────────
+  const sheets = [
+    {
+      name: 'AllPropertiesCatalog',
+      worksheet: rowsToWorksheet(allPropsRows, {
+        headers: ['environment', 'apiName', 'cloudhubVersion', 'splunkAccessKeyId', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties'],
+        colWidths: undefined,
+      }),
+    },
+    {
+      name: 'Host_APIUsersCatalog',
+      worksheet: rowsToWorksheet(hostApiRows, {
+        headers: ['environment', 'apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible'],
+        colWidths: undefined,
+      }),
+    },
+    {
+      name: 'ScheduleCatalog',
+      worksheet: rowsToWorksheet(scheduleRows, {
+        headers: ['environment', 'apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod'],
+        colWidths: undefined,
+      }),
+    },
+    // Sheet 4: StaticIPsCatalog — one row per app, includes env + CloudHub version + status
+    {
+      name: 'StaticIPsCatalog',
+      worksheet: rowsToWorksheet(staticIPsRows, {
+        headers: ['apiName', 'environment', 'cloudhubVersion', 'appStatus', 'staticIPsEnabled', 'staticIPs'],
+        colWidths: undefined,
+      }),
+    },
+  ];
 
   const date = new Date().toISOString().split('T')[0];
   const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   const envPart = safeName(envName);
   const filename = ['CPS-Properties', envPart, date].filter(Boolean).join('-') + '.xlsx';
-  XLSX.writeFile(wb, filename);
+  writeWorkbook(sheets, filename);
 }

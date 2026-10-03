@@ -1,6 +1,6 @@
 import axiosClient from './axiosClient.js';
-import * as mock from './mockData.js';
-import mockCpsData from './mockCpsData.json';
+import * as mock from './mocks/mockData.js';
+import mockCpsData from './mocks/mockCpsCredentials.json';
 
 // ── Demo-mode helpers (re-exported for backwards compatibility) ───────────────
 // Components that already import { isDemoMode } from '../services/api' continue
