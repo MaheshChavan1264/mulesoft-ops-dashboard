@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { RefreshCw, ShieldCheck, Search, SlidersHorizontal, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Globe, Trash2 } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Search, SlidersHorizontal, FileText, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Globe, Trash2, X } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import Select from '../components/Select';
 import BgFilterModal, { applyBgFilter } from '../components/BgFilterModal';
@@ -9,7 +9,7 @@ import api from '../services/api';
 import { ENV_BADGE } from '../utils/appUtils';
 import { getCachedSWR, setCached } from '../services/apiCache';
 
-const ENV_TAG_COLOR = { production: 'bg-green-100 text-green-600', sandbox: 'bg-yellow-100 text-yellow-600' };
+const ENV_TAG_COLOR = { production: 'bg-sfgreen-100 text-sfgreen-600', sandbox: 'bg-sforange-100 text-sforange-600' };
 
 // Cache TTL constants
 const ENV_CACHE_MS  = 10 * 60 * 1000;  // 10 min — env lists are stable
@@ -71,95 +71,95 @@ function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
   const isApproved = status === 'ACTIVE' || status === 'APPROVED';
 
   const statusIcon =
-    isApproved ? <CheckCircle size={12} className="text-green-600 flex-shrink-0" /> :
-    status === 'REVOKED' ? <XCircle size={12} className="text-red-600 flex-shrink-0" /> :
-    isPending ? <Clock size={12} className="text-yellow-600 flex-shrink-0" /> :
-    <AlertCircle size={12} className="text-gray-500 flex-shrink-0" />;
+    isApproved ? <CheckCircle size={12} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0" /> :
+    status === 'REVOKED' ? <XCircle size={12} className="text-red-600 dark:text-red-400 flex-shrink-0" /> :
+    isPending ? <Clock size={12} className="text-amber-600 dark:text-amber-400 flex-shrink-0" /> :
+    <AlertCircle size={12} className="text-gray-500 dark:text-gray-400 flex-shrink-0" />;
 
   const statusColor =
-    isApproved ? 'text-green-600 bg-green-50 border-green-300/40' :
-    status === 'REVOKED' ? 'text-red-600 bg-red-50 border-red-300/40' :
-    isPending ? 'text-yellow-600 bg-yellow-50 border-yellow-300/40' :
-    'text-gray-500 bg-gray-200/30 border-gray-300/40';
+    isApproved ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/80 dark:border-emerald-400/30' :
+    status === 'REVOKED' ? 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border-red-200/80 dark:border-red-400/30' :
+    isPending ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border-amber-200/80 dark:border-amber-400/30' :
+    'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/40 border-gray-200/80 dark:border-gray-600/40';
 
   return (
-    <div key={c.id || i} className="px-5 py-3 hover:bg-gray-100/30 transition-colors">
+    <div key={c.id || i} className="px-5 py-3.5 hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors">
       <div className="flex items-start justify-between gap-3 mb-2">
-        <p className="text-gray-900 text-sm font-medium truncate">{appName}</p>
+        <p className="text-gray-900 dark:text-gray-100 text-sm font-semibold truncate">{appName}</p>
         <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-semibold flex-shrink-0 ${statusColor}`}>
           {statusIcon}{status.replace('_', ' ')}
         </span>
       </div>
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <span className="text-gray-500 text-[10px] w-16 flex-shrink-0">Client ID</span>
-          <span className="font-mono text-[10px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 break-all select-all">
+          <span className="text-gray-400 dark:text-gray-500 text-[10px] w-16 flex-shrink-0">Client ID</span>
+          <span className="font-mono text-[10px] bg-gray-50 dark:bg-gray-900/50 px-1.5 py-0.5 rounded-md text-gray-600 dark:text-gray-300 break-all select-all">
             {clientId || '—'}
           </span>
         </div>
         {clientAppId && (
           <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-[10px] w-16 flex-shrink-0">App ID</span>
-            <span className="font-mono text-[10px] text-gray-500">{clientAppId}</span>
+            <span className="text-gray-400 dark:text-gray-500 text-[10px] w-16 flex-shrink-0">App ID</span>
+            <span className="font-mono text-[10px] text-gray-500 dark:text-gray-400">{clientAppId}</span>
           </div>
         )}
         <div className="flex items-center gap-2 flex-wrap pt-0.5">
           {tierName && (
-            <span className="text-blue-600 text-[10px] bg-blue-50 border border-blue-300/40 px-1.5 py-0.5 rounded">{tierName}</span>
+            <span className="text-sf-600 dark:text-sf-400 text-[10px] bg-sf-50 dark:bg-sf-500/10 border border-sf-200/60 dark:border-sf-400/30 px-1.5 py-0.5 rounded-md font-medium">{tierName}</span>
           )}
-          {created && <span className="text-gray-500 text-[10px]">{created}</span>}
+          {created && <span className="text-gray-400 dark:text-gray-500 text-[10px]">{created}</span>}
         </div>
       </div>
 
-      <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200/60">
+      <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100 dark:border-white/[0.06]">
         {/* ── Status action buttons (left) ─────────────────────────── */}
         <div className="flex gap-2 min-h-[24px] items-center">
-          {loading && <RefreshCw size={12} className="animate-spin text-gray-500" />}
+          {loading && <RefreshCw size={12} className="animate-spin text-gray-400 dark:text-gray-500" />}
 
           {!loading && isPending && (
             <>
-              <button onClick={() => handleUpdate('APPROVED')} className="text-[10px] uppercase font-bold tracking-wider bg-green-100/40 text-green-600 border border-green-300/50 hover:bg-green-800/60 px-3 py-1 rounded transition-colors">Approve</button>
-              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-100/40 text-red-600 border border-red-300/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Reject</button>
+              <button onClick={() => handleUpdate('APPROVED')} className="text-[10px] uppercase font-bold tracking-wider bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-400/30 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-sm hover:shadow-emerald-500/30 px-3 py-1 rounded-lg transition-all">Approve</button>
+              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200/70 dark:border-red-400/30 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-sm hover:shadow-red-500/30 px-3 py-1 rounded-lg transition-all">Reject</button>
             </>
           )}
 
           {!loading && isApproved && !confirmRevoke && (
-            <button onClick={() => setConfirmRevoke(true)} className="text-[10px] uppercase font-bold tracking-wider bg-red-100/40 text-red-600 border border-red-300/50 hover:bg-red-800/60 px-3 py-1 rounded transition-colors">Revoke</button>
+            <button onClick={() => setConfirmRevoke(true)} className="text-[10px] uppercase font-bold tracking-wider bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200/70 dark:border-red-400/30 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-sm hover:shadow-red-500/30 px-3 py-1 rounded-lg transition-all">Revoke</button>
           )}
 
           {!loading && confirmRevoke && (
             <div className="flex gap-2 items-center">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-red-600 flex items-center gap-1">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1">
                 <AlertCircle size={10} /> Revoke this contract?
               </span>
-              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-600 text-gray-900 hover:bg-red-500 px-3 py-1 rounded transition-colors">Yes, Revoke</button>
-              <button onClick={() => setConfirmRevoke(false)} className="text-[10px] uppercase font-bold tracking-wider text-gray-500 hover:text-gray-900 px-2 py-1 rounded transition-colors">Cancel</button>
+              <button onClick={() => handleUpdate('REVOKED')} className="text-[10px] uppercase font-bold tracking-wider bg-red-600 text-white hover:bg-red-500 px-3 py-1 rounded-lg shadow-sm shadow-red-500/30 transition-colors">Yes, Revoke</button>
+              <button onClick={() => setConfirmRevoke(false)} className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 px-2 py-1 rounded-lg transition-colors">Cancel</button>
             </div>
           )}
 
           {!loading && status === 'REVOKED' && (
-            <button onClick={() => handleUpdate('ACTIVE')} className="text-[10px] uppercase font-bold tracking-wider bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200 px-3 py-1 rounded transition-colors">Restore</button>
+            <button onClick={() => handleUpdate('ACTIVE')} className="text-[10px] uppercase font-bold tracking-wider bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 px-3 py-1 rounded-lg transition-colors">Restore</button>
           )}
         </div>
 
         {/* ── Delete button (right) ─────────────────────────────────── */}
         <div className="flex gap-2 items-center flex-shrink-0">
           {deleteLoading ? (
-            <RefreshCw size={12} className="animate-spin text-gray-500" />
+            <RefreshCw size={12} className="animate-spin text-gray-400 dark:text-gray-500" />
           ) : confirmDelete ? (
             <div className="flex gap-1.5 items-center">
-              <span className="text-[10px] font-bold text-red-600 flex items-center gap-1">
+              <span className="text-[10px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
                 <Trash2 size={10} /> Delete permanently?
               </span>
               <button
                 onClick={handleDelete}
-                className="text-[10px] uppercase font-bold tracking-wider bg-red-700 text-gray-900 hover:bg-red-600 px-2 py-0.5 rounded transition-colors"
+                className="text-[10px] uppercase font-bold tracking-wider bg-red-600 text-white hover:bg-red-500 px-2 py-0.5 rounded-lg shadow-sm shadow-red-500/30 transition-colors"
               >
                 Yes
               </button>
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="text-[10px] uppercase font-bold tracking-wider text-gray-500 hover:text-gray-900 px-2 py-0.5 rounded transition-colors"
+                className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 px-2 py-0.5 rounded-lg transition-colors"
               >
                 Cancel
               </button>
@@ -168,7 +168,7 @@ function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
             <button
               onClick={() => { setConfirmRevoke(false); setConfirmDelete(true); }}
               title="Delete contract permanently"
-              className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-gray-100 text-gray-500 border border-gray-300 hover:bg-red-100/40 hover:text-red-600 hover:border-red-300/50 px-2 py-1 rounded transition-colors"
+              className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-gray-100 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200/70 dark:hover:border-red-400/30 px-2 py-1 rounded-lg transition-colors"
             >
               <Trash2 size={11} /> Delete
             </button>
@@ -188,16 +188,16 @@ function PolicyCard({ p, i }) {
   const rawVer = p.template?.assetVersion || p.assetVersion;
   const policyVersion = rawVer && String(rawVer).length <= 10 ? rawVer : null;
   return (
-    <div key={p.id || i} className="px-5 py-2.5">
+    <div key={p.id || i} className="px-5 py-3 hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-gray-900 text-sm font-medium capitalize">{policyName.replace(/-/g, ' ')}</p>
-        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold flex-shrink-0 ${p.disabled ? 'text-red-600 bg-red-50 border-red-300/40' : 'text-green-600 bg-green-50 border-green-300/40'}`}>
+        <p className="text-gray-900 dark:text-gray-100 text-sm font-medium capitalize truncate">{policyName.replace(/-/g, ' ')}</p>
+        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold flex-shrink-0 ${p.disabled ? 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border-red-200/80 dark:border-red-400/30' : 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/80 dark:border-emerald-400/30'}`}>
           {p.disabled ? 'Disabled' : 'Active'}
         </span>
       </div>
-      <div className="flex items-center gap-2 mt-0.5">
-        <p className="text-gray-500 text-xs font-mono">{policyName}</p>
-        {policyVersion && <span className="text-gray-500 text-[10px]">v{policyVersion}</span>}
+      <div className="flex items-center gap-2 mt-1">
+        <p className="text-gray-400 dark:text-gray-500 text-xs font-mono truncate">{policyName}</p>
+        {policyVersion && <span className="text-gray-400 dark:text-gray-500 text-[10px] bg-gray-100 dark:bg-gray-700/60 px-1.5 py-0.5 rounded-md flex-shrink-0">v{policyVersion}</span>}
       </div>
     </div>
   );
@@ -586,7 +586,7 @@ export default function ApiManagerPage() {
       label: g.name,
       indent: !!g.parentId,
       tag: !g.parentId ? 'Root' : undefined,
-      tagColor: 'bg-blue-100 text-blue-600',
+      tagColor: 'bg-sf-100 text-sf-600',
     })),
   ];
 
@@ -638,22 +638,30 @@ export default function ApiManagerPage() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">API Manager</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Managed API instances in{' '}
-            <span className="text-blue-600">{selectedBgName}</span>
-            {selectedEnvName && (
-              <> · <span className="text-blue-600">{selectedEnvName}</span></>
-            )}
-          </p>
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 rounded-2xl bg-gradient-to-br from-sf-500 to-sfteal-500 shadow-md shadow-sf-500/30 dark:shadow-sf-500/20 flex-shrink-0">
+            <ShieldCheck size={20} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">API Manager</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
+              Managed API instances in{' '}
+              <span className="text-sf-600 dark:text-sf-400 font-semibold">{selectedBgName}</span>
+              {selectedEnvName && (
+                <> · <span className="text-sf-600 dark:text-sf-400 font-semibold">{selectedEnvName}</span></>
+              )}
+            </p>
+          </div>
         </div>
         <button
           onClick={loadApis}
           disabled={loading || !selectedBg}
-          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 bg-gray-100 px-3 py-2 rounded-lg disabled:opacity-50"
+          className="group/tool flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 hover:text-sf-700 dark:hover:text-sf-300 border border-gray-200 dark:border-gray-700 hover:border-sf-200/70 dark:hover:border-sf-400/30 px-3.5 py-2.5 rounded-xl shadow-sm hover:shadow-md disabled:opacity-50 transition-all"
         >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+          <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-gray-100 dark:bg-gray-700 group-hover/tool:bg-sf-100 dark:group-hover/tool:bg-sf-500/20 text-gray-500 dark:text-gray-400 group-hover/tool:text-sf-600 dark:group-hover/tool:text-sf-400 flex-shrink-0 transition-colors">
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+          </span>
+          Refresh
         </button>
       </div>
 
@@ -662,8 +670,8 @@ export default function ApiManagerPage() {
 
         {/* Business Group */}
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium flex-1">Business Group</p>
+          <div className="flex items-center gap-2 h-[18px] mb-1.5">
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold flex-1">Business Group</p>
           </div>
           <Select
             value={selectedBg}
@@ -674,7 +682,7 @@ export default function ApiManagerPage() {
             disabled={bgLoading}
           />
           {filterActive && (
-            <p className="text-[9px] text-blue-600 mt-0.5 pl-1">
+            <p className="text-[9px] text-sf-600 dark:text-sf-400 font-medium mt-1 pl-1">
               {visibleGroups.length}/{allBusinessGroups.length} shown
             </p>
           )}
@@ -682,10 +690,10 @@ export default function ApiManagerPage() {
 
         {/* Environment — respects global Env Filter from Header */}
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium flex-1">Environment</p>
+          <div className="flex items-center gap-2 h-[18px] mb-1.5">
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold flex-1">Environment</p>
             {envFilterActive && (
-              <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border bg-green-100 border-green-300/50 text-green-600">
+              <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md border bg-sfteal-50 dark:bg-sfteal-500/10 border-sfteal-200/60 dark:border-sfteal-400/30 text-sfteal-600 dark:text-sfteal-400 font-semibold">
                 <Globe size={9} /> Global filter
               </span>
             )}
@@ -702,7 +710,7 @@ export default function ApiManagerPage() {
             searchable={environments.length > 5}
           />
           {envFilterActive && (
-            <p className="text-[9px] text-green-600 mt-0.5 pl-1">
+            <p className="text-[9px] text-sfteal-600 dark:text-sfteal-400 font-medium mt-1 pl-1">
               {environments.length} env{environments.length !== 1 ? 's' : ''} from global filter
             </p>
           )}
@@ -710,22 +718,31 @@ export default function ApiManagerPage() {
 
         {/* Search — spans 2 columns on larger screens */}
         <div className="sm:col-span-2">
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1.5">Search</p>
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <div className="flex items-center gap-2 h-[18px] mb-1.5">
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold">Search</p>
+          </div>
+          <div className="relative group">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 group-focus-within:text-sf-500 pointer-events-none transition-colors" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by API name, asset ID, or instance ID…"
-              className="w-full bg-white border border-gray-300 rounded-lg pl-9 pr-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500"
+              className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl pl-10 pr-9 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 shadow-sm focus:outline-none focus:border-sf-500 dark:focus:border-sf-400 focus:ring-2 focus:ring-sf-500/15 dark:focus:ring-sf-400/15 transition-all"
             />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+                <X size={13} />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Error banner ───────────────────────────────────────────────────── */}
       {error && (
-        <div className="bg-yellow-50/20 border border-yellow-200/40 rounded-xl px-4 py-3 text-yellow-600 text-sm">
+        <div className="flex items-center gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200/80 dark:border-amber-400/30 rounded-2xl px-4 py-3 text-amber-700 dark:text-amber-300 text-sm shadow-sm">
+          <AlertCircle size={15} className="flex-shrink-0" />
           {error}
         </div>
       )}
@@ -734,86 +751,119 @@ export default function ApiManagerPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* ── API Instance List ─────────────────────────────────────────────── */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-gray-900 font-semibold">
-              API Instances ({filtered.length})
+        <div className="bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border border-gray-200 dark:border-white/[0.07] rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)] overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-gray-200 dark:border-white/[0.08] bg-gray-50/60 dark:bg-gray-900/40 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-gray-900 dark:text-gray-100 font-semibold text-sm">
+              <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-sf-100 dark:bg-sf-500/15 text-sf-600 dark:text-sf-400 flex-shrink-0">
+                <ShieldCheck size={13} />
+              </span>
+              API Instances <span className="text-gray-400 dark:text-gray-500 font-normal">({filtered.length})</span>
             </h3>
             {apis.length > filtered.length && (
-              <span className="text-[10px] text-gray-500">{apis.length} total</span>
+              <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium bg-gray-100 dark:bg-gray-700/60 px-2 py-1 rounded-lg">{apis.length} total</span>
             )}
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-500" />
+            <div className="divide-y divide-gray-100 dark:divide-white/[0.06]">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-5 py-3.5 animate-pulse">
+                  <div className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-gray-700 flex-shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 rounded bg-gray-100 dark:bg-gray-700" style={{ width: `${120 + (i % 4) * 40}px` }} />
+                    <div className="h-2.5 w-24 rounded bg-gray-100 dark:bg-gray-700" />
+                  </div>
+                  <div className="h-5 w-16 rounded-full bg-gray-100 dark:bg-gray-700 flex-shrink-0" />
+                </div>
+              ))}
             </div>
           ) : (
-            <div className="divide-y divide-gray-200 max-h-[500px] overflow-y-auto">
-              {filtered.map(a => (
-                <button
-                  key={`${a.id}-${a.assetId}`}
-                  onClick={() => selectApi(a)}
-                  className={`w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-100/50 text-left transition-colors ${
-                    selectedApi?.id === a.id ? 'bg-blue-600/10 border-l-2 border-blue-500' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <ShieldCheck size={15} className="text-blue-600 flex-shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-gray-900 text-sm font-medium truncate">
-                        {a.assetId || a.name || a.label}
-                      </p>
-                      <p className="text-gray-500 text-xs">
-                        v{a.assetVersion || a.productVersion || '—'} · ID: {a.id}
-                        {/* Show env name when viewing across multiple envs */}
-                        {!selectedEnv && a.environmentId && environments.length > 1 && (
-                          <> · <span className="text-gray-500">
-                            {environments.find(e => e.id === a.environmentId)?.name || a.environmentId}
-                          </span></>
-                        )}
-                      </p>
+            <div className="divide-y divide-gray-100 dark:divide-white/[0.06] max-h-[500px] overflow-y-auto">
+              {filtered.map(a => {
+                const isSel = selectedApi?.id === a.id;
+                return (
+                  <button
+                    key={`${a.id}-${a.assetId}`}
+                    onClick={() => selectApi(a)}
+                    className={`group w-full flex items-center justify-between gap-3 px-5 py-3.5 text-left transition-all border-l-2 ${
+                      isSel
+                        ? 'bg-sf-50/60 dark:bg-sf-500/[0.12] border-l-sf-500'
+                        : 'border-l-transparent hover:bg-gray-50 dark:hover:bg-white/[0.03] hover:border-l-sf-300 dark:hover:border-l-sf-400/40'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className={`flex items-center justify-center w-8 h-8 rounded-xl flex-shrink-0 transition-colors ${
+                        isSel
+                          ? 'bg-sf-600 text-white shadow-sm shadow-sf-500/30'
+                          : 'bg-gray-100 dark:bg-gray-700 text-sf-600 dark:text-sf-400 group-hover:bg-sf-100 dark:group-hover:bg-sf-500/20'
+                      }`}>
+                        <ShieldCheck size={14} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-gray-900 dark:text-gray-100 text-sm font-semibold truncate">
+                          {a.assetId || a.name || a.label}
+                        </p>
+                        <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">
+                          v{a.assetVersion || a.productVersion || '—'} <span className="text-gray-300 dark:text-gray-600">·</span> ID {a.id}
+                          {/* Show env name when viewing across multiple envs */}
+                          {!selectedEnv && a.environmentId && environments.length > 1 && (
+                            <> <span className="text-gray-300 dark:text-gray-600">·</span> {environments.find(e => e.id === a.environmentId)?.name || a.environmentId}</>
+                          )}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <StatusBadge status={a.status || 'active'} />
-                    <ChevronRight size={13} className="text-gray-500" />
-                  </div>
-                </button>
-              ))}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <StatusBadge status={a.status || 'active'} />
+                      <ChevronRight size={14} className="text-gray-300 dark:text-gray-600 group-hover:text-sf-500 dark:group-hover:text-sf-400 group-hover:translate-x-0.5 transition-all" />
+                    </div>
+                  </button>
+                );
+              })}
 
               {filtered.length === 0 && !loading && (
-                <p className="px-5 py-10 text-center text-gray-500 text-sm">
-                  {search
-                    ? 'No APIs match your search.'
-                    : !selectedBg
-                    ? 'Select a business group.'
-                    : 'No API instances found.'}
-                </p>
+                <div className="flex flex-col items-center justify-center py-14 px-6 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+                    <ShieldCheck size={20} className="text-gray-400 dark:text-gray-500" />
+                  </div>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">
+                    {search
+                      ? 'No APIs match your search.'
+                      : !selectedBg
+                      ? 'Select a business group.'
+                      : 'No API instances found.'}
+                  </p>
+                </div>
               )}
             </div>
           )}
         </div>
 
         {/* ── API Detail Panel ──────────────────────────────────────────────── */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden overflow-y-auto max-h-[700px]">
+        <div className="bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border border-gray-200 dark:border-white/[0.07] rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)] overflow-hidden overflow-y-auto max-h-[700px]">
           {selectedApi ? (
             <>
               {/* Detail header */}
-              <div className="px-5 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
-                <h3 className="text-gray-900 font-semibold">
-                  {selectedApi.assetId || selectedApi.name}
-                </h3>
-                <p className="text-gray-500 text-xs mt-0.5">
-                  Version {selectedApi.assetVersion || selectedApi.productVersion || '—'}
-                  {selectedApi.instanceLabel && (
-                    <span className="ml-2 text-blue-600">· {selectedApi.instanceLabel}</span>
-                  )}
-                </p>
+              <div className="px-5 py-3.5 border-b border-gray-200 dark:border-white/[0.08] sticky top-0 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm z-10">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex items-center justify-center w-7 h-7 rounded-xl bg-sf-100 dark:bg-sf-500/15 text-sf-600 dark:text-sf-400 flex-shrink-0">
+                    <ShieldCheck size={13} />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-gray-900 dark:text-gray-100 font-semibold text-sm truncate">
+                      {selectedApi.assetId || selectedApi.name}
+                    </h3>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">
+                      Version {selectedApi.assetVersion || selectedApi.productVersion || '—'}
+                      {selectedApi.instanceLabel && (
+                        <span className="ml-1.5 text-sf-600 dark:text-sf-400 font-medium">· {selectedApi.instanceLabel}</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Key-value metadata */}
-              <div className="p-5 space-y-2.5 text-sm border-b border-gray-200">
+              <div className="p-5 space-y-2 text-sm border-b border-gray-200 dark:border-white/[0.08]">
                 {[
                   ['API ID', selectedApi.id],
                   ['Group ID', selectedApi.groupId || '—'],
@@ -827,23 +877,26 @@ export default function ApiManagerPage() {
                   ['Status', selectedApi.status || 'active'],
                 ].map(([label, val]) => (
                   <div key={label} className="flex items-start justify-between gap-4">
-                    <span className="text-gray-500 flex-shrink-0 w-28">{label}</span>
-                    <span className="text-gray-900 text-right font-mono text-xs break-all">{String(val)}</span>
+                    <span className="text-gray-400 dark:text-gray-500 text-xs font-semibold uppercase tracking-wide flex-shrink-0 w-28 pt-1">{label}</span>
+                    <span className="text-gray-700 dark:text-gray-300 text-right font-mono text-xs break-all bg-gray-50 dark:bg-gray-900/50 px-2 py-1 rounded-lg">{String(val)}</span>
                   </div>
                 ))}
               </div>
 
               {/* Policies */}
-              <div className="border-b border-gray-200">
-                <div className="px-5 py-2.5 flex items-center justify-between">
-                  <h4 className="text-gray-900 text-sm font-semibold">
-                    Policies ({policies.length})
+              <div className="border-b border-gray-200 dark:border-white/[0.08]">
+                <div className="px-5 py-2.5 flex items-center justify-between bg-gray-50/60 dark:bg-gray-900/30">
+                  <h4 className="flex items-center gap-2 text-gray-900 dark:text-gray-100 text-sm font-semibold">
+                    <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfpurple-100 dark:bg-sfpurple-500/15 text-sfpurple-600 dark:text-sfpurple-400 flex-shrink-0">
+                      <SlidersHorizontal size={11} />
+                    </span>
+                    Policies <span className="text-gray-400 dark:text-gray-500 font-normal">({policies.length})</span>
                   </h4>
                 </div>
                 {policies.length === 0 ? (
-                  <p className="px-5 pb-4 text-gray-500 text-xs">No policies applied.</p>
+                  <p className="px-5 py-6 text-center text-gray-400 dark:text-gray-500 text-xs">No policies applied.</p>
                 ) : (
-                  <div className="divide-y divide-gray-200/60">
+                  <div className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                     {policies.map((p, i) => (
                       <PolicyCard key={p.id || i} p={p} i={i} />
                     ))}
@@ -853,22 +906,25 @@ export default function ApiManagerPage() {
 
               {/* Contracts */}
               <div>
-                <div className="px-5 py-2.5 flex items-center justify-between">
-                  <h4 className="text-gray-900 text-sm font-semibold">
-                    Contracts ({contracts.length})
+                <div className="px-5 py-2.5 flex items-center justify-between bg-gray-50/60 dark:bg-gray-900/30">
+                  <h4 className="flex items-center gap-2 text-gray-900 dark:text-gray-100 text-sm font-semibold">
+                    <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfteal-100 dark:bg-sfteal-500/15 text-sfteal-600 dark:text-sfteal-400 flex-shrink-0">
+                      <FileText size={11} />
+                    </span>
+                    Contracts <span className="text-gray-400 dark:text-gray-500 font-normal">({contracts.length})</span>
                   </h4>
                   {contractsLoading && (
-                    <RefreshCw size={12} className="animate-spin text-gray-500" />
+                    <RefreshCw size={12} className="animate-spin text-gray-400 dark:text-gray-500" />
                   )}
                 </div>
                 {contractsLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500" />
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-sf-500" />
                   </div>
                 ) : contracts.length === 0 ? (
-                  <p className="px-5 pb-4 text-gray-500 text-xs">No contracts found.</p>
+                  <p className="px-5 py-6 text-center text-gray-400 dark:text-gray-500 text-xs">No contracts found.</p>
                 ) : (
-                  <div className="divide-y divide-gray-200/60">
+                  <div className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                     {contracts.map((c, i) => (
                       <ContractCard
                         key={c.id || i}
@@ -884,9 +940,12 @@ export default function ApiManagerPage() {
             </>
           ) : (
             /* Empty state — no API selected */
-            <div className="flex flex-col items-center justify-center h-full py-20 text-center px-6">
-              <ShieldCheck size={32} className="text-gray-500 mb-3" />
-              <p className="text-gray-500 text-sm">Select an API instance to view details.</p>
+            <div className="flex flex-col items-center justify-center h-full py-24 text-center px-6">
+              <div className="w-14 h-14 rounded-3xl bg-gradient-to-br from-sf-50 to-sf-100 dark:from-sf-500/10 dark:to-sf-500/5 flex items-center justify-center mb-4 shadow-sm">
+                <ShieldCheck size={24} className="text-sf-400 dark:text-sf-500" />
+              </div>
+              <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Select an API instance</p>
+              <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">View policies, contracts, and endpoint details.</p>
             </div>
           )}
         </div>
