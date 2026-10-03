@@ -3,7 +3,6 @@ import { Database, Globe, Search, ShieldCheck, RefreshCw, AlertTriangle, Key, Up
 import Select from '../components/Select';
 import GlobalCpsCsvUpload from '../components/GlobalCpsCsvUpload';
 import { useCpsCredentialStore } from '../context/CpsCredentialStoreContext';
-import { useTheme } from '../context/ThemeContext';
 import { PropertyTable, SecureGroupEditor, AuthTabWithSearch } from './CpsManagerPage';
 import CpsRequestResponsePanel from '../components/CpsRequestResponsePanel';
 import CpsBinaryUploadPanel from '../components/CpsBinaryUploadPanel';
@@ -37,7 +36,6 @@ const CPS_URLS = {
 
 export default function GlobalCpsManagerPage() {
   const { globalCredentials, hasGlobalCredentials, getGlobalCredential, loadGlobalFromCsv } = useCpsCredentialStore();
-  const { isDark } = useTheme();
   const fileInputRef = useRef(null);
 
   const handlePremiumUpload = (e) => {
@@ -423,16 +421,18 @@ export default function GlobalCpsManagerPage() {
   }, [originalProps, pendingChanges]);
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Globe className="text-indigo-500" />
-            Global CPS Manager
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Manage Config Property Server (CPS) values across multiple business groups and environments globally.
-          </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 rounded-2xl bg-gradient-to-br from-sfpurple-500 to-sf-500 shadow-md shadow-sfpurple-500/30 dark:shadow-sfpurple-500/20 flex-shrink-0">
+            <Globe size={20} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Global CPS Manager</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
+              Manage Config Property Server values across business groups and environments, globally.
+            </p>
+          </div>
         </div>
         {hasGlobalCredentials && (
           <div className="flex items-center gap-3">
@@ -442,37 +442,21 @@ export default function GlobalCpsManagerPage() {
       </div>
 
       {!hasGlobalCredentials ? (
-        <div
-          style={{
-            background: isDark
-              ? 'radial-gradient(ellipse at top, rgba(99, 102, 241, 0.12) 0%, #111827 60%)'
-              : 'radial-gradient(ellipse at top, rgba(79, 70, 229, 0.08) 0%, #ffffff 60%)',
-            boxShadow: isDark ? '0 20px 40px -15px rgba(0,0,0,0.4)' : '0 20px 40px -15px rgba(0,0,0,0.1)',
-            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)',
-          }}
-          className="rounded-[2rem] p-12 lg:p-16 text-center flex flex-col items-center justify-center mx-auto max-w-3xl mt-12 mb-20"
-        >
-          <div
-            style={{
-              border: '1px solid rgba(59, 130, 246, 0.3)',
-              background: 'radial-gradient(circle at center, rgba(59, 130, 246, 0.15) 0%, transparent 70%)',
-            }}
-            className="p-5 rounded-full mb-8 relative flex items-center justify-center shadow-[0_0_30px_rgba(59,130,246,0.2)]"
-          >
-            <FileUp size={44} className="text-blue-600 dark:text-blue-400" />
+        <div className="relative overflow-hidden rounded-[2rem] p-12 lg:p-16 text-center flex flex-col items-center justify-center mx-auto max-w-3xl mt-6 mb-16 bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border border-gray-200 dark:border-white/[0.07] shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)]">
+          <div className="absolute inset-0 bg-gradient-to-br from-sfpurple-50/70 via-transparent to-sf-50/50 dark:from-sfpurple-500/[0.06] dark:via-transparent dark:to-sf-500/[0.04]" />
+
+          <div className="relative p-5 rounded-full mb-8 flex items-center justify-center bg-gradient-to-br from-sfpurple-100 to-sf-100 dark:from-sfpurple-500/15 dark:to-sf-500/10 shadow-[0_0_30px_rgba(142,78,198,0.15)] dark:shadow-[0_0_30px_rgba(142,78,198,0.1)]">
+            <FileUp size={44} className="text-sfpurple-600 dark:text-sfpurple-400" />
           </div>
-          
-          <h2
-            style={{ letterSpacing: '-0.02em' }}
-            className="text-3xl lg:text-4xl font-semibold text-gray-900 dark:text-gray-100 mb-4 font-sans"
-          >
+
+          <h2 className="relative text-3xl lg:text-4xl font-semibold text-gray-900 dark:text-gray-100 mb-4 tracking-tight">
             Global Configuration
           </h2>
-          
-          <p className="max-w-xl text-base mb-10 leading-relaxed text-gray-500 dark:text-gray-400">
-            Upload your master configuration CSV to manage properties across all business groups, <strong className="text-gray-700 dark:text-gray-300 font-medium">UAT/PROD</strong> environments, and <strong className="text-gray-700 dark:text-gray-300 font-medium">CH1/CH2</strong> versions from a single interface.
+
+          <p className="relative max-w-xl text-base mb-10 leading-relaxed text-gray-500 dark:text-gray-400">
+            Upload your master configuration CSV to manage properties across all business groups, <strong className="text-gray-700 dark:text-gray-300 font-semibold">UAT/PROD</strong> environments, and <strong className="text-gray-700 dark:text-gray-300 font-semibold">CH1/CH2</strong> versions from a single interface.
           </p>
-          
+
           <input
             ref={fileInputRef}
             type="file"
@@ -480,22 +464,14 @@ export default function GlobalCpsManagerPage() {
             onChange={handlePremiumUpload}
             style={{ display: 'none' }}
           />
-          
+
           <div
-            style={{
-              border: isDark ? '1px dashed rgba(255, 255, 255, 0.15)' : '1px dashed rgba(0, 0, 0, 0.15)',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)'
-            }}
-            className="w-full max-w-lg rounded-2xl p-10 flex flex-col items-center justify-center transition-all hover:bg-black/[0.03] dark:hover:bg-white/[0.03] cursor-pointer group"
+            className="relative w-full max-w-lg rounded-2xl p-10 flex flex-col items-center justify-center transition-all border border-dashed border-gray-300 dark:border-gray-600 hover:bg-sfpurple-50/40 dark:hover:bg-sfpurple-500/[0.04] hover:border-sfpurple-300 dark:hover:border-sfpurple-400/40 cursor-pointer group"
             onClick={() => fileInputRef.current?.click()}
           >
             <button
               onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-              style={{
-                background: 'linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 14px 0 rgba(37,99,235,0.39)',
-              }}
-              className="flex items-center gap-2.5 px-6 py-3 text-sm font-medium text-white rounded-lg transition-transform active:scale-95 group-hover:brightness-110 mb-4"
+              className="flex items-center gap-2.5 px-6 py-3 text-sm font-semibold text-white rounded-xl transition-all active:scale-95 bg-gradient-to-r from-sfpurple-600 to-sf-600 group-hover:from-sfpurple-500 group-hover:to-sf-500 shadow-md shadow-sfpurple-500/30 mb-4"
             >
               <Upload size={16} />
               Browse Files
@@ -503,29 +479,29 @@ export default function GlobalCpsManagerPage() {
             <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
               Drag & drop your CSV here, or browse
             </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-              Supports .csv files up to 25MB • UTF-8 encoded
+            <span className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+              Supports .csv files up to 25MB · UTF-8 encoded
             </span>
           </div>
         </div>
       ) : (
         <>
-          <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-5">
+          <div className="bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border border-gray-200 dark:border-white/[0.07] rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)] p-5 space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
                   Business Group
                 </label>
                 <Select
                   value={bg}
                   onChange={setBg}
                   options={bgOptions.length ? bgOptions : [{ value: '', label: 'No BGs found' }]}
-                  className="[&>button]:h-[42px] [&>button]:!bg-white/80 dark:[&>button]:!bg-gray-800/80 dark:[&>button]:!border-gray-700 dark:[&>button]:!text-gray-100 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 dark:[&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
+                  className="[&>button]:h-[42px]"
                 />
               </div>
               
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
                   Environment
                 </label>
                 <Select
@@ -535,12 +511,12 @@ export default function GlobalCpsManagerPage() {
                     { value: 'uat', label: 'UAT' },
                     { value: 'prod', label: 'PROD' }
                   ]}
-                  className="[&>button]:h-[42px] [&>button]:!bg-white/80 dark:[&>button]:!bg-gray-800/80 dark:[&>button]:!border-gray-700 dark:[&>button]:!text-gray-100 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 dark:[&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
+                  className="[&>button]:h-[42px]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
                   CloudHub Version
                 </label>
                 <Select
@@ -550,25 +526,25 @@ export default function GlobalCpsManagerPage() {
                     { value: 'ch1', label: 'CloudHub 1.0 (CH1)' },
                     { value: 'ch2', label: 'CloudHub 2.0 (CH2)' }
                   ]}
-                  className="[&>button]:h-[42px] [&>button]:!bg-white/80 dark:[&>button]:!bg-gray-800/80 dark:[&>button]:!border-gray-700 dark:[&>button]:!text-gray-100 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 dark:[&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
+                  className="[&>button]:h-[42px]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
                   CPS Config URL (Auto)
                 </label>
-                <div className="bg-gray-100/50 border border-gray-300/50 rounded-xl px-3 py-2 text-sm text-gray-600 font-mono flex items-center gap-2 h-[42px]">
-                  <Database size={14} className="text-indigo-600 flex-shrink-0" />
+                <div className="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-600 dark:text-gray-300 font-mono flex items-center gap-2 h-[42px]">
+                  <Database size={14} className="text-sfpurple-600 dark:text-sfpurple-400 flex-shrink-0" />
                   <span className="truncate">{cpsBaseUrl}</span>
                 </div>
               </div>
             </div>
             
-            <div className="flex flex-wrap items-end gap-4 border-t border-gray-200 pt-5">
+            <div className="flex flex-wrap items-end gap-4 border-t border-gray-100 dark:border-white/[0.06] pt-5">
               <div className="flex-[1.5] min-w-[300px]">
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <Key size={12} className="text-gray-500" />
+                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Key size={12} className="text-gray-400 dark:text-gray-500" />
                   Query Type & Keys
                 </label>
                 <div className="flex">
@@ -586,7 +562,7 @@ export default function GlobalCpsManagerPage() {
                         { value: 'secure', label: 'Secure' },
                         { value: 'binary', label: 'Binary' }
                       ]}
-                      className="[&>button]:rounded-l-xl [&>button]:rounded-r-none [&>button]:border-r-0 [&>button]:h-[42px] [&>button]:!bg-white/80 dark:[&>button]:!bg-gray-800/80 dark:[&>button]:!border-gray-700 dark:[&>button]:!text-gray-100 [&>button]:focus:border-indigo-500 [&>button]:focus:ring-2 [&>button]:focus:ring-indigo-200 dark:[&>button]:focus:ring-indigo-500/20 [&>button]:transition-all"
+                      className="[&>button]:rounded-l-xl [&>button]:rounded-r-none [&>button]:border-r-0 [&>button]:h-[42px]"
                     />
                   </div>
                   <input
@@ -595,13 +571,13 @@ export default function GlobalCpsManagerPage() {
                     onChange={e => setQueryKeys(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && fetchProperties()}
                     placeholder={queryType === 'binary' ? "e.g. keystore.jks" : "e.g. my-app-v1"}
-                    className="flex-1 min-w-0 bg-white/80 border border-gray-300 rounded-r-xl px-3 h-[42px] text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:bg-white font-mono transition-all"
+                    className="flex-1 min-w-0 bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-r-xl px-3 h-[42px] text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sf-500 dark:focus:border-sf-400 focus:ring-2 focus:ring-sf-500/15 font-mono transition-all"
                   />
                 </div>
               </div>
 
               <div className="flex-[1] min-w-[200px]">
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
                   Query: env
                 </label>
                 <input
@@ -609,13 +585,14 @@ export default function GlobalCpsManagerPage() {
                   value={queryEnv}
                   onChange={e => setQueryEnv(e.target.value)}
                   placeholder={env}
-                  className="w-full bg-white/80 border border-gray-300 rounded-xl px-3 h-[42px] text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:bg-white font-mono transition-all"
+                  className="w-full bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl px-3 h-[42px] text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sf-500 dark:focus:border-sf-400 focus:ring-2 focus:ring-sf-500/15 font-mono transition-all"
                 />
               </div>
               <button
                 onClick={() => setShowOverrides(!showOverrides)}
-                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors h-[42px] border ${
-                  showOverrides ? 'bg-gray-100 border-gray-300 text-gray-900' : 'bg-transparent border-gray-300 text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                title="Advanced request overrides"
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl transition-all h-[42px] border shadow-sm ${
+                  showOverrides ? 'bg-sfpurple-50 dark:bg-sfpurple-500/10 border-sfpurple-300/60 dark:border-sfpurple-400/30 text-sfpurple-700 dark:text-sfpurple-300' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                 }`}
               >
                 <Settings size={16} />
@@ -631,14 +608,14 @@ export default function GlobalCpsManagerPage() {
                     setLastOperation(null);
                   }}
                   disabled={!hasSearched}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-900 text-sm font-medium rounded-lg transition-colors h-[42px]"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/60 disabled:opacity-50 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-xl shadow-sm transition-all h-[42px]"
                 >
                   <X size={16} /> Clear
                 </button>
                 <button
                   onClick={() => fetchProperties(false)}
                   disabled={loading || !queryKeys.trim()}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-indigo-900/20 h-[42px]"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-sfpurple-600 to-sf-600 hover:from-sfpurple-500 hover:to-sf-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-all shadow-md shadow-sfpurple-500/25 h-[42px]"
                 >
                   {loading && !loadedParams ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
                   Load Properties
@@ -647,7 +624,7 @@ export default function GlobalCpsManagerPage() {
                   <button
                     onClick={() => fetchProperties(true)}
                     disabled={loading}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-cyan-900/20 h-[42px]"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-sfteal-600 hover:bg-sfteal-500 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-all shadow-md shadow-sfteal-500/25 h-[42px]"
                   >
                     <RefreshCw size={16} className={loading && loadedParams ? "animate-spin" : ""} />
                     Refresh
@@ -657,49 +634,49 @@ export default function GlobalCpsManagerPage() {
             </div>
             
             {showOverrides && (
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-5">
-                <h3 className="text-sm font-semibold text-gray-600 flex items-center gap-2">
-                  <Settings size={14} className="text-indigo-600" /> Advanced Request Overrides
+              <div className="bg-sfpurple-50/40 dark:bg-sfpurple-500/[0.04] border border-sfpurple-200/50 dark:border-sfpurple-400/20 rounded-2xl p-5 space-y-5">
+                <h3 className="text-sm font-semibold text-sfpurple-700 dark:text-sfpurple-300 flex items-center gap-2">
+                  <Settings size={14} /> Advanced Request Overrides
                 </h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Host Override */}
                   <div className="space-y-4">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Host</h4>
+                    <h4 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Host</h4>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1.5">Custom CPS Host</label>
+                      <label className="block text-xs text-gray-400 dark:text-gray-500 mb-1.5">Custom CPS Host</label>
                       <input
                         type="text"
                         value={customHost}
                         onChange={e => setCustomHost(e.target.value)}
                         placeholder={cpsBaseUrl}
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 font-mono"
+                        className="w-full bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfpurple-400 focus:ring-2 focus:ring-sfpurple-500/15 font-mono transition-all"
                       />
                     </div>
                   </div>
 
                   {/* Query Params Overrides */}
                   <div className="space-y-4">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Query Params</h4>
+                    <h4 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Query Params</h4>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1.5">env</label>
+                        <label className="block text-xs text-gray-400 dark:text-gray-500 mb-1.5">env</label>
                         <input
                           type="text"
                           value={queryEnv}
                           onChange={e => setQueryEnv(e.target.value)}
                           placeholder={env}
-                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 font-mono"
+                          className="w-full bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfpurple-400 focus:ring-2 focus:ring-sfpurple-500/15 font-mono transition-all"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1.5">keys</label>
+                        <label className="block text-xs text-gray-400 dark:text-gray-500 mb-1.5">keys</label>
                         <input
                           type="text"
                           value={queryKeys}
                           onChange={e => setQueryKeys(e.target.value)}
                           placeholder="e.g. my-app-v1"
-                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 font-mono"
+                          className="w-full bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfpurple-400 focus:ring-2 focus:ring-sfpurple-500/15 font-mono transition-all"
                         />
                       </div>
                     </div>
@@ -707,26 +684,26 @@ export default function GlobalCpsManagerPage() {
 
                   {/* Headers Overrides */}
                   <div className="space-y-4">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Auth Headers</h4>
+                    <h4 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Auth Headers</h4>
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1.5">client_id</label>
+                        <label className="block text-xs text-gray-400 dark:text-gray-500 mb-1.5">client_id</label>
                         <input
                           type="text"
                           value={customClientId}
                           onChange={e => setCustomClientId(e.target.value)}
                           placeholder="Default from CSV"
-                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 font-mono"
+                          className="w-full bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfpurple-400 focus:ring-2 focus:ring-sfpurple-500/15 font-mono transition-all"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1.5">client_secret</label>
+                        <label className="block text-xs text-gray-400 dark:text-gray-500 mb-1.5">client_secret</label>
                         <input
                           type="text"
                           value={customClientSecret}
                           onChange={e => setCustomClientSecret(e.target.value)}
                           placeholder="Default from CSV"
-                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 font-mono"
+                          className="w-full bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfpurple-400 focus:ring-2 focus:ring-sfpurple-500/15 font-mono transition-all"
                         />
                       </div>
                     </div>
@@ -737,24 +714,24 @@ export default function GlobalCpsManagerPage() {
           </div>
 
           {error && (
-            <div className="bg-red-50/30 border border-red-200/50 rounded-xl p-4 flex items-start gap-3">
-              <AlertTriangle className="text-red-500 flex-shrink-0 mt-0.5" size={18} />
-              <div className="text-sm text-red-600">{error}</div>
+            <div className="flex items-center gap-2.5 bg-sfred-50 dark:bg-sfred-500/10 border border-sfred-200/80 dark:border-sfred-400/30 rounded-2xl px-4 py-3 shadow-sm">
+              <AlertTriangle className="text-sfred-600 dark:text-sfred-400 flex-shrink-0" size={16} />
+              <div className="text-sm text-sfred-700 dark:text-sfred-300">{error}</div>
             </div>
           )}
 
           {hasSearched && (
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-1 p-1 bg-white border border-gray-200 rounded-xl w-fit">
+                <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl w-fit">
                   {PROP_TYPE_TABS.map(t => (
                     <button
                       key={t.id}
                       onClick={() => setActiveTab(t.id)}
-                      className={`px-4 py-2 text-xs font-medium rounded-lg transition-all ${
+                      className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
                         activeTab === t.id
-                          ? 'bg-gray-100 text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
+                          ? 'bg-white dark:bg-sf-500/20 text-sf-700 dark:text-sf-300 shadow-sm'
+                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                       }`}
                     >
                       {t.label}
@@ -766,18 +743,18 @@ export default function GlobalCpsManagerPage() {
                   {activeTab !== 'binaries' && (
                     <>
                       <button onClick={() => setShowImport(true)}
-                        className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                        className="flex items-center gap-1.5 text-xs font-medium text-sf-700 dark:text-sf-300 hover:text-sf-800 dark:hover:text-sf-200 bg-sf-50 dark:bg-sf-500/10 border border-sf-200/70 dark:border-sf-400/30 px-2.5 py-1.5 rounded-xl shadow-sm hover:shadow-md transition-all">
                         <Upload size={11} /> Import
                       </button>
                       <button onClick={exportJson}
-                        className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 bg-emerald-50/40 border border-emerald-200/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                        className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-400/30 px-2.5 py-1.5 rounded-xl shadow-sm hover:shadow-md transition-all">
                         <Download size={11} /> Export JSON
                       </button>
                     </>
                   )}
                   {activeTab !== 'auth' && (
                     <button onClick={() => setShowDelete(true)}
-                      className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 bg-red-50/40 border border-red-200/50 px-2.5 py-1.5 rounded-lg transition-colors">
+                      className="flex items-center gap-1.5 text-xs font-medium text-sfred-700 dark:text-sfred-300 hover:text-sfred-800 dark:hover:text-sfred-200 bg-sfred-50 dark:bg-sfred-500/10 border border-sfred-200/70 dark:border-sfred-400/30 px-2.5 py-1.5 rounded-xl shadow-sm hover:shadow-md transition-all">
                       <Trash2 size={11} /> Delete Project
                     </button>
                   )}
@@ -785,7 +762,7 @@ export default function GlobalCpsManagerPage() {
               </div>
 
               {activeTab === 'non-secure' && (
-                <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
+                <div className="bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border border-gray-200 dark:border-white/[0.07] rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)] p-5 space-y-4">
                   <PropertyTable
                     props={mergedProps}
                     originalProps={originalProps}
@@ -810,28 +787,28 @@ export default function GlobalCpsManagerPage() {
 
               {activeTab === 'secure' && (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-4">
+                  <div className="flex items-center justify-between bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border border-gray-200 dark:border-white/[0.07] rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)] p-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-gray-900">Secure Properties</h3>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Secure Properties</h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         Encrypted values that are securely stored in the CPS.
                       </p>
                     </div>
                     <button 
                       onClick={() => setShowSecureRawJson(true)}
-                      className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50/40 border border-blue-200/50 px-3 py-1.5 rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 text-xs font-medium text-sf-700 dark:text-sf-300 hover:text-sf-800 dark:hover:text-sf-200 bg-sf-50 dark:bg-sf-500/10 border border-sf-200/70 dark:border-sf-400/30 px-3 py-1.5 rounded-xl shadow-sm hover:shadow-md transition-all"
                     >
                       <Code size={12} /> Global Raw JSON
                     </button>
                   </div>
 
                   <div className="relative">
-                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
                     <input
                       value={secureGroupSearch}
                       onChange={e => setSecureGroupSearch(e.target.value)}
                       placeholder={`Search groups, keys, or values... (${secureGroups.length} group${secureGroups.length !== 1 ? 's' : ''})`}
-                      className="w-full bg-white border border-gray-300 rounded-xl pl-9 pr-10 py-2.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-cyan-300/50"
+                      className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl pl-9 pr-10 py-2.5 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 shadow-sm focus:outline-none focus:border-sf-500 dark:focus:border-sf-400 focus:ring-2 focus:ring-sf-500/15 transition-all"
                     />
                   </div>
 
@@ -866,7 +843,7 @@ export default function GlobalCpsManagerPage() {
               )}
 
               {activeTab === 'binaries' && (
-                <div className="bg-white border border-gray-200 rounded-xl p-5">
+                <div className="bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border border-gray-200 dark:border-white/[0.07] rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)] p-5">
                   <CpsBinaryUploadPanel
                     baseUrl={customHost.trim() || cpsBaseUrl}
                     environment={queryEnv.trim() || env}
