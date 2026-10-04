@@ -43,7 +43,7 @@ export default function ApiSpecTab({ pingSpec, pingSpecLoading, fetchPingSpec })
               </> : 'No spec available — app may not have an Exchange asset linked'}
           </p>
         </div>
-        <button onClick={() => fetchPingSpec()} disabled={pingSpecLoading}
+        <button onClick={() => fetchPingSpec(null, true)} disabled={pingSpecLoading}
           title="Re-fetch API spec from Exchange"
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-50/80 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200/70 dark:border-gray-700/60 rounded-lg transition-all disabled:opacity-50">
           <RefreshCw size={11} className={pingSpecLoading ? 'animate-spin' : ''} />

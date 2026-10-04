@@ -96,7 +96,7 @@ export default function ContractsTab({
             accent="teal"
             disabled={contractsLoading}
             spinning={contractsLoading}
-            onClick={loadContracts}
+            onClick={() => loadContracts(true)}
           />
         </div>
       </div>

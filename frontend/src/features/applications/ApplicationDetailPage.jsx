@@ -9,6 +9,8 @@ import {
   setCloudhub1SchedulerEnabled, setCloudhub2SchedulerEnabled,
   getContracts, updateContractStatus, deleteContract,
 } from '../../services/applicationsService';
+import { getCachedSWR, setCached, bustCache } from '../../services/apiCache';
+import { CK } from '../../services/cacheKeys';
 import { postCpsCredentialsRaw, fetchCpsProperties, resolveAndPostCpsCredentials } from '../../services/cpsService';
 import { getAutoCredentials } from '../../services/healthService';
 import { getExchangePingSpec } from '../../services/exchangeService';
@@ -37,6 +39,85 @@ import ContractsTab from './tabs/ContractsTab';
 import ApiSpecTab from './tabs/ApiSpecTab';
 import OverviewTab from './tabs/OverviewTab';
 
+// App detail cache eviction window — short because `status` can change at
+// any time (user action in another tab, Anypoint auto-scaling, etc.);
+// freshness (no-refetch-at-all) is governed by apiCache.js's global 3-min
+// FRESH_MS, same convention as ApplicationsPage's CK.apps/CK.bgs caches.
+const APP_DETAIL_STALE_MS = 5 * 60 * 1000;
+// Same rationale for the CPS non-secure properties auto-fetched below —
+// these change far less often than app status, but 5 min keeps the same
+// convention as the app-detail cache above.
+const CPS_NS_STALE_MS = 5 * 60 * 1000;
+// Lazy ("tab click") data caches — schedulers/contracts can change, but far
+// less often than app status; API/ping specs come from Exchange and rarely
+// change at all, so they get a longer window.
+const SCHEDULERS_STALE_MS = 5 * 60 * 1000;
+const CONTRACTS_STALE_MS  = 5 * 60 * 1000;
+const PING_SPEC_STALE_MS  = 10 * 60 * 1000;
+
+/**
+ * Fetch the full app-detail "bundle" (CH2 deployment + Private Space
+ * outbound IPs, or the CH1 fallback shape) with no component-state
+ * side effects — a pure (orgId, envId, appId) → data function so it can be
+ * cached/replayed by apiCache.js's SWR primitives in `load()` below.
+ */
+async function fetchAppBundle(orgId, envId, appId, forceRefresh = false) {
+  try {
+    const res = await getCloudhub2AppDetail(orgId, envId, appId, forceRefresh);
+    const app = res.data;
+    let ch2PrivateIPs = [];
+    // CH2 Private Space static outbound IPs
+    const targetId = app?.target?.targetId || '';
+    const isPrivate = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+    if (isPrivate) {
+      try {
+        const psRes = await getPrivateSpaceDetail(orgId, targetId);
+        const ips = psRes.data?.network?.outboundStaticIps || [];
+        if (Array.isArray(ips) && ips.length) ch2PrivateIPs = ips.filter(Boolean);
+      } catch { /* not accessible */ }
+    }
+    return { app, ch2PrivateIPs };
+  } catch {
+    const res2 = await getCloudhub1AppDetail(envId, appId, orgId, forceRefresh);
+    const c = res2.data;
+    let sch = [];
+    try {
+      const sr = await getCloudhub1Schedules(envId, appId, orgId);
+      sch = Array.isArray(sr.data) ? sr.data : (sr.data?.schedules || []);
+    } catch {}
+    // Fetch actual static IP addresses from dedicated endpoint when enabled
+    let staticIPs = [];
+    if (c.staticIPsEnabled) {
+      try {
+        const sipRes = await getCloudhub1StaticIps(envId, appId, orgId);
+        const sipArr = Array.isArray(sipRes.data) ? sipRes.data
+          : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
+        staticIPs = sipArr
+          .map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip))
+          .filter(Boolean);
+      } catch { /* endpoint not available — fall through to raw field check */ }
+    }
+    // Fallback: check raw response field names (some API versions include them inline)
+    if (staticIPs.length === 0) {
+      const rawIPs = c.staticIPs || c.staticIps || c.staticIPAddresses || c.ipAddresses || [];
+      if (Array.isArray(rawIPs) && rawIPs.length > 0) {
+        staticIPs = rawIPs.map(s => typeof s === 'string' ? s : (s.ipAddress || s.address || s.ip)).filter(Boolean);
+      }
+    }
+    const app = { _type:'ch1', id:c.domain, name:c.domain, status:c.status, region:c.region,
+      muleVersion:typeof c.muleVersion==='string'?c.muleVersion:c.muleVersion?.version,
+      lastModifiedDate:c.lastUpdateTime?new Date(c.lastUpdateTime).toISOString():null,
+      properties:c.properties||{}, persistentQueues:c.persistentQueues,
+      staticIPsEnabled:c.staticIPsEnabled,
+      staticIPs,
+      loggingCustomLog4JEnabled:c.loggingCustomLog4JEnabled,
+      monitoringEnabled:c.monitoringAutoRestart??c.monitoringEnabled,
+      workers:{ amount:typeof c.workers==='number'?c.workers:c.workers?.amount, type:c.workerType||c.workers?.type },
+      _ch1Schedules:sch, _raw:c };
+    return { app, ch2PrivateIPs: [] };
+  }
+}
+
 /* ── Main component ────────────────────────────────────── */
 
 export default function ApplicationDetailPage() {
@@ -60,18 +141,43 @@ export default function ApplicationDetailPage() {
   const [resolvedEnvName, setResolvedEnvName] = useState('');
   useEffect(() => {
     if (!orgId) return;
+    // Reuses ApplicationsPage's CK.bgs(orgId) cache — if the user came from
+    // the Applications list (the common path), this is an instant hit with
+    // zero network calls instead of re-fetching the same BG list again.
+    const cacheKey = CK.bgs(orgId);
+    const applyBgs = (groups) => {
+      const match = (groups || []).find(g => g.id === orgId);
+      if (match) setBgName(match.name);
+    };
+    const swr = getCachedSWR(cacheKey);
+    if (swr) {
+      applyBgs(swr.data);
+      if (!swr.stale) return;
+    }
     getBusinessGroups().then(r => {
       const groups = r.data?.data || [];
-      const match = groups.find(g => g.id === orgId);
-      if (match) setBgName(match.name);
+      setCached(cacheKey, groups, 30 * 60 * 1000);
+      applyBgs(groups);
     }).catch(() => {});
   }, [orgId]);
   useEffect(() => {
     if (!orgId || !envId) return;
-    getEnvironments(orgId).then(r => {
-      const envs = r.data?.data || r.data?.environments || r.data || [];
+    // Reuses the same CK.envs(orgId) cache key ApplicationsPage's env fetch
+    // would populate, with the same instant-render-then-revalidate pattern.
+    const cacheKey = CK.envs(orgId);
+    const applyEnvs = (envs) => {
       const match = (Array.isArray(envs) ? envs : []).find(e => e.id === envId);
       if (match) setResolvedEnvName(match.name);
+    };
+    const swr = getCachedSWR(cacheKey);
+    if (swr) {
+      applyEnvs(swr.data);
+      if (!swr.stale) return;
+    }
+    getEnvironments(orgId).then(r => {
+      const envs = r.data?.data || r.data?.environments || r.data || [];
+      setCached(cacheKey, envs, 30 * 60 * 1000);
+      applyEnvs(envs);
     }).catch(() => {});
   }, [orgId, envId]);
 
@@ -114,12 +220,13 @@ export default function ApplicationDetailPage() {
   //   Step 3 — fetch CPS non-secure to discover the Autodiscovery api.id
   //   Step 4 — pass apiId to /health/auto-credentials for a direct Layer 1 lookup
   //   Step 5 — fetch contracts for the matched API Manager instance
-  const loadContracts = useCallback(async () => {
+  const loadContracts = useCallback(async (forceRefresh = false) => {
     if (!orgId || !envId) return;
-    setContractsLoading(true);
-    setContractsError('');
-    setContracts(null);
-    try {
+
+    // Pure fetch — resolves to { instanceId, contracts } or throws (with
+    // `.noInstance = true` for the "not registered in API Manager" case so
+    // the caller can show that exact message instead of a generic one).
+    const fetchContractsBundle = async () => {
       const appData = app;
       let apiId;
 
@@ -177,21 +284,50 @@ export default function ApplicationDetailPage() {
       });
       const instanceId = acData?.matchedApis?.[0]?.id;
       if (!instanceId) {
-        setContractsError('No API Manager instance found for this application. Ensure it is registered in API Manager.');
-        setContractsLoading(false);
-        return;
+        const err = new Error('No API Manager instance found for this application. Ensure it is registered in API Manager.');
+        err.noInstance = true;
+        throw err;
       }
 
       // ── Step 5: fetch contracts ───────────────────────────────────────────
-      setContractApiInstanceId(instanceId);
       const contractsRes = await getContracts(orgId, envId, instanceId);
       const raw = contractsRes.data?.contracts || contractsRes.data || [];
-      setContracts(Array.isArray(raw) ? raw : []);
+      return { instanceId, contracts: Array.isArray(raw) ? raw : [] };
+    };
+
+    const cacheKey = CK.contracts(orgId, envId, appId);
+    const applyBundle = (bundle) => {
+      setContractApiInstanceId(bundle.instanceId);
+      setContracts(bundle.contracts);
+    };
+
+    if (!forceRefresh) {
+      const swr = getCachedSWR(cacheKey);
+      if (swr) {
+        applyBundle(swr.data);
+        setContractsError('');
+        if (swr.stale) {
+          fetchContractsBundle().then(bundle => {
+            setCached(cacheKey, bundle, CONTRACTS_STALE_MS);
+            applyBundle(bundle);
+          }).catch(() => {}); // keep showing stale data on a silent bg failure
+        }
+        return;
+      }
+    }
+
+    setContractsLoading(true);
+    setContractsError('');
+    setContracts(null);
+    try {
+      const bundle = await fetchContractsBundle();
+      setCached(cacheKey, bundle, CONTRACTS_STALE_MS);
+      applyBundle(bundle);
     } catch (e) {
-      setContractsError(getErrorMessage(e, 'Failed to load contracts'));
+      setContractsError(e.noInstance ? e.message : getErrorMessage(e, 'Failed to load contracts'));
     }
     setContractsLoading(false);
-  }, [orgId, envId, app, hasCpsCsvCredentials, getSecret]);
+  }, [orgId, envId, appId, app, hasCpsCsvCredentials, getSecret]);
 
   // Contract action handler (approve / revoke / delete)
   const handleContractAction = useCallback(async () => {
@@ -227,11 +363,15 @@ export default function ApplicationDetailPage() {
         message: `✗ Failed to ${action} contract: ${getErrorMessage(e)}`,
       });
     } finally {
+      // Invalidate the cached contracts bundle — the optimistic update above
+      // only patches local state; the next load (tab revisit, back-nav)
+      // should see the real post-action contract list/status.
+      bustCache(CK.contracts(orgId, envId, appId));
       setContractActionLoading(null);
       setContractConfirmState(null);
       setTimeout(() => setContractActionResult(null), 6000);
     }
-  }, [contractConfirmState, contractApiInstanceId, orgId, envId]);
+  }, [contractConfirmState, contractApiInstanceId, orgId, envId, appId]);
 
   // CPS state
   const [copiedCpsNs, setCopiedCpsNs] = useState(false);
@@ -251,8 +391,7 @@ export default function ApplicationDetailPage() {
   const [binaryLoading, setBinaryLoading] = useState(false);
   const [cpsOpen, setCpsOpen] = useState({ ns: true, sec: false, bin: false });
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (forceRefresh = false) => {
     // Reset all per-app fetched/derived state before loading. The route
     // (`applications/:orgId/:envId/:appId`) has no `key`, so React Router
     // reuses this same mounted component when navigating directly from one
@@ -260,66 +399,51 @@ export default function ApplicationDetailPage() {
     // the scheduler/contract/ping caches) would still hold the PREVIOUS
     // app's data, and loadCpsData()'s "already loaded" guard would then
     // skip fetching the new app's CPS properties entirely, making it look
-    // like CPS never auto-loads without a manual tab visit + Refresh.
-    setApp(null);
+    // like CPS never auto-loads without a manual tab visit + Refresh. This
+    // must run on every call regardless of whether the app bundle itself
+    // below is served from cache.
     setCpsData(null); setCpsError(''); setCpsMissingCred(null); setCpsAttemptedUrl('');
     setCpsCredsResolved(false);
     setCpsKeyOverride(''); setCpsEnvOverride('');
     setCh2Schedulers(null); setCpsSchedulerProps({});
     setContracts(null); setContractsError(''); setContractApiInstanceId(null);
     setPingSpec(null);
-    try {
-      const res = await getCloudhub2AppDetail(orgId, envId, appId);
-      setApp(res.data);
-      // CH2 Private Space static outbound IPs
-      const targetId = res.data?.target?.targetId || '';
-      const isPrivate = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
-      if (isPrivate) {
-        try {
-          const psRes = await getPrivateSpaceDetail(orgId, targetId);
-          const ips = psRes.data?.network?.outboundStaticIps || [];
-          if (Array.isArray(ips) && ips.length) setCh2PrivateIPs(ips.filter(Boolean));
-        } catch { /* not accessible */ }
+
+    const applyBundle = (bundle) => {
+      setApp(bundle.app);
+      setCh2PrivateIPs(bundle.ch2PrivateIPs || []);
+    };
+    const cacheKey = CK.appDetail(orgId, envId, appId);
+
+    // ── Frontend cache — SWR (stale-while-revalidate) ──────────────────────
+    // Mirrors ApplicationsPage's loadApps/loadBusinessGroups pattern: render
+    // instantly from any usable cached value (fresh OR stale-but-unexpired),
+    // then silently re-fetch in the background when stale so the page never
+    // shows the loading spinner on a repeat visit to an already-seen app.
+    if (!forceRefresh) {
+      const swr = getCachedSWR(cacheKey);
+      if (swr) {
+        applyBundle(swr.data);
+        setLoading(false);
+        if (swr.stale) {
+          fetchAppBundle(orgId, envId, appId).then(bundle => {
+            setCached(cacheKey, bundle, APP_DETAIL_STALE_MS);
+            applyBundle(bundle);
+          }).catch(() => {});
+        }
+        return;
       }
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
+    setLoading(true);
+    setApp(null);
+    try {
+      const bundle = await fetchAppBundle(orgId, envId, appId, forceRefresh);
+      setCached(cacheKey, bundle, APP_DETAIL_STALE_MS);
+      applyBundle(bundle);
     } catch {
-      try {
-        const res2 = await getCloudhub1AppDetail(envId, appId, orgId);
-        const c = res2.data;
-        let sch = [];
-        try {
-          const sr = await getCloudhub1Schedules(envId, appId, orgId);
-          sch = Array.isArray(sr.data) ? sr.data : (sr.data?.schedules || []);
-        } catch {}
-        // Fetch actual static IP addresses from dedicated endpoint when enabled
-        let staticIPs = [];
-        if (c.staticIPsEnabled) {
-          try {
-            const sipRes = await getCloudhub1StaticIps(envId, appId, orgId);
-            const sipArr = Array.isArray(sipRes.data) ? sipRes.data
-              : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
-            staticIPs = sipArr
-              .map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip))
-              .filter(Boolean);
-          } catch { /* endpoint not available — fall through to raw field check */ }
-        }
-        // Fallback: check raw response field names (some API versions include them inline)
-        if (staticIPs.length === 0) {
-          const rawIPs = c.staticIPs || c.staticIps || c.staticIPAddresses || c.ipAddresses || [];
-          if (Array.isArray(rawIPs) && rawIPs.length > 0) {
-            staticIPs = rawIPs.map(s => typeof s === 'string' ? s : (s.ipAddress || s.address || s.ip)).filter(Boolean);
-          }
-        }
-        setApp({ _type:'ch1', id:c.domain, name:c.domain, status:c.status, region:c.region,
-          muleVersion:typeof c.muleVersion==='string'?c.muleVersion:c.muleVersion?.version,
-          lastModifiedDate:c.lastUpdateTime?new Date(c.lastUpdateTime).toISOString():null,
-          properties:c.properties||{}, persistentQueues:c.persistentQueues,
-          staticIPsEnabled:c.staticIPsEnabled,
-          staticIPs,
-          loggingCustomLog4JEnabled:c.loggingCustomLog4JEnabled,
-          monitoringEnabled:c.monitoringAutoRestart??c.monitoringEnabled,
-          workers:{ amount:typeof c.workers==='number'?c.workers:c.workers?.amount, type:c.workerType||c.workers?.type },
-          _ch1Schedules:sch, _raw:c });
-      } catch { setApp(null); }
+      setApp(null);
     }
     setLoading(false);
   }, [orgId, envId, appId]);
@@ -327,57 +451,82 @@ export default function ApplicationDetailPage() {
   // Load CH2 schedulers from dedicated endpoint when infrastructure tab is opened.
   // If any scheduler expression is a ${...} placeholder, also silently fetch
   // CPS non-secure properties to resolve the actual cron values.
-  const loadCh2Schedulers = useCallback(async () => {
-    if (app?._type === 'ch1' || ch2Schedulers !== null) return;
-    setSchedulersLoading(true);
-    try {
+  const loadCh2Schedulers = useCallback(async (forceRefresh = false) => {
+    if (app?._type === 'ch1') return;
+
+    // Pure fetch — no component-state side effects besides the
+    // CPS-placeholder resolution (which is cheap, idempotent, and safe to
+    // re-run on every call including background refreshes).
+    const fetchItems = async () => {
       const res = await getCloudhub2Schedulers(orgId, envId, appId);
-      const rawItems = Array.isArray(res.data) ? res.data
+      const items = Array.isArray(res.data) ? res.data
         : (res.data?.schedulers || res.data?.items || []);
-      const items = rawItems;
       if (items.length > 0) {
         console.log('[Schedulers] raw sample item:', JSON.stringify(items[0], null, 2));
       }
-      setCh2Schedulers(items);
+      return items;
+    };
 
-      // Auto-resolve CPS properties for ${...} placeholder expressions
+    const resolvePlaceholders = async (items) => {
       const hasPlaceholders = items.some(s =>
         (s.expression || s.schedule?.expression || '').includes('${')
       );
-      if (hasPlaceholders) {
-        // Extract CPS config from app ARM props — delegate to the shared
-        // extractCpsConfig() — see FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
-        const cpsConfig2 = extractCpsConfig(app);
-        const cpsBUrl = cpsConfig2.cpsBaseUrl;
-        const cpsK = cpsConfig2.cpsKey || app.name;
-        const cpsE = cpsConfig2.cpsEnv;
-        const cpsCId = cpsConfig2.cpsClientId;
-        if (cpsBUrl && cpsK) {
+      if (!hasPlaceholders) return;
+      // Extract CPS config from app ARM props — delegate to the shared
+      // extractCpsConfig() — see FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
+      const cpsConfig2 = extractCpsConfig(app);
+      const cpsBUrl = cpsConfig2.cpsBaseUrl;
+      const cpsK = cpsConfig2.cpsKey || app.name;
+      const cpsE = cpsConfig2.cpsEnv;
+      const cpsCId = cpsConfig2.cpsClientId;
+      if (!cpsBUrl || !cpsK) return;
+      try {
+        // Post CPS credentials if available
+        if (cpsCId) {
           try {
-            // Post CPS credentials if available
-            if (cpsCId) {
-              try {
-                const normBase = cpsBUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
-                await postCpsCredentialsRaw({ credentials: { [`${normBase}::${orgId}`]: {} } });
-              } catch { /* non-fatal */ }
-            }
-            const data = await fetchCpsProperties({ baseUrl: cpsBUrl, type: 'non-secure', keys: cpsK, ...(cpsE && { environment: cpsE }), bgOrgId: orgId });
-            let flat = {};
-            if (Array.isArray(data?.responses)) data.responses.forEach(r => Object.assign(flat, r.properties || {}));
-            else if (Array.isArray(data)) data.forEach(r => { if (r?.properties) Object.assign(flat, r.properties); });
-            else if (data && typeof data === 'object') {
-              const fv = Object.values(data)[0];
-              flat = (fv && typeof fv === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
-            }
-            if (Object.keys(flat).length > 0) setCpsSchedulerProps(flat);
-          } catch { /* CPS not available — placeholders will show as unresolved */ }
+            const normBase = cpsBUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+            await postCpsCredentialsRaw({ credentials: { [`${normBase}::${orgId}`]: {} } });
+          } catch { /* non-fatal */ }
         }
+        const data = await fetchCpsProperties({ baseUrl: cpsBUrl, type: 'non-secure', keys: cpsK, ...(cpsE && { environment: cpsE }), bgOrgId: orgId });
+        let flat = {};
+        if (Array.isArray(data?.responses)) data.responses.forEach(r => Object.assign(flat, r.properties || {}));
+        else if (Array.isArray(data)) data.forEach(r => { if (r?.properties) Object.assign(flat, r.properties); });
+        else if (data && typeof data === 'object') {
+          const fv = Object.values(data)[0];
+          flat = (fv && typeof fv === 'object') ? Object.values(data).reduce((m, v) => (v && typeof v === 'object' ? Object.assign(m, v) : m), {}) : data;
+        }
+        if (Object.keys(flat).length > 0) setCpsSchedulerProps(flat);
+      } catch { /* CPS not available — placeholders will show as unresolved */ }
+    };
+
+    const cacheKey = CK.schedulers(orgId, envId, appId);
+    if (!forceRefresh) {
+      const swr = getCachedSWR(cacheKey);
+      if (swr) {
+        setCh2Schedulers(swr.data);
+        resolvePlaceholders(swr.data).catch(() => {});
+        if (swr.stale) {
+          fetchItems().then(items => {
+            setCached(cacheKey, items, SCHEDULERS_STALE_MS);
+            setCh2Schedulers(items);
+          }).catch(() => {});
+        }
+        return;
       }
+    }
+
+    setSchedulersLoading(true);
+    try {
+      const items = await fetchItems();
+      setCached(cacheKey, items, SCHEDULERS_STALE_MS);
+      setCh2Schedulers(items);
+      await resolvePlaceholders(items);
     } catch {
       setCh2Schedulers([]);
     }
     setSchedulersLoading(false);
-  }, [orgId, envId, appId, ch2Schedulers, app]);
+  }, [orgId, envId, appId, app]);
 
   useEffect(() => { if (orgId && envId && appId) load(); }, [load]);
 
@@ -425,6 +574,10 @@ export default function ApplicationDetailPage() {
         status: nextStatus,
         application: prev.application ? { ...prev.application, status: nextStatus } : prev.application
       } : prev);
+      // Invalidate the cached app-detail bundle so the next load (back-nav,
+      // tab revisit) re-fetches real status from Anypoint instead of
+      // replaying a now-outdated cached snapshot.
+      bustCache(CK.appDetail(orgId, envId, appId));
       setActionResult({ success: true, message: `✓ ${app.name}: ${action} initiated successfully` });
     } catch (e) {
       setActionResult({ success: false, message: `✗ Failed to ${action}: ${getErrorMessage(e)}` });
@@ -441,15 +594,32 @@ export default function ApplicationDetailPage() {
   // (e.g. job-ldp-ripjar-bulk-clear-ch2-api/1.0.0). Always use appName so the
   // backend can run its name-normalisation + variant-probing to find the correct
   // API spec asset, regardless of what ref.artifactId points to.
-  const fetchPingSpec = useCallback((currentApp) => {
+  const fetchPingSpec = useCallback((currentApp, forceRefresh = false) => {
     const a = currentApp || app;
     if (!a) return;
+
+    const cacheKey = CK.pingSpec(orgId, a.name);
+    if (!forceRefresh) {
+      const swr = getCachedSWR(cacheKey);
+      if (swr) {
+        setPingSpec(swr.data);
+        if (swr.stale) {
+          getExchangePingSpec({ orgId, appName: a.name }).then(r => {
+            setCached(cacheKey, r.data, PING_SPEC_STALE_MS);
+            setPingSpec(r.data);
+          }).catch(() => {});
+        }
+        return;
+      }
+    }
+
     setPingSpecLoading(true);
     setPingSpec(null);
     getExchangePingSpec({
       orgId,
       appName: a.name,   // backend always searches Exchange by name
     }).then(r => {
+      setCached(cacheKey, r.data, PING_SPEC_STALE_MS);
       setPingSpec(r.data);
       const total = r.data?.allEndpoints?.length ?? 0;
       const ping  = r.data?.pingEndpoints?.length ?? 0;
@@ -634,32 +804,34 @@ export default function ApplicationDetailPage() {
 
   const loadCpsData = async (keyOverride, envOverride) => {
     if (!cpsBaseUrl) return;
-    // Guard: skip the silent auto-trigger when data is already loaded/loading.
-    // A manual call (Refresh button / key-override change) always passes args so
-    // it bypasses this guard and forces a fresh fetch.
-    if (!keyOverride && !envOverride && (cpsData || cpsLoading)) return;
+    // isAutoTrigger: the silent on-page-open auto-load (no override args).
+    // A manual call (Refresh button / key-override change) always passes
+    // args, which both bypasses the "already loaded" guard below AND skips
+    // the cache read further down — it always forces a fresh network fetch.
+    const isAutoTrigger = !keyOverride && !envOverride;
+    if (isAutoTrigger && (cpsData || cpsLoading)) return;
     const useKey = keyOverride || effectiveCpsKey;
     const useEnv = envOverride || effectiveCpsEnv;
-    setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null); setCpsAttemptedUrl('');
-    setCpsCredsResolved(false);
+    const cacheKey = CK.cpsNonSecure(cpsBaseUrl, cpsDepType, useEnv, useKey);
 
-    // ── Auto-resolve CPS credentials from the imported CSV ────────────────
-    if (hasCpsCsvCredentials) {
-      const resolved = await resolveAndPostCpsCredentials({
-        cpsBaseUrl,
-        cpsClientId,
-        scopeId: orgId,
-        hasCredentials: hasCpsCsvCredentials,
-        getSecret,
-        getAllCredentials,
-      });
-      setCpsCredsResolved(resolved);
-      if (!resolved) {
-        console.log('[CPS auto-resolve] No matching credentials found in CSV — will show 422 error');
+    // Pure fetch — resolves to the exact object shape `setCpsData` expects,
+    // or throws. No component-state side effects (besides the credential
+    // flag, which is informational and safe to set during a silent
+    // background refresh too) so it can be reused for the cold-fetch path
+    // AND the stale-while-revalidate background refresh without duplicating
+    // the parsing logic.
+    const fetchCpsBundle = async () => {
+      if (hasCpsCsvCredentials) {
+        const resolved = await resolveAndPostCpsCredentials({
+          cpsBaseUrl, cpsClientId, scopeId: orgId,
+          hasCredentials: hasCpsCsvCredentials, getSecret, getAllCredentials,
+        });
+        setCpsCredsResolved(resolved);
+        if (!resolved) {
+          console.log('[CPS auto-resolve] No matching credentials found in CSV — will show 422 error');
+        }
       }
-    }
 
-    try {
       // Fetch non-secure properties for this specific project key
       const nsRaw = await fetchCpsProperties({
         baseUrl: cpsBaseUrl, type: 'non-secure', environment: useEnv,
@@ -701,16 +873,43 @@ export default function ApplicationDetailPage() {
 
       // Store secure/binary keys for on-demand fetching; do NOT auto-fetch them
       // Also store the raw API response for clipboard copying
-      setCpsData({
+      return {
         nonSecure: flatNs,
         rawNsResponse: nsRaw,   // original CPS API response (unmodified)
         secureGroups: [],
         rawSecureResponse: null,
-        binaryList: [], 
+        binaryList: [],
         secureKeys: flatNs['cps.secure.properties'] || '',
         binaryKeys: flatNs['cps.secure.binaries'] || '',
         useEnv,  // store for later fetches
-      });
+      };
+    };
+
+    // ── Frontend cache — SWR (stale-while-revalidate) ──────────────────────
+    // Only the silent auto-trigger consults the cache; manual Refresh/key
+    // override calls always hit the network, matching the existing "guard"
+    // comment's intent above.
+    if (isAutoTrigger) {
+      const swr = getCachedSWR(cacheKey);
+      if (swr) {
+        setCpsData(swr.data);
+        if (swr.stale) {
+          fetchCpsBundle().then(bundle => {
+            setCached(cacheKey, bundle, CPS_NS_STALE_MS);
+            setCpsData(bundle);
+          }).catch((err) => console.warn('[CPS] BG refresh failed:', err.message));
+        }
+        return;
+      }
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
+    setCpsLoading(true); setCpsError(''); setCpsMissingCred(null); setCpsData(null); setCpsAttemptedUrl('');
+    setCpsCredsResolved(false);
+    try {
+      const bundle = await fetchCpsBundle();
+      setCached(cacheKey, bundle, CPS_NS_STALE_MS);
+      setCpsData(bundle);
     } catch (e) {
       if (e.response?.status === 422 || e.response?.data?.needsConfig) {
         setCpsMissingCred(e.response.data.credKey);
@@ -994,7 +1193,7 @@ export default function ApplicationDetailPage() {
                 }
               }}
             />
-            <button onClick={load} title="Refresh" className="p-2.5 rounded-xl text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 bg-white/70 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 hover:bg-white dark:hover:bg-gray-800 hover:shadow-md transition-all">
+            <button onClick={() => load(true)} title="Refresh" className="p-2.5 rounded-xl text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 bg-white/70 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 hover:bg-white dark:hover:bg-gray-800 hover:shadow-md transition-all">
               <RefreshCw size={14}/>
             </button>
           </div>

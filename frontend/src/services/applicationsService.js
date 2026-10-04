@@ -39,12 +39,12 @@ export function getApplicationsSummary(bgId, forceRefresh = false) {
 
 // ── Application detail (CH1/CH2) ──────────────────────────────────────────
 
-export function getCloudhub2AppDetail(orgId, envId, appId) {
-  return api.get(`/applications/cloudhub2/${orgId}/${envId}/${appId}`);
+export function getCloudhub2AppDetail(orgId, envId, appId, forceRefresh = false) {
+  return api.get(`/applications/cloudhub2/${orgId}/${envId}/${appId}`, forceRefresh ? { params: { refresh: 'true' } } : undefined);
 }
 
-export function getCloudhub1AppDetail(envId, appId, orgId) {
-  return api.get(`/applications/cloudhub1/${envId}/${appId}`, { params: { orgId } });
+export function getCloudhub1AppDetail(envId, appId, orgId, forceRefresh = false) {
+  return api.get(`/applications/cloudhub1/${envId}/${appId}`, { params: { orgId, ...(forceRefresh ? { refresh: 'true' } : {}) } });
 }
 
 /** GET /applications/cloudhub1/{envId}/{appName}/properties — CH1 app runtime properties by name. */

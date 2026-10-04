@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 
@@ -58,6 +59,28 @@ app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:3000'],
   credentials: true
 }));
+// gzip/brotli-capable response compression — the summary endpoint and CH2
+// deployment detail (embedded `configuration` blob) are large repetitive
+// JSON payloads that shrink substantially over the wire; negligible CPU
+// cost compared to the Anypoint fan-out this backend is already waiting on.
+app.use(compression());
+// ── Conditional-GET support for read-only API responses ────────────────────
+// Express already generates a weak ETag for every res.json() response by
+// default (its built-in `etag: 'weak'` setting, never disabled here); the
+// missing piece was a Cache-Control header telling the browser's HTTP cache
+// it's allowed to store the response AND must revalidate with the server
+// before reuse (`no-cache` means "always revalidate", not "don't cache").
+// Combined with the ETag, a repeat GET for an unchanged resource comes back
+// as a tiny 304 Not Modified instead of the full JSON body — pure bandwidth
+// savings with zero staleness risk, since every request still round-trips
+// to this server, which still enforces its own NodeCache/SWR freshness
+// logic before deciding what to send. `private` keeps this out of
+// shared/CDN caches since every response is scoped to the caller's
+// session-authenticated Anypoint token.
+app.use((req, res, next) => {
+  if (req.method === 'GET') res.set('Cache-Control', 'private, no-cache');
+  next();
+});
 // Default body size limit — small and safe for all general routes.
 // CPS payloads (bulk property lists) can be large, so the limit is overridden
 // specifically for /api/cps below before mounting its router.

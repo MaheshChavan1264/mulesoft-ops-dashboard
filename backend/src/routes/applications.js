@@ -52,6 +52,77 @@ const summaryCache = new NodeCache({
 // firing an independent Anypoint fan-out.
 const inflightSummary = new Map(); // orgId → Promise<responseData>
 
+// ── Single-app-detail in-memory cache ────────────────────────────────────────
+//
+// Same NodeCache + SWR + thundering-herd-guard shape as the summary cache
+// above, but with a much shorter window: a single app's detail page is
+// opened/refreshed far more often per entity than the org-wide summary, and
+// `status` can change at any moment (user action, Anypoint auto-scaling), so
+// staying "instant" for more than ~1 min risks showing a stale running
+// state. Key is `${orgId}:${envId}:${deploymentId}` (CH2) or
+// `${orgId}:${envId}:${appName}` (CH1) — shared across all users viewing the
+// same app, same security reasoning as summaryCache (key scopes to orgId;
+// the caller's own Anypoint token still governs what they're allowed to see).
+const DETAIL_CACHE_TTL_MS   = 5 * 60 * 1000; // 5 min hard eviction
+const DETAIL_CACHE_FRESH_MS = 60 * 1000;     // 1 min SWR freshness threshold
+
+const detailCache = new NodeCache({
+  stdTTL:      DETAIL_CACHE_TTL_MS / 1000,
+  checkperiod: 60,       // short TTL — sweep every 1 min
+  useClones:   false,
+});
+const inflightDetail = new Map(); // cacheKey → Promise<data>
+
+/**
+ * Generic NodeCache + SWR + thundering-herd-guard choreography, extracted
+ * from the summary route's inline logic so single-app-detail routes can
+ * reuse the exact same instant-fresh / stale+background-refresh /
+ * piggyback-on-cold-fetch behavior without copy-pasting it per route.
+ *
+ * @param {object}   opts
+ * @param {NodeCache} opts.cache
+ * @param {Map}      opts.inflight       cacheKey → Promise<data>
+ * @param {string}   opts.key
+ * @param {number}   opts.freshMs
+ * @param {boolean}  opts.forceRefresh
+ * @param {Function} opts.fetchFn        () => Promise<data>
+ * @param {string}   opts.label          used only in the bg-refresh-failed warn log
+ * @returns {Promise<any>}  the data to send with res.json()
+ */
+async function swrFetch({ cache, inflight, key, freshMs, forceRefresh, fetchFn, label }) {
+  const cached = cache.get(key); // undefined if evicted — NodeCache enforces hard TTL
+  const ageMs  = cached ? Date.now() - cached.ts : Infinity;
+  const isFresh = ageMs < freshMs;
+
+  if (!forceRefresh && cached && isFresh) {
+    return cached.data; // instant — zero network
+  }
+
+  if (!forceRefresh && cached) {
+    // Stale-but-usable (NodeCache hasn't evicted it yet) — serve instantly,
+    // kick off exactly one background refresh per key.
+    if (!inflight.has(key)) {
+      const p = fetchFn()
+        .then((data) => { cache.set(key, { data, ts: Date.now() }); return data; })
+        .catch((err) => console.warn(`[${label}] BG refresh failed for ${key}:`, err.message))
+        .finally(() => inflight.delete(key));
+      inflight.set(key, p);
+    }
+    return cached.data;
+  }
+
+  // Cache miss / forceRefresh
+  if (!forceRefresh && inflight.has(key)) {
+    return inflight.get(key); // piggyback on the in-flight fetch
+  }
+
+  const p = fetchFn()
+    .then((data) => { cache.set(key, { data, ts: Date.now() }); return data; })
+    .finally(() => inflight.delete(key));
+  if (!forceRefresh) inflight.set(key, p);
+  return p;
+}
+
 // Get all applications for an environment (CloudHub 2.0)
 router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
   try {
@@ -69,31 +140,40 @@ router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
 
 // Get a specific CloudHub 2.0 application — enriched with properties from separate endpoint
 router.get('/cloudhub2/:orgId/:envId/:deploymentId', authMiddleware, async (req, res) => {
+  const { orgId, envId, deploymentId } = req.params;
+  const forceRefresh = req.query.refresh === 'true';
+  const cacheKey = `ch2:${orgId}:${envId}:${deploymentId}`;
   try {
     const client = createClient(req.anypointToken);
-    const { orgId, envId, deploymentId } = req.params;
 
-    // Fetch main deployment detail
-    const response = await client.get(
-      `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`
-    );
-    const deployment = response.data;
-
-    // Try to fetch application properties from dedicated endpoint
-    let extraProps = null;
-    try {
-      const propsRes = await client.get(
-        `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/settings`
+    const fetchFn = async () => {
+      // Fetch main deployment detail
+      const response = await client.get(
+        `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`
       );
-      extraProps = propsRes.data;
-    } catch { /* not all apps have this endpoint */ }
+      const deployment = response.data;
 
-    // Merge extra props into the deployment response if found
-    if (extraProps) {
-      deployment._settings = extraProps;
-    }
+      // Try to fetch application properties from dedicated endpoint
+      let extraProps = null;
+      try {
+        const propsRes = await client.get(
+          `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/settings`
+        );
+        extraProps = propsRes.data;
+      } catch { /* not all apps have this endpoint */ }
 
-    res.json(deployment);
+      // Merge extra props into the deployment response if found
+      if (extraProps) {
+        deployment._settings = extraProps;
+      }
+      return deployment;
+    };
+
+    const data = await swrFetch({
+      cache: detailCache, inflight: inflightDetail, key: cacheKey,
+      freshMs: DETAIL_CACHE_FRESH_MS, forceRefresh, fetchFn, label: 'CH2 detail',
+    });
+    res.json(data);
   } catch (error) {
     sendProxyError(res, error, 'Failed to fetch application');
   }
@@ -173,13 +253,23 @@ router.get('/cloudhub1/:envId', authMiddleware, async (req, res) => {
 
 // Get a specific CloudHub 1.0 application
 router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
+  const { envId, appName } = req.params;
+  const orgId = req.query.orgId || req.orgId;
+  const forceRefresh = req.query.refresh === 'true';
+  const cacheKey = `ch1:${orgId}:${envId}:${appName}`;
   try {
     const client = createClient(req.anypointToken);
-    const orgId = req.query.orgId || req.orgId;
-    const response = await client.get(`/cloudhub/api/applications/${req.params.appName}`, {
-      headers: makeCh1Headers(req.params.envId, orgId),
+    const fetchFn = async () => {
+      const response = await client.get(`/cloudhub/api/applications/${appName}`, {
+        headers: makeCh1Headers(envId, orgId),
+      });
+      return response.data;
+    };
+    const data = await swrFetch({
+      cache: detailCache, inflight: inflightDetail, key: cacheKey,
+      freshMs: DETAIL_CACHE_FRESH_MS, forceRefresh, fetchFn, label: 'CH1 detail',
     });
-    res.json(response.data);
+    res.json(data);
   } catch (error) {
     sendProxyError(res, error, 'Failed to fetch CloudHub 1.0 application');
   }
@@ -358,6 +448,7 @@ router.post('/cloudhub1/:envId/:appName/action', authMiddleware, async (req, res
     } else {
       await strategy1(action);
     }
+    detailCache.del(`ch1:${orgId}:${envId}:${appName}`);
     return res.json({ success: true, action, appName });
   } catch (e1) {
     // Strategy 1 failed — try strategy 2 (PUT with status field)
@@ -371,6 +462,7 @@ router.post('/cloudhub1/:envId/:appName/action', authMiddleware, async (req, res
       } else {
         await strategy2(action);
       }
+      detailCache.del(`ch1:${orgId}:${envId}:${appName}`);
       return res.json({ success: true, action, appName });
     } catch (e2) {
       console.error(`CH1 action ${action} failed for ${appName}:`, e2.response?.data || e2.message);
@@ -394,6 +486,7 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/action', authMiddleware, asy
   try {
     // Try dedicated action endpoint first (POST .../start, .../stop, .../restart)
     const response = await client.post(`${base}/${action}`);
+    detailCache.del(`ch2:${orgId}:${envId}:${deploymentId}`);
     return res.json({ success: true, action, deploymentId, data: response.data });
   } catch (e1) {
     // Fallback for start/stop: PATCH desiredState
@@ -404,12 +497,14 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/action', authMiddleware, asy
         await client.patch(base, { application: { desiredState: 'STOPPED' } });
         await new Promise(r => setTimeout(r, 3000));
         await client.patch(base, { application: { desiredState: 'STARTED' } });
+        detailCache.del(`ch2:${orgId}:${envId}:${deploymentId}`);
         return res.json({ success: true, action, deploymentId });
       }
       const stateMap = { start: 'STARTED', stop: 'STOPPED' };
       const response = await client.patch(base, {
         application: { desiredState: stateMap[action] }
       });
+      detailCache.del(`ch2:${orgId}:${envId}:${deploymentId}`);
       return res.json({ success: true, action, deploymentId, data: response.data });
     } catch (e2) {
       console.error(`CH2 action ${action} failed for ${deploymentId}:`, e2.response?.data || e2.message);
