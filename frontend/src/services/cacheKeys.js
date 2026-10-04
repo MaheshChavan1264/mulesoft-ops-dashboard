@@ -62,6 +62,14 @@ export const CK = {
   // ── CloudHub 1.0 application list ────────────────────────────────────────
   /** CH1 app list for a BG+env.  TTL recommendation: 5 min */
   ch1list: (bgId, envId) => `ch1list:${bgId}:${envId}`,
+
+  // ── Schedulers dashboard (aggregate across all apps in a BG scope) ──────
+  /**
+   * Flattened scheduler list for a BG scope — same (bgId, bgIds) shape as
+   * CK.apps above. bgId may be '__all__'; bgIds is the array actually fetched.
+   * TTL recommendation: 3 min (enabled/disabled + next-run change often)
+   */
+  allSchedulers: (bgId, bgIds) => `allschedulers:${bgId}:${Array.isArray(bgIds) ? bgIds.join(',') : bgIds}`,
 };
 
 /**
@@ -81,4 +89,5 @@ CK.PREFIX = {
   contracts:    'contracts:',
   pingSpec:     'pingspec:',
   ch1list:      'ch1list:',
+  allSchedulers: 'allschedulers:',
 };

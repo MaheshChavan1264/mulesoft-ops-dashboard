@@ -9,11 +9,13 @@ import {
   Users,
   Database,
   Globe,
+  Clock,
   ChevronRight
 } from 'lucide-react';
 
 const navItems = [
   { to: '/applications', icon: Server, label: 'Applications' },
+  { to: '/schedulers', icon: Clock, label: 'Schedulers' },
   { to: '/api-manager', icon: ShieldCheck, label: 'API Manager' },
   { to: '/exchange', icon: Package, label: 'Exchange Assets' },
   { to: '/ping-test', icon: Activity, label: 'Ping Test' },

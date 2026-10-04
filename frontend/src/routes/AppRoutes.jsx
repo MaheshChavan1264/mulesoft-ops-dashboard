@@ -17,6 +17,7 @@ const CpsComparisonPage = lazy(() => import('../features/cps/CpsComparisonPage')
 const GlobalSearchPage = lazy(() => import('../features/search/GlobalSearchPage'));
 const CpsManagerPage = lazy(() => import('../features/cps/CpsManagerPage'));
 const GlobalCpsManagerPage = lazy(() => import('../features/cps/GlobalCpsManagerPage'));
+const SchedulersPage = lazy(() => import('../features/schedulers/SchedulersPage'));
 
 const RouteFallback = () => (
   <div className="flex items-center justify-center h-full min-h-[60vh]">
@@ -58,6 +59,7 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="/applications" replace />} />
         <Route path="applications" element={<Suspense fallback={<RouteFallback />}><ApplicationsPage /></Suspense>} />
         <Route path="applications/:orgId/:envId/:appId" element={<Suspense fallback={<RouteFallback />}><ApplicationDetailPage /></Suspense>} />
+        <Route path="schedulers" element={<Suspense fallback={<RouteFallback />}><SchedulersPage /></Suspense>} />
         <Route path="api-manager" element={<Suspense fallback={<RouteFallback />}><ApiManagerPage /></Suspense>} />
         <Route path="exchange" element={<Suspense fallback={<RouteFallback />}><ExchangePage /></Suspense>} />
         <Route path="ping-test" element={<Suspense fallback={<RouteFallback />}><PingTestPage /></Suspense>} />

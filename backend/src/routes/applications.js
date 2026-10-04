@@ -704,12 +704,21 @@ const inflightSchedulersSummary = new Map(); // orgId → Promise<responseData>
  */
 function normalizeSchedulerRow(raw, app, i) {
   const schedule = raw.schedule || {};
+  const status = raw.status || {};
   const cron = schedule.cronExpression || schedule.expression || raw.expression || raw.cronExpression || null;
   const timeZone = schedule.timeZone || schedule.timezone || raw.timeZone || raw.timezone || null;
   const frequency = raw.frequency || schedule.frequency || (schedule.period > 0 ? schedule.period : null);
   const timeUnit = raw.timeUnit || schedule.timeUnit || null;
   const flowName = raw.flow || raw.flowName || raw.name || `scheduler-${i}`;
   const schedulerKey = raw.name || raw.schedulerName || raw.flow || raw.flowName || `scheduler-${i}`;
+  const lastRunCandidates = [
+    raw.lastRun, schedule.lastRun, status.lastRun,
+    raw.lastRunAt, schedule.lastRunAt, status.lastRunAt,
+    raw.lastFireAt, schedule.lastFireAt, status.lastFireAt,
+    raw.lastFiredAt, schedule.lastFiredAt, status.lastFiredAt,
+    raw.lastFired, schedule.lastFired, status.lastFired,
+  ];
+  const lastRun = lastRunCandidates.find((v) => v != null && v !== 0 && v !== '') ?? null;
   return {
     envId: app.environment?.id,
     envName: app.environment?.name,
@@ -724,6 +733,7 @@ function normalizeSchedulerRow(raw, app, i) {
     frequency,
     timeUnit,
     enabled: raw.enabled !== false,
+    lastRun,
   };
 }
 
