@@ -774,13 +774,20 @@ function normalizeSchedulerRow(raw, app, i) {
     raw.lastFired, schedule.lastFired, status.lastFired,
   ];
   const lastRun = lastRunCandidates.find((v) => v != null && v !== 0 && v !== '') ?? null;
-  // Explicit flag instead of making every caller re-derive `cron?.startsWith('${')`.
-  // Resolving the actual value requires the app's CPS config + credentials
-  // (see features/applications/tabs/InfrastructureTab.jsx's opt-in "Get Cron
-  // Expressions" button) — deliberately NOT done here: this is a hot,
-  // automatically-fanned-out aggregate endpoint, not a place to silently
-  // fetch CPS secrets for every app on every dashboard load.
+  // Explicit flags instead of making every caller re-derive
+  // `field?.startsWith('${')`. Resolving the actual values requires the
+  // app's CPS config + credentials (see features/applications/tabs/
+  // InfrastructureTab.jsx's opt-in "Get Cron Expressions" button) —
+  // deliberately NOT done here: this is a hot, automatically-fanned-out
+  // aggregate endpoint, not a place to silently fetch CPS secrets for every
+  // app on every dashboard load.
+  // Tracked independently — a scheduler can have a fully resolved cron but
+  // a timezone that's still a raw `${cps.property}` placeholder (or vice
+  // versa), and both cases need their own "unresolved" signal so the
+  // frontend doesn't miss resolving/flagging one just because the other
+  // already looks fine.
   const unresolvedPlaceholder = typeof cron === 'string' && cron.startsWith('${');
+  const unresolvedTzPlaceholder = typeof timeZone === 'string' && timeZone.startsWith('${');
   return {
     envId: app.environment?.id,
     envName: app.environment?.name,
@@ -801,6 +808,7 @@ function normalizeSchedulerRow(raw, app, i) {
     cron,
     unresolvedPlaceholder,
     timeZone,
+    unresolvedTzPlaceholder,
     frequency,
     timeUnit,
     enabled: raw.enabled !== false,

@@ -25,12 +25,6 @@ export default function InfrastructureTab({
 }) {
   const enabledCount = allSchedulers.filter(s => s.enabled !== false).length;
   const disabledCount = allSchedulers.length - enabledCount;
-  const hasUnresolved = allSchedulers.some(s => {
-    const expr = s.expression || s.schedule?.expression || '';
-    if (!expr.startsWith('${')) return false;
-    const propName = expr.slice(2, -1);
-    return !cpsSchedulerProps[propName] && !cpsSchedulerProps[propName.toLowerCase()] && !allProps[propName];
-  });
 
   // Best-effort Anypoint identifier — falls back to flow name when the API
   // omits a dedicated `name`/`schedulerName` field. Two distinct schedulers
@@ -122,6 +116,14 @@ export default function InfrastructureTab({
       match
     );
     const isUnresolvedPlaceholder = rawCron?.startsWith('${') && resolvedCron === rawCron;
+    // Tracked independently of the cron placeholder above — a scheduler can
+    // have a fully resolved cron but a timezone that's still a raw
+    // `${cps.property}` placeholder (or vice versa). Without this, the
+    // "Get Cron Expressions" button's hasUnresolved check (and the
+    // Schedulers-dashboard sibling logic) only ever looked at the cron
+    // field, so an unresolved timezone silently stayed as its raw
+    // placeholder string with no way to trigger resolution.
+    const isTzUnresolvedPlaceholder = rawTz?.startsWith('${') && schedulerTz === rawTz;
     const wasResolved = rawCron !== resolvedCron;
     const cron = resolvedCron; // display the resolved value
     let decodedCron = '';
@@ -163,10 +165,33 @@ export default function InfrastructureTab({
     const lastRunRaw = lastRunCandidates.find(v => v != null && v !== 0 && v !== '');
 
     return {
-      s, i, active, schedulerTz, isUnresolvedPlaceholder, wasResolved, rawCron, cron, decodedCron,
+      s, i, active, schedulerTz, isUnresolvedPlaceholder, isTzUnresolvedPlaceholder, wasResolved, rawCron, cron, decodedCron,
       computedNextRun, freq, timeUnit, flowName, schedulerKey, rowId, isAmbiguous, lastRunRaw,
     };
   }), [schedulers, allProps, cpsSchedulerProps, cpsData, ambiguousKeySet]);
+
+  // Drives the "Get Cron Expressions" button's visibility — true if ANY
+  // scheduler for this app still has an unresolved cron OR timezone
+  // placeholder, using the exact same resolution logic as `enrichedSchedulers`
+  // below. Deliberately checked over `allSchedulers` (not the search-filtered
+  // `schedulers`/`enrichedSchedulers`) — the button offers to resolve CPS
+  // properties for the whole app, so it shouldn't disappear just because the
+  // one unresolved scheduler happens to be filtered out of the search box.
+  const hasUnresolved = useMemo(() => allSchedulers.some(s => {
+    const rawCron = s.schedule?.cronExpression || s.schedule?.expression || s.expression || s.cronExpression;
+    const rawTz = s.schedule?.timeZone || s.schedule?.timezone || s.timeZone || s.timezone || null;
+    const resolve = (val) => val?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
+      allProps[propName] ||
+      allProps[propName.toLowerCase()] ||
+      cpsSchedulerProps[propName] ||
+      cpsSchedulerProps[propName.toLowerCase()] ||
+      cpsData?.nonSecure?.[propName] ||
+      match
+    );
+    const cronUnresolved = rawCron?.startsWith('${') && resolve(rawCron) === rawCron;
+    const tzUnresolved = rawTz?.startsWith('${') && resolve(rawTz) === rawTz;
+    return cronUnresolved || tzUnresolved;
+  }), [allSchedulers, allProps, cpsSchedulerProps, cpsData]);
 
   // Once a scheduler's cron/timezone has been resolved from a `${cps.property}`
   // placeholder to its real value (via the "Get Cron Expressions" flow below,
@@ -323,7 +348,7 @@ export default function InfrastructureTab({
         {allSchedulers.length>0 ? (
           <div className="p-4 space-y-3">
             {enrichedSchedulers.map(({
-              s, active, schedulerTz, isUnresolvedPlaceholder, wasResolved, rawCron, cron, decodedCron,
+              s, active, schedulerTz, isUnresolvedPlaceholder, isTzUnresolvedPlaceholder, wasResolved, rawCron, cron, decodedCron,
               computedNextRun, freq, timeUnit, flowName, schedulerKey, rowId, isAmbiguous, lastRunRaw,
             }) => {
               const isTriggering = triggerLoadingSet.has(schedulerKey);
@@ -422,9 +447,16 @@ export default function InfrastructureTab({
                               <span className="text-[12px] text-gray-700 dark:text-gray-200 font-semibold">{decodedCron}</span>
                             )}
                             {schedulerTz && (
-                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-600 dark:text-sfteal-400 font-medium">
-                                <Clock size={9} /> {schedulerTz}
-                              </span>
+                              isTzUnresolvedPlaceholder ? (
+                                <span title={`Unresolved CPS placeholder: ${schedulerTz}`}
+                                  className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 font-mono font-medium">
+                                  <AlertTriangle size={9} /> {schedulerTz}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-600 dark:text-sfteal-400 font-medium">
+                                  <Clock size={9} /> {schedulerTz}
+                                </span>
+                              )
                             )}
                             {wasResolved && (
                               <span title={`Resolved from placeholder: ${rawCron}`}
@@ -440,18 +472,32 @@ export default function InfrastructureTab({
                               <AlertTriangle size={11} /> Unresolved CPS placeholder
                             </span>
                             {schedulerTz && (
-                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-600 dark:text-sfteal-400 font-medium">
-                                <Clock size={9} /> {schedulerTz}
-                              </span>
+                              isTzUnresolvedPlaceholder ? (
+                                <span title={`Unresolved CPS placeholder: ${schedulerTz}`}
+                                  className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 font-mono font-medium">
+                                  <AlertTriangle size={9} /> {schedulerTz}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-600 dark:text-sfteal-400 font-medium">
+                                  <Clock size={9} /> {schedulerTz}
+                                </span>
+                              )
                             )}
                           </div>
                         ) : freq != null ? (
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
                             {schedulerTz && (
-                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-600 dark:text-sfteal-400 font-medium">
-                                <Clock size={9} /> {schedulerTz}
-                              </span>
+                              isTzUnresolvedPlaceholder ? (
+                                <span title={`Unresolved CPS placeholder: ${schedulerTz}`}
+                                  className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 font-mono font-medium">
+                                  <AlertTriangle size={9} /> {schedulerTz}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-600 dark:text-sfteal-400 font-medium">
+                                  <Clock size={9} /> {schedulerTz}
+                                </span>
+                              )
                             )}
                           </div>
                         ) : <span className="text-gray-400 dark:text-gray-600 text-xs">No schedule info</span>}

@@ -112,19 +112,26 @@ const SchedulerRow = React.memo(function SchedulerRow({
   onToggleSelect, onRequestToggle, onRequestTrigger, onNavigateToApp, onOpenApp,
 }) {
   const active = s.enabled !== false;
-  // If the user already resolved this exact app+scheduler's CPS placeholder
+  // If the user already resolved this exact app+scheduler's CPS placeholder(s)
   // on the Infrastructure tab (via "Resolve from CPS →") or via this page's
-  // own "Resolve CPS Crons" button, show that real value instead of the raw
+  // own "Resolve CPS Crons" button, show the real value(s) instead of the raw
   // `${cps.property}` placeholder this endpoint can't itself afford to
   // resolve. Display-time only — never mutates `s` or the underlying cache.
+  // Checked independently for cron vs. timezone — a scheduler can have a
+  // fully resolved cron but a still-unresolved `${...}` timezone (or vice
+  // versa); gating the cache lookup on cron alone meant an unresolved
+  // timezone was silently rendered as its raw placeholder string forever.
   // `resolveVersion` isn't read below — it exists purely so React.memo sees
   // a changed prop and re-renders this row after a bulk resolve completes
   // (getResolvedSchedule reads a module-level Map, not React state, so
   // nothing would otherwise tell this memoized row to re-check it).
-  const resolved = s.unresolvedPlaceholder ? getResolvedSchedule(s.appId, s.schedulerKey) : null;
+  const resolved = (s.unresolvedPlaceholder || s.unresolvedTzPlaceholder)
+    ? getResolvedSchedule(s.appId, s.schedulerKey)
+    : null;
   const cron = resolved?.cron ?? s.cron;
+  const unresolvedPlaceholder = resolved?.cron ? false : s.unresolvedPlaceholder;
   const timeZone = resolved?.timeZone ?? s.timeZone;
-  const unresolvedPlaceholder = resolved ? false : s.unresolvedPlaceholder;
+  const unresolvedTzPlaceholder = resolved?.timeZone ? false : s.unresolvedTzPlaceholder;
   const { decodedCron, computedNextRun } = useMemo(() => {
     if (!cron || unresolvedPlaceholder) return { decodedCron: '', computedNextRun: null };
     let decoded = '';
@@ -182,13 +189,20 @@ const SchedulerRow = React.memo(function SchedulerRow({
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <MetaTag color={unresolvedPlaceholder ? 'gray' : 'cyan'}>{cron}</MetaTag>
-              {timeZone && <span className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {timeZone}</span>}
+              {timeZone && (
+                unresolvedTzPlaceholder ? (
+                  <span title={`Unresolved CPS placeholder: ${timeZone}`}
+                    className="text-[10px] text-amber-600 dark:text-amber-400 font-mono">⚠ {timeZone}</span>
+                ) : (
+                  <span className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {timeZone}</span>
+                )
+              )}
             </div>
             {decodedCron && <p className="text-[11px] text-gray-600 dark:text-gray-300">{decodedCron}</p>}
-            {unresolvedPlaceholder && (
+            {(unresolvedPlaceholder || unresolvedTzPlaceholder) && (
               <button
                 onClick={() => onNavigateToApp(s._bgId, s.envId, s.appId)}
-                title="Open this app's Infrastructure tab to resolve the cron value from CPS properties"
+                title="Open this app's Infrastructure tab to resolve the cron/timezone value from CPS properties"
                 className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:underline">
                 <Key size={9} /> Resolve from CPS →
               </button>
@@ -466,10 +480,14 @@ export default function SchedulersPage() {
   // Still-unresolved count — re-derived whenever cpsResolveVersion bumps so
   // the "Resolve CPS Crons" button's badge/disabled-state reflects rows the
   // resolution cache has already filled in, not just the static
-  // server-computed `unresolvedPlaceholder` flag (which never changes).
+  // server-computed `unresolvedPlaceholder`/`unresolvedTzPlaceholder` flags
+  // (which never change). Counts a row as unresolved if EITHER its cron or
+  // its timezone is still a raw placeholder and hasn't been cached yet.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const unresolvedCount = useMemo(
-    () => filtered.filter((s) => s.unresolvedPlaceholder && !getResolvedSchedule(s.appId, s.schedulerKey)).length,
+    () => filtered.filter((s) =>
+      (s.unresolvedPlaceholder || s.unresolvedTzPlaceholder) && !getResolvedSchedule(s.appId, s.schedulerKey)
+    ).length,
     [filtered, cpsResolveVersion]
   );
 
@@ -660,7 +678,11 @@ export default function SchedulersPage() {
   const resolveCpsCrons = async () => {
     const unresolvedApps = new Map(); // appId -> {appId, envId, bgId, deploymentType}
     filtered.forEach((s) => {
-      if (s.unresolvedPlaceholder && !unresolvedApps.has(s.appId)) {
+      // Scan for EITHER an unresolved cron OR an unresolved timezone — an
+      // app with a fully-resolved cron but a still-placeholder timezone
+      // was previously skipped entirely here, so its timezone could never
+      // get resolved by this button.
+      if ((s.unresolvedPlaceholder || s.unresolvedTzPlaceholder) && !unresolvedApps.has(s.appId)) {
         unresolvedApps.set(s.appId, { appId: s.appId, envId: s.envId, bgId: s._bgId, deploymentType: s.deploymentType });
       }
     });
@@ -680,12 +702,12 @@ export default function SchedulersPage() {
       });
 
       filtered.forEach((s) => {
-        if (!s.unresolvedPlaceholder) return;
+        if (!s.unresolvedPlaceholder && !s.unresolvedTzPlaceholder) return;
         const entry = propsByApp.get(s.appId);
         if (!entry || entry.error) return;
         const { resolved: cron, wasResolved: cronResolved } = resolvePlaceholder(s.cron, entry.props);
-        const { resolved: timeZone } = resolvePlaceholder(s.timeZone, entry.props);
-        if (cronResolved) {
+        const { resolved: timeZone, wasResolved: tzResolved } = resolvePlaceholder(s.timeZone, entry.props);
+        if (cronResolved || tzResolved) {
           rememberResolvedSchedule(s.appId, s.schedulerKey, { cron, timeZone });
           resolvedCount++;
         }
@@ -695,7 +717,7 @@ export default function SchedulersPage() {
       setTriggerResult({
         success: failedApps === 0,
         message: resolvedCount > 0
-          ? `✓ Resolved ${resolvedCount} cron${resolvedCount !== 1 ? 's' : ''} from CPS${failedApps > 0 ? ` (${failedApps} app${failedApps !== 1 ? 's' : ''} failed)` : ''}`
+          ? `✓ Resolved ${resolvedCount} scheduler${resolvedCount !== 1 ? 's' : ''} from CPS${failedApps > 0 ? ` (${failedApps} app${failedApps !== 1 ? 's' : ''} failed)` : ''}`
           : failedApps > 0
             ? `✗ Failed to resolve CPS properties for ${failedApps} app${failedApps !== 1 ? 's' : ''}`
             : 'No crons could be resolved — property not found in CPS',
