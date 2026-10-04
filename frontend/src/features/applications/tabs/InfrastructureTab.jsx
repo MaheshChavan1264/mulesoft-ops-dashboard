@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect } from 'react';
-import { Clock, Zap, Activity, Key, RefreshCw, X, Search, Power, CheckSquare, Square } from 'lucide-react';
+import { Clock, Zap, Activity, Key, RefreshCw, X, Search, Power, CheckSquare, Square, AlertTriangle, History, CalendarClock, Info } from 'lucide-react';
 import cronstrue from 'cronstrue';
 import { fetchCpsProperties } from '../../../services/cpsService';
 import { rememberResolvedSchedule } from '../../../services/cpsCronResolutionCache';
@@ -264,7 +264,7 @@ export default function InfrastructureTab({
                 className="w-full bg-gray-50/70 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/60 rounded-xl pl-8 pr-4 py-2.5 text-xs text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfpurple-400 dark:focus:border-sfpurple-500 focus:ring-2 focus:ring-sfpurple-500/10 focus:bg-white dark:focus:bg-gray-800 transition-all"
               />
               {schedulerSearch && (
-                <button onClick={() => setSchedulerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xs">✕</button>
+                <button onClick={() => setSchedulerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"><X size={12} /></button>
               )}
             </div>
             {schedulerSearch && (
@@ -275,12 +275,21 @@ export default function InfrastructureTab({
           </div>
         )}
         {schedulers.length > 0 && (
-          <div className="px-5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between gap-3 flex-wrap">
+          <div className={`px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap transition-colors ${
+            selectedVisibleCount > 0
+              ? 'bg-gradient-to-r from-sfpurple-50 via-sfpurple-50/40 to-transparent dark:from-sfpurple-500/10 dark:via-sfpurple-500/5 border-sfpurple-200/70 dark:border-sfpurple-400/20'
+              : 'bg-transparent border-gray-100 dark:border-gray-800'
+          }`}>
             <button
               onClick={toggleSelectAll}
-              className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
-              {allVisibleSelected ? <CheckSquare size={14} className="text-sfpurple-600 dark:text-sfpurple-400" /> : <Square size={14} />}
-              {selectedVisibleCount > 0 ? `${selectedVisibleCount} selected` : 'Select all'}
+              className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
+              {allVisibleSelected ? <CheckSquare size={15} className="text-sfpurple-600 dark:text-sfpurple-400" /> : <Square size={15} />}
+              {selectedVisibleCount > 0 ? (
+                <span className="inline-flex items-center gap-1.5 text-sfpurple-700 dark:text-sfpurple-300">
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-sfpurple-600 text-white text-[10px] font-bold">{selectedVisibleCount}</span>
+                  selected
+                </span>
+              ) : 'Select all'}
             </button>
             {selectedVisibleCount > 0 && (
               <div className="flex items-center gap-2">
@@ -288,23 +297,24 @@ export default function InfrastructureTab({
                   onClick={() => setBulkSchedulerRunConfirm({ schedulerKeys: selectedSchedulerKeys(visibleKeys) })}
                   disabled={!isRunning}
                   title={!isRunning ? 'App must be RUNNING to trigger schedulers' : 'Run the selected schedulers now'}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600">
-                  <Zap size={11} /> Run Selected
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-white dark:bg-gray-900 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/70 dark:border-sfpurple-400/20 shadow-sm hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 hover:shadow-md hover:shadow-sfpurple-500/25">
+                  <Zap size={12} /> Run Selected
                 </button>
                 <button
                   onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: selectedSchedulerKeys(visibleKeys), nextEnabled: true })}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white hover:border-emerald-600">
-                  <Power size={11} /> Enable Selected
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-white dark:bg-gray-900 text-emerald-700 dark:text-emerald-300 border-emerald-200/70 dark:border-emerald-400/20 shadow-sm hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-md hover:shadow-emerald-500/25">
+                  <Power size={12} /> Enable Selected
                 </button>
                 <button
                   onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: selectedSchedulerKeys(visibleKeys), nextEnabled: false })}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white hover:border-red-600">
-                  <Power size={11} /> Disable Selected
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 border-red-200/70 dark:border-red-400/20 shadow-sm hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-md hover:shadow-red-500/25">
+                  <Power size={12} /> Disable Selected
                 </button>
+                <span className="w-px h-5 bg-sfpurple-200/70 dark:bg-sfpurple-400/20 mx-0.5" />
                 <button
                   onClick={() => setSelectedSchedulers(new Set())}
-                  className="text-[11px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-1">
-                  Clear
+                  className="flex items-center gap-1 text-[11px] font-medium text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 px-1 transition-colors">
+                  <X size={12} /> Clear
                 </button>
               </div>
             )}
@@ -318,6 +328,7 @@ export default function InfrastructureTab({
             }) => {
               const isTriggering = triggerLoadingSet.has(schedulerKey);
               const isToggling = toggleLoadingSet.has(schedulerKey);
+              const isSelected = selectedSchedulers.has(rowId);
 
               let lastRunNode;
               if (!lastRunRaw) {
@@ -327,114 +338,153 @@ export default function InfrastructureTab({
                 const valid = !isNaN(d.getTime()) && d.getFullYear() > 1970;
                 lastRunNode = valid ? (
                   <>
-                    <span className="text-gray-600 dark:text-gray-300 text-xs font-mono">{d.toLocaleDateString()}</span>
+                    <span className="text-gray-700 dark:text-gray-200 text-xs font-mono font-semibold">{d.toLocaleDateString()}</span>
                     <p className="text-gray-400 dark:text-gray-500 text-[10px] font-mono">{d.toLocaleTimeString()}</p>
                   </>
                 ) : <span className="text-gray-500 dark:text-gray-400 text-xs font-mono">{String(lastRunRaw)}</span>;
               }
 
               return (
-                <div key={rowId} className={`group relative rounded-2xl border bg-white/70 dark:bg-gray-900/40 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden ${active ? 'border-gray-200/70 dark:border-gray-700/60' : 'border-gray-200/50 dark:border-gray-800/60 opacity-70'}`}>
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${active ? 'bg-gradient-to-b from-sfpurple-400 to-sfpurple-600' : 'bg-gray-300 dark:bg-gray-700'}`} />
-                  <div className="grid grid-cols-[auto_200px_minmax(200px,340px)_84px_84px_auto] items-center gap-4 px-5 py-3.5 pl-6">
-                    {/* Select checkbox */}
-                    <input
-                      type="checkbox"
-                      checked={selectedSchedulers.has(rowId)}
-                      onChange={() => toggleSelectOne(rowId)}
-                      className="flex-shrink-0 rounded border-gray-300 dark:border-gray-600 text-sfpurple-600 focus:ring-sfpurple-500"
-                    />
-                    {/* Flow identity */}
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <PulseDot active={active}/>
-                      <div className="min-w-0">
-                        <p title={flowName} className="text-gray-800 dark:text-gray-100 text-sm font-semibold font-mono truncate leading-tight">{flowName}</p>
-                        <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-md font-semibold mt-1 ${active?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400':'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}>
-                          {active?'Enabled':'Disabled'}
-                        </span>
-                        {isAmbiguous && (
-                          <span title="Another scheduler in this app shares the same identifier — Run Now/Toggle are disabled to avoid acting on the wrong one"
-                            className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-md font-semibold mt-1 ml-1 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                            ⚠ ambiguous
-                          </span>
-                        )}
+                <div key={rowId} className={`group relative rounded-2xl border-l-4 border transition-all duration-300 overflow-hidden ${
+                  isSelected
+                    ? 'border-l-sfpurple-500 border-sfpurple-200/80 dark:border-sfpurple-400/30 bg-sfpurple-50/50 dark:bg-sfpurple-500/[0.07] shadow-md shadow-sfpurple-500/10'
+                    : active
+                      ? 'border-l-sfpurple-400 border-gray-200/70 dark:border-gray-700/60 bg-white/70 dark:bg-gray-900/40 shadow-sm hover:shadow-lg hover:border-sfpurple-200/70 dark:hover:border-sfpurple-400/20'
+                      : 'border-l-gray-300 dark:border-l-gray-700 border-gray-200/50 dark:border-gray-800/60 bg-white/40 dark:bg-gray-900/20 opacity-75 hover:opacity-100'
+                } backdrop-blur-sm`}>
+                  <div className="px-4 py-3.5">
+                    {/* ── Header row: select + identity (left) / actions (right) ── */}
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <button
+                          onClick={() => toggleSelectOne(rowId)}
+                          className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-md transition-colors"
+                          title={isSelected ? 'Deselect' : 'Select'}>
+                          {isSelected
+                            ? <CheckSquare size={17} className="text-sfpurple-600 dark:text-sfpurple-400" />
+                            : <Square size={17} className="text-gray-300 dark:text-gray-600 group-hover:text-gray-400 dark:group-hover:text-gray-500" />}
+                        </button>
+                        <PulseDot active={active}/>
+                        <div className="min-w-0">
+                          <p title={flowName} className="text-gray-800 dark:text-gray-100 text-sm font-bold font-mono truncate leading-tight">{flowName}</p>
+                          <div className="flex items-center gap-1 mt-1">
+                            <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${active?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400':'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}>
+                              {active?'Enabled':'Disabled'}
+                            </span>
+                            {isAmbiguous && (
+                              <span title="Another scheduler in this app shares the same identifier — Run Now/Toggle are disabled to avoid acting on the wrong one"
+                                className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                <AlertTriangle size={9} /> ambiguous
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => setSchedulerToggleConfirm({ schedulerKey, nextEnabled: !active })}
+                          disabled={isToggling || isAmbiguous}
+                          title={isAmbiguous ? 'Ambiguous scheduler identifier — another scheduler in this app shares the same name/flow, so this action is disabled to avoid toggling the wrong one' : (active ? `Disable "${schedulerKey}"` : `Enable "${schedulerKey}"`)}
+                          className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                            active
+                              ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-md hover:shadow-red-500/30'
+                              : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-md hover:shadow-emerald-500/30'
+                          }`}>
+                          {isToggling
+                            ? <><RefreshCw size={13} className="animate-spin" /> {active ? 'Disabling…' : 'Enabling…'}</>
+                            : <><Power size={13} /> {active ? 'Disable' : 'Enable'}</>}
+                        </button>
+                        <button
+                          onClick={() => setSchedulerConfirmKey(schedulerKey)}
+                          disabled={isTriggering || !isRunning || isAmbiguous}
+                          title={isAmbiguous ? 'Ambiguous scheduler identifier — another scheduler in this app shares the same name/flow, so this action is disabled to avoid triggering the wrong one' : (!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`)}
+                          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 hover:shadow-md hover:shadow-sfpurple-500/30">
+                          {isTriggering
+                            ? <><RefreshCw size={13} className="animate-spin" /> Running…</>
+                            : <><Zap size={13} /> Run Now</>}
+                        </button>
                       </div>
                     </div>
 
-                    {/* Cron / frequency */}
-                    <div className="min-w-0">
-                      {cron && !isUnresolvedPlaceholder ? (
-                        <div className="space-y-1">
+                    {/* ── Metadata strip: schedule / last run / next run ── */}
+                    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800/80 flex items-stretch gap-5 flex-wrap">
+                      {/* Schedule */}
+                      <div className="min-w-[180px] flex-1">
+                        <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1.5 flex items-center gap-1">
+                          <Clock size={9} /> Schedule
+                        </p>
+                        {cron && !isUnresolvedPlaceholder ? (
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <MetaTag color="cyan">{cron}</MetaTag>
-                            {schedulerTz && <span className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {schedulerTz}</span>}
+                            {decodedCron && (
+                              <span className="text-[12px] text-gray-700 dark:text-gray-200 font-semibold">{decodedCron}</span>
+                            )}
+                            {schedulerTz && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-600 dark:text-sfteal-400 font-medium">
+                                <Clock size={9} /> {schedulerTz}
+                              </span>
+                            )}
+                            {wasResolved && (
+                              <span title={`Resolved from placeholder: ${rawCron}`}
+                                className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-help">
+                                <Info size={10} />
+                              </span>
+                            )}
                           </div>
-                          {decodedCron && (
-                            <p className="text-[12px] text-gray-600 dark:text-gray-300 font-medium truncate" title={decodedCron}>{decodedCron}</p>
-                          )}
-                          {wasResolved && (
-                            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono truncate" title="Property placeholder resolved from app properties">{rawCron}</p>
-                          )}
-                        </div>
-                      ) : isUnresolvedPlaceholder ? (
-                        <div className="space-y-1">
-                          <MetaTag color="gray">{rawCron}</MetaTag>
-                          <p className="text-[10px] text-amber-600 dark:text-amber-400">⚠ property not in runtime props — check CPS</p>
-                          {schedulerTz && <p className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {schedulerTz}</p>}
-                        </div>
-                      ) : freq ? (
-                        <div className="space-y-1">
-                          <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
-                          {schedulerTz && <p className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {schedulerTz}</p>}
-                        </div>
-                      ) : <span className="text-gray-400 dark:text-gray-600 text-xs">No schedule info</span>}
-                    </div>
+                        ) : isUnresolvedPlaceholder ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span title={rawCron}
+                              className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg font-mono font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-400/20">
+                              <AlertTriangle size={11} /> Unresolved CPS placeholder
+                            </span>
+                            {schedulerTz && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-600 dark:text-sfteal-400 font-medium">
+                                <Clock size={9} /> {schedulerTz}
+                              </span>
+                            )}
+                          </div>
+                        ) : freq != null ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <MetaTag color="blue">{freq}{timeUnit ? ` ${timeUnit}` : ''}</MetaTag>
+                            {schedulerTz && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-sfteal-50 dark:bg-sfteal-500/10 text-sfteal-600 dark:text-sfteal-400 font-medium">
+                                <Clock size={9} /> {schedulerTz}
+                              </span>
+                            )}
+                          </div>
+                        ) : <span className="text-gray-400 dark:text-gray-600 text-xs">No schedule info</span>}
+                      </div>
 
-                    {/* Last run */}
-                    <div className="min-w-0">
-                      <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1">Last Run</p>
-                      {lastRunNode}
-                    </div>
+                      <span className="w-px bg-gray-100 dark:bg-gray-800 self-stretch flex-shrink-0" />
 
-                    {/* Next run */}
-                    <div className="min-w-0">
-                      <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1">Next Run</p>
-                      {computedNextRun ? (
-                        <>
-                          <span className="text-sfpurple-700 dark:text-sfpurple-300 text-xs font-mono font-semibold">{computedNextRun.toLocaleDateString()}</span>
-                          <p className="text-sfpurple-500 dark:text-sfpurple-400 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
-                        </>
-                      ) : freq ? (
-                        <span className="text-gray-400 dark:text-gray-600 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>
-                      ) : (
-                        <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>
-                      )}
-                    </div>
+                      {/* Last run */}
+                      <div className="flex-shrink-0 min-w-[76px]">
+                        <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1.5 flex items-center gap-1">
+                          <History size={9} /> Last Run
+                        </p>
+                        {lastRunNode}
+                      </div>
 
-                    {/* Action */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setSchedulerToggleConfirm({ schedulerKey, nextEnabled: !active })}
-                        disabled={isToggling || isAmbiguous}
-                        title={isAmbiguous ? 'Ambiguous scheduler identifier — another scheduler in this app shares the same name/flow, so this action is disabled to avoid toggling the wrong one' : (active ? `Disable "${schedulerKey}"` : `Enable "${schedulerKey}"`)}
-                        className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                          active
-                            ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-md hover:shadow-red-500/30'
-                            : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-md hover:shadow-emerald-500/30'
-                        }`}>
-                        {isToggling
-                          ? <><RefreshCw size={13} className="animate-spin" /> {active ? 'Disabling…' : 'Enabling…'}</>
-                          : <><Power size={13} /> {active ? 'Disable' : 'Enable'}</>}
-                      </button>
-                      <button
-                        onClick={() => setSchedulerConfirmKey(schedulerKey)}
-                        disabled={isTriggering || !isRunning || isAmbiguous}
-                        title={isAmbiguous ? 'Ambiguous scheduler identifier — another scheduler in this app shares the same name/flow, so this action is disabled to avoid triggering the wrong one' : (!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`)}
-                        className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 hover:shadow-md hover:shadow-sfpurple-500/30">
-                        {isTriggering
-                          ? <><RefreshCw size={13} className="animate-spin" /> Running…</>
-                          : <><Zap size={13} /> Run Now</>}
-                      </button>
+                      <span className="w-px bg-gray-100 dark:bg-gray-800 self-stretch flex-shrink-0" />
+
+                      {/* Next run */}
+                      <div className="flex-shrink-0 min-w-[76px]">
+                        <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1.5 flex items-center gap-1">
+                          <CalendarClock size={9} /> Next Run
+                        </p>
+                        {computedNextRun ? (
+                          <>
+                            <span className="text-sfpurple-700 dark:text-sfpurple-300 text-xs font-mono font-semibold">{computedNextRun.toLocaleDateString()}</span>
+                            <p className="text-sfpurple-500 dark:text-sfpurple-400 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
+                          </>
+                        ) : freq ? (
+                          <span className="text-gray-400 dark:text-gray-600 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
