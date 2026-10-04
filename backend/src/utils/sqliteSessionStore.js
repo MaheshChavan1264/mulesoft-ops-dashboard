@@ -26,6 +26,22 @@ class SQLiteSessionStore extends Store {
       )
     `);
 
+    // Wipe every existing session as soon as the table exists — before this
+    // store is handed to express-session, so no request can race it. Used
+    // so a deliberate stop+start of the server forces everyone to log back
+    // in again, while the table still protects against mid-run crashes
+    // (the table persists during the process's lifetime, this only clears
+    // it once, right at startup).
+    if (options.clearOnStart) {
+      try {
+        this.db.exec('DELETE FROM sessions');
+        const cleared = this.db.prepare('SELECT changes() AS c').get()?.c ?? 0;
+        logger.info({ clearedSessions: cleared }, '[SessionStore] Cleared all sessions on startup');
+      } catch (err) {
+        logger.error({ err }, '[SessionStore] Failed to clear sessions on startup');
+      }
+    }
+
     this._pruneTimer = setInterval(() => this._prune(), options.cleanupInterval || PRUNE_INTERVAL_MS);
     if (this._pruneTimer.unref) this._pruneTimer.unref();
   }

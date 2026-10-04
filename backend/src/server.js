@@ -40,9 +40,12 @@ const cpsRoutes = require('./routes/cps');
 const healthRoutes = require('./routes/health');
 
 // ── SQLite session store ──────────────────────────────────────────────────────
-// Replaces the default MemoryStore (which loses all sessions on restart).
-// Sessions are persisted to ./data/sessions.db — survives restarts, deploys,
-// and OOM-induced process kills without logging out all users.
+// Replaces the default MemoryStore (which would also lose sessions on
+// in-process events like an unhandled rejection restart loop). Sessions are
+// persisted to ./data/sessions.db for the lifetime of the process — but
+// cleared on every deliberate startup (see `clearOnStart` below), so a
+// stop+start always forces re-login, matching the "session only lives for
+// this run" expectation.
 const SQLiteStore = require('./utils/sqliteSessionStore');
 try { if (!fs.existsSync(config.sessionDbDir)) fs.mkdirSync(config.sessionDbDir, { recursive: true }); } catch {}
 
@@ -103,7 +106,14 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ limit: '1mb', extended: true }));
 app.use(session({
-  store: new SQLiteStore({ db: 'sessions.db', dir: config.sessionDbDir }),
+  // clearOnStart: wipes every persisted session as soon as this process
+  // boots — so a deliberate stop+start of the server forces everyone back
+  // to the login page, matching the "token only lives for this run" mental
+  // model, while the SQLite backing store still protects an in-progress
+  // run from losing sessions to a crash or a load-balancer-triggered
+  // restart that the operator didn't initiate (same session survives those,
+  // only a real process restart clears it).
+  store: new SQLiteStore({ db: 'sessions.db', dir: config.sessionDbDir, clearOnStart: true }),
   secret: config.sessionSecret || DEFAULT_SECRET,
   resave: false,
   saveUninitialized: false,
