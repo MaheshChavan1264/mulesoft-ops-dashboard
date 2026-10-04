@@ -5,6 +5,7 @@
  * pattern.  Centralising it here ensures consistent error shapes across all
  * endpoints and makes the route handlers easier to read.
  */
+const logger = require('./logger');
 
 /**
  * Pull the most specific human-readable message out of an Anypoint
@@ -54,7 +55,7 @@ const extractAnypointErrorMessage = (error, fallback) => {
 const sendProxyError = (res, error, fallbackMessage) => {
   const status = error.response?.status || 500;
   const message = extractAnypointErrorMessage(error, fallbackMessage);
-  console.error(fallbackMessage + ':', error.response?.data || error.message);
+  logger.error({ err: error.response?.data || error.message }, fallbackMessage);
   res.status(status).json({ error: message });
 };
 

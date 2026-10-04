@@ -4,6 +4,7 @@ const router = express.Router();
 
 const { ANYPOINT_URL } = require('../utils/anypointClient');
 const { mapOrgShape } = require('../utils/orgHelpers');
+const logger = require('../utils/logger');
 
 // Helper: fetch user profile and store session
 async function storeSession(req, token) {
@@ -61,7 +62,7 @@ async function storeSession(req, token) {
 
   // Log for debugging
   const totalEnvs = Object.values(accessibleEnvironments).flat().length;
-  console.log(`Session: ${memberOrgs.length} orgs, ${roleEnvIds.size} role-scoped envs, ${totalEnvs} accessible envs`);
+  logger.info(`Session: ${memberOrgs.length} orgs, ${roleEnvIds.size} role-scoped envs, ${totalEnvs} accessible envs`);
 
   req.session.accessibleEnvironments = accessibleEnvironments;
   req.session.user = {
@@ -87,7 +88,7 @@ router.post('/login', async (req, res) => {
     const result = await storeSession(req, access_token);
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('Login error:', error.response?.data || error.message);
+    logger.error({ err: error.response?.data || error.message }, 'Login error');
     res.status(error.response?.status || 500).json({
       error: error.response?.data?.message || 'Login failed. Check your credentials.'
     });
@@ -106,7 +107,7 @@ router.post('/token-login', async (req, res) => {
     const result = await storeSession(req, cleanToken);
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('Token login error:', error.response?.data || error.message);
+    logger.error({ err: error.response?.data || error.message }, 'Token login error');
     const status = error.response?.status || 401;
     let msg = 'Invalid or expired access token.';
     if (status === 400) msg = 'Token format is invalid. Make sure you copied only the token value (not "Bearer <token>").';
@@ -142,7 +143,7 @@ router.post('/connected-app-login', async (req, res) => {
     const result = await storeSession(req, access_token);
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('Connected App login error:', error.response?.data || error.message);
+    logger.error({ err: error.response?.data || error.message }, 'Connected App login error');
     const msg = error.response?.data?.error_description
       || error.response?.data?.message
       || 'Connected App authentication failed. Check your Client ID and Secret.';

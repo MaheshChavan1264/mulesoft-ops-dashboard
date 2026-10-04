@@ -1,25 +1,28 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
+const helmet = require('helmet');
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
+const pinoHttp = require('pino-http');
+
+const config = require('./config');
+const logger = require('./utils/logger');
 
 // ── Session secret validation ─────────────────────────────────────────────────
 // Fail fast in production if SESSION_SECRET is not set or is the known default.
 // In development, emit a warning but continue.
-const SESSION_SECRET = process.env.SESSION_SECRET;
 const DEFAULT_SECRET = 'mulesoft-dashboard-secret';
-if (!SESSION_SECRET || SESSION_SECRET === DEFAULT_SECRET) {
-  if (process.env.NODE_ENV === 'production') {
-    console.error(
-      'FATAL: SESSION_SECRET must be set to a strong random string in production. ' +
+if (!config.sessionSecret || config.sessionSecret === DEFAULT_SECRET) {
+  if (config.isProd) {
+    logger.fatal(
+      'SESSION_SECRET must be set to a strong random string in production. ' +
       'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'
     );
     process.exit(1);
   } else {
-    console.warn(
-      'WARNING: SESSION_SECRET is not set or is the default. ' +
+    logger.warn(
+      'SESSION_SECRET is not set or is the default. ' +
       'This is insecure — set SESSION_SECRET in .env before deploying to production.'
     );
   }
@@ -41,22 +44,37 @@ const healthRoutes = require('./routes/health');
 // Sessions are persisted to ./data/sessions.db — survives restarts, deploys,
 // and OOM-induced process kills without logging out all users.
 const SQLiteStore = require('./utils/sqliteSessionStore');
-const SESSION_DB_DIR = process.env.SESSION_DB_DIR || './data';
-try { if (!fs.existsSync(SESSION_DB_DIR)) fs.mkdirSync(SESSION_DB_DIR, { recursive: true }); } catch {}
+try { if (!fs.existsSync(config.sessionDbDir)) fs.mkdirSync(config.sessionDbDir, { recursive: true }); } catch {}
 
 const app = express();
-const PORT = process.env.PORT || 5000;
-const isProd = process.env.NODE_ENV === 'production';
 
 // Trust the first proxy hop when running behind nginx / a load balancer.
 // Required for req.secure and cookie.secure to work correctly in production.
-if (isProd) {
+if (config.isProd) {
   app.set('trust proxy', 1);
 }
 
+// ── Security headers ──────────────────────────────────────────────────────────
+// helmet sets a conservative baseline (X-Content-Type-Options, X-Frame-Options,
+// HSTS when served over HTTPS, etc). CSP is disabled here because this server
+// only serves a JSON API (the SPA is a separate static deploy) — a strict CSP
+// on API responses adds no protection and risks breaking tooling that inspects
+// headers; revisit if this process ever also serves the frontend bundle.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+
+// ── Structured request logging ────────────────────────────────────────────────
+// Attaches req.log (a pino child logger with a request id) to every request,
+// and emits one structured completion log line per request/response.
+app.use(pinoHttp({
+  logger,
+  autoLogging: { ignore: (req) => req.url === '/api/ping' },
+}));
+
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  // Previously hardcoded to localhost origins only, which silently broke any
+  // real deployment. Configure real origins via CORS_ORIGINS in .env.
+  origin: config.corsOrigins,
   credentials: true
 }));
 // gzip/brotli-capable response compression — the summary endpoint and CH2
@@ -87,34 +105,61 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ limit: '1mb', extended: true }));
 app.use(session({
-  store: new SQLiteStore({ db: 'sessions.db', dir: SESSION_DB_DIR }),
-  secret: SESSION_SECRET || DEFAULT_SECRET,
+  store: new SQLiteStore({ db: 'sessions.db', dir: config.sessionDbDir }),
+  secret: config.sessionSecret || DEFAULT_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: isProd,          // true in production (HTTPS only), false in dev
+    secure: config.isProd,   // true in production (HTTPS only), false in dev
     httpOnly: true,          // prevents JavaScript access to the cookie
     sameSite: 'lax',         // CSRF mitigation — blocks cross-site POST requests
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: config.sessionMaxAgeMs
   }
 }));
 
-// ── Rate limiting — auth endpoints only ─────────────────────────────────────
-// Limit login attempts to prevent brute-force attacks.
-// 20 attempts per IP per 15-minute window is generous for legitimate use
-// while blocking automated credential-stuffing.
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,  // 15 minutes
-  max: 20,                    // max 20 login attempts per IP per window
-  standardHeaders: true,      // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false,       // Disable the `X-RateLimit-*` headers
-  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
-  skip: (req) => process.env.NODE_ENV !== 'production', // only enforce in production
-});
+// ── Rate limiting ────────────────────────────────────────────────────────────
+// By default limiters only enforce in production (RATE_LIMIT_ENFORCE_DEV=true
+// to also enforce locally) so they never get in the way during development.
+const enforceLimiter = (req) => !config.isProd && !config.rateLimit.enforceOutsideProd;
 
+// Auth endpoints — brute-force / credential-stuffing protection.
+const authLimiter = rateLimit({
+  windowMs: config.rateLimit.authWindowMs,
+  max: config.rateLimit.authMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please try again later.' },
+  skip: enforceLimiter,
+});
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/token-login', authLimiter);
 app.use('/api/auth/connected-app-login', authLimiter);
+
+// General /api/* traffic — a buggy frontend loop or malicious client should
+// not be able to hammer this server (and every downstream Anypoint/CPS/
+// internal host it fans requests out to) without limit.
+const generalApiLimiter = rateLimit({
+  windowMs: config.rateLimit.apiWindowMs,
+  max: config.rateLimit.apiMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+  skip: enforceLimiter,
+});
+app.use('/api', generalApiLimiter);
+
+// /api/cps/search-user fans out up to CONCURRENCY (30) requests per call
+// across every app passed in — needs a much tighter per-session cap than
+// the general limiter above.
+const searchUserLimiter = rateLimit({
+  windowMs: config.rateLimit.searchUserWindowMs,
+  max: config.rateLimit.searchUserMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many credential-search requests. Please wait before retrying.' },
+  skip: enforceLimiter,
+});
+app.use('/api/cps/search-user', searchUserLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -140,10 +185,43 @@ app.get('/api/ping', (req, res) => {
 // Any route that calls next(err) or throws will land here instead of hanging.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error('[GlobalError]', err);
+  (req.log || logger).error({ err }, 'Unhandled route error');
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`MuleSoft Dashboard Backend running on port ${PORT}`);
+const server = app.listen(config.port, () => {
+  logger.info(`MuleSoft Dashboard Backend running on port ${config.port}`);
 });
+
+// ── Graceful shutdown ────────────────────────────────────────────────────────
+// Stop accepting new connections and close the SQLite handles (app.db,
+// sessions.db) cleanly on SIGTERM/SIGINT instead of relying on the process
+// being killed mid-request — matters for rolling deploys / container restarts.
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`${signal} received — shutting down gracefully`);
+
+  const forceExitTimer = setTimeout(() => {
+    logger.warn('Graceful shutdown timed out — forcing exit');
+    process.exit(1);
+  }, 10000);
+  if (forceExitTimer.unref) forceExitTimer.unref();
+
+  server.close(() => {
+    try {
+      require('./utils/db').close();
+    } catch (err) {
+      logger.error({ err }, 'Error closing app.db during shutdown');
+    }
+    clearTimeout(forceExitTimer);
+    logger.info('Shutdown complete');
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+module.exports = app;

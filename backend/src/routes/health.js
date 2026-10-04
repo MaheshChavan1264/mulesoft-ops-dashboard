@@ -1,16 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const https = require('https');
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
-const { stripDeploymentSuffix } = require('../utils/appHelpers');
 const { fetchExchangeAppCreds } = require('../utils/exchangeHelpers');
 const { sendProxyError } = require('../utils/responseHelpers');
 const db = require('../utils/db');
+const { sharedHttpAgent, sharedHttpsAgent } = require('../utils/httpAgents');
+const logger = require('../utils/logger');
+const {
+  fetchAllApisForEnv,
+  collectCandidates,
+  fuzzyMatchApis,
+  getOrgEnvs,
+} = require('../utils/apiManagerHelpers');
 
-// Agent that tolerates self-signed / internal-CA certs
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+// Shared keep-alive agent that tolerates self-signed / internal-CA certs —
+// same instance used by every CPS call in routes/cps.js (see utils/httpAgents.js).
+const httpsAgent = sharedHttpsAgent;
 
 const PING_PATHS = [
   '/api/v1/ping',
@@ -20,7 +27,14 @@ const PING_PATHS = [
   '/api/ping',
   '/ping',
 ];
-const PING_TIMEOUT_MS = 30000; // 30 s — some apps (e.g. PAPIs calling Oracle) need more time
+const PING_TIMEOUT_MS = 10000; // 10 s per individual attempt — generous for a healthy app
+// Hard ceiling on TOTAL wall-clock time for one /ping call, regardless of how many
+// base URLs / paths remain to try. Previously each of up to 18 candidate URLs
+// (3 bases x 6 paths) was tried strictly sequentially with a 30s timeout each,
+// so a fully unreachable app could take ~9 minutes to fail. Paths within a phase
+// are now fired in parallel (see below) and this deadline aborts everything in
+// flight once the budget is exhausted, so callers get a definitive answer fast.
+const PING_OVERALL_DEADLINE_MS = 30000; // 30 s total
 
 /**
  * Returns a domain-qualifier segment to insert between the env slug and
@@ -115,6 +129,7 @@ router.post('/oauth2-token', authMiddleware, async (req, res) => {
     if (scope) params.append('scope', scope);
     const response = await axios.post(tokenUrl, params.toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      httpAgent: sharedHttpAgent,
       httpsAgent,
       timeout: 15000,
       validateStatus: () => true,
@@ -127,10 +142,10 @@ router.post('/oauth2-token', authMiddleware, async (req, res) => {
     if (!access_token) {
       return res.status(400).json({ error: 'Token endpoint did not return access_token', raw: response.data });
     }
-    console.log(`[oauth2-token] Token fetched from ${tokenUrl} (expires_in=${expires_in})`);
+    logger.debug(`[oauth2-token] Token fetched from ${tokenUrl} (expires_in=${expires_in})`);
     return res.json({ access_token, token_type: token_type || 'Bearer', expires_in });
   } catch (e) {
-    console.error('[oauth2-token] Error:', e.message);
+    logger.error({ err: e }, '[oauth2-token] Error');
     return res.status(500).json({ error: e.message });
   }
 });
@@ -190,9 +205,9 @@ router.post('/ping', authMiddleware, async (req, res) => {
   const httpBase = qualifier ? base.replace(/^https:\/\//, 'http://') : null;
 
   if (qualifier) {
-    console.log(`[Ping] Domain qualifier detected: "${qualifier}" (envName="${envName}") → primary base: ${base}`);
-    if (httpBase)     console.log(`[Ping] HTTP fallback: ${httpBase} (tried if HTTPS .${qualifier}. TLS fails)`);
-    if (standardBase) console.log(`[Ping] Standard fallback: ${standardBase} (tried if ALL .${qualifier}. paths fail)`);
+    logger.debug(`[Ping] Domain qualifier detected: "${qualifier}" (envName="${envName}") → primary base: ${base}`);
+    if (httpBase)     logger.debug(`[Ping] HTTP fallback: ${httpBase} (tried if HTTPS .${qualifier}. TLS fails)`);
+    if (standardBase) logger.debug(`[Ping] Standard fallback: ${standardBase} (tried if ALL .${qualifier}. paths fail)`);
   }
 
   const outboundHeaders = {
@@ -204,62 +219,53 @@ router.post('/ping', authMiddleware, async (req, res) => {
   if (clientId) outboundHeaders['client_id'] = clientId;
   if (clientSecret) outboundHeaders['client_secret'] = clientSecret;
 
-  console.log('[Ping] Base URL:', base);
-  console.log('[Ping] Headers being sent:', {
-    'x-transaction-id': transactionId,
-    ...(bearerToken ? { Authorization: `Bearer ${bearerToken.slice(0, 20)}… (len ${bearerToken.length})` } : {}),
-    ...(clientId ? { client_id: `${clientId.slice(0, 6)}…` } : {}),
-    ...(clientSecret ? { client_secret: `${clientSecret.slice(0, 4)}… (len ${clientSecret.length})` } : {}),
-  });
+  logger.debug({ base }, '[Ping] Base URL');
+  logger.debug({
+    headers: {
+      'x-transaction-id': transactionId,
+      ...(bearerToken ? { Authorization: `Bearer ${bearerToken.slice(0, 20)}… (len ${bearerToken.length})` } : {}),
+      ...(clientId ? { client_id: `${clientId.slice(0, 6)}…` } : {}),
+      ...(clientSecret ? { client_secret: `${clientSecret.slice(0, 4)}… (len ${clientSecret.length})` } : {}),
+    },
+  }, '[Ping] Headers being sent');
 
   // Build the ordered URL list:
   //   1. HTTPS qualified (.fin.) paths  — tried first (correct URL, prefer HTTPS)
   //   2. HTTP qualified (.fin.) paths   — tried if HTTPS fails (some .fin. servers use HTTP)
   //   3. HTTPS standard paths           — final fallback (no qualifier)
-  const urlsToTry = [
-    // HTTPS .fin. paths
-    ...PING_PATHS.map(p => queryParams ? `${base}${p}?${queryParams}` : `${base}${p}`),
-    // HTTP .fin. paths (fallback when HTTPS TLS fails on internal FIN servers)
-    ...(httpBase ? PING_PATHS.map(p => queryParams ? `${httpBase}${p}?${queryParams}` : `${httpBase}${p}`) : []),
-    // Standard HTTPS paths (no .fin. qualifier — final fallback)
-    ...(standardBase ? PING_PATHS.map(p => queryParams ? `${standardBase}${p}?${queryParams}` : `${standardBase}${p}`) : []),
-  ];
+  //
+  // Paths WITHIN a phase are fired in PARALLEL (Promise.all) rather than
+  // sequentially: at most one path is expected to exist on a given app, so
+  // the others typically resolve fast anyway (404 / no-listener), and this
+  // caps a phase's duration at ~1 request instead of 6. Phases are still
+  // tried in order so the "correct" base URL is always preferred when it
+  // works. An overall deadline (PING_OVERALL_DEADLINE_MS) bounds the TOTAL
+  // time regardless of how many phases/paths remain.
+  const buildPhaseUrls = (b) => PING_PATHS.map(p => queryParams ? `${b}${p}?${queryParams}` : `${b}${p}`);
+  const phases = [
+    { label: 'https-qualified', urls: buildPhaseUrls(base) },
+    { label: 'http-qualified', urls: httpBase ? buildPhaseUrls(httpBase) : [] },
+    { label: 'standard-fallback', urls: standardBase ? buildPhaseUrls(standardBase) : [] },
+  ].filter((p) => p.urls.length > 0);
 
-  // Thresholds for phase-change logging
-  const httpsQualifiedCount = PING_PATHS.length;
-  const httpQualifiedCount  = httpBase ? PING_PATHS.length * 2 : PING_PATHS.length;
-  const qualifiedPathCount = PING_PATHS.length; // number of .fin. paths before fallback starts
-  let loggedHttpFallback = false;
-  let loggedStandardFallback = false;
   const attempts = [];
+  const deadlineAt = Date.now() + PING_OVERALL_DEADLINE_MS;
+  const controller = new AbortController();
+  const deadlineTimer = setTimeout(() => controller.abort(), PING_OVERALL_DEADLINE_MS);
 
-  for (let _i = 0; _i < urlsToTry.length; _i++) {
-    const url = urlsToTry[_i];
-
-    // Log when switching from HTTPS .fin. → HTTP .fin.
-    if (httpBase && _i === httpsQualifiedCount && !loggedHttpFallback) {
-      loggedHttpFallback = true;
-      console.log(`[Ping] HTTPS .${qualifier}. paths failed — now trying HTTP .${qualifier}.: ${httpBase}`);
-    }
-    // Log when switching from HTTP .fin. → standard HTTPS
-    if (standardBase && _i === httpQualifiedCount && !loggedStandardFallback) {
-      loggedStandardFallback = true;
-      console.log(`[Ping] All .${qualifier}. paths (HTTPS+HTTP) exhausted — now trying standard fallback: ${standardBase}`);
-    }
-
+  /** Try a single ping URL. Always resolves — never throws. */
+  const attemptOne = async (url) => {
     const t0 = Date.now();
-    console.log(`[Ping] → Trying: ${url}`);
-
     try {
       const response = await axios.get(url, {
         timeout: PING_TIMEOUT_MS,
         validateStatus: () => true,
         headers: outboundHeaders,
         maxRedirects: 5,
+        httpAgent: sharedHttpAgent,
         httpsAgent,
+        signal: controller.signal,
       });
-
-      console.log(`[Ping] ✓ ${url} → HTTP ${response.status} (${Date.now() - t0}ms)`);
 
       const responseTimeMs = Date.now() - t0;
       const httpStatus = response.status;
@@ -278,7 +284,6 @@ router.post('/ping', authMiddleware, async (req, res) => {
       try {
         attemptPayload = typeof response.data === 'object' ? response.data : String(response.data).slice(0, 2000);
       } catch {}
-      attempts.push({ url, httpStatus, responseTimeMs, payload: attemptPayload });
 
       const payloadStr = payload
         ? typeof payload === 'string' ? payload : JSON.stringify(payload)
@@ -305,10 +310,6 @@ router.post('/ping', authMiddleware, async (req, res) => {
         );
       })();
 
-      if (isAppLevel404) {
-        console.log(`[Ping] ${url} → 200 but app-level 404 detected (ENDPT_FAILURE/NOT_FOUND) — skipping to next path`);
-      }
-
       const isNoListener =
         httpStatus === 404 ||
         payloadStr.toLowerCase().includes('no listener for endpoint') ||
@@ -327,50 +328,27 @@ router.post('/ping', authMiddleware, async (req, res) => {
         (Array.isArray(payload.errors) && payload.errors.length > 0)
       );
 
+      logger.debug(`[Ping] ✓ ${url} → HTTP ${httpStatus} (${responseTimeMs}ms)${isAppLevel404 ? ' [app-level 404 — skipping]' : ''}`);
+
+      let success = null;
       if (httpStatus < 500 && !isNoListener) {
         const status =
           httpStatus >= 200 && httpStatus < 300 ? 'SUCCESS' :
           httpStatus >= 400 && httpStatus < 500 ? 'PARTIAL' : 'FAILED';
-        const result = { status, activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts };
-        
-        // Save to DB
-        if (orgId && envId) {
-          console.log(`[Ping DB] Saving SUCCESS for ${appName} org=${orgId} env=${envId}`);
-          db.run(
-            `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload, env_name, target_type, credentials, http_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [req.sessionID, orgId, envId, appName, Date.now(), status, responseTimeMs, url, JSON.stringify(payload), envName, targetType, credentialsLabel, httpStatus || null],
-            (err) => { if (err) console.error('[ping] Error saving history SUCCESS:', err.message, err); }
-          );
-        } else {
-          console.log(`[Ping DB] Skipping save SUCCESS because orgId or envId missing. orgId=${orgId}, envId=${envId}`);
-        }
-        
-        return res.json(result);
+        success = { status, activeEndpoint: url, responseTimeMs, httpStatus, payload };
+      } else if (httpStatus >= 500 && !isNoListener && hasMeaningfulBody) {
+        logger.debug(`[Ping] ${url} → ${httpStatus} with meaningful pingResponse body — marking PARTIAL (app reachable, downstream error)`);
+        success = { status: 'PARTIAL', activeEndpoint: url, responseTimeMs, httpStatus, payload };
       }
 
-      if (httpStatus >= 500 && !isNoListener && hasMeaningfulBody) {
-        console.log(`[Ping] ${url} → ${httpStatus} with meaningful pingResponse body — marking PARTIAL (app reachable, downstream error)`);
-        const result = { status: 'PARTIAL', activeEndpoint: url, responseTimeMs, httpStatus, payload, attempts };
-        
-        // Save to DB
-        if (orgId && envId) {
-          console.log(`[Ping DB] Saving PARTIAL for ${appName} org=${orgId} env=${envId}`);
-          db.run(
-            `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload, env_name, target_type, credentials, http_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [req.sessionID, orgId, envId, appName, Date.now(), 'PARTIAL', responseTimeMs, url, JSON.stringify(payload), envName, targetType, credentialsLabel, httpStatus || null],
-            (err) => { if (err) console.error('[ping] Error saving history PARTIAL:', err.message, err); }
-          );
-        } else {
-          console.log(`[Ping DB] Skipping save PARTIAL because orgId or envId missing. orgId=${orgId}, envId=${envId}`);
-        }
-
-        return res.json(result);
-      }
+      return { attempt: { url, httpStatus, responseTimeMs, payload: attemptPayload }, success };
     } catch (err) {
       const responseTimeMs = Date.now() - t0;
       let errorDetail = err.message;
 
-      if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+      if (controller.signal.aborted) {
+        errorDetail = `Overall ping deadline (${PING_OVERALL_DEADLINE_MS}ms) exceeded`;
+      } else if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
         errorDetail = `Timeout after ${PING_TIMEOUT_MS}ms`;
       } else if (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN') {
         errorDetail = 'DNS resolution failed — host unreachable';
@@ -380,15 +358,59 @@ router.post('/ping', authMiddleware, async (req, res) => {
         errorDetail = 'SSL certificate error';
       }
 
-      console.log(`[Ping] ✗ ${url} → ${errorDetail} (${responseTimeMs}ms)`);
-      attempts.push({ url, error: errorDetail, responseTimeMs, payload: null });
+      logger.debug(`[Ping] ✗ ${url} → ${errorDetail} (${responseTimeMs}ms)`);
+      return { attempt: { url, error: errorDetail, responseTimeMs, payload: null }, success: null };
     }
+  };
+
+  let finalResult = null;
+
+  for (const phase of phases) {
+    if (Date.now() >= deadlineAt) {
+      logger.debug(`[Ping] Overall deadline (${PING_OVERALL_DEADLINE_MS}ms) reached — stopping before phase "${phase.label}"`);
+      break;
+    }
+    if (phase.label === 'http-qualified') {
+      logger.debug(`[Ping] HTTPS .${qualifier}. paths failed — now trying HTTP .${qualifier}.: ${httpBase}`);
+    } else if (phase.label === 'standard-fallback') {
+      logger.debug(`[Ping] Qualified paths exhausted — now trying standard fallback: ${standardBase}`);
+    }
+    logger.debug(`[Ping] Phase "${phase.label}" — trying ${phase.urls.length} path(s) in parallel`);
+
+    const settled = await Promise.all(phase.urls.map(attemptOne));
+    for (const { attempt, success } of settled) {
+      attempts.push(attempt);
+      if (!finalResult && success) finalResult = success; // first success in path order wins
+    }
+    if (finalResult) break;
+  }
+
+  clearTimeout(deadlineTimer);
+
+  if (finalResult) {
+    const result = { ...finalResult, attempts };
+
+    if (orgId && envId) {
+      logger.debug(`[Ping DB] Saving ${finalResult.status} for ${appName} org=${orgId} env=${envId}`);
+      db.run(
+        `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload, env_name, target_type, credentials, http_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.sessionID, orgId, envId, appName, Date.now(), finalResult.status, finalResult.responseTimeMs, finalResult.activeEndpoint, JSON.stringify(finalResult.payload), envName, targetType, credentialsLabel, finalResult.httpStatus || null],
+        (err) => { if (err) logger.error({ err }, '[ping] Error saving history'); }
+      );
+    } else {
+      logger.debug(`[Ping DB] Skipping save because orgId or envId missing. orgId=${orgId}, envId=${envId}`);
+    }
+
+    return res.json(result);
   }
 
   // Build a human-readable summary of why all paths failed
+  const deadlineHit = Date.now() >= deadlineAt;
   const errorTypes = [...new Set(attempts.map(a => a.error).filter(Boolean))];
   let summary = 'All ping paths unreachable';
-  if (errorTypes.some(e => e.includes('ECONNREFUSED') || e.includes('Connection refused'))) {
+  if (deadlineHit) {
+    summary = `Ping aborted after the overall ${PING_OVERALL_DEADLINE_MS / 1000}s time budget was exhausted trying all candidate paths.`;
+  } else if (errorTypes.some(e => e.includes('ECONNREFUSED') || e.includes('Connection refused'))) {
     summary = 'Connection refused — app port is not accepting connections. The app may be stopped or crashed.';
   } else if (errorTypes.some(e => e.includes('Timeout') || e.includes('ETIMEDOUT') || e.includes('ECONNABORTED'))) {
     summary = `Request timed out after ${PING_TIMEOUT_MS / 1000}s — the app may be overloaded, or a firewall/VPC rule is blocking the connection.`;
@@ -412,14 +434,14 @@ router.post('/ping', authMiddleware, async (req, res) => {
 
   // Save failed ping to DB
   if (orgId && envId) {
-    console.log(`[Ping DB] Saving FAILED for ${appName} org=${orgId} env=${envId}`);
+    logger.debug(`[Ping DB] Saving FAILED for ${appName} org=${orgId} env=${envId}`);
     db.run(
       `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, error, env_name, target_type, credentials) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [req.sessionID, orgId, envId, appName, Date.now(), 'FAILED', summary, envName, targetType, credentialsLabel],
-      (err) => { if (err) console.error('[ping] Error saving history FAILED:', err.message, err); }
+      (err) => { if (err) logger.error({ err }, '[ping] Error saving history FAILED'); }
     );
   } else {
-    console.log(`[Ping DB] Skipping save FAILED because orgId or envId missing. orgId=${orgId}, envId=${envId}`);
+    logger.debug(`[Ping DB] Skipping save FAILED because orgId or envId missing. orgId=${orgId}, envId=${envId}`);
   }
 
   return res.json(result);
@@ -441,7 +463,7 @@ router.get('/ping/history', authMiddleware, (req, res) => {
 
   db.all(query, params, (err, rows) => {
     if (err) {
-      console.error('[ping/history] Error fetching history:', err.message);
+      logger.error({ err }, '[ping/history] Error fetching history');
       return res.status(500).json({ error: 'Failed to fetch ping history' });
     }
     const history = rows.map(r => {
@@ -482,37 +504,12 @@ router.delete('/ping/history', authMiddleware, (req, res) => {
 
   db.run(query, params, (err) => {
     if (err) {
-      console.error('[ping/history] Error deleting history:', err.message);
+      logger.error({ err }, '[ping/history] Error deleting history');
       return res.status(500).json({ error: 'Failed to clear history' });
     }
     return res.json({ success: true });
   });
 });
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Normalize a name for fuzzy matching:
- *   - strip deployment/version suffixes (via shared stripDeploymentSuffix)
- *   - replace hyphens / underscores / dots with space
- *   - collapse whitespace
- *
- * Uses stripDeploymentSuffix from appHelpers so the regex rules stay in sync
- * with the Exchange search normalization in exchange.js.
- */
-function normalizeName(name) {
-  return stripDeploymentSuffix(name)
-    .replace(/[-_.]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function isMatch(appName, apiLabel) {
-  const a = normalizeName(appName);
-  const b = normalizeName(apiLabel);
-  if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
-}
 
 // ─── POST /api/health/auto-credentials ───────────────────────────────────────
 /**
@@ -538,133 +535,11 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
     const client = createClient(req.anypointToken);
     const searchOrgId = (apiMgrOrgId && apiMgrOrgId !== orgId) ? apiMgrOrgId : orgId;
 
-    console.log(`[auto-credentials] Request — appName="${appName}" apiId=${apiId || 'null'} assetId=${assetId || 'null'} org=${searchOrgId} env=${envId}`);
-
-    // ── Shared helpers ──────────────────────────────────────────────────────
-
-    /** Flatten an API Manager list response (assets[] or apis[] shape) into a flat array. */
-    function flattenApiResponse(data) {
-      const assets = data?.assets;
-      if (Array.isArray(assets) && assets.length > 0) {
-        return assets.flatMap(asset =>
-          (asset.apis || []).map(api => ({
-            ...api,
-            assetId: api.assetId || asset.assetId,
-            asset: {
-              assetId: asset.assetId,
-              exchangeAssetName: asset.exchangeAssetName || asset.assetId,
-              ...(api.asset || {}),
-            },
-          }))
-        );
-      }
-      const raw = data?.apis || data?.data || [];
-      return Array.isArray(raw) ? raw : [];
-    }
-
-    /** Fetch ALL API Manager instances for org+env using pagination (100/page). */
-    async function fetchAllApisForEnv(oId, eId, filterAssetId) {
-      const PAGE = 100;
-      let offset = 0;
-      let all = [];
-      try {
-        while (true) {
-          const params = { limit: PAGE, offset };
-          if (filterAssetId) params.assetId = filterAssetId;
-          const r = await client.get(
-            `/apimanager/api/v1/organizations/${oId}/environments/${eId}/apis`,
-            { params }
-          );
-          const page = flattenApiResponse(r.data);
-          all = all.concat(page);
-          const total = r.data?.total ?? page.length;
-          if (all.length >= total || page.length < PAGE) break;
-          offset += PAGE;
-        }
-      } catch { /* return what we have so far */ }
-      return all;
-    }
-
-    /** Fetch approved contracts for one API instance and return normalized rows. */
-    async function extractContractClientIds(oId, eId, api) {
-      const apiLabel =
-        api.instanceLabel ||
-        api.asset?.exchangeAssetName ||
-        api.asset?.assetId ||
-        String(api.id);
-      try {
-        const r = await client.get(
-          `/apimanager/api/v1/organizations/${oId}/environments/${eId}/apis/${api.id}/contracts`
-        );
-        const raw = r.data?.contracts || r.data || [];
-        return (Array.isArray(raw) ? raw : [])
-          .filter(c => (c.status || '').toUpperCase() === 'APPROVED')
-          .map(c => ({
-            clientId:
-              c.application?.coreServicesId ||
-              c.application?.clientId ||
-              c.application?.credentials?.clientId ||
-              c.clientApplication?.coreServicesId ||
-              c.clientId ||
-              c.credentials?.clientId ||
-              null,
-            apiInstanceName: apiLabel,
-            apiInstanceId: api.id,
-            contractApp: c.application?.name || 'Unknown',
-          }))
-          .filter(x => x.clientId);
-      } catch (err) {
-        console.warn(`[auto-credentials] contracts fetch failed for API ${api.id}:`, err.message);
-        return [];
-      }
-    }
-
-    /** Collect unique clientIds from up to 5 API instances in parallel. */
-    async function collectCandidates(oId, eId, matchedApis) {
-      const seen = new Set();
-      const allCandidates = [];
-      const matchInfo = [];
-      await Promise.allSettled(
-        matchedApis.slice(0, 5).map(async api => {
-          const rows = await extractContractClientIds(oId, eId, api);
-          for (const row of rows) {
-            if (!seen.has(row.clientId)) {
-              seen.add(row.clientId);
-              allCandidates.push(row.clientId);
-              matchInfo.push(row);
-            }
-          }
-        })
-      );
-      return { allCandidates, matchInfo };
-    }
-
-    /** Fuzzy-filter a list of API instances against the app name. */
-    function fuzzyMatch(apis) {
-      return apis.filter(api => {
-        const labels = [
-          api.instanceLabel,
-          api.asset?.exchangeAssetName,
-          api.asset?.assetId,
-          api.asset?.name,
-          api.assetId,
-        ].filter(Boolean);
-        return labels.some(l => isMatch(appName, l));
-      });
-    }
-
-    /** Get all environments for an org. */
-    async function getOrgEnvs(oId) {
-      try {
-        const r = await client.get(`/accounts/api/organizations/${oId}/environments`);
-        const list = r.data?.data || r.data?.environments || r.data || [];
-        return Array.isArray(list) ? list : [];
-      } catch { return []; }
-    }
+    logger.debug(`[auto-credentials] Request — appName="${appName}" apiId=${apiId || 'null'} assetId=${assetId || 'null'} org=${searchOrgId} env=${envId}`);
 
     /** Build a result response and send it. */
-    function sendResult(res, allCandidates, matchInfo, matchedApis, layer) {
-      console.log(`[auto-credentials] ✅ Layer ${layer} — ${allCandidates.length} clientId(s) for "${appName}"`);
+    const sendResult = (allCandidates, matchInfo, matchedApis, layer) => {
+      logger.info(`[auto-credentials] Layer ${layer} — ${allCandidates.length} clientId(s) for "${appName}"`);
       return res.json({
         found: allCandidates.length > 0,
         candidates: allCandidates,
@@ -675,57 +550,57 @@ router.post('/auto-credentials', authMiddleware, async (req, res) => {
         })),
         resolvedLayer: layer,
       });
-    }
+    };
 
     // ── LAYER 1: Direct api.id lookup ─────────────────────────────────────
     if (apiId && apiId !== '0') {
-      console.log(`[auto-credentials] Layer 1 — direct api.id="${apiId}"`);
-      const envIds = [envId, ...(await getOrgEnvs(searchOrgId)).map(e => e.id).filter(id => id !== envId)];
+      logger.debug(`[auto-credentials] Layer 1 — direct api.id="${apiId}"`);
+      const envIds = [envId, ...(await getOrgEnvs(client, searchOrgId)).map(e => e.id).filter(id => id !== envId)];
       for (const eid of envIds) {
         try {
           const r = await client.get(
             `/apimanager/api/v1/organizations/${searchOrgId}/environments/${eid}/apis/${apiId}`
           );
           if (r.data?.id) {
-            const { allCandidates, matchInfo } = await collectCandidates(searchOrgId, eid, [r.data]);
+            const { allCandidates, matchInfo } = await collectCandidates(client, searchOrgId, eid, [r.data]);
             if (allCandidates.length > 0) {
-              return sendResult(res, allCandidates, matchInfo, [r.data], 1);
+              return sendResult(allCandidates, matchInfo, [r.data], 1);
             }
           }
         } catch { /* try next env */ }
       }
-      console.log('[auto-credentials] Layer 1 — no contracts found, falling through to Layer 2');
+      logger.debug('[auto-credentials] Layer 1 — no contracts found, falling through to Layer 2');
     }
 
     // ── LAYER 2: assetId-filtered paginated search ────────────────────────
     if (assetId) {
-      console.log(`[auto-credentials] Layer 2 — assetId-filtered search: "${assetId}"`);
-      const apis = await fetchAllApisForEnv(searchOrgId, envId, assetId);
+      logger.debug(`[auto-credentials] Layer 2 — assetId-filtered search: "${assetId}"`);
+      const apis = await fetchAllApisForEnv(client, searchOrgId, envId, assetId);
       if (apis.length > 0) {
-        const { allCandidates, matchInfo } = await collectCandidates(searchOrgId, envId, apis);
+        const { allCandidates, matchInfo } = await collectCandidates(client, searchOrgId, envId, apis);
         if (allCandidates.length > 0) {
-          return sendResult(res, allCandidates, matchInfo, apis, 2);
+          return sendResult(allCandidates, matchInfo, apis, 2);
         }
       }
-      console.log('[auto-credentials] Layer 2 — no contracts found, falling through to Layer 3');
+      logger.debug('[auto-credentials] Layer 2 — no contracts found, falling through to Layer 3');
     }
 
     // ── LAYER 3: Paginated fuzzy name search — deployment env only ────────
-    console.log(`[auto-credentials] Layer 3 — paginated fuzzy search in env ${envId}`);
+    logger.debug(`[auto-credentials] Layer 3 — paginated fuzzy search in env ${envId}`);
     {
-      const apis = await fetchAllApisForEnv(searchOrgId, envId);
-      const matched = fuzzyMatch(apis);
-      console.log(`[auto-credentials] Layer 3 — ${apis.length} instances, ${matched.length} match(es)`);
+      const apis = await fetchAllApisForEnv(client, searchOrgId, envId);
+      const matched = fuzzyMatchApis(apis, appName);
+      logger.debug(`[auto-credentials] Layer 3 — ${apis.length} instances, ${matched.length} match(es)`);
       if (matched.length > 0) {
-        const { allCandidates, matchInfo } = await collectCandidates(searchOrgId, envId, matched);
+        const { allCandidates, matchInfo } = await collectCandidates(client, searchOrgId, envId, matched);
         if (allCandidates.length > 0) {
-          return sendResult(res, allCandidates, matchInfo, matched, 3);
+          return sendResult(allCandidates, matchInfo, matched, 3);
         }
       }
     }
 
     // All layers exhausted
-    console.log(`[auto-credentials] All layers exhausted — no API Manager instance found for "${appName}"`);
+    logger.info(`[auto-credentials] All layers exhausted — no API Manager instance found for "${appName}"`);
     return res.json({
       found: false,
       candidates: [],
@@ -759,7 +634,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
     const client = createClient(req.anypointToken);
 
     // 1. List user's Exchange applications
-    console.log(`[auto-contract-creds] Listing user apps for org ${orgId}`);
+    logger.debug(`[auto-contract-creds] Listing user apps for org ${orgId}`);
     let userApps = [];
     try {
       const appsRes = await client.get(
@@ -768,7 +643,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       );
       userApps = Array.isArray(appsRes.data) ? appsRes.data : (appsRes.data?.applications || appsRes.data?.data || []);
     } catch (e) {
-      console.warn('[auto-contract-creds] Could not list user apps:', e.message);
+      logger.warn({ err: e }, '[auto-contract-creds] Could not list user apps');
     }
 
     if (userApps.length === 0) {
@@ -777,10 +652,10 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
         contractStatus: 'no-apps'
       });
     }
-    console.log(`[auto-contract-creds] Found ${userApps.length} user app(s)`);
+    logger.debug(`[auto-contract-creds] Found ${userApps.length} user app(s)`);
 
     // 2. Fetch existing contracts on this API
-    console.log(`[auto-contract-creds] Fetching existing contracts for API ${apiId}`);
+    logger.debug(`[auto-contract-creds] Fetching existing contracts for API ${apiId}`);
     let existingContracts = [];
     try {
       const contractsRes = await client.get(
@@ -788,7 +663,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       );
       existingContracts = contractsRes.data?.contracts || contractsRes.data || [];
     } catch (e) {
-      console.warn('[auto-contract-creds] Could not fetch contracts:', e.message);
+      logger.warn({ err: e }, '[auto-contract-creds] Could not fetch contracts');
     }
 
     const userAppIds = new Set(userApps.map(a => String(a.id)));
@@ -802,7 +677,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
     if (existingApproved) {
       const appId = existingApproved.application?.id || existingApproved.applicationId;
       const appName = existingApproved.application?.name || 'User App';
-      console.log(`[auto-contract-creds] Found existing approved contract for app ${appName} (${appId})`);
+      logger.debug(`[auto-contract-creds] Found existing approved contract for app ${appName} (${appId})`);
       const creds = await fetchExchangeAppCreds(client, orgId, appId);
       if (creds.clientId && creds.clientSecret) {
         return res.json({ ...creds, contractStatus: 'approved', appName, appId });
@@ -819,7 +694,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       const appId = existingPendingAny.application?.id || existingPendingAny.applicationId;
       const appName = existingPendingAny.application?.name || 'User App';
       const status = (existingPendingAny.status || 'PENDING').toLowerCase();
-      console.log(`[auto-contract-creds] Found existing ${status.toUpperCase()} contract for app ${appName} (${appId}) — returning status only`);
+      logger.debug(`[auto-contract-creds] Found existing ${status.toUpperCase()} contract for app ${appName} (${appId}) — returning status only`);
       const creds = await fetchExchangeAppCreds(client, orgId, appId);
       return res.json({ clientId: creds.clientId, clientSecret: creds.clientSecret, contractStatus: status, appName, appId });
     }
@@ -831,7 +706,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
     const isProd =
       (envType || '').toLowerCase() === 'production' ||
       /(?:^|[-_ ])prod$/i.test((envName || '').trim());
-    console.log(`[auto-contract-creds] isProd=${isProd} (envType="${envType || ''}", envName="${envName || ''}")`);
+    logger.debug(`[auto-contract-creds] isProd=${isProd} (envType="${envType || ''}", envName="${envName || ''}")`);
     const nameLo = (a) => (a.name || '').toLowerCase();
 
     const targetApp =
@@ -843,7 +718,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       userApps[0];
     const targetAppId = targetApp.id;
     const targetAppName = targetApp.name || 'User App';
-    console.log(`[auto-contract-creds] No existing contract found — creating for app "${targetAppName}" (${targetAppId})`);
+    logger.debug(`[auto-contract-creds] No existing contract found — creating for app "${targetAppName}" (${targetAppId})`);
 
     // Double-check this specific app doesn't already have a contract (safety net)
     const existingPending = existingContracts.find(c =>
@@ -889,7 +764,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
         ...pingOnlyApps.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
         ...otherApps2.filter(a => !seen.has(String(a.id)) && seen.add(String(a.id))),
       ];
-      console.log(`[auto-contract-creds] Candidate apps (${isProd ? 'PROD' : 'stage'}): ${candidateApps.map(a => a.name).join(', ')}`);
+      logger.debug(`[auto-contract-creds] Candidate apps (${isProd ? 'PROD' : 'stage'}): ${candidateApps.map(a => a.name).join(', ')}`);
       let created = false;
       let lastErr = null;
 
@@ -902,7 +777,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
             contractBody
           );
           contractStatus = (createRes.data?.status || 'pending').toLowerCase();
-          console.log(`[auto-contract-creds] Contract created with app "${candidateApp.name}" (${candidateApp.id}), status: ${contractStatus}`);
+          logger.debug(`[auto-contract-creds] Contract created with app "${candidateApp.name}" (${candidateApp.id}), status: ${contractStatus}`);
           Object.assign(targetApp, { id: candidateApp.id, name: candidateApp.name });
           created = true;
           break;
@@ -910,11 +785,11 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
           const msg = createErr.response?.data?.message || createErr.message || '';
           const isIdpConflict = msg.toLowerCase().includes('idp') || msg.toLowerCase().includes('identity');
           if (isIdpConflict) {
-            console.log(`[auto-contract-creds] IDP conflict for app "${candidateApp.name}" — trying next app`);
+            logger.debug(`[auto-contract-creds] IDP conflict for app "${candidateApp.name}" — trying next app`);
             lastErr = createErr;
             continue;
           }
-          console.warn('[auto-contract-creds] Could not create contract:', createErr.response?.data || msg);
+          logger.warn({ detail: createErr.response?.data || msg }, '[auto-contract-creds] Could not create contract');
           return res.status(createErr.response?.status || 500).json({
             error: msg || 'Failed to create contract',
             contractStatus: 'error',
@@ -926,7 +801,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
 
       if (!created) {
         const errMsg = lastErr?.response?.data?.message || lastErr?.message || 'All available apps have IDP conflicts with this API instance';
-        console.warn('[auto-contract-creds] Could not create contract with any app:', errMsg);
+        logger.warn({ errMsg }, '[auto-contract-creds] Could not create contract with any app');
         return res.status(409).json({
           error: errMsg,
           contractStatus: 'error',
@@ -935,7 +810,7 @@ router.post('/auto-contract-creds', authMiddleware, async (req, res) => {
       }
     } else {
       contractStatus = (existingPending.status || 'pending').toLowerCase();
-      console.log(`[auto-contract-creds] Contract already exists with status: ${contractStatus}`);
+      logger.debug(`[auto-contract-creds] Contract already exists with status: ${contractStatus}`);
     }
 
     // 4. Fetch credentials for the user app

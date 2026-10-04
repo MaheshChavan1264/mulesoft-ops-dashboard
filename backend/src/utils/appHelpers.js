@@ -111,6 +111,72 @@ const stripDeploymentSuffix = (name) =>
     // Strip bare version suffix: v1, v2.0
     .replace(/\bv\d+(\.\d+)*$/i, '');
 
+// ── Accessible-environment flattening ─────────────────────────────────────────
+
+/**
+ * Build the `{ orgId, env }[]` pairs a request should operate on, given the
+ * session's `accessibleEnvironments` map (orgId → env[]) and the org the
+ * caller asked for.
+ *
+ * Three near-identical versions of this logic used to live inline in
+ * routes/environments.js, routes/metrics.js and routes/applications.js
+ * (`_fetchSummary`) — this is the single shared implementation.
+ *
+ * Behaviour:
+ *  - If `targetOrgId` has its own entry with environments, use only those
+ *    (a specific business group was selected).
+ *  - Otherwise (root org, or a BG with no direct environments) aggregate
+ *    across every org in the map — this is the "show everything accessible"
+ *    case.
+ *  - Always filtered through `isProductionEnv` (excludes qa/dev envs) and
+ *    deduplicated by environment id.
+ *
+ * @param {Record<string, Array<{id:string}>>} accessibleEnvironments  req.accessibleEnvironments
+ * @param {string} [targetOrgId]  Org the caller asked for; omit to aggregate everything.
+ * @returns {Array<{ orgId: string, env: object }>}
+ */
+function getAccessibleEnvPairs(accessibleEnvironments, targetOrgId) {
+  const targetEnvs = targetOrgId ? accessibleEnvironments[targetOrgId] : null;
+  const seen = new Set();
+  const pairs = [];
+
+  const pushPair = (orgId, env) => {
+    if (!isProductionEnv(env) || seen.has(env.id)) return;
+    seen.add(env.id);
+    pairs.push({ orgId, env });
+  };
+
+  if (targetEnvs?.length > 0) {
+    for (const env of targetEnvs) pushPair(targetOrgId, env);
+  } else {
+    for (const [orgId, envs] of Object.entries(accessibleEnvironments || {})) {
+      for (const env of envs) pushPair(orgId, env);
+    }
+  }
+  return pairs;
+}
+
+// ── Production-environment detection (by name, not by excluding qa/dev) ───────
+
+/**
+ * Detect whether an environment should be treated as "production" for the
+ * purposes of CH1 domain selection, auto-contract app targeting, etc.
+ *
+ * This is a DIFFERENT concept from `isProductionEnv` above (which filters
+ * OUT qa/dev envs from env lists): `isProdEnvironment` answers "is this
+ * specifically the prod env", used to decide which internal domain / which
+ * Exchange app to target. The same `envType === 'production' OR envName
+ * ends with -PROD/_PROD` regex used to live duplicated 3x in health.js
+ * (`buildBaseUrl`, `/ping`, `/auto-contract-creds`).
+ *
+ * @param {string} [envType]  e.g. 'production' | 'sandbox' | 'design'
+ * @param {string} [envName]  full env display name, e.g. "MY-ORG-PROD"
+ * @returns {boolean}
+ */
+const isProdEnvironment = (envType, envName) =>
+  (envType || '').toLowerCase() === 'production' ||
+  /(?:^|[-_ ])prod$/i.test((envName || '').trim());
+
 module.exports = {
   isProductionEnv,
   uniqueProductionEnvs,
@@ -118,4 +184,6 @@ module.exports = {
   normalizeStatus,
   makeCh1Headers,
   stripDeploymentSuffix,
+  getAccessibleEnvPairs,
+  isProdEnvironment,
 };

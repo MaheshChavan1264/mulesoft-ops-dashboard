@@ -2,6 +2,7 @@ const { Store } = require('express-session');
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const fs = require('fs');
+const logger = require('./logger');
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
@@ -33,7 +34,7 @@ class SQLiteSessionStore extends Store {
     try {
       this.db.prepare('DELETE FROM sessions WHERE expired < ?').run(Date.now());
     } catch (err) {
-      console.error('[SessionStore] prune error:', err.message);
+      logger.error({ err }, '[SessionStore] prune error');
     }
   }
 

@@ -1,6 +1,7 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const fs = require('fs');
+const logger = require('./logger');
 
 const DB_DIR = path.join(__dirname, '..', '..', 'data');
 if (!fs.existsSync(DB_DIR)) {
@@ -10,7 +11,7 @@ if (!fs.existsSync(DB_DIR)) {
 const dbPath = path.join(DB_DIR, 'app.db');
 
 const sqlite = new DatabaseSync(dbPath);
-console.log('[DB] Connected to application database (app.db).');
+logger.info('[DB] Connected to application database (app.db).');
 
 const db = {
   run(sql, params, callback) {
@@ -29,7 +30,7 @@ const db = {
       if (typeof callback === 'function') {
         callback.call({}, err);
       } else {
-        console.error('[DB] run error:', err.message);
+        logger.error({ err }, '[DB] run error');
       }
     }
     return db;
@@ -73,7 +74,7 @@ const db = {
       if (typeof callback === 'function') callback(null);
     } catch (err) {
       if (typeof callback === 'function') callback(err);
-      else console.error('[DB] exec error:', err.message);
+      else logger.error({ err }, '[DB] exec error');
     }
     return db;
   },
@@ -127,6 +128,29 @@ db.serialize(() => {
   addColumnIfMissing('http_status', 'INTEGER');
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_ping_history_session_app ON ping_history(session_id, org_id, env_id, app_name)`);
+
+  // ── CPS write/delete/auth-change audit trail ───────────────────────────
+  // CPS write operations mutate real production configuration (property
+  // values, access-control lists, binaries) but were previously only
+  // logged to console.* with no durable record of who changed what.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS cps_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      username TEXT,
+      timestamp INTEGER NOT NULL,
+      operation TEXT NOT NULL,
+      cps_base_url TEXT,
+      project_key TEXT,
+      environment TEXT,
+      prop_type TEXT,
+      success INTEGER NOT NULL,
+      http_status INTEGER,
+      detail TEXT
+    )
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_cps_audit_log_time ON cps_audit_log(timestamp)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_cps_audit_log_project ON cps_audit_log(cps_base_url, project_key)`);
 });
 
 module.exports = db;
