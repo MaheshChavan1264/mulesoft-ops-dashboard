@@ -89,12 +89,20 @@ export function aoaToWorksheet(aoa, { colWidths } = {}) {
  * Assemble a workbook from one or more named worksheets and trigger the
  * browser download. Sheet names are sanitized/truncated automatically.
  *
- * `bookSST: true` forces SheetJS to emit a proper Shared Strings Table
- * (xl/sharedStrings.xml) with `t="s"` cell references. Without it, SheetJS
- * writes plain string cells as `t="str"` — a type ECMA-376 reserves for
- * cached *formula* results — which Excel tolerates but stricter readers
- * (Zoho Sheets, some LibreOffice/Google Sheets import paths) flag as a
- * corrupt/invalid file on open.
+ * Two SheetJS writer quirks are disabled here because they produced files
+ * that Excel opens fine but stricter OOXML readers (Zoho Sheet, some
+ * LibreOffice/Google Sheets import paths) flag as corrupt and offer to
+ * "repair":
+ *   - `bookSST: true` forces a proper Shared Strings Table
+ *     (xl/sharedStrings.xml) with `t="s"` cell references. Without it,
+ *     SheetJS writes plain string cells as `t="str"` — a type ECMA-376
+ *     reserves for cached *formula* results, not literal strings.
+ *   - `ignoreEC: false` suppresses the `<ignoredErrors>` "number stored as
+ *     text" annotation SheetJS otherwise adds for the *entire* used range
+ *     on any sheet containing at least one string cell — even when most
+ *     cells in that range are plainly non-numeric text (e.g. headers).
+ *     This is purely an Excel UI hint (the little green corner triangle);
+ *     dropping it does not change any cell data.
  *
  * @param {Array<{name: string, worksheet: XLSX.WorkSheet}>} sheets
  * @param {string} filename
@@ -104,7 +112,7 @@ export function writeWorkbook(sheets, filename) {
   sheets.forEach(({ name, worksheet }) => {
     XLSX.utils.book_append_sheet(wb, worksheet, sanitizeSheetName(name));
   });
-  XLSX.writeFile(wb, filename, { bookSST: true });
+  XLSX.writeFile(wb, filename, { bookSST: true, ignoreEC: false });
 }
 
 /**
