@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Clock, Zap, Activity, Key, RefreshCw, X, Search, Power, CheckSquare, Square } from 'lucide-react';
 import cronstrue from 'cronstrue';
 import { fetchCpsProperties } from '../../../services/cpsService';
@@ -30,9 +30,43 @@ export default function InfrastructureTab({
     return !cpsSchedulerProps[propName] && !cpsSchedulerProps[propName.toLowerCase()] && !allProps[propName];
   });
 
-  const visibleKeys = schedulers.map((s, i) => s.name || s.schedulerName || s.flow || s.flowName || `scheduler-${i}`);
+  // Best-effort Anypoint identifier — falls back to flow name when the API
+  // omits a dedicated `name`/`schedulerName` field. Two distinct schedulers
+  // CAN legitimately share this (e.g. the same flow scheduled twice), so it
+  // must never be used alone as a React key or Set-selection identity.
+  // Per Mulesoft's AMC API docs, `flowName` is the real identifier the
+  // PUT/POST/DELETE scheduler endpoints expect — prioritize it over the
+  // speculative `name`/`schedulerName`/`flow` fallbacks.
+  const schedulerKeyOf = (s, i) => s.flowName || s.name || s.schedulerName || s.flow || `scheduler-${i}`;
+
+  // Computed over the full unfiltered list (not the search-filtered
+  // `schedulers`) — a real collision between two schedulers in this app
+  // shouldn't become invisible just because the search box hides one of them.
+  const ambiguousKeySet = useMemo(() => {
+    const counts = new Map();
+    allSchedulers.forEach((s, i) => {
+      const k = schedulerKeyOf(s, i);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    });
+    return new Set([...counts.entries()].filter(([, c]) => c > 1).map(([k]) => k));
+  }, [allSchedulers]);
+
+  // rowId guarantees per-row uniqueness (index-suffixed) for React keys and
+  // selection, independent of whether schedulerKey itself collides.
+  const rowIdOf = (s, i) => `${schedulerKeyOf(s, i)}::${i}`;
+
+  const visibleKeys = schedulers.map((s, i) => rowIdOf(s, i));
   const selectedVisibleCount = visibleKeys.filter(k => selectedSchedulers.has(k)).length;
   const allVisibleSelected = visibleKeys.length > 0 && selectedVisibleCount === visibleKeys.length;
+
+  // Bulk actions must send the real Anypoint identifier, not the
+  // uniqueness-only rowId — and must skip ambiguous rows for the same
+  // reason the per-row buttons are disabled on them.
+  const rowIdToKey = new Map(schedulers.map((s, i) => [rowIdOf(s, i), schedulerKeyOf(s, i)]));
+  const selectedSchedulerKeys = (keys) => keys
+    .filter(k => selectedSchedulers.has(k) && !ambiguousKeySet.has(rowIdToKey.get(k)))
+    .map(k => rowIdToKey.get(k));
+
 
   const toggleSelectAll = () => {
     setSelectedSchedulers(prev => {
@@ -53,6 +87,84 @@ export default function InfrastructureTab({
       return next;
     });
   };
+
+  // Precompute the expensive/pure per-row derivations once per actual data
+  // change (schedulers list, resolved CPS/runtime props) instead of on every
+  // render of this tab — cronstrue parsing + the cron next-run search (see
+  // shared.jsx's getNextCronRun) are non-trivial work that doesn't need to
+  // redo itself just because e.g. the search box text or a loading flag changed.
+  const enrichedSchedulers = useMemo(() => schedulers.map((s, i) => {
+    // CH2 uses s.schedule.expression; CH1 uses s.schedule.cronExpression or s.expression
+    const rawCron = s.schedule?.cronExpression ||
+                    s.schedule?.expression ||
+                    s.expression ||
+                    s.cronExpression;
+    // Scheduler-configured timezone (CH2 returns this in schedule.timeZone)
+    const rawTz = s.schedule?.timeZone || s.schedule?.timezone || s.timeZone || s.timezone || null;
+    // Resolve ${...} placeholders in timezone value (same as cron expression)
+    const schedulerTz = rawTz?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
+      allProps[propName] ||
+      allProps[propName.toLowerCase()] ||
+      cpsSchedulerProps[propName] ||
+      cpsSchedulerProps[propName.toLowerCase()] ||
+      cpsData?.nonSecure?.[propName] ||
+      match
+    ) || null;
+    // Resolve ${propName} placeholders: check runtime props first, then CPS props
+    const resolvedCron = rawCron?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
+      allProps[propName] ||
+      allProps[propName.toLowerCase()] ||
+      cpsSchedulerProps[propName] ||
+      cpsSchedulerProps[propName.toLowerCase()] ||
+      cpsData?.nonSecure?.[propName] ||
+      match
+    );
+    const isUnresolvedPlaceholder = rawCron?.startsWith('${') && resolvedCron === rawCron;
+    const wasResolved = rawCron !== resolvedCron;
+    const cron = resolvedCron; // display the resolved value
+    let decodedCron = '';
+    if (cron && !isUnresolvedPlaceholder) {
+      try {
+        decodedCron = cronstrue.toString(cron, { throwExceptionOnParseError: true });
+      } catch (e) {
+        // ignore parsing errors (e.g. non-standard crons)
+      }
+    }
+    // Compute next run from cron expression (works for both CH1 and CH2 since
+    // the Anypoint Platform schedulers API does not return nextRun reliably).
+    // Only compute for ENABLED schedulers — a disabled scheduler has no next run.
+    const active = s.enabled!==false;
+    const computedNextRun = (cron && !isUnresolvedPlaceholder && active) ? getNextCronRun(cron) : null;
+    // CH2 fixed-frequency: s.schedule.frequency; CH1: s.frequency or s.schedule.period.
+    // Checked with ?? (not ||) so a legitimate frequency of 0 isn't
+    // treated as absent and skipped in favor of the next fallback.
+    const freq = s.frequency ?? s.schedule?.frequency ??
+                 (s.schedule?.period > 0 ? s.schedule.period : null);
+    const timeUnit = s.timeUnit || s.schedule?.timeUnit;
+    const flowName = s.flowName||s.flow||s.name;
+    const schedulerKey = schedulerKeyOf(s, i);
+    const rowId = rowIdOf(s, i);
+    const isAmbiguous = ambiguousKeySet.has(schedulerKey);
+
+    // Lastrun lookup
+    const lastRunCandidates = [
+      s.lastRun, s.schedule?.lastRun, s.status?.lastRun,
+      s.lastRunAt, s.schedule?.lastRunAt, s.status?.lastRunAt,
+      s.lastFireAt, s.schedule?.lastFireAt, s.status?.lastFireAt,
+      s.lastFiredAt, s.schedule?.lastFiredAt, s.status?.lastFiredAt,
+      s.lastFired, s.schedule?.lastFired, s.status?.lastFired,
+      s.lastRunTime, s.schedule?.lastRunTime, s.status?.lastRunTime,
+      s.lastExecution, s.schedule?.lastExecution, s.status?.lastExecution,
+      s.lastTriggerTime, s.schedule?.lastTriggerTime, s.stats?.lastRun,
+      s.trigger?.lastFireTime, s.meta?.lastRun,
+    ];
+    const lastRunRaw = lastRunCandidates.find(v => v != null && v !== 0 && v !== '');
+
+    return {
+      s, i, active, schedulerTz, isUnresolvedPlaceholder, wasResolved, rawCron, cron, decodedCron,
+      computedNextRun, freq, timeUnit, flowName, schedulerKey, rowId, isAmbiguous, lastRunRaw,
+    };
+  }), [schedulers, allProps, cpsSchedulerProps, cpsData, ambiguousKeySet]);
 
   return (
     <div className="space-y-5">
@@ -156,12 +268,12 @@ export default function InfrastructureTab({
             {selectedVisibleCount > 0 && (
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: visibleKeys.filter(k => selectedSchedulers.has(k)), nextEnabled: true })}
+                  onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: selectedSchedulerKeys(visibleKeys), nextEnabled: true })}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white hover:border-emerald-600">
                   <Power size={11} /> Enable Selected
                 </button>
                 <button
-                  onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: visibleKeys.filter(k => selectedSchedulers.has(k)), nextEnabled: false })}
+                  onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: selectedSchedulerKeys(visibleKeys), nextEnabled: false })}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white hover:border-red-600">
                   <Power size={11} /> Disable Selected
                 </button>
@@ -176,71 +288,13 @@ export default function InfrastructureTab({
         )}
         {allSchedulers.length>0 ? (
           <div className="p-4 space-y-3">
-            {schedulers.map((s,i) => {
-              // CH2 uses s.schedule.expression; CH1 uses s.schedule.cronExpression or s.expression
-              const rawCron = s.schedule?.cronExpression ||
-                              s.schedule?.expression ||
-                              s.expression ||
-                              s.cronExpression;
-              // Scheduler-configured timezone (CH2 returns this in schedule.timeZone)
-              const rawTz = s.schedule?.timeZone || s.schedule?.timezone || s.timeZone || s.timezone || null;
-              // Resolve ${...} placeholders in timezone value (same as cron expression)
-              const schedulerTz = rawTz?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
-                allProps[propName] ||
-                allProps[propName.toLowerCase()] ||
-                cpsSchedulerProps[propName] ||
-                cpsSchedulerProps[propName.toLowerCase()] ||
-                cpsData?.nonSecure?.[propName] ||
-                match
-              ) || null;
-              // Resolve ${propName} placeholders: check runtime props first, then CPS props
-              const resolvedCron = rawCron?.replace(/\$\{([^}]+)\}/g, (match, propName) =>
-                allProps[propName] ||
-                allProps[propName.toLowerCase()] ||
-                cpsSchedulerProps[propName] ||
-                cpsSchedulerProps[propName.toLowerCase()] ||
-                cpsData?.nonSecure?.[propName] ||
-                match
-              );
-              const isUnresolvedPlaceholder = rawCron?.startsWith('${') && resolvedCron === rawCron;
-              const wasResolved = rawCron !== resolvedCron;
-              const cron = resolvedCron; // display the resolved value
-              let decodedCron = '';
-              if (cron && !isUnresolvedPlaceholder) {
-                try {
-                  decodedCron = cronstrue.toString(cron, { throwExceptionOnParseError: true });
-                } catch (e) {
-                  // ignore parsing errors (e.g. non-standard crons)
-                }
-              }
-              // Compute next run from cron expression (works for both CH1 and CH2 since
-              // the Anypoint Platform schedulers API does not return nextRun reliably).
-              // Only compute for ENABLED schedulers — a disabled scheduler has no next run.
-              const active = s.enabled!==false;
-              const computedNextRun = (cron && !isUnresolvedPlaceholder && active) ? getNextCronRun(cron) : null;
-              // CH2 fixed-frequency: s.schedule.frequency; CH1: s.frequency or s.schedule.period
-              const freq = s.frequency ||
-                           s.schedule?.frequency ||
-                           (s.schedule?.period > 0 ? s.schedule.period : null);
-              const timeUnit = s.timeUnit || s.schedule?.timeUnit;
-              const flowName = s.flow||s.flowName||s.name;
-              const schedulerKey = s.name || s.schedulerName || s.flow || s.flowName || `scheduler-${i}`;
+            {enrichedSchedulers.map(({
+              s, active, schedulerTz, isUnresolvedPlaceholder, wasResolved, rawCron, cron, decodedCron,
+              computedNextRun, freq, timeUnit, flowName, schedulerKey, rowId, isAmbiguous, lastRunRaw,
+            }) => {
               const isTriggering = triggerLoadingSet.has(schedulerKey);
               const isToggling = toggleLoadingSet.has(schedulerKey);
 
-              // Lastrun lookup
-              const lastRunCandidates = [
-                s.lastRun, s.schedule?.lastRun, s.status?.lastRun,
-                s.lastRunAt, s.schedule?.lastRunAt, s.status?.lastRunAt,
-                s.lastFireAt, s.schedule?.lastFireAt, s.status?.lastFireAt,
-                s.lastFiredAt, s.schedule?.lastFiredAt, s.status?.lastFiredAt,
-                s.lastFired, s.schedule?.lastFired, s.status?.lastFired,
-                s.lastRunTime, s.schedule?.lastRunTime, s.status?.lastRunTime,
-                s.lastExecution, s.schedule?.lastExecution, s.status?.lastExecution,
-                s.lastTriggerTime, s.schedule?.lastTriggerTime, s.stats?.lastRun,
-                s.trigger?.lastFireTime, s.meta?.lastRun,
-              ];
-              const lastRunRaw = lastRunCandidates.find(v => v != null && v !== 0 && v !== '');
               let lastRunNode;
               if (!lastRunRaw) {
                 lastRunNode = <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>;
@@ -256,14 +310,14 @@ export default function InfrastructureTab({
               }
 
               return (
-                <div key={i} className={`group relative rounded-2xl border bg-white/70 dark:bg-gray-900/40 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden ${active ? 'border-gray-200/70 dark:border-gray-700/60' : 'border-gray-200/50 dark:border-gray-800/60 opacity-70'}`}>
+                <div key={rowId} className={`group relative rounded-2xl border bg-white/70 dark:bg-gray-900/40 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden ${active ? 'border-gray-200/70 dark:border-gray-700/60' : 'border-gray-200/50 dark:border-gray-800/60 opacity-70'}`}>
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${active ? 'bg-gradient-to-b from-sfpurple-400 to-sfpurple-600' : 'bg-gray-300 dark:bg-gray-700'}`} />
                   <div className="flex flex-wrap items-center gap-4 px-5 py-4 pl-6">
                     {/* Select checkbox */}
                     <input
                       type="checkbox"
-                      checked={selectedSchedulers.has(schedulerKey)}
-                      onChange={() => toggleSelectOne(schedulerKey)}
+                      checked={selectedSchedulers.has(rowId)}
+                      onChange={() => toggleSelectOne(rowId)}
                       className="flex-shrink-0 rounded border-gray-300 dark:border-gray-600 text-sfpurple-600 focus:ring-sfpurple-500"
                     />
                     {/* Flow identity */}
@@ -274,6 +328,12 @@ export default function InfrastructureTab({
                         <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-md font-semibold mt-1 ${active?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400':'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}>
                           {active?'Enabled':'Disabled'}
                         </span>
+                        {isAmbiguous && (
+                          <span title="Another scheduler in this app shares the same identifier — Run Now/Toggle are disabled to avoid acting on the wrong one"
+                            className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-md font-semibold mt-1 ml-1 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                            ⚠ ambiguous
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -331,8 +391,8 @@ export default function InfrastructureTab({
                     <div className="flex-shrink-0 ml-auto flex items-center gap-2">
                       <button
                         onClick={() => setSchedulerToggleConfirm({ schedulerKey, nextEnabled: !active })}
-                        disabled={isToggling}
-                        title={active ? `Disable "${schedulerKey}"` : `Enable "${schedulerKey}"`}
+                        disabled={isToggling || isAmbiguous}
+                        title={isAmbiguous ? 'Ambiguous scheduler identifier — another scheduler in this app shares the same name/flow, so this action is disabled to avoid toggling the wrong one' : (active ? `Disable "${schedulerKey}"` : `Enable "${schedulerKey}"`)}
                         className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                           active
                             ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-md hover:shadow-red-500/30'
@@ -344,8 +404,8 @@ export default function InfrastructureTab({
                       </button>
                       <button
                         onClick={() => setSchedulerConfirmKey(schedulerKey)}
-                        disabled={isTriggering || !isRunning}
-                        title={!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`}
+                        disabled={isTriggering || !isRunning || isAmbiguous}
+                        title={isAmbiguous ? 'Ambiguous scheduler identifier — another scheduler in this app shares the same name/flow, so this action is disabled to avoid triggering the wrong one' : (!isRunning ? 'App must be RUNNING to trigger a scheduler' : `Run "${schedulerKey}" immediately`)}
                         className="flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 hover:shadow-md hover:shadow-sfpurple-500/30">
                         {isTriggering
                           ? <><RefreshCw size={11} className="animate-spin" /> Running…</>

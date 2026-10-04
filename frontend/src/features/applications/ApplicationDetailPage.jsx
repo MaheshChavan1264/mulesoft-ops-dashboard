@@ -671,10 +671,19 @@ export default function ApplicationDetailPage() {
         }));
       } else {
         await setCloudhub2SchedulerEnabled(orgId, envId, appId, schedulerKey, nextEnabled);
+        // flowName is the real Mulesoft AMC identifier (matches schedulerKey
+        // derivation in InfrastructureTab.jsx) — name/flow kept as fallbacks
+        // for older/alternate response shapes.
         setCh2Schedulers(prev => (prev || []).map(s =>
-          (s.name === schedulerKey || s.flow === schedulerKey) ? { ...s, enabled: nextEnabled } : s
+          (s.flowName === schedulerKey || s.name === schedulerKey || s.flow === schedulerKey) ? { ...s, enabled: nextEnabled } : s
         ));
       }
+      // Both the per-app scheduler cache (this tab) and the aggregate
+      // Schedulers-dashboard cache embed this same enabled/disabled flag —
+      // bust both so a toggle here isn't silently reverted by a stale read
+      // on the other page within the SWR freshness window.
+      bustCache(CK.schedulers(orgId, envId, appId));
+      bustCache(CK.PREFIX.allSchedulers);
       setTriggerResult({ success: true, message: `✓ Scheduler "${schedulerKey}" ${nextEnabled ? 'enabled' : 'disabled'} successfully` });
     } catch (e) {
       setTriggerResult({ success: false, message: `✗ Failed to ${nextEnabled ? 'enable' : 'disable'} "${schedulerKey}": ${getErrorMessage(e)}` });
@@ -711,10 +720,13 @@ export default function ApplicationDetailPage() {
       }));
     } else {
       setCh2Schedulers(prev => (prev || []).map(s => {
-        const key = s.name || s.flow;
+        const key = s.flowName || s.name || s.flow;
         return succeeded.has(key) ? { ...s, enabled: nextEnabled } : s;
       }));
     }
+    // See toggleScheduler above — same dual-cache invalidation requirement.
+    bustCache(CK.schedulers(orgId, envId, appId));
+    bustCache(CK.PREFIX.allSchedulers);
     setTriggerResult(failedCount === 0
       ? { success: true, message: `✓ ${succeeded.size} scheduler${succeeded.size !== 1 ? 's' : ''} ${nextEnabled ? 'enabled' : 'disabled'} successfully` }
       : { success: false, message: `⚠ ${succeeded.size} succeeded, ${failedCount} failed to ${nextEnabled ? 'enable' : 'disable'}` });

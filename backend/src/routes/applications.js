@@ -224,8 +224,12 @@ router.put('/cloudhub2/:orgId/:envId/:deploymentId/schedulers/:schedulerName', a
   const basePath = `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/schedulers`;
   try {
     const listResponse = await client.get(basePath);
-    const schedulers = Array.isArray(listResponse.data) ? listResponse.data : listResponse.data?.schedulers || [];
-    const current = schedulers.find((s) => s.name === schedulerName || s.flow === schedulerName);
+    // Per Mulesoft's AMC Application Manager API, GET .../schedulers returns
+    // { total, items: [...] } — NOT { schedulers: [...] }. The `.schedulers`
+    // fallback below was wrong and silently produced an empty list for every
+    // CH2 app, making "enable/disable" always 404 with "not found".
+    const schedulers = Array.isArray(listResponse.data) ? listResponse.data : (listResponse.data?.items || listResponse.data?.schedulers || []);
+    const current = schedulers.find((s) => s.name === schedulerName || s.flow === schedulerName || s.flowName === schedulerName);
     if (!current) {
       return res.status(404).json({ error: `Scheduler "${schedulerName}" not found` });
     }
@@ -696,6 +700,19 @@ const schedulersSummaryCache = new NodeCache({
 const inflightSchedulersSummary = new Map(); // orgId → Promise<responseData>
 
 /**
+ * Picks the first "present" candidate from a list, where present means
+ * "not null/undefined/empty-string" — unlike `a || b || c`, this correctly
+ * keeps a legitimate `0` (e.g. frequency: 0) instead of falling through to
+ * the next candidate.
+ */
+function firstPresent(...candidates) {
+  for (const c of candidates) {
+    if (c !== null && c !== undefined && c !== '') return c;
+  }
+  return null;
+}
+
+/**
  * Normalizes one raw CH1 ("schedule") or CH2 ("scheduler") entry plus its
  * owning app into the flat row shape the Schedulers dashboard renders.
  * Mirrors the same fallback chains frontend/.../InfrastructureTab.jsx uses
@@ -707,10 +724,14 @@ function normalizeSchedulerRow(raw, app, i) {
   const status = raw.status || {};
   const cron = schedule.cronExpression || schedule.expression || raw.expression || raw.cronExpression || null;
   const timeZone = schedule.timeZone || schedule.timezone || raw.timeZone || raw.timezone || null;
-  const frequency = raw.frequency || schedule.frequency || (schedule.period > 0 ? schedule.period : null);
+  const frequency = firstPresent(raw.frequency, schedule.frequency, schedule.period > 0 ? schedule.period : null);
   const timeUnit = raw.timeUnit || schedule.timeUnit || null;
-  const flowName = raw.flow || raw.flowName || raw.name || `scheduler-${i}`;
-  const schedulerKey = raw.name || raw.schedulerName || raw.flow || raw.flowName || `scheduler-${i}`;
+  const flowName = raw.flowName || raw.flow || raw.name || `scheduler-${i}`;
+  // Per Mulesoft's AMC API docs, the identifier the PUT/POST/DELETE
+  // scheduler endpoints expect in the URL path is `flowName` — prioritize
+  // it over the speculative `name`/`schedulerName`/`flow` fallbacks (kept
+  // only for CH1 schedules / older response shapes that may not use it).
+  const schedulerKey = raw.flowName || raw.name || raw.schedulerName || raw.flow || `scheduler-${i}`;
   const lastRunCandidates = [
     raw.lastRun, schedule.lastRun, status.lastRun,
     raw.lastRunAt, schedule.lastRunAt, status.lastRunAt,
@@ -719,6 +740,13 @@ function normalizeSchedulerRow(raw, app, i) {
     raw.lastFired, schedule.lastFired, status.lastFired,
   ];
   const lastRun = lastRunCandidates.find((v) => v != null && v !== 0 && v !== '') ?? null;
+  // Explicit flag instead of making every caller re-derive `cron?.startsWith('${')`.
+  // Resolving the actual value requires the app's CPS config + credentials
+  // (see features/applications/tabs/InfrastructureTab.jsx's opt-in "Get Cron
+  // Expressions" button) — deliberately NOT done here: this is a hot,
+  // automatically-fanned-out aggregate endpoint, not a place to silently
+  // fetch CPS secrets for every app on every dashboard load.
+  const unresolvedPlaceholder = typeof cron === 'string' && cron.startsWith('${');
   return {
     envId: app.environment?.id,
     envName: app.environment?.name,
@@ -727,8 +755,17 @@ function normalizeSchedulerRow(raw, app, i) {
     appStatus: app.status,
     deploymentType: app.deploymentType,
     schedulerKey,
+    // Guaranteed-unique identity for React keys / Set-based selection — NOT
+    // sent back to Anypoint. schedulerKey (above) is a best-effort guess at
+    // the real Anypoint identifier (falls back to flow name when the API
+    // omits `name`), so two distinct schedulers CAN legitimately end up with
+    // the same schedulerKey (e.g. the same flow scheduled twice). rowId's
+    // index suffix keeps row identity/selection correct even then; see
+    // markAmbiguousSchedulerKeys for the "same API key, action disabled" case.
+    rowId: `${schedulerKey}::${i}`,
     flowName,
     cron,
+    unresolvedPlaceholder,
     timeZone,
     frequency,
     timeUnit,
@@ -737,9 +774,60 @@ function normalizeSchedulerRow(raw, app, i) {
   };
 }
 
+/**
+ * Flags rows whose `schedulerKey` is shared by more than one scheduler in
+ * the SAME app — Run Now / Toggle actions send `schedulerKey` back to
+ * Anypoint as the target identifier, so when it's ambiguous we can't tell
+ * which of the colliding schedulers an action would actually hit. Mutates
+ * and returns `rows` with `ambiguousKey: true` set on every row involved in
+ * a collision, so the frontend can disable actions on them instead of
+ * guessing.
+ */
+function markAmbiguousSchedulerKeys(rows) {
+  const counts = new Map();
+  for (const row of rows) counts.set(row.schedulerKey, (counts.get(row.schedulerKey) || 0) + 1);
+  for (const row of rows) {
+    if (counts.get(row.schedulerKey) > 1) row.ambiguousKey = true;
+  }
+  return rows;
+}
+
+
 async function _fetchSchedulersSummary(client, targetOrgId) {
   const cachedSummary = summaryCache.get(targetOrgId);
-  const summaryData = cachedSummary ? cachedSummary.data : await _fetchSummary(client, targetOrgId);
+  const ageMs = cachedSummary ? Date.now() - cachedSummary.ts : Infinity;
+  const isFresh = ageMs < SUMMARY_CACHE_FRESH_MS;
+
+  let summaryData;
+  if (cachedSummary && isFresh) {
+    summaryData = cachedSummary.data;
+  } else if (cachedSummary) {
+    // Stale-but-usable — serve it now (an app roster up to a few minutes
+    // old is fine for a scheduler listing), but kick off a background
+    // refresh of the *app summary* itself so this cache can't silently
+    // keep serving a roster up to SUMMARY_CACHE_TTL_MS (20 min) old with
+    // no self-healing. Shares `inflightSummary` with the /summary/:orgId
+    // route — if that route already triggered a refresh for this org, this
+    // just piggybacks instead of firing a second redundant fan-out.
+    summaryData = cachedSummary.data;
+    if (!inflightSummary.has(targetOrgId)) {
+      const p = _fetchSummary(client, targetOrgId)
+        .catch((err) => logger.warn({ err }, `[SchedulersSummary] BG summary refresh failed for org ${targetOrgId}`))
+        .finally(() => inflightSummary.delete(targetOrgId));
+      inflightSummary.set(targetOrgId, p);
+    }
+  } else {
+    // Cold cache — no choice but to fetch synchronously. Piggyback on an
+    // in-flight fetch if the /summary/:orgId route (or another concurrent
+    // scheduler-summary request) already started one for this org.
+    summaryData = inflightSummary.has(targetOrgId)
+      ? await inflightSummary.get(targetOrgId)
+      : await (() => {
+          const p = _fetchSummary(client, targetOrgId).finally(() => inflightSummary.delete(targetOrgId));
+          inflightSummary.set(targetOrgId, p);
+          return p;
+        })();
+  }
   const apps = summaryData.data || [];
 
   const fanOutResults = await mapWithConcurrency(apps, SCHEDULERS_FAN_OUT_CONCURRENCY, async (app) => {
@@ -747,8 +835,14 @@ async function _fetchSchedulersSummary(client, targetOrgId) {
       const response = await client.get(
         `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${app.environment.id}/deployments/${app.id}/schedulers`
       );
-      const list = Array.isArray(response.data) ? response.data : response.data?.schedulers || [];
-      return list.map((s, i) => normalizeSchedulerRow(s, app, i));
+      // Per Mulesoft's AMC Application Manager API, GET .../schedulers
+      // returns { total, items: [...] } — NOT { schedulers: [...] }. The
+      // old `.schedulers` fallback always missed, silently producing an
+      // empty list for every CH2 app in the aggregate Schedulers dashboard
+      // (the per-app Infrastructure tab already checked `.items` — see
+      // ApplicationDetailPage.jsx's loadCh2Schedulers — this route didn't).
+      const list = Array.isArray(response.data) ? response.data : (response.data?.items || response.data?.schedulers || []);
+      return markAmbiguousSchedulerKeys(list.map((s, i) => normalizeSchedulerRow(s, app, i)));
     }
     const response = await client.get(
       `/cloudhub/api/applications/${app.id}/schedules`,
@@ -756,7 +850,7 @@ async function _fetchSchedulersSummary(client, targetOrgId) {
     );
     const raw = response.data;
     const list = Array.isArray(raw) ? raw : (raw?.data || raw?.schedules || []);
-    return list.map((s, i) => normalizeSchedulerRow(s, app, i));
+    return markAmbiguousSchedulerKeys(list.map((s, i) => normalizeSchedulerRow(s, app, i)));
   });
 
   const schedulers = [];

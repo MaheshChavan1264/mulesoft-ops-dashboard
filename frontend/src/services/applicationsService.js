@@ -82,7 +82,7 @@ export function getCloudhub1StaticIps(envId, appId, orgId) {
   return api.get(`/applications/cloudhub1/${envId}/${appId}/static-ips`, { params: { orgId } });
 }
 
-/** @param {'start'|'stop'|'restart'} action */
+/** POST /applications/cloudhub1/{envId}/{appId}/schedules/{schedulerKey}/run — trigger a CH1 scheduler immediately. */
 export function runCloudhub1SchedulerNow(envId, appId, schedulerKey, orgId) {
   return api.post(
     `/applications/cloudhub1/${envId}/${appId}/schedules/${encodeURIComponent(schedulerKey)}/run`,
