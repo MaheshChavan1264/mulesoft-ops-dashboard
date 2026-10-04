@@ -6,11 +6,21 @@ import { postCpsCredentialsRaw, fetchCpsProperties } from '../services/cpsServic
 import { extractCpsResponseEntries, flattenCpsResponse, normaliseCpsUrl } from './cpsHelpers';
 import { rowsToWorksheet, writeWorkbook } from './xlsxExport';
 import { getErrorMessage } from '../services/http';
+import cronstrue from 'cronstrue';
 
 const SECRET_PATTERNS = /password|secret|passwd|token|credential|\.key$|keypassword|keystorepassword|truststore\.password|ssl\.password|msk\.password/i;
 
 function isSecretKey(k) {
   return SECRET_PATTERNS.test(k);
+}
+
+function decodeCron(expr) {
+  if (!expr || typeof expr !== 'string' || expr.startsWith('${')) return '';
+  try {
+    return cronstrue.toString(expr, { throwExceptionOnParseError: true });
+  } catch {
+    return '';
+  }
 }
 
 function maskSecrets(props) {
@@ -265,12 +275,14 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
     const rawPeriod = fixedSched?.period || fixedSched?.frequency || s.schedule?.period || s.schedule?.frequency || s.frequency || s.period || '';
     const rawTimeUnit = fixedSched?.timeUnit || s.schedule?.timeUnit || s.timeUnit || '';
     const rawTimeZone = cronSched?.timeZone || s.schedule?.timeZone || s.timeZone || '';
+    const resolvedCron = resolveProp(rawCron);
     scheduleRows.push({
       environment: schedEnv,
       apiDomainName: app.name,
       scheduleName: s.flow || s.flowName || s.name || s.schedulerName || '',
       enabled: s.enabled !== false ? 'true' : 'false',
-      scheduleCronExpression: resolveProp(rawCron),
+      scheduleCronExpression: resolvedCron,
+      decodedCronExpression: decodeCron(resolvedCron),
       scheduleTimeZone: resolveProp(rawTimeZone),
       scheduleTimeUnit: resolveProp(rawTimeUnit),
       schedulePeriod: String(resolveProp(String(rawPeriod)))
@@ -394,7 +406,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
     {
       name: 'ScheduleCatalog',
       worksheet: rowsToWorksheet(scheduleRows, {
-        headers: ['environment', 'apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod'],
+        headers: ['environment', 'apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'decodedCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod'],
         colWidths: undefined,
       }),
     },
