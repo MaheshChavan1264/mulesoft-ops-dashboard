@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
-import { Check, Copy, Eye, EyeOff, AlertTriangle, Zap, Trash2, X } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff, AlertTriangle, Zap, Trash2, X, Power } from 'lucide-react';
 import CopyBtn from '../../components/shared/CopyBtn';
 import ConfirmActionModal from '../../components/ui/ConfirmActionModal';
 import { ACTION_CONFIG } from '../../utils/appUtils';
@@ -342,6 +342,79 @@ export function SchedulerConfirmModal({ schedulerKey, onConfirm, onCancel, loadi
             immediately?
           </p>
           <p className="text-amber-600 dark:text-amber-400 text-xs mt-2 font-medium">⚠ This will execute the scheduler flow outside its normal schedule.</p>
+        </>
+      }
+    />
+  );
+}
+
+export function SchedulerToggleConfirmModal({ state, onConfirm, onCancel, loading }) {
+  if (!state) return null;
+  const { schedulerKey, nextEnabled } = state;
+  return (
+    <ConfirmActionModal
+      icon={Power}
+      accent={nextEnabled ? 'emerald' : 'red'}
+      title={nextEnabled ? 'Enable Scheduler?' : 'Disable Scheduler?'}
+      colorClassName={nextEnabled
+        ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 shadow-emerald-500/30 hover:shadow-emerald-500/40'
+        : 'bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 shadow-red-500/30 hover:shadow-red-500/40'}
+      confirmLabel={<><Power size={13} /> {nextEnabled ? 'Enable' : 'Disable'}</>}
+      loading={loading}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+      message={
+        <>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">
+            Are you sure you want to{' '}
+            <span className={`font-semibold ${nextEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+              {nextEnabled ? 'enable' : 'disable'}
+            </span>{' '}
+            the scheduler{' '}
+            <span className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-xs bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{schedulerKey}</span>?
+          </p>
+          {!nextEnabled && (
+            <p className="text-amber-600 dark:text-amber-400 text-xs mt-2 font-medium">⚠ The flow will no longer run on its schedule until re-enabled.</p>
+          )}
+        </>
+      }
+    />
+  );
+}
+
+export function BulkSchedulerToggleConfirmModal({ state, onConfirm, onCancel, loading }) {
+  if (!state) return null;
+  const { schedulerKeys, nextEnabled } = state;
+  const count = schedulerKeys?.length || 0;
+  return (
+    <ConfirmActionModal
+      icon={Power}
+      accent={nextEnabled ? 'emerald' : 'red'}
+      title={nextEnabled ? `Enable ${count} Scheduler${count !== 1 ? 's' : ''}?` : `Disable ${count} Scheduler${count !== 1 ? 's' : ''}?`}
+      colorClassName={nextEnabled
+        ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 shadow-emerald-500/30 hover:shadow-emerald-500/40'
+        : 'bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 shadow-red-500/30 hover:shadow-red-500/40'}
+      confirmLabel={<><Power size={13} /> {nextEnabled ? 'Enable All' : 'Disable All'}</>}
+      loading={loading}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+      message={
+        <>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">
+            Are you sure you want to{' '}
+            <span className={`font-semibold ${nextEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+              {nextEnabled ? 'enable' : 'disable'}
+            </span>{' '}
+            these {count} scheduler{count !== 1 ? 's' : ''}?
+          </p>
+          <div className="flex flex-wrap gap-1.5 mt-2 max-h-24 overflow-y-auto">
+            {(schedulerKeys || []).map(k => (
+              <span key={k} className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-[10px] bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{k}</span>
+            ))}
+          </div>
+          {!nextEnabled && (
+            <p className="text-amber-600 dark:text-amber-400 text-xs mt-2 font-medium">⚠ These flows will no longer run on their schedule until re-enabled.</p>
+          )}
         </>
       }
     />

@@ -95,6 +95,21 @@ export function runCloudhub2SchedulerNow(orgId, envId, appId, schedulerKey) {
   return api.post(`/applications/cloudhub2/${orgId}/${envId}/${appId}/schedulers/${encodeURIComponent(schedulerKey)}/run`);
 }
 
+export function setCloudhub1SchedulerEnabled(envId, appId, schedulerKey, orgId, enabled) {
+  return api.put(
+    `/applications/cloudhub1/${envId}/${appId}/schedules/${encodeURIComponent(schedulerKey)}`,
+    { enabled },
+    { params: { orgId } }
+  );
+}
+
+export function setCloudhub2SchedulerEnabled(orgId, envId, appId, schedulerKey, enabled) {
+  return api.put(
+    `/applications/cloudhub2/${orgId}/${envId}/${appId}/schedulers/${encodeURIComponent(schedulerKey)}`,
+    { enabled }
+  );
+}
+
 // ── Application lifecycle actions ─────────────────────────────────────────
 
 /** @param {'start'|'stop'|'restart'} action */

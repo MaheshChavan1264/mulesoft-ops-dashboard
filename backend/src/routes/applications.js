@@ -127,6 +127,36 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/schedulers/:schedulerName/ru
   }
 });
 
+// Enable or disable a CloudHub 2.0 scheduler.
+// The Anypoint AMC API expects a PUT with the full scheduler config (not just
+// `enabled`), so we fetch the current list first and merge the toggled flag
+// into the matching scheduler's existing config before sending it back.
+router.put('/cloudhub2/:orgId/:envId/:deploymentId/schedulers/:schedulerName', authMiddleware, async (req, res) => {
+  const { orgId, envId, deploymentId, schedulerName } = req.params;
+  const { enabled } = req.body || {};
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: '"enabled" must be a boolean' });
+  }
+  const client = createClient(req.anypointToken);
+  const basePath = `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/schedulers`;
+  try {
+    const listResponse = await client.get(basePath);
+    const schedulers = Array.isArray(listResponse.data) ? listResponse.data : listResponse.data?.schedulers || [];
+    const current = schedulers.find((s) => s.name === schedulerName || s.flow === schedulerName);
+    if (!current) {
+      return res.status(404).json({ error: `Scheduler "${schedulerName}" not found` });
+    }
+    const payload = { ...current, enabled };
+    const response = await client.put(
+      `${basePath}/${encodeURIComponent(schedulerName)}`,
+      payload
+    );
+    return res.json({ success: true, schedulerName, enabled, data: response.data });
+  } catch (error) {
+    sendProxyError(res, error, `Failed to ${enabled ? 'enable' : 'disable'} scheduler "${schedulerName}"`);
+  }
+});
+
 // Get all CloudHub 1.0 applications
 router.get('/cloudhub1/:envId', authMiddleware, async (req, res) => {
   try {
@@ -223,6 +253,38 @@ router.post('/cloudhub1/:envId/:appName/schedules/:scheduleName/run', authMiddle
         error: e2.response?.data?.message || `Failed to trigger scheduler "${scheduleName}"`
       });
     }
+  }
+});
+
+// Enable or disable a CloudHub 1.0 schedule.
+// Same approach as CH2: fetch the current list, merge the toggled `enabled`
+// flag into the matching schedule's existing config, then PUT it back.
+router.put('/cloudhub1/:envId/:appName/schedules/:scheduleId', authMiddleware, async (req, res) => {
+  const { envId, appName, scheduleId } = req.params;
+  const orgId = req.query.orgId || req.orgId;
+  const { enabled } = req.body || {};
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: '"enabled" must be a boolean' });
+  }
+  const client = createClient(req.anypointToken);
+  const headers = makeCh1Headers(envId, orgId);
+  const basePath = `/cloudhub/api/applications/${appName}/schedules`;
+  try {
+    const listResponse = await client.get(basePath, { headers });
+    const schedules = Array.isArray(listResponse.data) ? listResponse.data : listResponse.data?.data || [];
+    const current = schedules.find((s) => s.id === scheduleId || s.name === scheduleId);
+    if (!current) {
+      return res.status(404).json({ error: `Schedule "${scheduleId}" not found` });
+    }
+    const payload = { ...current, enabled };
+    const response = await client.put(
+      `${basePath}/${encodeURIComponent(scheduleId)}`,
+      payload,
+      { headers }
+    );
+    return res.json({ success: true, scheduleId, enabled, data: response.data });
+  } catch (error) {
+    sendProxyError(res, error, `Failed to ${enabled ? 'enable' : 'disable'} schedule "${scheduleId}"`);
   }
 });
 

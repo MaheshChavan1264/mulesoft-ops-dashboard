@@ -6,6 +6,7 @@ import {
   getBusinessGroups, getEnvironments, getCloudhub2AppDetail, getCloudhub1AppDetail,
   getPrivateSpaceDetail, getCloudhub1Schedules, getCloudhub2Schedulers, getCloudhub1StaticIps,
   runCloudhub1SchedulerNow, runCloudhub2SchedulerNow, runCloudhub1Action, runCloudhub2Action,
+  setCloudhub1SchedulerEnabled, setCloudhub2SchedulerEnabled,
   getContracts, updateContractStatus, deleteContract,
 } from '../../services/applicationsService';
 import { postCpsCredentialsRaw, fetchCpsProperties, resolveAndPostCpsCredentials } from '../../services/cpsService';
@@ -26,7 +27,7 @@ import cronstrue from 'cronstrue';
 import {
   getNextCronRun, CopyGroupBtn, SecretVal, TAG_COLORS, MetaTag, NS_DOT_COLORS, PulseDot, KVRow,
   CARD_ACCENTS, GlassCard, HERO_ACTION_ACCENTS, HeroActionBtn, STAT_TILE_ACCENTS, StatTile, SectionLabel,
-  AppConfirmModal, SchedulerConfirmModal, ContractConfirmModal,
+  AppConfirmModal, SchedulerConfirmModal, SchedulerToggleConfirmModal, BulkSchedulerToggleConfirmModal, ContractConfirmModal,
 } from './shared';
 import PropertiesTab from './tabs/PropertiesTab';
 import DependenciesTab from './tabs/DependenciesTab';
@@ -85,6 +86,13 @@ export default function ApplicationDetailPage() {
   const [triggerLoadingSet, setTriggerLoadingSet] = useState(new Set());
   const [triggerResult, setTriggerResult] = useState(null);
   const [schedulerConfirmKey, setSchedulerConfirmKey] = useState(null);
+  // Scheduler enable/disable state
+  const [toggleLoadingSet, setToggleLoadingSet] = useState(new Set());
+  const [schedulerToggleConfirm, setSchedulerToggleConfirm] = useState(null); // { schedulerKey, nextEnabled }
+  // Bulk scheduler selection + enable/disable state
+  const [selectedSchedulers, setSelectedSchedulers] = useState(new Set());
+  const [bulkSchedulerToggleConfirm, setBulkSchedulerToggleConfirm] = useState(null); // { schedulerKeys, nextEnabled }
+  const [bulkToggleLoading, setBulkToggleLoading] = useState(false);
 
   // Ping spec from Exchange (auto-fetched when app has application.ref)
   const [pingSpec, setPingSpec] = useState(null);
@@ -453,6 +461,77 @@ export default function ApplicationDetailPage() {
     }
   }, [app, orgId, envId, appId]);
 
+  // Enable or disable a scheduler
+  const toggleScheduler = useCallback(async () => {
+    if (!schedulerToggleConfirm) return;
+    const { schedulerKey, nextEnabled } = schedulerToggleConfirm;
+    setToggleLoadingSet(prev => new Set([...prev, schedulerKey]));
+    setTriggerResult(null);
+    try {
+      if (app?._type === 'ch1') {
+        await setCloudhub1SchedulerEnabled(envId, appId, schedulerKey, orgId, nextEnabled);
+        setApp(prev => ({
+          ...prev,
+          _ch1Schedules: (prev._ch1Schedules || []).map(s =>
+            (s.id === schedulerKey || s.name === schedulerKey) ? { ...s, enabled: nextEnabled } : s
+          ),
+        }));
+      } else {
+        await setCloudhub2SchedulerEnabled(orgId, envId, appId, schedulerKey, nextEnabled);
+        setCh2Schedulers(prev => (prev || []).map(s =>
+          (s.name === schedulerKey || s.flow === schedulerKey) ? { ...s, enabled: nextEnabled } : s
+        ));
+      }
+      setTriggerResult({ success: true, message: `✓ Scheduler "${schedulerKey}" ${nextEnabled ? 'enabled' : 'disabled'} successfully` });
+    } catch (e) {
+      setTriggerResult({ success: false, message: `✗ Failed to ${nextEnabled ? 'enable' : 'disable'} "${schedulerKey}": ${getErrorMessage(e)}` });
+    } finally {
+      setToggleLoadingSet(prev => { const next = new Set(prev); next.delete(schedulerKey); return next; });
+      setSchedulerToggleConfirm(null);
+      setTimeout(() => setTriggerResult(null), 5000);
+    }
+  }, [schedulerToggleConfirm, app, orgId, envId, appId]);
+
+  // Enable or disable multiple schedulers at once (fires one PUT per scheduler
+  // in parallel — the Anypoint API has no bulk endpoint, see backend route).
+  const bulkToggleSchedulers = useCallback(async () => {
+    if (!bulkSchedulerToggleConfirm) return;
+    const { schedulerKeys, nextEnabled } = bulkSchedulerToggleConfirm;
+    if (!schedulerKeys?.length) return;
+    setBulkToggleLoading(true);
+    setToggleLoadingSet(prev => new Set([...prev, ...schedulerKeys]));
+    setTriggerResult(null);
+    const results = await Promise.allSettled(schedulerKeys.map(key =>
+      app?._type === 'ch1'
+        ? setCloudhub1SchedulerEnabled(envId, appId, key, orgId, nextEnabled)
+        : setCloudhub2SchedulerEnabled(orgId, envId, appId, key, nextEnabled)
+    ));
+    const succeeded = new Set(schedulerKeys.filter((_, i) => results[i].status === 'fulfilled'));
+    const failedCount = schedulerKeys.length - succeeded.size;
+    if (app?._type === 'ch1') {
+      setApp(prev => ({
+        ...prev,
+        _ch1Schedules: (prev._ch1Schedules || []).map(s => {
+          const key = s.id || s.name;
+          return succeeded.has(key) ? { ...s, enabled: nextEnabled } : s;
+        }),
+      }));
+    } else {
+      setCh2Schedulers(prev => (prev || []).map(s => {
+        const key = s.name || s.flow;
+        return succeeded.has(key) ? { ...s, enabled: nextEnabled } : s;
+      }));
+    }
+    setTriggerResult(failedCount === 0
+      ? { success: true, message: `✓ ${succeeded.size} scheduler${succeeded.size !== 1 ? 's' : ''} ${nextEnabled ? 'enabled' : 'disabled'} successfully` }
+      : { success: false, message: `⚠ ${succeeded.size} succeeded, ${failedCount} failed to ${nextEnabled ? 'enable' : 'disable'}` });
+    setToggleLoadingSet(prev => { const next = new Set(prev); schedulerKeys.forEach(k => next.delete(k)); return next; });
+    setSelectedSchedulers(prev => { const next = new Set(prev); succeeded.forEach(k => next.delete(k)); return next; });
+    setBulkToggleLoading(false);
+    setBulkSchedulerToggleConfirm(null);
+    setTimeout(() => setTriggerResult(null), 6000);
+  }, [bulkSchedulerToggleConfirm, app, orgId, envId, appId]);
+
   const isCH1 = app?._type === 'ch1';
 
   // Derived values depend only on `app`/`isCH1`/`ch2Schedulers` — none of them
@@ -695,6 +774,18 @@ export default function ApplicationDetailPage() {
         onConfirm={() => { triggerScheduler(schedulerConfirmKey); setSchedulerConfirmKey(null); }}
         onCancel={() => setSchedulerConfirmKey(null)}
         loading={triggerLoadingSet.has(schedulerConfirmKey)}
+      />
+      <SchedulerToggleConfirmModal
+        state={schedulerToggleConfirm}
+        onConfirm={toggleScheduler}
+        onCancel={() => setSchedulerToggleConfirm(null)}
+        loading={toggleLoadingSet.has(schedulerToggleConfirm?.schedulerKey)}
+      />
+      <BulkSchedulerToggleConfirmModal
+        state={bulkSchedulerToggleConfirm}
+        onConfirm={bulkToggleSchedulers}
+        onCancel={() => setBulkSchedulerToggleConfirm(null)}
+        loading={bulkToggleLoading}
       />
       <ContractConfirmModal
         state={contractConfirmState}
@@ -956,6 +1047,11 @@ export default function ApplicationDetailPage() {
           cpsData={cpsData}
           triggerLoadingSet={triggerLoadingSet}
           setSchedulerConfirmKey={setSchedulerConfirmKey}
+          toggleLoadingSet={toggleLoadingSet}
+          setSchedulerToggleConfirm={setSchedulerToggleConfirm}
+          selectedSchedulers={selectedSchedulers}
+          setSelectedSchedulers={setSelectedSchedulers}
+          setBulkSchedulerToggleConfirm={setBulkSchedulerToggleConfirm}
         />
       )}
 

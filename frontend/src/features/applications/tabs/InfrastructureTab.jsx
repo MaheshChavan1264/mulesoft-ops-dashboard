@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Zap, Activity, Key, RefreshCw, X, Search } from 'lucide-react';
+import { Clock, Zap, Activity, Key, RefreshCw, X, Search, Power, CheckSquare, Square } from 'lucide-react';
 import cronstrue from 'cronstrue';
 import { fetchCpsProperties } from '../../../services/cpsService';
 import { GlassCard, StatTile, PulseDot, MetaTag, getNextCronRun } from '../shared';
@@ -18,6 +18,8 @@ export default function InfrastructureTab({
   schedulerSearch, setSchedulerSearch,
   allProps, cpsData,
   triggerLoadingSet, setSchedulerConfirmKey,
+  toggleLoadingSet, setSchedulerToggleConfirm,
+  selectedSchedulers, setSelectedSchedulers, setBulkSchedulerToggleConfirm,
 }) {
   const enabledCount = allSchedulers.filter(s => s.enabled !== false).length;
   const disabledCount = allSchedulers.length - enabledCount;
@@ -27,6 +29,30 @@ export default function InfrastructureTab({
     const propName = expr.slice(2, -1);
     return !cpsSchedulerProps[propName] && !cpsSchedulerProps[propName.toLowerCase()] && !allProps[propName];
   });
+
+  const visibleKeys = schedulers.map((s, i) => s.name || s.schedulerName || s.flow || s.flowName || `scheduler-${i}`);
+  const selectedVisibleCount = visibleKeys.filter(k => selectedSchedulers.has(k)).length;
+  const allVisibleSelected = visibleKeys.length > 0 && selectedVisibleCount === visibleKeys.length;
+
+  const toggleSelectAll = () => {
+    setSelectedSchedulers(prev => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleKeys.forEach(k => next.delete(k));
+      } else {
+        visibleKeys.forEach(k => next.add(k));
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectOne = (key) => {
+    setSelectedSchedulers(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-5">
@@ -119,6 +145,35 @@ export default function InfrastructureTab({
             )}
           </div>
         )}
+        {schedulers.length > 0 && (
+          <div className="px-5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between gap-3 flex-wrap">
+            <button
+              onClick={toggleSelectAll}
+              className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+              {allVisibleSelected ? <CheckSquare size={14} className="text-sfpurple-600 dark:text-sfpurple-400" /> : <Square size={14} />}
+              {selectedVisibleCount > 0 ? `${selectedVisibleCount} selected` : 'Select all'}
+            </button>
+            {selectedVisibleCount > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: visibleKeys.filter(k => selectedSchedulers.has(k)), nextEnabled: true })}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white hover:border-emerald-600">
+                  <Power size={11} /> Enable Selected
+                </button>
+                <button
+                  onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: visibleKeys.filter(k => selectedSchedulers.has(k)), nextEnabled: false })}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white hover:border-red-600">
+                  <Power size={11} /> Disable Selected
+                </button>
+                <button
+                  onClick={() => setSelectedSchedulers(new Set())}
+                  className="text-[11px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-1">
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         {allSchedulers.length>0 ? (
           <div className="p-4 space-y-3">
             {schedulers.map((s,i) => {
@@ -171,6 +226,7 @@ export default function InfrastructureTab({
               const flowName = s.flow||s.flowName||s.name;
               const schedulerKey = s.name || s.schedulerName || s.flow || s.flowName || `scheduler-${i}`;
               const isTriggering = triggerLoadingSet.has(schedulerKey);
+              const isToggling = toggleLoadingSet.has(schedulerKey);
 
               // Lastrun lookup
               const lastRunCandidates = [
@@ -203,6 +259,13 @@ export default function InfrastructureTab({
                 <div key={i} className={`group relative rounded-2xl border bg-white/70 dark:bg-gray-900/40 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden ${active ? 'border-gray-200/70 dark:border-gray-700/60' : 'border-gray-200/50 dark:border-gray-800/60 opacity-70'}`}>
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${active ? 'bg-gradient-to-b from-sfpurple-400 to-sfpurple-600' : 'bg-gray-300 dark:bg-gray-700'}`} />
                   <div className="flex flex-wrap items-center gap-4 px-5 py-4 pl-6">
+                    {/* Select checkbox */}
+                    <input
+                      type="checkbox"
+                      checked={selectedSchedulers.has(schedulerKey)}
+                      onChange={() => toggleSelectOne(schedulerKey)}
+                      className="flex-shrink-0 rounded border-gray-300 dark:border-gray-600 text-sfpurple-600 focus:ring-sfpurple-500"
+                    />
                     {/* Flow identity */}
                     <div className="flex items-center gap-2.5 min-w-[160px] flex-shrink-0">
                       <PulseDot active={active}/>
@@ -265,7 +328,20 @@ export default function InfrastructureTab({
                     </div>
 
                     {/* Action */}
-                    <div className="flex-shrink-0 ml-auto">
+                    <div className="flex-shrink-0 ml-auto flex items-center gap-2">
+                      <button
+                        onClick={() => setSchedulerToggleConfirm({ schedulerKey, nextEnabled: !active })}
+                        disabled={isToggling}
+                        title={active ? `Disable "${schedulerKey}"` : `Enable "${schedulerKey}"`}
+                        className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                          active
+                            ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-md hover:shadow-red-500/30'
+                            : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-md hover:shadow-emerald-500/30'
+                        }`}>
+                        {isToggling
+                          ? <><RefreshCw size={11} className="animate-spin" /> {active ? 'Disabling…' : 'Enabling…'}</>
+                          : <><Power size={11} /> {active ? 'Disable' : 'Enable'}</>}
+                      </button>
                       <button
                         onClick={() => setSchedulerConfirmKey(schedulerKey)}
                         disabled={isTriggering || !isRunning}
