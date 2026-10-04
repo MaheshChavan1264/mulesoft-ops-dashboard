@@ -258,12 +258,20 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
 
   const resolveProp = (val) => {
     if (!val) return val;
-    const m = String(val).match(/^\$\{(.+)\}$/);
-    if (m) {
-      const key = m[1];
-      return flatNs[key] || flatSecure[key] || (fetchedAllProps && fetchedAllProps[key]) || val;
-    }
-    return val;
+    // Mirror InfrastructureTab.jsx's resolution exactly: a global replace
+    // (handles placeholders embedded in a larger string, not just a value
+    // that IS a placeholder) with a case-insensitive fallback — real CPS
+    // property keys can differ in case from the `${...}` reference used in
+    // the deployed app's scheduler config, so an exact-case-only lookup
+    // silently leaves the raw placeholder in the export.
+    return String(val).replace(/\$\{([^}]+)\}/g, (match, propName) =>
+      flatNs[propName] ||
+      flatNs[propName.toLowerCase()] ||
+      flatSecure[propName] ||
+      flatSecure[propName.toLowerCase()] ||
+      (fetchedAllProps && (fetchedAllProps[propName] || fetchedAllProps[propName.toLowerCase()])) ||
+      match
+    );
   };
 
   const schedEnv = app._envName || app.environment?.name || '—';
