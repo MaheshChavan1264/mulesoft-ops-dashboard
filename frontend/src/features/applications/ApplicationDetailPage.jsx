@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity, Share2, ShieldCheck, Trash2, GitBranch, Layers, Hash, Boxes } from 'lucide-react';
 import {
@@ -29,7 +29,7 @@ import cronstrue from 'cronstrue';
 import {
   getNextCronRun, CopyGroupBtn, SecretVal, TAG_COLORS, MetaTag, NS_DOT_COLORS, PulseDot, KVRow,
   CARD_ACCENTS, GlassCard, HERO_ACTION_ACCENTS, HeroActionBtn, STAT_TILE_ACCENTS, StatTile, SectionLabel,
-  AppConfirmModal, SchedulerConfirmModal, SchedulerToggleConfirmModal, BulkSchedulerToggleConfirmModal, ContractConfirmModal,
+  AppConfirmModal, SchedulerConfirmModal, SchedulerToggleConfirmModal, BulkSchedulerToggleConfirmModal, BulkSchedulerRunConfirmModal, ContractConfirmModal,
 } from './shared';
 import PropertiesTab from './tabs/PropertiesTab';
 import DependenciesTab from './tabs/DependenciesTab';
@@ -125,9 +125,14 @@ export default function ApplicationDetailPage() {
   const { orgId: paramOrgId, envId, appId } = useParams();
   const orgId = paramOrgId || authOrgId;
   const navigate = useNavigate();
+  const location = useLocation();
   const [app, setApp] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('overview');
+  // Lands directly on the Infrastructure tab when arriving via the
+  // Schedulers dashboard's "Resolve from CPS →" link (see SchedulersPage.jsx's
+  // onNavigateToApp) instead of defaulting to Overview and making the user
+  // click into "Schedulers" themselves.
+  const [tab, setTab] = useState(() => location.state?.openInfrastructureTab ? 'infrastructure' : 'overview');
   const [propSearch, setPropSearch] = useState('');
   const [schedulerSearch, setSchedulerSearch] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
@@ -199,6 +204,8 @@ export default function ApplicationDetailPage() {
   const [selectedSchedulers, setSelectedSchedulers] = useState(new Set());
   const [bulkSchedulerToggleConfirm, setBulkSchedulerToggleConfirm] = useState(null); // { schedulerKeys, nextEnabled }
   const [bulkToggleLoading, setBulkToggleLoading] = useState(false);
+  const [bulkSchedulerRunConfirm, setBulkSchedulerRunConfirm] = useState(null); // { schedulerKeys }
+  const [bulkRunLoading, setBulkRunLoading] = useState(false);
 
   // Ping spec from Exchange (auto-fetched when app has application.ref)
   const [pingSpec, setPingSpec] = useState(null);
@@ -530,6 +537,17 @@ export default function ApplicationDetailPage() {
 
   useEffect(() => { if (orgId && envId && appId) load(); }, [load]);
 
+  // Mirrors the Infrastructure-tab load-trigger inside the tab-click handler
+  // below, but fires on mount too — needed because `tab` can start as
+  // 'infrastructure' already (landing here via the Schedulers dashboard's
+  // "Resolve from CPS →" link sets that as the initial state), in which case
+  // the click handler never runs to kick off the fetch.
+  useEffect(() => {
+    if (tab === 'infrastructure' && app?._type !== 'ch1' && ch2Schedulers === null && !schedulersLoading) {
+      loadCh2Schedulers();
+    }
+  }, [tab, app, ch2Schedulers, schedulersLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── CPS auto-load on page open ───────────────────────────────────────────
   // `loadCpsData` is defined after the early-return guards (it closes over
   // render-time derived values). We keep a ref to its latest version so this
@@ -736,6 +754,33 @@ export default function ApplicationDetailPage() {
     setBulkSchedulerToggleConfirm(null);
     setTimeout(() => setTriggerResult(null), 6000);
   }, [bulkSchedulerToggleConfirm, app, orgId, envId, appId]);
+
+  // Trigger multiple schedulers to run immediately at once (fires one POST
+  // per scheduler in parallel — same no-bulk-endpoint reasoning as
+  // bulkToggleSchedulers above).
+  const bulkRunSchedulers = useCallback(async () => {
+    if (!bulkSchedulerRunConfirm) return;
+    const { schedulerKeys } = bulkSchedulerRunConfirm;
+    if (!schedulerKeys?.length) return;
+    setBulkRunLoading(true);
+    setTriggerLoadingSet(prev => new Set([...prev, ...schedulerKeys]));
+    setTriggerResult(null);
+    const results = await Promise.allSettled(schedulerKeys.map(key =>
+      app?._type === 'ch1'
+        ? runCloudhub1SchedulerNow(envId, appId, key, orgId)
+        : runCloudhub2SchedulerNow(orgId, envId, appId, key)
+    ));
+    const succeeded = schedulerKeys.filter((_, i) => results[i].status === 'fulfilled').length;
+    const failedCount = schedulerKeys.length - succeeded;
+    setTriggerResult(failedCount === 0
+      ? { success: true, message: `✓ ${succeeded} scheduler${succeeded !== 1 ? 's' : ''} triggered successfully` }
+      : { success: false, message: `⚠ ${succeeded} succeeded, ${failedCount} failed to trigger` });
+    setTriggerLoadingSet(prev => { const next = new Set(prev); schedulerKeys.forEach(k => next.delete(k)); return next; });
+    setSelectedSchedulers(new Set());
+    setBulkRunLoading(false);
+    setBulkSchedulerRunConfirm(null);
+    setTimeout(() => setTriggerResult(null), 6000);
+  }, [bulkSchedulerRunConfirm, app, orgId, envId, appId]);
 
   const isCH1 = app?._type === 'ch1';
 
@@ -1021,6 +1066,12 @@ export default function ApplicationDetailPage() {
         onCancel={() => setBulkSchedulerToggleConfirm(null)}
         loading={bulkToggleLoading}
       />
+      <BulkSchedulerRunConfirmModal
+        state={bulkSchedulerRunConfirm}
+        onConfirm={bulkRunSchedulers}
+        onCancel={() => setBulkSchedulerRunConfirm(null)}
+        loading={bulkRunLoading}
+      />
       <ContractConfirmModal
         state={contractConfirmState}
         onConfirm={handleContractAction}
@@ -1261,6 +1312,7 @@ export default function ApplicationDetailPage() {
       {/* ── INFRA & CONFIG ───────────────────────────── */}
       {tab==='infrastructure' && (
         <InfrastructureTab
+          appId={appId}
           allSchedulers={allSchedulers}
           schedulers={schedulers}
           isRunning={isRunning}
@@ -1286,6 +1338,7 @@ export default function ApplicationDetailPage() {
           selectedSchedulers={selectedSchedulers}
           setSelectedSchedulers={setSelectedSchedulers}
           setBulkSchedulerToggleConfirm={setBulkSchedulerToggleConfirm}
+          setBulkSchedulerRunConfirm={setBulkSchedulerRunConfirm}
         />
       )}
 

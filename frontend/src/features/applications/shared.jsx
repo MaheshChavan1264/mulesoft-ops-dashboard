@@ -421,6 +421,37 @@ export function BulkSchedulerToggleConfirmModal({ state, onConfirm, onCancel, lo
   );
 }
 
+export function BulkSchedulerRunConfirmModal({ state, onConfirm, onCancel, loading }) {
+  if (!state) return null;
+  const { schedulerKeys } = state;
+  const count = schedulerKeys?.length || 0;
+  return (
+    <ConfirmActionModal
+      icon={Zap}
+      accent="purple"
+      title={`Run ${count} Scheduler${count !== 1 ? 's' : ''} Now?`}
+      colorClassName="bg-gradient-to-b from-sfpurple-500 to-sfpurple-600 hover:from-sfpurple-400 hover:to-sfpurple-500 shadow-sfpurple-500/30 hover:shadow-sfpurple-500/40"
+      confirmLabel={<><Zap size={13} /> Run All</>}
+      loading={loading}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+      message={
+        <>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">
+            Are you sure you want to trigger these {count} scheduler{count !== 1 ? 's' : ''} immediately?
+          </p>
+          <div className="flex flex-wrap gap-1.5 mt-2 max-h-24 overflow-y-auto">
+            {(schedulerKeys || []).map(k => (
+              <span key={k} className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-[10px] bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{k}</span>
+            ))}
+          </div>
+          <p className="text-amber-600 dark:text-amber-400 text-xs mt-2 font-medium">⚠ This will execute each scheduler flow outside its normal schedule.</p>
+        </>
+      }
+    />
+  );
+}
+
 export function ContractConfirmModal({ state, onConfirm, onCancel, loading }) {
   if (!state) return null;
   const { action, appName } = state;

@@ -239,7 +239,7 @@ router.put('/cloudhub2/:orgId/:envId/:deploymentId/schedulers/:schedulerName', a
       `${basePath}/${encodeURIComponent(schedulerName)}`,
       payload
     );
-    schedulersSummaryCache.del(orgId);
+    invalidateSchedulersSummary(orgId);
     logger.info({ orgId, envId, deploymentId, schedulerName, enabled }, 'CH2 scheduler toggled');
     return res.json({ success: true, schedulerName, enabled, data: response.data });
   } catch (error) {
@@ -373,7 +373,7 @@ router.put('/cloudhub1/:envId/:appName/schedules/:scheduleId', authMiddleware, a
       payload,
       { headers }
     );
-    schedulersSummaryCache.del(orgId);
+    invalidateSchedulersSummary(orgId);
     logger.info({ orgId, envId, appName, scheduleId, enabled }, 'CH1 scheduler toggled');
     return res.json({ success: true, scheduleId, enabled, data: response.data });
   } catch (error) {
@@ -703,7 +703,28 @@ const schedulersSummaryCache = new NodeCache({
   checkperiod: 5 * 60,
   useClones:   false,
 });
-const inflightSchedulersSummary = new Map(); // orgId → Promise<responseData>
+const inflightSchedulersSummary = new Map(); // cacheKey → Promise<responseData>
+
+/**
+ * Composite cache key for the schedulers-summary cache — scoping by env
+ * means "give me schedulers for env X" and "give me schedulers for the
+ * whole org" are cached as separate entries instead of one clobbering the
+ * other. `envIds` is sorted so the same env set always maps to the same
+ * key regardless of request order.
+ */
+function schedulersSummaryCacheKey(orgId, envIds) {
+  return envIds && envIds.length ? `${orgId}:${[...envIds].sort().join(',')}` : orgId;
+}
+
+/**
+ * Invalidate every cached schedulers-summary entry for an org — including
+ * every env-scoped variant (schedulersSummaryCacheKey above) — not just the
+ * bare org-wide one. Needed after a toggle/trigger action so BOTH the
+ * org-wide view and any env-filtered view the user may load next are fresh.
+ */
+function invalidateSchedulersSummary(orgId) {
+  schedulersSummaryCache.del(schedulersSummaryCache.keys().filter((k) => k === orgId || k.startsWith(`${orgId}:`)));
+}
 
 /**
  * Picks the first "present" candidate from a list, where present means
@@ -799,7 +820,7 @@ function markAmbiguousSchedulerKeys(rows) {
 }
 
 
-async function _fetchSchedulersSummary(client, targetOrgId) {
+async function _fetchSchedulersSummary(client, targetOrgId, envIds) {
   const cachedSummary = summaryCache.get(targetOrgId);
   const ageMs = cachedSummary ? Date.now() - cachedSummary.ts : Infinity;
   const isFresh = ageMs < SUMMARY_CACHE_FRESH_MS;
@@ -834,7 +855,17 @@ async function _fetchSchedulersSummary(client, targetOrgId) {
           return p;
         })();
   }
-  const apps = summaryData.data || [];
+  let apps = summaryData.data || [];
+
+  // Scope the fan-out to only the requested environments — e.g. the
+  // Schedulers dashboard asking for just "Production" instead of every
+  // environment in the org. Filtering here (before the per-app fan-out)
+  // means fewer Anypoint calls, not just a smaller response — apps outside
+  // the requested envs are never queried for their schedulers at all.
+  if (envIds && envIds.length) {
+    const envIdSet = new Set(envIds);
+    apps = apps.filter((app) => envIdSet.has(app.environment?.id));
+  }
 
   const fanOutResults = await mapWithConcurrency(apps, SCHEDULERS_FAN_OUT_CONCURRENCY, async (app) => {
     if (app.deploymentType === 'CloudHub 2.0') {
@@ -879,27 +910,34 @@ async function _fetchSchedulersSummary(client, targetOrgId) {
     total: schedulers.length,
     data: schedulers,
     orgId: targetOrgId,
+    envIds: envIds && envIds.length ? envIds : undefined,
     _errors: errors.length > 0 ? errors : undefined,
     _cachedAt: new Date().toISOString(),
   };
-  schedulersSummaryCache.set(targetOrgId, { data: responseData, ts: Date.now() });
-  logger.debug(`[SchedulersSummary] Cache SET for org ${targetOrgId} (${schedulers.length} schedulers across ${apps.length} apps)`);
+  const cacheKey = schedulersSummaryCacheKey(targetOrgId, envIds);
+  schedulersSummaryCache.set(cacheKey, { data: responseData, ts: Date.now() });
+  logger.debug(`[SchedulersSummary] Cache SET for ${cacheKey} (${schedulers.length} schedulers across ${apps.length} apps)`);
   return responseData;
 }
 
-// Schedulers summary: aggregate every app's schedulers across all environments for an org
+// Schedulers summary: aggregate every app's schedulers for an org, optionally
+// scoped to a comma-separated list of environment IDs via ?envIds=
 router.get('/schedulers/:orgId', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
     const targetOrgId = req.params.orgId;
     const forceRefresh = req.query.refresh === 'true';
+    const envIds = typeof req.query.envIds === 'string'
+      ? req.query.envIds.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+    const cacheKey = schedulersSummaryCacheKey(targetOrgId, envIds);
     const data = await swrFetch({
       cache: schedulersSummaryCache,
       inflight: inflightSchedulersSummary,
-      key: targetOrgId,
+      key: cacheKey,
       freshMs: SCHEDULERS_SUMMARY_CACHE_FRESH_MS,
       forceRefresh,
-      fetchFn: () => _fetchSchedulersSummary(client, targetOrgId),
+      fetchFn: () => _fetchSchedulersSummary(client, targetOrgId, envIds),
       label: 'SchedulersSummary',
     });
     res.json(data);

@@ -16,7 +16,10 @@ import { getErrorMessage } from '../../services/http';
 import { useBgEnvFilter } from '../../hooks/useBgEnvFilter';
 import { useDebounce } from '../../hooks/useDebounce';
 import { mapWithConcurrency } from '../../utils/concurrencyPool';
-import { StatTile, MetaTag, PulseDot, getNextCronRun, SchedulerConfirmModal, SchedulerToggleConfirmModal, BulkSchedulerToggleConfirmModal } from '../applications/shared';
+import { getResolvedSchedule, rememberResolvedSchedule } from '../../services/cpsCronResolutionCache';
+import { resolveSchedulerCpsPropsForApps, resolvePlaceholder } from '../../utils/resolveSchedulerCpsCrons';
+import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
+import { StatTile, MetaTag, PulseDot, getNextCronRun, SchedulerConfirmModal, SchedulerToggleConfirmModal, BulkSchedulerToggleConfirmModal, BulkSchedulerRunConfirmModal } from '../applications/shared';
 
 // Caps concurrent /applications/schedulers/{orgId} requests when "All
 // Organizations" fans out across many BGs. Each of those backend requests
@@ -32,15 +35,35 @@ const SCHED_STALE_MS = 20 * 60 * 1000; // 20 min eviction
 
 /**
  * Standalone fetch helper mirroring ApplicationsPage's _fetchAndCacheApps —
- * fetches the aggregate scheduler list for every BG id, merges + dedupes,
- * stores in cache, and returns the merged array. Does NOT touch React state.
+ * fetches the aggregate scheduler list AND the environments list for every
+ * BG id, merges + dedupes both, stores the pair together under one cache
+ * entry, and returns them. Does NOT touch React state.
+ *
+ * Bundling environments with schedulers (rather than fetching them
+ * separately only on a cold miss, as this used to do) matters: on a cache
+ * HIT the component must still be able to populate its `environments`
+ * state — otherwise the env dropdown ends up empty and the global
+ * env-visibility filter silently stops applying, because both read from
+ * `environments` state which would otherwise only ever get set on a cold
+ * fetch. See ApplicationsPage.jsx's `_fetchAndCacheApps` for the same
+ * `{ apps, envs }` pairing pattern this mirrors.
+ *
+ * @param {string}   bgId
+ * @param {string[]} bgIds
+ * @param {string[]|null} envIds  optional env-filter scope — forwarded to
+ *   the backend so it only fans out requests for apps in these envs.
+ * @param {string}   cacheKey
  */
-async function _fetchAndCacheSchedulers(bgId, bgIds, cacheKey) {
-  const results = await mapWithConcurrency(bgIds, BG_FAN_OUT_CONCURRENCY, (id) => getAllSchedulers(id));
+async function _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey) {
+  const [schedResults, envResults] = await Promise.all([
+    mapWithConcurrency(bgIds, BG_FAN_OUT_CONCURRENCY, (id) => getAllSchedulers(id, envIds)),
+    Promise.allSettled(bgIds.map((id) => getEnvironments(id))),
+  ]);
+
   const merged = [];
   const errors = [];
   const seen = new Set();
-  results.forEach((r, i) => {
+  schedResults.forEach((r, i) => {
     if (r.status === 'fulfilled') {
       (r.value.data.data || []).forEach((s) => {
         // rowId (not schedulerKey) — schedulerKey can legitimately collide
@@ -55,8 +78,19 @@ async function _fetchAndCacheSchedulers(bgId, bgIds, cacheKey) {
       errors.push(`BG ${bgIds[i]}: ${r.reason?.message || 'fetch failed'}`);
     }
   });
-  setCached(cacheKey, merged, SCHED_STALE_MS);
-  return { merged, errors };
+
+  const mergedEnvs = [];
+  const seenEnvs = new Set();
+  envResults.forEach((r) => {
+    if (r.status === 'fulfilled') {
+      (r.value.data.data || []).forEach((e) => {
+        if (!seenEnvs.has(e.id)) { seenEnvs.add(e.id); mergedEnvs.push(e); }
+      });
+    }
+  });
+
+  setCached(cacheKey, { schedulers: merged, environments: mergedEnvs }, SCHED_STALE_MS);
+  return { merged, environments: mergedEnvs, errors };
 }
 
 /**
@@ -72,16 +106,29 @@ async function _fetchAndCacheSchedulers(bgId, bgIds, cacheKey) {
  * so React.memo's shallow prop comparison actually skips re-renders.
  */
 const SchedulerRow = React.memo(function SchedulerRow({
-  s, rowKeyStr, isChecked, isTriggering, isToggling, envType,
-  onToggleSelect, onRequestToggle, onRequestTrigger, onNavigateToApp,
+  s, rowKeyStr, isChecked, isTriggering, isToggling, envType, resolveVersion,
+  onToggleSelect, onRequestToggle, onRequestTrigger, onNavigateToApp, onOpenApp,
 }) {
   const active = s.enabled !== false;
+  // If the user already resolved this exact app+scheduler's CPS placeholder
+  // on the Infrastructure tab (via "Resolve from CPS →") or via this page's
+  // own "Resolve CPS Crons" button, show that real value instead of the raw
+  // `${cps.property}` placeholder this endpoint can't itself afford to
+  // resolve. Display-time only — never mutates `s` or the underlying cache.
+  // `resolveVersion` isn't read below — it exists purely so React.memo sees
+  // a changed prop and re-renders this row after a bulk resolve completes
+  // (getResolvedSchedule reads a module-level Map, not React state, so
+  // nothing would otherwise tell this memoized row to re-check it).
+  const resolved = s.unresolvedPlaceholder ? getResolvedSchedule(s.appId, s.schedulerKey) : null;
+  const cron = resolved?.cron ?? s.cron;
+  const timeZone = resolved?.timeZone ?? s.timeZone;
+  const unresolvedPlaceholder = resolved ? false : s.unresolvedPlaceholder;
   const { decodedCron, computedNextRun } = useMemo(() => {
-    if (!s.cron || s.unresolvedPlaceholder) return { decodedCron: '', computedNextRun: null };
+    if (!cron || unresolvedPlaceholder) return { decodedCron: '', computedNextRun: null };
     let decoded = '';
-    try { decoded = cronstrue.toString(s.cron, { throwExceptionOnParseError: true }); } catch { /* ignore */ }
-    return { decodedCron: decoded, computedNextRun: active ? getNextCronRun(s.cron) : null };
-  }, [s.cron, s.unresolvedPlaceholder, active]);
+    try { decoded = cronstrue.toString(cron, { throwExceptionOnParseError: true }); } catch { /* ignore */ }
+    return { decodedCron: decoded, computedNextRun: active ? getNextCronRun(cron) : null };
+  }, [cron, unresolvedPlaceholder, active]);
   // appStatus always comes through backend's normalizeStatus() (see
   // appHelpers.js), which already canonicalizes STARTED -> RUNNING before
   // this ever reaches the frontend — no need to check both.
@@ -98,7 +145,12 @@ const SchedulerRow = React.memo(function SchedulerRow({
         <div className="flex items-center gap-2">
           <PulseDot active={active} />
           <div className="min-w-0">
-            <p className="text-gray-900 dark:text-gray-100 font-semibold text-xs truncate max-w-[180px]">{s.appName}</p>
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpenApp(s._bgId, s.envId, s.appId); }}
+              title={`Open ${s.appName} in Application Detail`}
+              className="text-gray-900 dark:text-gray-100 font-semibold text-xs truncate max-w-[260px] block hover:text-sfpurple-600 dark:hover:text-sfpurple-400 hover:underline text-left">
+              {s.appName}
+            </button>
             <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${
               s.deploymentType === 'CloudHub 2.0' ? 'bg-sf-50 text-sf-700 dark:bg-sf-500/15 dark:text-sf-300' : 'bg-sfpurple-50 text-sfpurple-700 dark:bg-sfpurple-500/15 dark:text-sfpurple-300'
             }`}>{s.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1'}</span>
@@ -112,7 +164,7 @@ const SchedulerRow = React.memo(function SchedulerRow({
         </div>
       </td>
       <td className="px-4 py-3.5">
-        <p className="font-mono text-xs text-gray-800 dark:text-gray-200 break-all max-w-[180px]">{s.flowName}</p>
+        <p title={s.flowName} className="font-mono text-xs text-gray-800 dark:text-gray-200 truncate max-w-[220px]">{s.flowName}</p>
         <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-md font-semibold mt-1 ${active ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}>
           {active ? 'Enabled' : 'Disabled'}
         </span>
@@ -124,14 +176,14 @@ const SchedulerRow = React.memo(function SchedulerRow({
         )}
       </td>
       <td className="px-4 py-3.5 max-w-[220px]">
-        {s.cron ? (
+        {cron ? (
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <MetaTag color={s.unresolvedPlaceholder ? 'gray' : 'cyan'}>{s.cron}</MetaTag>
-              {s.timeZone && <span className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {s.timeZone}</span>}
+              <MetaTag color={unresolvedPlaceholder ? 'gray' : 'cyan'}>{cron}</MetaTag>
+              {timeZone && <span className="text-[10px] text-sfteal-600 dark:text-sfteal-400">🕐 {timeZone}</span>}
             </div>
             {decodedCron && <p className="text-[11px] text-gray-600 dark:text-gray-300">{decodedCron}</p>}
-            {s.unresolvedPlaceholder && (
+            {unresolvedPlaceholder && (
               <button
                 onClick={() => onNavigateToApp(s._bgId, s.envId, s.appId)}
                 title="Open this app's Infrastructure tab to resolve the cron value from CPS properties"
@@ -153,24 +205,24 @@ const SchedulerRow = React.memo(function SchedulerRow({
         ) : <span className="text-gray-400 dark:text-gray-600">—</span>}
       </td>
       <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-center gap-1.5">
+        <div className="flex items-center justify-center gap-2">
           <button
             onClick={() => onRequestToggle({ schedulerKey: rowKeyStr, nextEnabled: !active })}
             disabled={isToggling || s.ambiguousKey}
             title={s.ambiguousKey ? 'Ambiguous scheduler identifier — another scheduler in this app shares the same name/flow, so this action is disabled to avoid toggling the wrong one' : (active ? 'Disable' : 'Enable')}
-            className={`flex items-center gap-1 px-2 py-1.5 text-[10px] font-semibold rounded-lg border transition-all disabled:opacity-40 ${
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold rounded-lg border transition-all disabled:opacity-40 ${
               active
                 ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white'
                 : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white'
             }`}>
-            {isToggling ? <RefreshCw size={11} className="animate-spin" /> : <Power size={11} />}
+            {isToggling ? <RefreshCw size={14} className="animate-spin" /> : <Power size={14} />}
           </button>
           <button
             onClick={() => onRequestTrigger(rowKeyStr)}
             disabled={isTriggering || !appRunning || s.ambiguousKey}
             title={s.ambiguousKey ? 'Ambiguous scheduler identifier — another scheduler in this app shares the same name/flow, so this action is disabled to avoid triggering the wrong one' : (!appRunning ? 'App must be running to trigger' : 'Run now')}
-            className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-semibold rounded-lg border transition-all disabled:opacity-40 bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white">
-            {isTriggering ? <RefreshCw size={11} className="animate-spin" /> : <Zap size={11} />}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold rounded-lg border transition-all disabled:opacity-40 bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white">
+            {isTriggering ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
           </button>
         </div>
       </td>
@@ -201,11 +253,31 @@ export default function SchedulersPage() {
 
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 200);
-  const [filterEnv, setFilterEnv] = useState('');
+  // Persisted the same way selectedBg is — without this, navigating away
+  // (e.g. "Resolve from CPS" → Infrastructure tab) and back fully unmounts
+  // this page, losing the selection and silently reverting to "All
+  // Environments" even though the user had deliberately narrowed it down.
+  const [filterEnv, setFilterEnv] = useState(
+    () => localStorage.getItem('mule_schedulers_filter_env') || ''
+  );
+  useEffect(() => {
+    if (filterEnv) localStorage.setItem('mule_schedulers_filter_env', filterEnv);
+    else localStorage.removeItem('mule_schedulers_filter_env');
+  }, [filterEnv]);
   const [filterStatus, setFilterStatus] = useState(''); // enabled/disabled
   const [filterType, setFilterType] = useState(''); // CloudHub 1.0 / 2.0
 
-  const { bgFilterVersion, envFilterVersion } = useBgEnvFilter();
+  const { bgFilterVersion, envFilterVersion, visibleEnvIds } = useBgEnvFilter();
+
+  // The actual env scope to request from the backend: the single env picked
+  // in this page's own dropdown takes priority; otherwise fall back to the
+  // global env-visibility filter (EnvFilterModal) so "All Environments" here
+  // still only fetches/shows envs the user hasn't hidden app-wide. Empty
+  // Set / no selection = no restriction (fetch everything).
+  const envIdsFilter = useMemo(() => {
+    if (filterEnv) return [filterEnv];
+    return visibleEnvIds.size > 0 ? [...visibleEnvIds] : null;
+  }, [filterEnv, visibleEnvIds]);
 
   // Single-scheduler action state
   const [triggerLoadingSet, setTriggerLoadingSet] = useState(new Set());
@@ -217,7 +289,16 @@ export default function SchedulersPage() {
   // Bulk selection state
   const [selectedKeys, setSelectedKeys] = useState(new Set());
   const [bulkSchedulerToggleConfirm, setBulkSchedulerToggleConfirm] = useState(null);
+  const [bulkSchedulerRunConfirm, setBulkSchedulerRunConfirm] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkRunLoading, setBulkRunLoading] = useState(false);
+
+  // CPS cron resolution (global "Resolve CPS Crons" button)
+  const { hasCredentials, getSecret, getAllCredentials } = useCpsCredentialStore();
+  const [cpsResolveLoading, setCpsResolveLoading] = useState(false);
+  // Bumped after a successful bulk resolve purely to bust SchedulerRow's
+  // React.memo — see the comment on SchedulerRow's `resolveVersion` prop.
+  const [cpsResolveVersion, setCpsResolveVersion] = useState(0);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -275,20 +356,27 @@ export default function SchedulersPage() {
     const bgIds = bgId === '__all__'
       ? (visible.length > 0 ? visible.map((g) => g.id) : [orgId])
       : [bgId];
+    const envIds = envIdsFilter;
+
+    const cacheKey = CK.allSchedulers(bgId, bgIds, envIds);
 
     if (!forceRefresh) {
-      const cacheKey = CK.allSchedulers(bgId, bgIds);
       const swr = getCachedSWR(cacheKey);
       if (swr) {
-        setSchedulers(swr.data);
-        setError(swr.data.length === 0 ? 'No schedulers found.' : '');
+        // Bundled payload — see _fetchAndCacheSchedulers's doc comment for
+        // why `environments` must always come from the SAME cache entry as
+        // `schedulers` instead of only being set on a cold fetch.
+        setSchedulers(swr.data.schedulers);
+        setEnvironments(swr.data.environments);
+        setError(swr.data.schedulers.length === 0 ? 'No schedulers found.' : '');
         setSelectedKeys(new Set());
         if (swr.stale) {
           // Guard against setting state after unmount — the user may navigate
           // away before this background refresh resolves.
-          _fetchAndCacheSchedulers(bgId, bgIds, cacheKey).then(({ merged, errors }) => {
+          _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey).then(({ merged, environments: envs, errors }) => {
             if (!isMounted.current) return;
             setSchedulers(merged);
+            setEnvironments(envs);
             setFetchErrors(errors);
             if (merged.length === 0) setError('No schedulers found.');
           }).catch(() => {});
@@ -301,23 +389,9 @@ export default function SchedulersPage() {
     setError('');
     setSelectedKeys(new Set());
     try {
-      const [envsResults] = await Promise.all([
-        Promise.allSettled(bgIds.map((id) => getEnvironments(id))),
-      ]);
-      const mergedEnvs = [];
-      const seenEnvs = new Set();
-      envsResults.forEach((r) => {
-        if (r.status === 'fulfilled') {
-          (r.value.data.data || []).forEach((e) => {
-            if (!seenEnvs.has(e.id)) { seenEnvs.add(e.id); mergedEnvs.push(e); }
-          });
-        }
-      });
-      setEnvironments(mergedEnvs);
-
-      const cacheKey = CK.allSchedulers(bgId, bgIds);
-      const { merged, errors } = await _fetchAndCacheSchedulers(bgId, bgIds, cacheKey);
+      const { merged, environments: envs, errors } = await _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey);
       setSchedulers(merged);
+      setEnvironments(envs);
       setFetchErrors(errors);
       if (merged.length === 0) setError('No schedulers found.');
 
@@ -326,9 +400,11 @@ export default function SchedulersPage() {
       }
       keepFreshKeyRef.current = cacheKey;
       keepFresh(cacheKey, () =>
-        _fetchAndCacheSchedulers(bgId, bgIds, cacheKey).then(({ merged: m, errors: e }) => {
-          if (isMounted.current) { setSchedulers(m); setFetchErrors(e); }
-          return m;
+        _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey).then(({ merged: m, environments: e2, errors: e }) => {
+          if (isMounted.current) { setSchedulers(m); setEnvironments(e2); setFetchErrors(e); }
+          // Keep the shape consistent with what setCached stores internally
+          // (apiCache's keepFresh sweep re-stores whatever this returns).
+          return { schedulers: m, environments: e2 };
         })
       );
     } catch (e) {
@@ -339,9 +415,15 @@ export default function SchedulersPage() {
   };
 
   useEffect(() => { if (orgId) loadBusinessGroups(); }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Re-fetch whenever the BG selection OR the effective env scope changes —
+  // filterEnv (this page's own dropdown) and envFilterVersion (the global
+  // env-visibility filter, bumped via a window event when EnvFilterModal
+  // saves) both change `envIdsFilter`, and since schedulers are now fetched
+  // scoped to that env set server-side (not just filtered client-side
+  // afterwards), a change there must trigger a real re-fetch.
   useEffect(() => {
     if (selectedBg && allBusinessGroups.length > 0) loadSchedulers(selectedBg);
-  }, [selectedBg]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedBg, filterEnv, envFilterVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setSelectedKeys(new Set()); }, [selectedBg]);
 
   /* ── Filtering ──────────────────────────────────────── */
@@ -365,6 +447,15 @@ export default function SchedulersPage() {
 
   const enabledCount = filtered.filter((s) => s.enabled !== false).length;
   const disabledCount = filtered.length - enabledCount;
+  // Still-unresolved count — re-derived whenever cpsResolveVersion bumps so
+  // the "Resolve CPS Crons" button's badge/disabled-state reflects rows the
+  // resolution cache has already filled in, not just the static
+  // server-computed `unresolvedPlaceholder` flag (which never changes).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const unresolvedCount = useMemo(
+    () => filtered.filter((s) => s.unresolvedPlaceholder && !getResolvedSchedule(s.appId, s.schedulerKey)).length,
+    [filtered, cpsResolveVersion]
+  );
 
   // Reset to page 1 whenever filters/search/BG change
   useEffect(() => {
@@ -378,6 +469,16 @@ export default function SchedulersPage() {
   // instead of the whole `environments` array + an inline .find() per row.
   const envTypeById = useMemo(() => new Map(environments.map((e) => [e.id, e.type])), [environments]);
   const onNavigateToApp = useCallback((bgId, envId, appId) => {
+    // location.state tells ApplicationDetailPage to land directly on the
+    // Infrastructure tab — the user clicked this link specifically to
+    // resolve a CPS cron placeholder, so skip making them click "Schedulers"
+    // (that tab's label) themselves after arriving on the Overview tab.
+    navigate(`/applications/${bgId}/${envId}/${appId}`, { state: { openInfrastructureTab: true } });
+  }, [navigate]);
+  // Plain "open this app" navigation (e.g. clicking the app name) — lands on
+  // the normal default (Overview) tab, unlike onNavigateToApp above which is
+  // specifically for the "Resolve from CPS →" link.
+  const onOpenApp = useCallback((bgId, envId, appId) => {
     navigate(`/applications/${bgId}/${envId}/${appId}`);
   }, [navigate]);
 
@@ -495,6 +596,102 @@ export default function SchedulersPage() {
     setTimeout(() => setTriggerResult(null), 6000);
   };
 
+  const executeBulkRun = async () => {
+    const state = bulkSchedulerRunConfirm;
+    if (!state) return;
+    const { schedulerKeys } = state;
+    setBulkRunLoading(true);
+    setTriggerLoadingSet((prev) => { const n = new Set(prev); schedulerKeys.forEach((k) => n.add(k)); return n; });
+    const results = await Promise.allSettled(schedulerKeys.map(async (key) => {
+      const row = findRow(key);
+      if (!row) throw new Error('not found');
+      // Same two reasons single-row Run Now is disabled: ambiguous identity,
+      // or the app isn't running so the trigger would just fail server-side.
+      if (row.ambiguousKey) throw new Error('ambiguous scheduler identifier — skipped');
+      if ((row.appStatus || '').toUpperCase() !== 'RUNNING') throw new Error('app not running — skipped');
+      if (row.deploymentType === 'CloudHub 2.0') {
+        await runCloudhub2SchedulerNow(row._bgId, row.envId, row.appId, row.schedulerKey);
+      } else {
+        await runCloudhub1SchedulerNow(row.envId, row.appId, row.schedulerKey, row._bgId);
+      }
+      return key;
+    }));
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const failCount = schedulerKeys.length - succeeded;
+    setTriggerResult({
+      success: failCount === 0,
+      message: failCount === 0
+        ? `✓ ${succeeded} scheduler${succeeded !== 1 ? 's' : ''} triggered`
+        : `${succeeded} succeeded, ${failCount} failed/skipped`,
+    });
+    setTriggerLoadingSet((prev) => { const n = new Set(prev); schedulerKeys.forEach((k) => n.delete(k)); return n; });
+    setBulkRunLoading(false);
+    setBulkSchedulerRunConfirm(null);
+    setSelectedKeys(new Set());
+    setTimeout(() => setTriggerResult(null), 6000);
+  };
+
+  /**
+   * Global "Resolve CPS Crons" — resolves every currently-filtered
+   * scheduler's `${cps.property}` placeholder in one pass instead of
+   * requiring the user to open each app's Infrastructure tab individually.
+   * Scoped to `filtered` (respects search/env/status/type filters, same
+   * set the table is showing) rather than literally every scheduler ever
+   * loaded — a user filtering down to "Production" shouldn't pay the cost
+   * (CPS fetch per app, needs credentials) of resolving apps they've
+   * filtered out of view.
+   */
+  const resolveCpsCrons = async () => {
+    const unresolvedApps = new Map(); // appId -> {appId, envId, bgId, deploymentType}
+    filtered.forEach((s) => {
+      if (s.unresolvedPlaceholder && !unresolvedApps.has(s.appId)) {
+        unresolvedApps.set(s.appId, { appId: s.appId, envId: s.envId, bgId: s._bgId, deploymentType: s.deploymentType });
+      }
+    });
+    if (unresolvedApps.size === 0) return;
+
+    setCpsResolveLoading(true);
+    try {
+      const propsByApp = await resolveSchedulerCpsPropsForApps(
+        [...unresolvedApps.values()],
+        { hasCredentials, getSecret, getAllCredentials }
+      );
+
+      let resolvedCount = 0;
+      let failedApps = 0;
+      propsByApp.forEach(({ props, error }) => {
+        if (error) failedApps++;
+      });
+
+      filtered.forEach((s) => {
+        if (!s.unresolvedPlaceholder) return;
+        const entry = propsByApp.get(s.appId);
+        if (!entry || entry.error) return;
+        const { resolved: cron, wasResolved: cronResolved } = resolvePlaceholder(s.cron, entry.props);
+        const { resolved: timeZone } = resolvePlaceholder(s.timeZone, entry.props);
+        if (cronResolved) {
+          rememberResolvedSchedule(s.appId, s.schedulerKey, { cron, timeZone });
+          resolvedCount++;
+        }
+      });
+
+      setCpsResolveVersion((v) => v + 1); // force rows to re-check the resolution cache
+      setTriggerResult({
+        success: failedApps === 0,
+        message: resolvedCount > 0
+          ? `✓ Resolved ${resolvedCount} cron${resolvedCount !== 1 ? 's' : ''} from CPS${failedApps > 0 ? ` (${failedApps} app${failedApps !== 1 ? 's' : ''} failed)` : ''}`
+          : failedApps > 0
+            ? `✗ Failed to resolve CPS properties for ${failedApps} app${failedApps !== 1 ? 's' : ''}`
+            : 'No crons could be resolved — property not found in CPS',
+      });
+    } catch (e) {
+      setTriggerResult({ success: false, message: `✗ Failed to resolve CPS crons: ${getErrorMessage(e)}` });
+    } finally {
+      setCpsResolveLoading(false);
+      setTimeout(() => setTriggerResult(null), 6000);
+    }
+  };
+
   /* ── Select options ────────────────────────────────── */
   const visibleGroups = applyBgFilter(allBusinessGroups);
   const filterActive = visibleGroups.length < allBusinessGroups.length;
@@ -550,6 +747,12 @@ export default function SchedulersPage() {
         onCancel={() => setBulkSchedulerToggleConfirm(null)}
         loading={bulkLoading}
       />
+      <BulkSchedulerRunConfirmModal
+        state={bulkSchedulerRunConfirm}
+        onConfirm={executeBulkRun}
+        onCancel={() => setBulkSchedulerRunConfirm(null)}
+        loading={bulkRunLoading}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -561,6 +764,19 @@ export default function SchedulersPage() {
           {selectedVisibleCount > 0 && (
             <>
               <span className="text-[11px] text-sfpurple-700 dark:text-sfpurple-300 font-bold px-2 py-1 rounded-lg bg-sfpurple-50 dark:bg-sfpurple-500/10">{selectedVisibleCount} sel</span>
+              <button
+                onClick={() => {
+                  const keys = visibleKeys.filter((k) => selectedKeys.has(k));
+                  const runnable = keys.filter((k) => {
+                    const row = findRow(k);
+                    return row && !row.ambiguousKey && (row.appStatus || '').toUpperCase() === 'RUNNING';
+                  });
+                  setBulkSchedulerRunConfirm({ schedulerKeys: runnable });
+                }}
+                title="Run the selected schedulers now (apps that aren't running or have an ambiguous identifier are skipped)"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition-all bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20 hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600">
+                <Zap size={12} /> Run
+              </button>
               <button onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: visibleKeys.filter((k) => selectedKeys.has(k)), nextEnabled: true })}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition-all bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white hover:border-emerald-600">
                 <Power size={12} /> Enable
@@ -573,7 +789,18 @@ export default function SchedulersPage() {
                 className="text-[11px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-1">
                 Clear
               </button>
+              <span className="w-px h-6 bg-gradient-to-b from-transparent via-gray-200 dark:via-gray-700 to-transparent mx-1 flex-shrink-0" />
             </>
+          )}
+          {unresolvedCount > 0 && (
+            <button
+              onClick={resolveCpsCrons}
+              disabled={cpsResolveLoading}
+              title="Resolve every ${cps.property} cron/timezone placeholder currently visible, by fetching each affected app's CPS properties"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition-all bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-400/20 hover:bg-amber-600 hover:text-white hover:border-amber-600 disabled:opacity-50">
+              {cpsResolveLoading ? <RefreshCw size={12} className="animate-spin" /> : <Key size={12} />}
+              Resolve CPS Crons ({unresolvedCount})
+            </button>
           )}
           <button onClick={() => loadSchedulers(selectedBg, true)} disabled={loading || bgLoading}
             title="Refresh scheduler list"
@@ -714,10 +941,12 @@ export default function SchedulersPage() {
                     isTriggering={triggerLoadingSet.has(key)}
                     isToggling={toggleLoadingSet.has(key)}
                     envType={envTypeById.get(s.envId)}
+                    resolveVersion={cpsResolveVersion}
                     onToggleSelect={toggleSelectOne}
                     onRequestToggle={setSchedulerToggleConfirm}
                     onRequestTrigger={setSchedulerConfirmKey}
                     onNavigateToApp={onNavigateToApp}
+                    onOpenApp={onOpenApp}
                   />
                 );
               })}

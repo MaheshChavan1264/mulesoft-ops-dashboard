@@ -111,12 +111,21 @@ export function setCloudhub2SchedulerEnabled(orgId, envId, appId, schedulerKey, 
 }
 
 /**
- * GET /applications/schedulers/{orgId} — aggregate scheduler list across
- * every app (CH1 + CH2, all environments) for one business group. Backs the
- * Schedulers dashboard page; see cacheKeys.js's `allSchedulers` key.
+ * GET /applications/schedulers/{orgId} — aggregate scheduler list for one
+ * business group, optionally scoped to specific environment IDs so the
+ * backend only fans out requests for apps in those envs (fewer Anypoint
+ * calls, not just a smaller response). Backs the Schedulers dashboard page;
+ * see cacheKeys.js's `allSchedulers` key.
+ *
+ * @param {string}   orgId
+ * @param {string[]} [envIds]       env IDs to scope the fetch to; omit/empty for all envs
+ * @param {boolean}  [forceRefresh]
  */
-export function getAllSchedulers(orgId, forceRefresh = false) {
-  return api.get(`/applications/schedulers/${orgId}`, forceRefresh ? { params: { refresh: 'true' } } : {});
+export function getAllSchedulers(orgId, envIds, forceRefresh = false) {
+  const params = {};
+  if (envIds && envIds.length) params.envIds = envIds.join(',');
+  if (forceRefresh) params.refresh = 'true';
+  return api.get(`/applications/schedulers/${orgId}`, Object.keys(params).length ? { params } : {});
 }
 
 // ── Application lifecycle actions ─────────────────────────────────────────

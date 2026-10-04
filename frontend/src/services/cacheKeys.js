@@ -67,9 +67,14 @@ export const CK = {
   /**
    * Flattened scheduler list for a BG scope — same (bgId, bgIds) shape as
    * CK.apps above. bgId may be '__all__'; bgIds is the array actually fetched.
+   * envIds is the optional env-filter scope (page-local selection or the
+   * global env-visibility filter) — included in the key so an env-scoped
+   * fetch and the unfiltered org-wide fetch are cached as separate entries
+   * instead of one clobbering the other.
    * TTL recommendation: 3 min (enabled/disabled + next-run change often)
    */
-  allSchedulers: (bgId, bgIds) => `allschedulers:${bgId}:${Array.isArray(bgIds) ? bgIds.join(',') : bgIds}`,
+  allSchedulers: (bgId, bgIds, envIds) =>
+    `allschedulers:${bgId}:${Array.isArray(bgIds) ? bgIds.join(',') : bgIds}:${Array.isArray(envIds) && envIds.length ? [...envIds].sort().join(',') : 'all'}`,
 };
 
 /**
