@@ -184,9 +184,9 @@ app.get('/api/ping', (req, res) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   const statusCode = err.status || 500;
-  (req.log || logger).error(
+  logger.error(
     {
-      requestId: req.requestId,
+      method: req.method,
       route: req.originalUrl || req.path,
       statusCode,
       stack: err.stack,
@@ -197,7 +197,20 @@ app.use((err, req, res, next) => {
 });
 
 const server = app.listen(config.port, () => {
-  logger.info(`MuleSoft Dashboard Backend running on port ${config.port}`);
+  logger.info(
+    {
+      nodeEnv: config.nodeEnv,
+      port: config.port,
+      corsOrigins: config.corsOrigins,
+      anypointUrl: config.anypointUrl,
+      rateLimit: {
+        enforced: config.isProd || config.rateLimit.enforceOutsideProd,
+        authMax: config.rateLimit.authMax,
+        apiMax: config.rateLimit.apiMax,
+      },
+    },
+    `MuleSoft Dashboard Backend running on port ${config.port}`
+  );
 });
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────

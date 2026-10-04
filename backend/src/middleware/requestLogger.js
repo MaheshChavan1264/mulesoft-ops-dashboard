@@ -1,22 +1,23 @@
 /**
  * Request-tracing middleware.
  *
- * - Reads/generates an `x-request-id` correlation id for every request and
- *   echoes it back on the response headers.
- * - Runs the rest of the request inside an AsyncLocalStorage context (see
- *   utils/requestContext.js) so every downstream call — route handlers,
- *   service/helper functions, DB queries — can pick up the same requestId
- *   without it being threaded through every function signature. utils/logger.js
- *   reads this context automatically and stamps `requestId` onto every log line.
- * - Emits one structured completion log line per request on `res.on('finish')`
- *   with method, path, status code, response time, client IP and user-agent.
- *   Sensitive query parameters (token/secret) are redacted from the logged URL.
+ * - Echoes an `x-request-id` correlation id on the response headers (reads
+ *   an incoming one if the client already sent one, generates a fresh one
+ *   otherwise) — useful for a client/support ticket to reference a specific
+ *   call, without that id cluttering every log line server-side.
+ * - Emits one compact structured completion log line per request on
+ *   `res.on('finish')` with just method, url and status code.
+ * - Separately emits a WARN with the fuller picture (duration, client IP,
+ *   user-agent) only when a request is slow (> SLOW_REQUEST_MS) — detail
+ *   that matters for diagnosing a problem shouldn't cost noise on every
+ *   normal request.
+ * - Sensitive query parameters (token/secret) are redacted from the logged URL.
  */
 const crypto = require('crypto');
 const logger = require('../utils/logger');
-const { requestContext } = require('../utils/requestContext');
 
 const SENSITIVE_QUERY_PARAMS = ['token', 'secret'];
+const SLOW_REQUEST_MS = 1000;
 
 /** Redacts sensitive query parameters from a path+query string before logging. */
 function redactUrl(rawUrl) {
@@ -36,34 +37,35 @@ function redactUrl(rawUrl) {
 function requestLogger(req, res, next) {
   const incomingId = req.headers['x-request-id'];
   const requestId = (typeof incomingId === 'string' && incomingId.trim()) || crypto.randomUUID();
-
   res.setHeader('x-request-id', requestId);
-  req.requestId = requestId;
-  req.log = logger.child({ requestId });
 
   const startedAt = process.hrtime.bigint();
 
-  requestContext.run({ requestId }, () => {
-    res.on('finish', () => {
-      const responseTimeMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
-      logger.info(
+  res.on('finish', () => {
+    const method = req.method;
+    const url = redactUrl(req.originalUrl || req.url);
+    const statusCode = res.statusCode;
+
+    logger.info({ method, url, statusCode }, 'HTTP request completed');
+
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    if (durationMs > SLOW_REQUEST_MS) {
+      logger.warn(
         {
-          requestId,
-          method: req.method,
-          url: redactUrl(req.originalUrl || req.url),
-          statusCode: res.statusCode,
-          responseTimeMs: Math.round(responseTimeMs * 100) / 100,
+          method,
+          url,
+          statusCode,
+          durationMs: Math.round(durationMs),
           ip: req.ip,
           userAgent: req.headers['user-agent'],
         },
-        'HTTP request completed'
+        'Slow HTTP request'
       );
-    });
-
-    next();
+    }
   });
+
+  next();
 }
 
 module.exports = requestLogger;
 module.exports.requestLogger = requestLogger;
-module.exports.requestContext = requestContext;

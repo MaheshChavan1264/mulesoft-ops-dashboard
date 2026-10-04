@@ -204,6 +204,7 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/schedulers/:schedulerName/ru
     const response = await client.post(
       `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/schedulers/${encodeURIComponent(schedulerName)}/run`
     );
+    logger.info({ orgId, envId, deploymentId, schedulerName }, 'CH2 scheduler triggered');
     return res.json({ success: true, schedulerName, data: response.data });
   } catch (error) {
     sendProxyError(res, error, `Failed to trigger scheduler "${schedulerName}"`);
@@ -239,6 +240,7 @@ router.put('/cloudhub2/:orgId/:envId/:deploymentId/schedulers/:schedulerName', a
       payload
     );
     schedulersSummaryCache.del(orgId);
+    logger.info({ orgId, envId, deploymentId, schedulerName, enabled }, 'CH2 scheduler toggled');
     return res.json({ success: true, schedulerName, enabled, data: response.data });
   } catch (error) {
     sendProxyError(res, error, `Failed to ${enabled ? 'enable' : 'disable'} scheduler "${schedulerName}"`);
@@ -335,6 +337,7 @@ router.post('/cloudhub1/:envId/:appName/schedules/:scheduleName/run', authMiddle
       () => client.post(`/cloudhub/api/applications/${appName}/schedules/${encodeURIComponent(scheduleName)}/run`, {}, { headers }),
       () => client.post(`/cloudhub/api/v2/applications/${appName}/schedules/${encodeURIComponent(scheduleName)}/run`, {}, { headers }),
     ]);
+    logger.info({ orgId, envId, appName, scheduleName }, 'CH1 scheduler triggered');
     return res.json({ success: true, scheduleName, data: response.data });
   } catch (err) {
     logger.error({ err: err.response?.data || err.message }, `CH1 schedule trigger failed for ${appName}/${scheduleName}`);
@@ -371,6 +374,7 @@ router.put('/cloudhub1/:envId/:appName/schedules/:scheduleId', authMiddleware, a
       { headers }
     );
     schedulersSummaryCache.del(orgId);
+    logger.info({ orgId, envId, appName, scheduleId, enabled }, 'CH1 scheduler toggled');
     return res.json({ success: true, scheduleId, enabled, data: response.data });
   } catch (error) {
     sendProxyError(res, error, `Failed to ${enabled ? 'enable' : 'disable'} schedule "${scheduleId}"`);
@@ -438,6 +442,7 @@ router.post('/cloudhub1/:envId/:appName/action', authMiddleware, async (req, res
       () => runWithRestartFallback(strategy2, action),
     ]);
     detailCache.del(`ch1:${orgId}:${envId}:${appName}`);
+    logger.info({ orgId, envId, appName, action }, 'CH1 application action succeeded');
     return res.json({ success: true, action, appName });
   } catch (err) {
     logger.error({ err: err.response?.data || err.message }, `CH1 action ${action} failed for ${appName}`);
@@ -475,6 +480,7 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/action', authMiddleware, asy
   try {
     const response = await tryStrategies([strategy1, strategy2]);
     detailCache.del(`ch2:${orgId}:${envId}:${deploymentId}`);
+    logger.info({ orgId, envId, deploymentId, action }, 'CH2 application action succeeded');
     return res.json({ success: true, action, deploymentId, data: response?.data });
   } catch (err) {
     logger.error({ err: err.response?.data || err.message }, `CH2 action ${action} failed for ${deploymentId}`);

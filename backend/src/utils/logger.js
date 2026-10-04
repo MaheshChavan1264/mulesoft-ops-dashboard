@@ -8,9 +8,6 @@
  *    fatal) level records, independent of what's printed to the console.
  *  - Automatic redaction of sensitive fields (passwords, tokens, client
  *    secrets, ...) from every logged payload, recursively.
- *  - Automatic correlation: whichever `requestId` is active in
- *    AsyncLocalStorage (set by middleware/requestLogger.js) is stamped onto
- *    every log line without callers having to pass it explicitly.
  *
  * Backwards-compatible call signatures: existing call sites across the
  * codebase were written against pino's calling convention
@@ -23,7 +20,6 @@ const winston = require('winston');
 require('winston-daily-rotate-file');
 
 const config = require('../config');
-const { getRequestId } = require('./requestContext');
 
 // ── Custom levels ────────────────────────────────────────────────────────────
 // Adds `fatal` (above `error`) to winston's default npm levels, matching the
@@ -83,30 +79,21 @@ const redactFormat = winston.format((info) => {
   return result;
 });
 
-// ── Correlation ──────────────────────────────────────────────────────────────
-const contextFormat = winston.format((info) => {
-  if (!info.requestId) {
-    const requestId = getRequestId();
-    if (requestId) info.requestId = requestId;
-  }
-  return info;
-});
-
 // ── Output formats ───────────────────────────────────────────────────────────
+// Dev line shape: `<level> <timestamp>: <message> <meta>` — level leads so
+// severity is the first thing scanned when skimming a scrolling terminal,
+// with the timestamp immediately after it rather than out in front.
 const devFormat = winston.format.combine(
-  contextFormat(),
   redactFormat(),
   winston.format.colorize(),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
-  winston.format.printf(({ timestamp, level, message, requestId, ...meta }) => {
-    const reqIdStr = requestId ? ` [reqId:${requestId}]` : '';
+  winston.format.printf(({ timestamp, level, message, ...meta }) => {
     const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
-    return `${timestamp} ${level}:${reqIdStr} ${message}${metaStr}`;
+    return `${level} ${timestamp}: ${message}${metaStr}`;
   })
 );
 
 const prodFormat = winston.format.combine(
-  contextFormat(),
   redactFormat(),
   winston.format.timestamp(), // ISO 8601
   winston.format.json()
