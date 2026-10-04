@@ -17,6 +17,55 @@ import * as XLSX from 'xlsx';
  */
 
 /**
+ * Excel's hard per-cell string limit (a 16-bit signed length field —
+ * 2^15-1). Microsoft Excel silently truncates/"repairs" cells that exceed
+ * this and still opens the file; stricter OOXML readers (Zoho Sheets,
+ * some LibreOffice/Google Sheets import paths) treat it as a structural
+ * violation and refuse the file outright ("we found a problem with some
+ * content... repair"). exportCps.js's AllPropertiesCatalog sheet
+ * concatenates an app's entire property set into one cell
+ * (`propsToString()`), which can exceed this for apps with large CPS
+ * property sets (certs, JSON blobs, many secure keys) — this is the most
+ * likely real-world trigger for that error, so every row is sanitized
+ * here before it reaches the XLSX writer, for every exporter in the app.
+ */
+const MAX_CELL_CHARS = 32767;
+const TRUNCATION_SUFFIX = '…[TRUNCATED]';
+
+/**
+ * Excel's own hard cap on column width (`!cols[].wch`) is 255 characters;
+ * values beyond that are an out-of-range attribute on `<col width="...">`
+ * that Excel clamps silently but, again, stricter readers may reject.
+ * Capped well under that ceiling since no realistic column needs to be
+ * wider than this to stay readable.
+ */
+const MAX_COL_WIDTH = 80;
+
+/**
+ * Truncate any string value exceeding Excel's per-cell character limit,
+ * leaving everything else untouched. Mutates nothing — returns new row
+ * objects.
+ *
+ * @param {Array<Record<string, any>>} rows
+ * @returns {Array<Record<string, any>>}
+ */
+function clampCellStrings(rows) {
+  return rows.map((row) => {
+    let changed = false;
+    const next = {};
+    for (const [k, v] of Object.entries(row)) {
+      if (typeof v === 'string' && v.length > MAX_CELL_CHARS) {
+        next[k] = v.slice(0, MAX_CELL_CHARS - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX;
+        changed = true;
+      } else {
+        next[k] = v;
+      }
+    }
+    return changed ? next : row;
+  });
+}
+
+/**
  * Sanitize a string for use as an Excel sheet name: strips the characters
  * Excel disallows (`/ \ ? * [ ] :`) and truncates to the 31-character limit.
  *
@@ -40,7 +89,7 @@ export function sanitizeSheetName(name, fallback = 'Sheet') {
  */
 export function autoSizeColumns(rows, headers) {
   return headers.map((h) => ({
-    wch: Math.max(h.length, ...rows.map((r) => String(r[h] ?? '').length)) + 2,
+    wch: Math.min(Math.max(h.length, ...rows.map((r) => String(r[h] ?? '').length)) + 2, MAX_COL_WIDTH),
   }));
 }
 
@@ -57,10 +106,11 @@ export function autoSizeColumns(rows, headers) {
  * @returns {XLSX.WorkSheet}
  */
 export function rowsToWorksheet(rows, { headers, colWidths = 'auto' } = {}) {
-  const ws = XLSX.utils.json_to_sheet(rows, headers ? { header: headers } : undefined);
-  const resolvedHeaders = headers || (rows[0] ? Object.keys(rows[0]) : []);
+  const safeRows = clampCellStrings(rows);
+  const ws = XLSX.utils.json_to_sheet(safeRows, headers ? { header: headers } : undefined);
+  const resolvedHeaders = headers || (safeRows[0] ? Object.keys(safeRows[0]) : []);
   if (colWidths === 'auto') {
-    if (resolvedHeaders.length && rows.length) ws['!cols'] = autoSizeColumns(rows, resolvedHeaders);
+    if (resolvedHeaders.length && safeRows.length) ws['!cols'] = autoSizeColumns(safeRows, resolvedHeaders);
   } else if (Array.isArray(colWidths)) {
     ws['!cols'] = colWidths.map((w) => ({ wch: w }));
   }
@@ -78,9 +128,14 @@ export function rowsToWorksheet(rows, { headers, colWidths = 'auto' } = {}) {
  * @returns {XLSX.WorkSheet}
  */
 export function aoaToWorksheet(aoa, { colWidths } = {}) {
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const safeAoa = aoa.map((row) => row.map((cell) =>
+    (typeof cell === 'string' && cell.length > MAX_CELL_CHARS)
+      ? cell.slice(0, MAX_CELL_CHARS - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX
+      : cell
+  ));
+  const ws = XLSX.utils.aoa_to_sheet(safeAoa);
   if (Array.isArray(colWidths)) {
-    ws['!cols'] = colWidths.map((w) => ({ wch: w }));
+    ws['!cols'] = colWidths.map((w) => ({ wch: Math.min(w, MAX_COL_WIDTH) }));
   }
   return ws;
 }
