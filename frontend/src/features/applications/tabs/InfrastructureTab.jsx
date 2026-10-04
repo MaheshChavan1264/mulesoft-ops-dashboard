@@ -336,7 +336,7 @@ export default function InfrastructureTab({
               return (
                 <div key={rowId} className={`group relative rounded-2xl border bg-white/70 dark:bg-gray-900/40 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden ${active ? 'border-gray-200/70 dark:border-gray-700/60' : 'border-gray-200/50 dark:border-gray-800/60 opacity-70'}`}>
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${active ? 'bg-gradient-to-b from-sfpurple-400 to-sfpurple-600' : 'bg-gray-300 dark:bg-gray-700'}`} />
-                  <div className="grid grid-cols-[auto_200px_minmax(200px,1fr)_84px_84px_auto] items-center gap-4 px-5 py-3.5 pl-6">
+                  <div className="grid grid-cols-[auto_200px_minmax(200px,340px)_84px_84px_auto] items-center gap-4 px-5 py-3.5 pl-6">
                     {/* Select checkbox */}
                     <input
                       type="checkbox"
@@ -412,7 +412,7 @@ export default function InfrastructureTab({
                     </div>
 
                     {/* Action */}
-                    <div className="flex items-center gap-2 justify-self-end">
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={() => setSchedulerToggleConfirm({ schedulerKey, nextEnabled: !active })}
                         disabled={isToggling || isAmbiguous}

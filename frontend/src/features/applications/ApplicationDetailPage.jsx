@@ -479,6 +479,16 @@ export default function ApplicationDetailPage() {
         (s.expression || s.schedule?.expression || '').includes('${')
       );
       if (!hasPlaceholders) return;
+      // `app` can still be null here if this fires before the app bundle
+      // finishes loading (e.g. landing directly on this tab via the
+      // Schedulers dashboard's "Resolve from CPS →" link, which sets the
+      // initial tab to 'infrastructure' before `load()` resolves). Without
+      // this guard, `app.name` below throws synchronously — uncaught by the
+      // try/catch further down since it's before it — and the exception
+      // propagates up to loadCh2Schedulers' own catch, which then wipes the
+      // just-fetched real scheduler list back to `[]`. Bail out instead;
+      // the effect that calls loadCh2Schedulers re-fires once `app` loads.
+      if (!app) return;
       // Extract CPS config from app ARM props — delegate to the shared
       // extractCpsConfig() — see FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
       const cpsConfig2 = extractCpsConfig(app);
@@ -542,8 +552,13 @@ export default function ApplicationDetailPage() {
   // 'infrastructure' already (landing here via the Schedulers dashboard's
   // "Resolve from CPS →" link sets that as the initial state), in which case
   // the click handler never runs to kick off the fetch.
+  // Requires `app` to be loaded first (not just `ch2Schedulers === null`) —
+  // calling this before `app` resolves meant `app?._type !== 'ch1'` was
+  // trivially true (undefined !== 'ch1'), firing the CH2 fetch even for
+  // apps that turn out to be CH1, and racing resolvePlaceholders against a
+  // still-null `app`.
   useEffect(() => {
-    if (tab === 'infrastructure' && app?._type !== 'ch1' && ch2Schedulers === null && !schedulersLoading) {
+    if (tab === 'infrastructure' && app && app._type !== 'ch1' && ch2Schedulers === null && !schedulersLoading) {
       loadCh2Schedulers();
     }
   }, [tab, app, ch2Schedulers, schedulersLoading]); // eslint-disable-line react-hooks/exhaustive-deps

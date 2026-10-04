@@ -23,10 +23,12 @@ import { StatTile, MetaTag, PulseDot, getNextCronRun, SchedulerConfirmModal, Sch
 
 // Caps concurrent /applications/schedulers/{orgId} requests when "All
 // Organizations" fans out across many BGs. Each of those backend requests
-// ALSO fans out up to 8 concurrent per-app calls internally (see backend's
-// SCHEDULERS_FAN_OUT_CONCURRENCY) — without this cap, total in-flight
-// Anypoint calls scaled as (visible BG count) × 8, unbounded.
-const BG_FAN_OUT_CONCURRENCY = 4;
+// ALSO fans out up to SCHEDULERS_FAN_OUT_CONCURRENCY (20, see backend)
+// concurrent per-app calls internally — without this cap, total in-flight
+// Anypoint calls would scale as (visible BG count) × 20, unbounded.
+// At 6 (not 4) this still comfortably fits the Anypoint agent's maxSockets
+// (100 — see anypointClient.js) alongside the per-org fan-out below.
+const BG_FAN_OUT_CONCURRENCY = 6;
 
 // ── Cache TTL constants ──────────────────────────────────────────────────
 // Mirrors ApplicationsPage's APP_STALE_MS reasoning — FRESH_MS (3 min) is
@@ -306,7 +308,21 @@ export default function SchedulersPage() {
 
   const keepFreshKeyRef = useRef(null);
   const isMounted = useRef(true);
-  useEffect(() => () => { isMounted.current = false; }, []);
+  useEffect(() => () => {
+    isMounted.current = false;
+    // Unlike ApplicationsPage/_fetchAndCacheApps (cheap: a handful of
+    // summary calls), this page's keepFresh job re-runs the FULL per-app
+    // scheduler fan-out — one HTTP call per app, no bulk endpoint exists on
+    // the Anypoint side — which for a large account can take 30-90+
+    // seconds. Leaving that registered forever (the pattern other pages
+    // use, to keep navigating back instantly fresh) means it silently
+    // re-fires every ~3 min in the background for as long as the app stays
+    // open, long after the user has left this page, competing for the same
+    // connection pool as every other request. Stop it on unmount instead —
+    // the cost of one cold re-fetch next time this page opens is far
+    // cheaper than an unbounded recurring multi-thousand-app crawl.
+    if (keepFreshKeyRef.current) stopKeepingFresh(keepFreshKeyRef.current);
+  }, []);
 
   // Uses rowId (guaranteed unique within an app — see backend's
   // normalizeSchedulerRow) rather than schedulerKey, which can legitimately

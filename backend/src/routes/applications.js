@@ -696,7 +696,14 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
 const SCHEDULERS_SUMMARY_CACHE_TTL_MS   = 20 * 60 * 1000; // 20 min hard eviction
 const SCHEDULERS_SUMMARY_CACHE_FRESH_MS =  3 * 60 * 1000; // 3 min SWR freshness threshold
-const SCHEDULERS_FAN_OUT_CONCURRENCY = 8;
+// There is no bulk "list schedulers" endpoint on the Anypoint AMC API — one
+// HTTP call per app is unavoidable. For accounts with hundreds/thousands of
+// apps per org (seen in practice: 500-1200+ apps in a single BG), a
+// concurrency of 8 meant a cold fetch took 30-90+ seconds (apps/8 sequential
+// batches). Raised to 20 — comfortably inside the Anypoint agent's
+// maxSockets (100, see anypointClient.js) even with the frontend's
+// BG_FAN_OUT_CONCURRENCY (6) running several orgs in parallel at once.
+const SCHEDULERS_FAN_OUT_CONCURRENCY = 20;
 
 const schedulersSummaryCache = new NodeCache({
   stdTTL:      SCHEDULERS_SUMMARY_CACHE_TTL_MS / 1000,
