@@ -3,7 +3,7 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 const { stripDeploymentSuffix } = require('../utils/appHelpers');
-const { sendProxyError } = require('../utils/responseHelpers');
+const { sendProxyError, extractAnypointErrorMessage } = require('../utils/responseHelpers');
 
 // Search Exchange assets
 router.get('/search', authMiddleware, async (req, res) => {
@@ -665,7 +665,7 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[ping-spec] Error:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch ping spec',
+      error: extractAnypointErrorMessage(error, 'Failed to fetch ping spec'),
       specType: 'unknown',
       pingEndpoints: [],
       allEndpoints: [],

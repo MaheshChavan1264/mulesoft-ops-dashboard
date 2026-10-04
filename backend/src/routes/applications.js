@@ -9,7 +9,7 @@ const {
   normalizeStatus,
   makeCh1Headers,
 } = require('../utils/appHelpers');
-const { sendProxyError } = require('../utils/responseHelpers');
+const { sendProxyError, extractAnypointErrorMessage } = require('../utils/responseHelpers');
 
 // ── Application-summary in-memory cache ──────────────────────────────────────
 //
@@ -174,7 +174,7 @@ router.get('/cloudhub1/:envId/:appName/static-ips', authMiddleware, async (req, 
       console.error('Error fetching CH1 static IPs:', error.response?.data || error.message);
     }
     res.status(status).json({
-      error: error.response?.data?.message || 'Failed to fetch static IPs'
+      error: extractAnypointErrorMessage(error, 'Failed to fetch static IPs')
     });
   }
 });
@@ -371,7 +371,7 @@ router.get('/private-spaces/:orgId/:privateSpaceId', authMiddleware, async (req,
   } catch (error) {
     const status = error.response?.status || 500;
     if (status !== 404) console.error('Error fetching private space:', error.response?.data || error.message);
-    res.status(status).json({ error: error.response?.data?.message || 'Failed to fetch private space' });
+    res.status(status).json({ error: extractAnypointErrorMessage(error, 'Failed to fetch private space') });
   }
 });
 

@@ -3,7 +3,7 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 const { fetchExchangeAppCreds } = require('../utils/exchangeHelpers');
-const { sendProxyError } = require('../utils/responseHelpers');
+const { sendProxyError, extractAnypointErrorMessage } = require('../utils/responseHelpers');
 
 // Fetch a client application's clientId from Exchange by numeric appId.
 // Route uses a hyphenated prefix so it CANNOT be confused with /:orgId/:envId/:apiId.
@@ -77,7 +77,7 @@ router.get('/:orgId/:envId/:apiId/policies', authMiddleware, async (req, res) =>
   } catch (error) {
     console.error('[APIs] policies error:', error.response?.status, error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API policies',
+      error: extractAnypointErrorMessage(error, 'Failed to fetch API policies'),
       _debug: { orgId, envId, apiId, url }
     });
   }
@@ -95,7 +95,7 @@ router.get('/:orgId/:envId/:apiId/contracts', authMiddleware, async (req, res) =
   } catch (error) {
     console.error('[APIs] contracts error:', error.response?.status, error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API contracts',
+      error: extractAnypointErrorMessage(error, 'Failed to fetch API contracts'),
       _debug: { orgId, envId, apiId, url }
     });
   }
@@ -114,7 +114,7 @@ router.delete('/:orgId/:envId/:apiId/contracts/:contractId', authMiddleware, asy
   } catch (error) {
     console.error('[APIs] delete contract error:', error.response?.status, error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to delete contract',
+      error: extractAnypointErrorMessage(error, 'Failed to delete contract'),
       _debug: { orgId, envId, apiId, contractId, url }
     });
   }
@@ -138,7 +138,7 @@ router.patch('/:orgId/:envId/:apiId/contracts/:contractId', authMiddleware, asyn
   } catch (error) {
     console.error('[APIs] patch contract error:', error.response?.status, error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to update contract status',
+      error: extractAnypointErrorMessage(error, 'Failed to update contract status'),
       _debug: { orgId, envId, apiId, contractId, url }
     });
   }

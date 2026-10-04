@@ -177,7 +177,7 @@ export default function ExchangePage() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-5">
+    <div className="h-full flex flex-col space-y-5">
       {showBgFilter && (
         <BgFilterModal businessGroups={allBgs} onClose={() => setShowBgFilter(false)} onSaved={() => {}} />
       )}
@@ -239,11 +239,13 @@ export default function ExchangePage() {
         </button>
       </div>
 
-      {/* ── Main layout ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+      {/* ── Main layout — fills remaining viewport height so both panels
+          scroll independently instead of being capped at an arbitrary
+          max-height with empty space below ───────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 flex-1 min-h-0">
 
         {/* ── Asset list (2/5) ─────────────────────────────── */}
-        <div className="lg:col-span-2 card-surface overflow-hidden flex flex-col">
+        <div className="lg:col-span-2 card-surface overflow-hidden flex flex-col h-full">
           <div className="px-5 py-3.5 border-b border-gray-200 dark:border-white/[0.08] bg-gray-50/60 dark:bg-gray-900/40 flex items-center justify-between flex-shrink-0">
             <h3 className="flex items-center gap-2 text-gray-900 dark:text-gray-100 font-semibold text-sm">
               <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-sfpurple-100 dark:bg-sfpurple-500/15 text-sfpurple-600 dark:text-sfpurple-400 flex-shrink-0">
@@ -275,7 +277,7 @@ export default function ExchangePage() {
           {loading ? (
             <SkeletonListRows rows={6} />
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-white/[0.06] overflow-y-auto flex-1 max-h-[640px]">
+            <div className="divide-y divide-gray-100 dark:divide-white/[0.06] overflow-y-auto flex-1">
               {assets.map((asset, i) => {
                 const isSel = selected?.assetId === asset.assetId && selected?.groupId === asset.groupId;
                 return (
@@ -323,7 +325,7 @@ export default function ExchangePage() {
         </div>
 
         {/* ── Asset Detail panel (3/5) ─────────────────────── */}
-        <div className="lg:col-span-3 card-surface overflow-hidden flex flex-col min-h-[500px]">
+        <div className="lg:col-span-3 card-surface overflow-hidden flex flex-col h-full">
           {!selected ? (
             <div className="flex flex-col items-center justify-center flex-1 py-24 text-center px-6">
               <div className="w-14 h-14 rounded-3xl bg-gradient-to-br from-sfpurple-50 to-sf-50 dark:from-sfpurple-500/10 dark:to-sf-500/5 flex items-center justify-center mb-4 shadow-sm">

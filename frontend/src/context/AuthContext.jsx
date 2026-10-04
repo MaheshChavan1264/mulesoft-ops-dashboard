@@ -4,6 +4,9 @@ import { MOCK_USER } from '../services/mocks/mockData.js';
 import { clearCache } from '../services/apiCache';
 import { warmCache } from '../services/prefetch';
 import * as authService from '../services/authService';
+import { useCredentialStore } from './CredentialStoreContext';
+import { useCpsCredentialStore } from './CpsCredentialStoreContext';
+import { useGlobalCpsCredentialStore } from './GlobalCpsCredentialStoreContext';
 
 const AuthContext = createContext(null);
 
@@ -12,6 +15,15 @@ export const AuthProvider = ({ children }) => {
   const [orgId, setOrgId] = useState(null);
   const [orgName, setOrgName] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // All three credential stores are RAM-only — none persist secrets to
+  // localStorage/sessionStorage — but since their Providers are mounted
+  // once at the top of the app and never unmount on logout, their React
+  // state would otherwise survive a logout → different-user login within
+  // the same browser tab. Clearing them explicitly here closes that gap.
+  const { clearCredentials: clearAppCreds } = useCredentialStore();
+  const { clearCredentials: clearCpsCreds } = useCpsCredentialStore();
+  const { clearCredentials: clearGlobalCpsCreds } = useGlobalCpsCredentialStore();
 
   const checkSession = useCallback(async () => {
     try {
@@ -98,10 +110,13 @@ export const AuthProvider = ({ children }) => {
     disableDemoMode();
     await authService.logout();
     clearCache(); // flush stale data so next user never sees previous session
+    clearAppCreds();       // CredentialStoreContext — RAM-only ping-test CSV creds
+    clearCpsCreds();        // CpsCredentialStoreContext — RAM-only per-app CPS CSV creds
+    clearGlobalCpsCreds();  // GlobalCpsCredentialStoreContext — RAM-only Global CPS matrix
     setUser(null);
     setOrgId(null);
     setOrgName(null);
-  }, []);
+  }, [clearAppCreds, clearCpsCreds, clearGlobalCpsCreds]);
 
   const value = useMemo(
     () => ({ user, orgId, orgName, loading, login, tokenLogin, connectedAppLogin, demoLogin, logout }),

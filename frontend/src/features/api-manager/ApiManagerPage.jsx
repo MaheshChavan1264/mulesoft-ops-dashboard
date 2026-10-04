@@ -70,12 +70,27 @@ export default function ApiManagerPage() {
   const pendingInstanceIdRef = useRef(
     localStorage.getItem('mule_apimgr_instance') || ''
   );
+  // Fallback hint when ApplicationDetailPage didn't know the exact API
+  // instance ID yet (its Contracts tab hadn't been loaded) — it stores the
+  // app name instead so we can pre-filter/auto-select by name once the
+  // instance list loads. Previously written by ApplicationDetailPage but
+  // never read here, so the "API Manager" shortcut silently did nothing
+  // whenever contracts hadn't been fetched first.
+  const pendingSearchRef = useRef(
+    localStorage.getItem('mule_apimgr_search') || ''
+  );
 
-  // Clear the pending instance key from localStorage as soon as the page mounts
-  // (we've already captured it in the ref above)
+  // Clear the pending instance/search keys from localStorage as soon as the
+  // page mounts (we've already captured them in the refs above), and seed
+  // the search box with the name hint so the list is pre-filtered even if
+  // auto-select below can't resolve it unambiguously.
   useEffect(() => {
     if (pendingInstanceIdRef.current) {
       localStorage.removeItem('mule_apimgr_instance');
+    }
+    if (pendingSearchRef.current) {
+      localStorage.removeItem('mule_apimgr_search');
+      setSearch(pendingSearchRef.current);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -84,14 +99,38 @@ export default function ApiManagerPage() {
     if (authOrgId) loadBusinessGroups();
   }, [authOrgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-select pending API instance once the list finishes loading
+  // Auto-select pending API instance once the list finishes loading.
+  // Prefers the exact instance ID (set when ApplicationDetailPage's
+  // Contracts tab had already resolved it); falls back to an unambiguous
+  // name match (assetId/name/label) when only the app-name hint is
+  // available. If the name hint matches more than one instance, we leave
+  // it unresolved — the search box is already pre-filled above so the
+  // user can pick the right one from the filtered list.
   useEffect(() => {
+    if (apis.length === 0 || selectedApi) return;
+
     const targetId = pendingInstanceIdRef.current;
-    if (!targetId || apis.length === 0 || selectedApi) return;
-    const match = apis.find(a => String(a.id) === String(targetId));
-    if (match) {
-      pendingInstanceIdRef.current = ''; // consume — only fire once
-      selectApi(match);
+    if (targetId) {
+      const match = apis.find(a => String(a.id) === String(targetId));
+      if (match) {
+        pendingInstanceIdRef.current = ''; // consume — only fire once
+        selectApi(match);
+        return;
+      }
+    }
+
+    const targetName = pendingSearchRef.current;
+    if (targetName) {
+      const q = targetName.toLowerCase().trim();
+      const nameMatches = apis.filter(a =>
+        (a.assetId || '').toLowerCase() === q ||
+        (a.name || '').toLowerCase() === q ||
+        (a.label || '').toLowerCase() === q
+      );
+      if (nameMatches.length === 1) {
+        pendingSearchRef.current = ''; // consume — only fire once
+        selectApi(nameMatches[0]);
+      }
     }
   }, [apis]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -428,7 +467,7 @@ export default function ApiManagerPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-5">
+    <div className="h-full flex flex-col space-y-5">
       {showBgFilter && (
         <BgFilterModal
           businessGroups={allBusinessGroups}
@@ -551,12 +590,14 @@ export default function ApiManagerPage() {
         </div>
       )}
 
-      {/* ── Main grid: list + detail ────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ── Main grid: list + detail — fills remaining viewport height so
+          both panels scroll independently instead of being capped at an
+          arbitrary max-height with empty space below ───────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
 
         {/* ── API Instance List ─────────────────────────────────────────────── */}
-        <div className="card-surface overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-200 dark:border-white/[0.08] bg-gray-50/60 dark:bg-gray-900/40 flex items-center justify-between">
+        <div className="card-surface overflow-hidden flex flex-col h-full">
+          <div className="px-5 py-3.5 border-b border-gray-200 dark:border-white/[0.08] bg-gray-50/60 dark:bg-gray-900/40 flex items-center justify-between flex-shrink-0">
             <h3 className="flex items-center gap-2 text-gray-900 dark:text-gray-100 font-semibold text-sm">
               <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-sf-100 dark:bg-sf-500/15 text-sf-600 dark:text-sf-400 flex-shrink-0">
                 <ShieldCheck size={13} />
@@ -571,7 +612,7 @@ export default function ApiManagerPage() {
           {loading ? (
             <SkeletonListRows rows={6} showBadge />
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-white/[0.06] max-h-[500px] overflow-y-auto">
+            <div className="divide-y divide-gray-100 dark:divide-white/[0.06] flex-1 overflow-y-auto">
               {filtered.map(a => {
                 const isSel = selectedApi?.id === a.id;
                 return (
@@ -632,7 +673,7 @@ export default function ApiManagerPage() {
         </div>
 
         {/* ── API Detail Panel ──────────────────────────────────────────────── */}
-        <div className="card-surface overflow-hidden overflow-y-auto max-h-[700px]">
+        <div className="card-surface overflow-hidden overflow-y-auto h-full">
           {selectedApi ? (
             <>
               {/* Detail header */}

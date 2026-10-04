@@ -15,8 +15,11 @@ const CredentialStoreContext = createContext(null);
  *   - The CSV is parsed client-side; file bytes never leave the browser.
  *   - clientSecrets are not sent to the backend; only the single matched
  *     clientId+secret pair travels over HTTPS at the moment a ping fires.
- *   - On logout, the AuthContext should call clearCredentials() (or the
- *     React tree unmount handles it automatically).
+ *   - On logout, AuthContext explicitly calls clearCredentials() on this
+ *     (and the other two credential) context(s) — since all three
+ *     Providers are mounted once at the top of the app and never unmount,
+ *     the React tree alone would NOT clear this state across a logout /
+ *     different-user login in the same tab.
  *
  * The Map/loadedCount state machine and its accessor callbacks live in the
  * shared useCredentialMapStore hook so this context stays in sync with
