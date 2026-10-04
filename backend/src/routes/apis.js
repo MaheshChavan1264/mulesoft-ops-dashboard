@@ -3,7 +3,10 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { createClient } = require('../utils/anypointClient');
 const { fetchExchangeAppCreds } = require('../utils/exchangeHelpers');
-const { sendProxyError } = require('../utils/responseHelpers');
+const { extractAnypointErrorMessage } = require('../utils/responseHelpers');
+const { proxyHandler } = require('../utils/asyncHandler');
+const { clampPagination } = require('../utils/pagination');
+const logger = require('../utils/logger');
 
 // Fetch a client application's clientId from Exchange by numeric appId.
 // Route uses a hyphenated prefix so it CANNOT be confused with /:orgId/:envId/:apiId.
@@ -24,60 +27,52 @@ router.get('/app-client-id/:appId', authMiddleware, async (req, res) => {
   const client = createClient(req.anypointToken);
 
   for (const oid of toTry) {
-    const { clientId, clientSecret } = await fetchExchangeAppCreds(client, oid, appId);
+    const { clientId } = await fetchExchangeAppCreds(client, oid, appId);
     if (clientId) {
-      console.log(`[APIs] clientId resolved for appId ${appId} via org ${oid}`);
+      logger.info(`[APIs] clientId resolved for appId ${appId} via org ${oid}`);
       return res.json({ id: appId, name: null, clientId });
     }
-    console.warn(`[APIs] Exchange app lookup found no clientId (org ${oid})`);
+    logger.warn(`[APIs] Exchange app lookup found no clientId (org ${oid})`);
   }
 
   // Nothing worked — return null clientId without error so UI gracefully shows "—"
-  console.warn(`[APIs] Could not resolve clientId for appId ${appId} after trying orgs: ${toTry.join(', ')}`);
+  logger.warn(`[APIs] Could not resolve clientId for appId ${appId} after trying orgs: ${toTry.join(', ')}`);
   res.json({ id: appId, name: null, clientId: null });
 });
 
 // Get all API instances for an environment
-router.get('/:orgId/:envId', authMiddleware, async (req, res) => {
-  try {
-    const client = createClient(req.anypointToken);
-    const { limit = 50, offset = 0 } = req.query;
-    const response = await client.get(
-      `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis`,
-      { params: { limit, offset } }
-    );
-    res.json(response.data);
-  } catch (error) {
-    sendProxyError(res, error, 'Failed to fetch API instances');
-  }
-});
+router.get('/:orgId/:envId', authMiddleware, proxyHandler('Failed to fetch API instances', async (req, res) => {
+  const client = createClient(req.anypointToken);
+  const { limit, offset } = clampPagination(req.query);
+  const response = await client.get(
+    `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis`,
+    { params: { limit, offset } }
+  );
+  res.json(response.data);
+}));
 
 // Get a specific API instance
-router.get('/:orgId/:envId/:apiId', authMiddleware, async (req, res) => {
-  try {
-    const client = createClient(req.anypointToken);
-    const response = await client.get(
-      `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis/${req.params.apiId}`
-    );
-    res.json(response.data);
-  } catch (error) {
-    sendProxyError(res, error, 'Failed to fetch API instance');
-  }
-});
+router.get('/:orgId/:envId/:apiId', authMiddleware, proxyHandler('Failed to fetch API instance', async (req, res) => {
+  const client = createClient(req.anypointToken);
+  const response = await client.get(
+    `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis/${req.params.apiId}`
+  );
+  res.json(response.data);
+}));
 
 // Get policies applied to an API instance
 router.get('/:orgId/:envId/:apiId/policies', authMiddleware, async (req, res) => {
   const { orgId, envId, apiId } = req.params;
   const url = `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/policies`;
-  console.log('[APIs] GET policies →', url);
+  logger.debug(`[APIs] GET policies → ${url}`);
   try {
     const client = createClient(req.anypointToken);
     const response = await client.get(url);
     res.json(response.data);
   } catch (error) {
-    console.error('[APIs] policies error:', error.response?.status, error.response?.data || error.message);
+    logger.error({ status: error.response?.status, data: error.response?.data || error.message }, '[APIs] policies error');
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API policies',
+      error: extractAnypointErrorMessage(error, 'Failed to fetch API policies'),
       _debug: { orgId, envId, apiId, url }
     });
   }
@@ -87,15 +82,15 @@ router.get('/:orgId/:envId/:apiId/policies', authMiddleware, async (req, res) =>
 router.get('/:orgId/:envId/:apiId/contracts', authMiddleware, async (req, res) => {
   const { orgId, envId, apiId } = req.params;
   const url = `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts`;
-  console.log('[APIs] GET contracts →', url);
+  logger.debug(`[APIs] GET contracts → ${url}`);
   try {
     const client = createClient(req.anypointToken);
     const response = await client.get(url);
     res.json(response.data);
   } catch (error) {
-    console.error('[APIs] contracts error:', error.response?.status, error.response?.data || error.message);
+    logger.error({ status: error.response?.status, data: error.response?.data || error.message }, '[APIs] contracts error');
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to fetch API contracts',
+      error: extractAnypointErrorMessage(error, 'Failed to fetch API contracts'),
       _debug: { orgId, envId, apiId, url }
     });
   }
@@ -105,16 +100,16 @@ router.get('/:orgId/:envId/:apiId/contracts', authMiddleware, async (req, res) =
 router.delete('/:orgId/:envId/:apiId/contracts/:contractId', authMiddleware, async (req, res) => {
   const { orgId, envId, apiId, contractId } = req.params;
   const url = `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts/${contractId}`;
-  console.log('[APIs] DELETE contract →', url);
+  logger.debug(`[APIs] DELETE contract → ${url}`);
   try {
     const client = createClient(req.anypointToken);
     const response = await client.delete(url);
     // Anypoint returns 204 No Content on success
     res.status(response.status === 204 ? 204 : 200).json(response.data ?? { success: true });
   } catch (error) {
-    console.error('[APIs] delete contract error:', error.response?.status, error.response?.data || error.message);
+    logger.error({ status: error.response?.status, data: error.response?.data || error.message }, '[APIs] delete contract error');
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to delete contract',
+      error: extractAnypointErrorMessage(error, 'Failed to delete contract'),
       _debug: { orgId, envId, apiId, contractId, url }
     });
   }
@@ -130,44 +125,36 @@ router.patch('/:orgId/:envId/:apiId/contracts/:contractId', authMiddleware, asyn
   }
 
   const url = `/apimanager/api/v1/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts/${contractId}`;
-  console.log(`[APIs] PATCH contract status to ${status} →`, url);
+  logger.debug(`[APIs] PATCH contract status to ${status} → ${url}`);
   try {
     const client = createClient(req.anypointToken);
     const response = await client.patch(url, { status });
     res.json(response.data);
   } catch (error) {
-    console.error('[APIs] patch contract error:', error.response?.status, error.response?.data || error.message);
+    logger.error({ status: error.response?.status, data: error.response?.data || error.message }, '[APIs] patch contract error');
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || 'Failed to update contract status',
+      error: extractAnypointErrorMessage(error, 'Failed to update contract status'),
       _debug: { orgId, envId, apiId, contractId, url }
     });
   }
 });
 
 // Get SLA tiers for an API instance
-router.get('/:orgId/:envId/:apiId/tiers', authMiddleware, async (req, res) => {
-  try {
-    const client = createClient(req.anypointToken);
-    const response = await client.get(
-      `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis/${req.params.apiId}/tiers`
-    );
-    res.json(response.data);
-  } catch (error) {
-    sendProxyError(res, error, 'Failed to fetch SLA tiers');
-  }
-});
+router.get('/:orgId/:envId/:apiId/tiers', authMiddleware, proxyHandler('Failed to fetch SLA tiers', async (req, res) => {
+  const client = createClient(req.anypointToken);
+  const response = await client.get(
+    `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis/${req.params.apiId}/tiers`
+  );
+  res.json(response.data);
+}));
 
 // Get API alerts
-router.get('/:orgId/:envId/:apiId/alerts', authMiddleware, async (req, res) => {
-  try {
-    const client = createClient(req.anypointToken);
-    const response = await client.get(
-      `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis/${req.params.apiId}/alerts`
-    );
-    res.json(response.data);
-  } catch (error) {
-    sendProxyError(res, error, 'Failed to fetch API alerts');
-  }
-});
+router.get('/:orgId/:envId/:apiId/alerts', authMiddleware, proxyHandler('Failed to fetch API alerts', async (req, res) => {
+  const client = createClient(req.anypointToken);
+  const response = await client.get(
+    `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis/${req.params.apiId}/alerts`
+  );
+  res.json(response.data);
+}));
 
 module.exports = router;

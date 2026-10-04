@@ -118,6 +118,32 @@ export async function getOrFetch(key, fetchFn, staleMs = STALE_MS) {
   return inflight.get(key);
 }
 
+/**
+ * Plain inflight request deduplication — no TTL caching, just collapses
+ * concurrent identical requests into a single HTTP call so every waiter
+ * shares the same promise/response.
+ *
+ * Used by services/api.js's GET facade so simultaneous calls to the same
+ * URL+params (e.g. several components mounting at once and all requesting
+ * the same business-group list) no longer each fire their own network
+ * request — see FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review,
+ * finding #8 ("apiCache.js SWR/dedup engine bypassed by api.js's own
+ * facade"). Deliberately does NOT cache the result past the in-flight
+ * window — callers that want TTL caching should use getOrFetch/getCachedSWR
+ * directly with their own cache key, since those have page-specific
+ * freshness requirements this generic layer shouldn't second-guess.
+ *
+ * @param {string}   key
+ * @param {Function} fetchFn  () => Promise<data>
+ * @returns {Promise<data>}
+ */
+export function dedupeInflight(key, fetchFn) {
+  if (inflight.has(key)) return inflight.get(key);
+  const promise = fetchFn().finally(() => inflight.delete(key));
+  inflight.set(key, promise);
+  return promise;
+}
+
 // ── Cache invalidation ───────────────────────────────────────────────────────
 
 /** Remove all cache entries whose key starts with a given prefix. */

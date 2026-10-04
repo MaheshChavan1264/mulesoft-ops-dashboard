@@ -34,13 +34,47 @@ export const CK = {
    */
   appsAll: (bgIds) => `apps:__all__:${Array.isArray(bgIds) ? bgIds.join(',') : bgIds}`,
 
-  // ── CloudHub 2.0 per-app detail ──────────────────────────────────────────
-  /** Full CH2 deployment detail for a single app.  TTL recommendation: 5 min */
-  appDetail: (appId, envId) => `ch2detail:${appId}:${envId}`,
+  // ── Per-app detail (CH1 or CH2) ──────────────────────────────────────────
+  /** Full app detail (CH2 deployment+Private Space IPs, or CH1 fallback
+   *  bundle) for a single app. TTL recommendation: 5 min */
+  appDetail: (orgId, envId, appId) => `appdetail:${orgId}:${envId}:${appId}`,
+
+  // ── Breadcrumb lookups (shared with ApplicationsPage's BG/env caches) ───
+  /** Environments list for a BG — same shape as getEnvironments(orgId).
+   *  TTL recommendation: 30 min (rarely changes) */
+  envs: (orgId) => `envs:${orgId}`,
+
+  // ── CPS non-secure properties (auto-loaded on app detail open) ───────────
+  /** Flattened non-secure CPS properties for one app's CPS key+env.
+   *  TTL recommendation: 5 min */
+  cpsNonSecure: (baseUrl, depType, env, key) => `cpsns:${baseUrl}:${depType}:${env}:${key}`,
+
+  // ── Application Detail page's lazy ("tab click") data ────────────────────
+  /** CH2 scheduler list for one app (Schedulers tab).  TTL recommendation: 5 min */
+  schedulers: (orgId, envId, appId) => `schedulers:${orgId}:${envId}:${appId}`,
+  /** Resolved API Manager instance + consumer contracts (Contracts tab).
+   *  TTL recommendation: 5 min */
+  contracts: (orgId, envId, appId) => `contracts:${orgId}:${envId}:${appId}`,
+  /** Exchange ping/API spec (API Spec + Ping Test tabs) — rarely changes.
+   *  TTL recommendation: 10 min */
+  pingSpec: (orgId, appName) => `pingspec:${orgId}:${appName}`,
 
   // ── CloudHub 1.0 application list ────────────────────────────────────────
   /** CH1 app list for a BG+env.  TTL recommendation: 5 min */
   ch1list: (bgId, envId) => `ch1list:${bgId}:${envId}`,
+
+  // ── Schedulers dashboard (aggregate across all apps in a BG scope) ──────
+  /**
+   * Flattened scheduler list for a BG scope — same (bgId, bgIds) shape as
+   * CK.apps above. bgId may be '__all__'; bgIds is the array actually fetched.
+   * envIds is the optional env-filter scope (page-local selection or the
+   * global env-visibility filter) — included in the key so an env-scoped
+   * fetch and the unfiltered org-wide fetch are cached as separate entries
+   * instead of one clobbering the other.
+   * TTL recommendation: 3 min (enabled/disabled + next-run change often)
+   */
+  allSchedulers: (bgId, bgIds, envIds) =>
+    `allschedulers:${bgId}:${Array.isArray(bgIds) ? bgIds.join(',') : bgIds}:${Array.isArray(envIds) && envIds.length ? [...envIds].sort().join(',') : 'all'}`,
 };
 
 /**
@@ -51,8 +85,14 @@ export const CK = {
  *   bustCache(CK.PREFIX.bgs)    // invalidate all business-group caches
  */
 CK.PREFIX = {
-  bgs:       'bgs:',
-  apps:      'apps:',
-  appDetail: 'ch2detail:',
-  ch1list:   'ch1list:',
+  bgs:          'bgs:',
+  apps:         'apps:',
+  appDetail:    'appdetail:',
+  envs:         'envs:',
+  cpsNonSecure: 'cpsns:',
+  schedulers:   'schedulers:',
+  contracts:    'contracts:',
+  pingSpec:     'pingspec:',
+  ch1list:      'ch1list:',
+  allSchedulers: 'allschedulers:',
 };

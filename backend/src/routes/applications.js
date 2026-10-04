@@ -9,7 +9,10 @@ const {
   normalizeStatus,
   makeCh1Headers,
 } = require('../utils/appHelpers');
-const { sendProxyError } = require('../utils/responseHelpers');
+const { sendProxyError, extractAnypointErrorMessage } = require('../utils/responseHelpers');
+const { tryStrategies, runWithRestartFallback } = require('../utils/retryStrategies');
+const { mapWithConcurrency } = require('../utils/concurrencyPool');
+const logger = require('../utils/logger');
 
 // ── Application-summary in-memory cache ──────────────────────────────────────
 //
@@ -52,6 +55,77 @@ const summaryCache = new NodeCache({
 // firing an independent Anypoint fan-out.
 const inflightSummary = new Map(); // orgId → Promise<responseData>
 
+// ── Single-app-detail in-memory cache ────────────────────────────────────────
+//
+// Same NodeCache + SWR + thundering-herd-guard shape as the summary cache
+// above, but with a much shorter window: a single app's detail page is
+// opened/refreshed far more often per entity than the org-wide summary, and
+// `status` can change at any moment (user action, Anypoint auto-scaling), so
+// staying "instant" for more than ~1 min risks showing a stale running
+// state. Key is `${orgId}:${envId}:${deploymentId}` (CH2) or
+// `${orgId}:${envId}:${appName}` (CH1) — shared across all users viewing the
+// same app, same security reasoning as summaryCache (key scopes to orgId;
+// the caller's own Anypoint token still governs what they're allowed to see).
+const DETAIL_CACHE_TTL_MS   = 5 * 60 * 1000; // 5 min hard eviction
+const DETAIL_CACHE_FRESH_MS = 60 * 1000;     // 1 min SWR freshness threshold
+
+const detailCache = new NodeCache({
+  stdTTL:      DETAIL_CACHE_TTL_MS / 1000,
+  checkperiod: 60,       // short TTL — sweep every 1 min
+  useClones:   false,
+});
+const inflightDetail = new Map(); // cacheKey → Promise<data>
+
+/**
+ * Generic NodeCache + SWR + thundering-herd-guard choreography, extracted
+ * from the summary route's inline logic so single-app-detail routes can
+ * reuse the exact same instant-fresh / stale+background-refresh /
+ * piggyback-on-cold-fetch behavior without copy-pasting it per route.
+ *
+ * @param {object}   opts
+ * @param {NodeCache} opts.cache
+ * @param {Map}      opts.inflight       cacheKey → Promise<data>
+ * @param {string}   opts.key
+ * @param {number}   opts.freshMs
+ * @param {boolean}  opts.forceRefresh
+ * @param {Function} opts.fetchFn        () => Promise<data>
+ * @param {string}   opts.label          used only in the bg-refresh-failed warn log
+ * @returns {Promise<any>}  the data to send with res.json()
+ */
+async function swrFetch({ cache, inflight, key, freshMs, forceRefresh, fetchFn, label }) {
+  const cached = cache.get(key); // undefined if evicted — NodeCache enforces hard TTL
+  const ageMs  = cached ? Date.now() - cached.ts : Infinity;
+  const isFresh = ageMs < freshMs;
+
+  if (!forceRefresh && cached && isFresh) {
+    return cached.data; // instant — zero network
+  }
+
+  if (!forceRefresh && cached) {
+    // Stale-but-usable (NodeCache hasn't evicted it yet) — serve instantly,
+    // kick off exactly one background refresh per key.
+    if (!inflight.has(key)) {
+      const p = fetchFn()
+        .then((data) => { cache.set(key, { data, ts: Date.now() }); return data; })
+        .catch((err) => logger.warn({ err }, `[${label}] BG refresh failed for ${key}`))
+        .finally(() => inflight.delete(key));
+      inflight.set(key, p);
+    }
+    return cached.data;
+  }
+
+  // Cache miss / forceRefresh
+  if (!forceRefresh && inflight.has(key)) {
+    return inflight.get(key); // piggyback on the in-flight fetch
+  }
+
+  const p = fetchFn()
+    .then((data) => { cache.set(key, { data, ts: Date.now() }); return data; })
+    .finally(() => inflight.delete(key));
+  if (!forceRefresh) inflight.set(key, p);
+  return p;
+}
+
 // Get all applications for an environment (CloudHub 2.0)
 router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
   try {
@@ -69,31 +143,40 @@ router.get('/cloudhub2/:orgId/:envId', authMiddleware, async (req, res) => {
 
 // Get a specific CloudHub 2.0 application — enriched with properties from separate endpoint
 router.get('/cloudhub2/:orgId/:envId/:deploymentId', authMiddleware, async (req, res) => {
+  const { orgId, envId, deploymentId } = req.params;
+  const forceRefresh = req.query.refresh === 'true';
+  const cacheKey = `ch2:${orgId}:${envId}:${deploymentId}`;
   try {
     const client = createClient(req.anypointToken);
-    const { orgId, envId, deploymentId } = req.params;
 
-    // Fetch main deployment detail
-    const response = await client.get(
-      `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`
-    );
-    const deployment = response.data;
-
-    // Try to fetch application properties from dedicated endpoint
-    let extraProps = null;
-    try {
-      const propsRes = await client.get(
-        `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/settings`
+    const fetchFn = async () => {
+      // Fetch main deployment detail
+      const response = await client.get(
+        `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`
       );
-      extraProps = propsRes.data;
-    } catch { /* not all apps have this endpoint */ }
+      const deployment = response.data;
 
-    // Merge extra props into the deployment response if found
-    if (extraProps) {
-      deployment._settings = extraProps;
-    }
+      // Try to fetch application properties from dedicated endpoint
+      let extraProps = null;
+      try {
+        const propsRes = await client.get(
+          `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/settings`
+        );
+        extraProps = propsRes.data;
+      } catch { /* not all apps have this endpoint */ }
 
-    res.json(deployment);
+      // Merge extra props into the deployment response if found
+      if (extraProps) {
+        deployment._settings = extraProps;
+      }
+      return deployment;
+    };
+
+    const data = await swrFetch({
+      cache: detailCache, inflight: inflightDetail, key: cacheKey,
+      freshMs: DETAIL_CACHE_FRESH_MS, forceRefresh, fetchFn, label: 'CH2 detail',
+    });
+    res.json(data);
   } catch (error) {
     sendProxyError(res, error, 'Failed to fetch application');
   }
@@ -121,9 +204,46 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/schedulers/:schedulerName/ru
     const response = await client.post(
       `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/schedulers/${encodeURIComponent(schedulerName)}/run`
     );
+    logger.info({ orgId, envId, deploymentId, schedulerName }, 'CH2 scheduler triggered');
     return res.json({ success: true, schedulerName, data: response.data });
   } catch (error) {
     sendProxyError(res, error, `Failed to trigger scheduler "${schedulerName}"`);
+  }
+});
+
+// Enable or disable a CloudHub 2.0 scheduler.
+// The Anypoint AMC API expects a PUT with the full scheduler config (not just
+// `enabled`), so we fetch the current list first and merge the toggled flag
+// into the matching scheduler's existing config before sending it back.
+router.put('/cloudhub2/:orgId/:envId/:deploymentId/schedulers/:schedulerName', authMiddleware, async (req, res) => {
+  const { orgId, envId, deploymentId, schedulerName } = req.params;
+  const { enabled } = req.body || {};
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: '"enabled" must be a boolean' });
+  }
+  const client = createClient(req.anypointToken);
+  const basePath = `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/schedulers`;
+  try {
+    const listResponse = await client.get(basePath);
+    // Per Mulesoft's AMC Application Manager API, GET .../schedulers returns
+    // { total, items: [...] } — NOT { schedulers: [...] }. The `.schedulers`
+    // fallback below was wrong and silently produced an empty list for every
+    // CH2 app, making "enable/disable" always 404 with "not found".
+    const schedulers = Array.isArray(listResponse.data) ? listResponse.data : (listResponse.data?.items || listResponse.data?.schedulers || []);
+    const current = schedulers.find((s) => s.name === schedulerName || s.flow === schedulerName || s.flowName === schedulerName);
+    if (!current) {
+      return res.status(404).json({ error: `Scheduler "${schedulerName}" not found` });
+    }
+    const payload = { ...current, enabled };
+    const response = await client.put(
+      `${basePath}/${encodeURIComponent(schedulerName)}`,
+      payload
+    );
+    invalidateSchedulersSummary(orgId);
+    logger.info({ orgId, envId, deploymentId, schedulerName, enabled }, 'CH2 scheduler toggled');
+    return res.json({ success: true, schedulerName, enabled, data: response.data });
+  } catch (error) {
+    sendProxyError(res, error, `Failed to ${enabled ? 'enable' : 'disable'} scheduler "${schedulerName}"`);
   }
 });
 
@@ -143,13 +263,23 @@ router.get('/cloudhub1/:envId', authMiddleware, async (req, res) => {
 
 // Get a specific CloudHub 1.0 application
 router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
+  const { envId, appName } = req.params;
+  const orgId = req.query.orgId || req.orgId;
+  const forceRefresh = req.query.refresh === 'true';
+  const cacheKey = `ch1:${orgId}:${envId}:${appName}`;
   try {
     const client = createClient(req.anypointToken);
-    const orgId = req.query.orgId || req.orgId;
-    const response = await client.get(`/cloudhub/api/applications/${req.params.appName}`, {
-      headers: makeCh1Headers(req.params.envId, orgId),
+    const fetchFn = async () => {
+      const response = await client.get(`/cloudhub/api/applications/${appName}`, {
+        headers: makeCh1Headers(envId, orgId),
+      });
+      return response.data;
+    };
+    const data = await swrFetch({
+      cache: detailCache, inflight: inflightDetail, key: cacheKey,
+      freshMs: DETAIL_CACHE_FRESH_MS, forceRefresh, fetchFn, label: 'CH1 detail',
     });
-    res.json(response.data);
+    res.json(data);
   } catch (error) {
     sendProxyError(res, error, 'Failed to fetch CloudHub 1.0 application');
   }
@@ -171,10 +301,10 @@ router.get('/cloudhub1/:envId/:appName/static-ips', authMiddleware, async (req, 
     const status = error.response?.status || 500;
     // 404 is expected for apps that don't have the static-ips endpoint — log at debug level only
     if (status !== 404) {
-      console.error('Error fetching CH1 static IPs:', error.response?.data || error.message);
+      logger.error({ err: error.response?.data || error.message }, 'Error fetching CH1 static IPs');
     }
     res.status(status).json({
-      error: error.response?.data?.message || 'Failed to fetch static IPs'
+      error: extractAnypointErrorMessage(error, 'Failed to fetch static IPs')
     });
   }
 });
@@ -203,26 +333,51 @@ router.post('/cloudhub1/:envId/:appName/schedules/:scheduleName/run', authMiddle
   const client = createClient(req.anypointToken);
   const headers = makeCh1Headers(envId, orgId);
   try {
-    const response = await client.post(
-      `/cloudhub/api/applications/${appName}/schedules/${encodeURIComponent(scheduleName)}/run`,
-      {},
+    const response = await tryStrategies([
+      () => client.post(`/cloudhub/api/applications/${appName}/schedules/${encodeURIComponent(scheduleName)}/run`, {}, { headers }),
+      () => client.post(`/cloudhub/api/v2/applications/${appName}/schedules/${encodeURIComponent(scheduleName)}/run`, {}, { headers }),
+    ]);
+    logger.info({ orgId, envId, appName, scheduleName }, 'CH1 scheduler triggered');
+    return res.json({ success: true, scheduleName, data: response.data });
+  } catch (err) {
+    logger.error({ err: err.response?.data || err.message }, `CH1 schedule trigger failed for ${appName}/${scheduleName}`);
+    return res.status(err.response?.status || 500).json({
+      error: err.response?.data?.message || `Failed to trigger scheduler "${scheduleName}"`
+    });
+  }
+});
+
+// Enable or disable a CloudHub 1.0 schedule.
+// Same approach as CH2: fetch the current list, merge the toggled `enabled`
+// flag into the matching schedule's existing config, then PUT it back.
+router.put('/cloudhub1/:envId/:appName/schedules/:scheduleId', authMiddleware, async (req, res) => {
+  const { envId, appName, scheduleId } = req.params;
+  const orgId = req.query.orgId || req.orgId;
+  const { enabled } = req.body || {};
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: '"enabled" must be a boolean' });
+  }
+  const client = createClient(req.anypointToken);
+  const headers = makeCh1Headers(envId, orgId);
+  const basePath = `/cloudhub/api/applications/${appName}/schedules`;
+  try {
+    const listResponse = await client.get(basePath, { headers });
+    const schedules = Array.isArray(listResponse.data) ? listResponse.data : listResponse.data?.data || [];
+    const current = schedules.find((s) => s.id === scheduleId || s.name === scheduleId);
+    if (!current) {
+      return res.status(404).json({ error: `Schedule "${scheduleId}" not found` });
+    }
+    const payload = { ...current, enabled };
+    const response = await client.put(
+      `${basePath}/${encodeURIComponent(scheduleId)}`,
+      payload,
       { headers }
     );
-    return res.json({ success: true, scheduleName, data: response.data });
-  } catch (e1) {
-    try {
-      const response = await client.post(
-        `/cloudhub/api/v2/applications/${appName}/schedules/${encodeURIComponent(scheduleName)}/run`,
-        {},
-        { headers }
-      );
-      return res.json({ success: true, scheduleName, data: response.data });
-    } catch (e2) {
-      console.error(`CH1 schedule trigger failed for ${appName}/${scheduleName}:`, e2.response?.data || e2.message);
-      return res.status(e2.response?.status || 500).json({
-        error: e2.response?.data?.message || `Failed to trigger scheduler "${scheduleName}"`
-      });
-    }
+    invalidateSchedulersSummary(orgId);
+    logger.info({ orgId, envId, appName, scheduleId, enabled }, 'CH1 scheduler toggled');
+    return res.json({ success: true, scheduleId, enabled, data: response.data });
+  } catch (error) {
+    sendProxyError(res, error, `Failed to ${enabled ? 'enable' : 'disable'} schedule "${scheduleId}"`);
   }
 });
 
@@ -277,45 +432,23 @@ router.post('/cloudhub1/:envId/:appName/action', authMiddleware, async (req, res
   const strategy2 = async (act) =>
     client.put(`/cloudhub/api/applications/${appName}`, { status: statusMap[act] || act.toUpperCase() }, { headers });
 
-  // Restart helper: execute a single-action fn for stop, wait, then start
-  const doRestart = async (fn) => {
-    await fn('stop');
-    await new Promise((r) => setTimeout(r, 4000));
-    await fn('start');
-  };
-
-  // Try strategy 1 first
+  // Each strategy gets the restart = "try native restart, else stop→wait→start"
+  // fallback automatically via runWithRestartFallback (utils/retryStrategies.js);
+  // tryStrategies then tries strategy1-with-restart-fallback, and if THAT whole
+  // thing fails, falls through to strategy2-with-restart-fallback.
   try {
-    if (action === 'restart') {
-      // CH1 may not have a native restart — try direct first, then stop→start
-      try {
-        await strategy1('restart');
-      } catch {
-        await doRestart(strategy1);
-      }
-    } else {
-      await strategy1(action);
-    }
+    await tryStrategies([
+      () => runWithRestartFallback(strategy1, action),
+      () => runWithRestartFallback(strategy2, action),
+    ]);
+    detailCache.del(`ch1:${orgId}:${envId}:${appName}`);
+    logger.info({ orgId, envId, appName, action }, 'CH1 application action succeeded');
     return res.json({ success: true, action, appName });
-  } catch (e1) {
-    // Strategy 1 failed — try strategy 2 (PUT with status field)
-    try {
-      if (action === 'restart') {
-        try {
-          await strategy2('restart');
-        } catch {
-          await doRestart(strategy2);
-        }
-      } else {
-        await strategy2(action);
-      }
-      return res.json({ success: true, action, appName });
-    } catch (e2) {
-      console.error(`CH1 action ${action} failed for ${appName}:`, e2.response?.data || e2.message);
-      return res.status(e2.response?.status || 500).json({
-        error: e2.response?.data?.message || `Failed to ${action} application`
-      });
-    }
+  } catch (err) {
+    logger.error({ err: err.response?.data || err.message }, `CH1 action ${action} failed for ${appName}`);
+    return res.status(err.response?.status || 500).json({
+      error: err.response?.data?.message || `Failed to ${action} application`
+    });
   }
 });
 
@@ -329,32 +462,31 @@ router.post('/cloudhub2/:orgId/:envId/:deploymentId/action', authMiddleware, asy
   const client = createClient(req.anypointToken);
   const base = `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`;
 
-  try {
-    // Try dedicated action endpoint first (POST .../start, .../stop, .../restart)
-    const response = await client.post(`${base}/${action}`);
-    return res.json({ success: true, action, deploymentId, data: response.data });
-  } catch (e1) {
-    // Fallback for start/stop: PATCH desiredState
-    // Fallback for restart: stop then start (RESTARTED is not a valid desiredState)
-    try {
-      if (action === 'restart') {
-        // CH2 restart = stop → wait → start
-        await client.patch(base, { application: { desiredState: 'STOPPED' } });
-        await new Promise(r => setTimeout(r, 3000));
-        await client.patch(base, { application: { desiredState: 'STARTED' } });
-        return res.json({ success: true, action, deploymentId });
-      }
-      const stateMap = { start: 'STARTED', stop: 'STOPPED' };
-      const response = await client.patch(base, {
-        application: { desiredState: stateMap[action] }
-      });
-      return res.json({ success: true, action, deploymentId, data: response.data });
-    } catch (e2) {
-      console.error(`CH2 action ${action} failed for ${deploymentId}:`, e2.response?.data || e2.message);
-      return res.status(e2.response?.status || 500).json({
-        error: e2.response?.data?.message || `Failed to ${action} deployment`
-      });
+  // Strategy 1: dedicated action endpoint (POST .../start, .../stop, .../restart)
+  const strategy1 = () => client.post(`${base}/${action}`);
+
+  // Strategy 2: PATCH desiredState — restart isn't a valid desiredState on CH2,
+  // so it's handled as stop → wait → start (RESTARTED is not accepted here).
+  const strategy2 = async () => {
+    if (action === 'restart') {
+      await client.patch(base, { application: { desiredState: 'STOPPED' } });
+      await new Promise((r) => setTimeout(r, 3000));
+      return client.patch(base, { application: { desiredState: 'STARTED' } });
     }
+    const stateMap = { start: 'STARTED', stop: 'STOPPED' };
+    return client.patch(base, { application: { desiredState: stateMap[action] } });
+  };
+
+  try {
+    const response = await tryStrategies([strategy1, strategy2]);
+    detailCache.del(`ch2:${orgId}:${envId}:${deploymentId}`);
+    logger.info({ orgId, envId, deploymentId, action }, 'CH2 application action succeeded');
+    return res.json({ success: true, action, deploymentId, data: response?.data });
+  } catch (err) {
+    logger.error({ err: err.response?.data || err.message }, `CH2 action ${action} failed for ${deploymentId}`);
+    return res.status(err.response?.status || 500).json({
+      error: err.response?.data?.message || `Failed to ${action} deployment`
+    });
   }
 });
 
@@ -370,8 +502,8 @@ router.get('/private-spaces/:orgId/:privateSpaceId', authMiddleware, async (req,
     res.json(response.data);
   } catch (error) {
     const status = error.response?.status || 500;
-    if (status !== 404) console.error('Error fetching private space:', error.response?.data || error.message);
-    res.status(status).json({ error: error.response?.data?.message || 'Failed to fetch private space' });
+    if (status !== 404) logger.error({ err: error.response?.data || error.message }, 'Error fetching private space');
+    res.status(status).json({ error: extractAnypointErrorMessage(error, 'Failed to fetch private space') });
   }
 });
 
@@ -477,7 +609,7 @@ async function _fetchSummary(client, targetOrgId) {
   // Store in NodeCache — TTL eviction is handled automatically by NodeCache's
   // internal checkperiod sweep; no manual cleanup needed.
   summaryCache.set(targetOrgId, { data: responseData, ts: Date.now() });
-  //console.log(`[Summary] ${new Date().toISOString()} Cache SET for org ${targetOrgId} (${results.length} apps)`);
+  logger.debug(`[Summary] Cache SET for org ${targetOrgId} (${results.length} apps)`);
   return responseData;
 }
 
@@ -511,19 +643,19 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
     if (!forceRefresh && cached && isFresh) {
       // ── Fresh hit — instant response, zero network ───────────────────────
-      //console.log(`[Summary] ${new Date().toISOString()} Cache HIT (fresh) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s)`);
+      logger.debug(`[Summary] Cache HIT (fresh) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s)`);
       return res.json(cached.data);
     }
 
     if (!forceRefresh && isUsable) {
       // ── Stale-but-usable — respond instantly, refresh in background ──────
-      //console.log(`[Summary] ${new Date().toISOString()} Cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s) — BG refresh started`);
+      logger.debug(`[Summary] Cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s) — BG refresh started`);
       res.json(cached.data);
 
       // Only start a background refresh if one isn't already running for this org
       if (!inflightSummary.has(targetOrgId)) {
         const p = _fetchSummary(client, targetOrgId)
-          .catch((err) => console.warn(`[Summary] BG refresh failed for org ${targetOrgId}:`, err.message))
+          .catch((err) => logger.warn({ err }, `[Summary] BG refresh failed for org ${targetOrgId}`))
           .finally(() => inflightSummary.delete(targetOrgId));
         inflightSummary.set(targetOrgId, p);
       }
@@ -531,11 +663,11 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     }
 
     // ── Cache miss / force-refresh — thundering-herd protected fetch ────────
-    //console.log(`[Summary] ${new Date().toISOString()} Cache MISS for org ${targetOrgId} (forceRefresh: ${forceRefresh})`);
+    logger.debug(`[Summary] Cache MISS for org ${targetOrgId} (forceRefresh: ${forceRefresh})`);
 
     if (!forceRefresh && inflightSummary.has(targetOrgId)) {
       // Another request is already fetching this org — piggyback on it
-      //console.log(`[Summary] ${new Date().toISOString()} Piggybacking on in-flight fetch for org ${targetOrgId}`);
+      logger.debug(`[Summary] Piggybacking on in-flight fetch for org ${targetOrgId}`);
       const data = await inflightSummary.get(targetOrgId);
       return res.json(data);
     }
@@ -550,6 +682,282 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
     res.json(data);
   } catch (error) {
     sendProxyError(res, error, 'Failed to fetch application summary');
+  }
+});
+
+// ── Aggregate schedulers across every app in an org (Schedulers dashboard) ──
+//
+// Same NodeCache + SWR + thundering-herd-guard shape as summaryCache above.
+// Reuses the (already-cached) app summary to know which apps exist and
+// whether each is CH1/CH2, then fans out one scheduler-list call per app
+// via mapWithConcurrency (bounded concurrency — an org can have hundreds of
+// apps, and firing them all at once would hammer the Anypoint API / trip
+// rate limits the way an unbounded Promise.all would).
+
+const SCHEDULERS_SUMMARY_CACHE_TTL_MS   = 20 * 60 * 1000; // 20 min hard eviction
+const SCHEDULERS_SUMMARY_CACHE_FRESH_MS =  3 * 60 * 1000; // 3 min SWR freshness threshold
+// There is no bulk "list schedulers" endpoint on the Anypoint AMC API — one
+// HTTP call per app is unavoidable. For accounts with hundreds/thousands of
+// apps per org (seen in practice: 500-1200+ apps in a single BG), a
+// concurrency of 8 meant a cold fetch took 30-90+ seconds (apps/8 sequential
+// batches). Raised to 20 — comfortably inside the Anypoint agent's
+// maxSockets (100, see anypointClient.js) even with the frontend's
+// BG_FAN_OUT_CONCURRENCY (6) running several orgs in parallel at once.
+const SCHEDULERS_FAN_OUT_CONCURRENCY = 20;
+
+const schedulersSummaryCache = new NodeCache({
+  stdTTL:      SCHEDULERS_SUMMARY_CACHE_TTL_MS / 1000,
+  checkperiod: 5 * 60,
+  useClones:   false,
+});
+const inflightSchedulersSummary = new Map(); // cacheKey → Promise<responseData>
+
+/**
+ * Composite cache key for the schedulers-summary cache — scoping by env
+ * means "give me schedulers for env X" and "give me schedulers for the
+ * whole org" are cached as separate entries instead of one clobbering the
+ * other. `envIds` is sorted so the same env set always maps to the same
+ * key regardless of request order.
+ */
+function schedulersSummaryCacheKey(orgId, envIds) {
+  return envIds && envIds.length ? `${orgId}:${[...envIds].sort().join(',')}` : orgId;
+}
+
+/**
+ * Invalidate every cached schedulers-summary entry for an org — including
+ * every env-scoped variant (schedulersSummaryCacheKey above) — not just the
+ * bare org-wide one. Needed after a toggle/trigger action so BOTH the
+ * org-wide view and any env-filtered view the user may load next are fresh.
+ */
+function invalidateSchedulersSummary(orgId) {
+  schedulersSummaryCache.del(schedulersSummaryCache.keys().filter((k) => k === orgId || k.startsWith(`${orgId}:`)));
+}
+
+/**
+ * Picks the first "present" candidate from a list, where present means
+ * "not null/undefined/empty-string" — unlike `a || b || c`, this correctly
+ * keeps a legitimate `0` (e.g. frequency: 0) instead of falling through to
+ * the next candidate.
+ */
+function firstPresent(...candidates) {
+  for (const c of candidates) {
+    if (c !== null && c !== undefined && c !== '') return c;
+  }
+  return null;
+}
+
+/**
+ * Normalizes one raw CH1 ("schedule") or CH2 ("scheduler") entry plus its
+ * owning app into the flat row shape the Schedulers dashboard renders.
+ * Mirrors the same fallback chains frontend/.../InfrastructureTab.jsx uses
+ * for a single app, so a scheduler looks identical whether it's reached via
+ * the per-app tab or this aggregate view.
+ */
+function normalizeSchedulerRow(raw, app, i) {
+  const schedule = raw.schedule || {};
+  const status = raw.status || {};
+  const cron = schedule.cronExpression || schedule.expression || raw.expression || raw.cronExpression || null;
+  const timeZone = schedule.timeZone || schedule.timezone || raw.timeZone || raw.timezone || null;
+  const frequency = firstPresent(raw.frequency, schedule.frequency, schedule.period > 0 ? schedule.period : null);
+  const timeUnit = raw.timeUnit || schedule.timeUnit || null;
+  const flowName = raw.flowName || raw.flow || raw.name || `scheduler-${i}`;
+  // Per Mulesoft's AMC API docs, the identifier the PUT/POST/DELETE
+  // scheduler endpoints expect in the URL path is `flowName` — prioritize
+  // it over the speculative `name`/`schedulerName`/`flow` fallbacks (kept
+  // only for CH1 schedules / older response shapes that may not use it).
+  const schedulerKey = raw.flowName || raw.name || raw.schedulerName || raw.flow || `scheduler-${i}`;
+  const lastRunCandidates = [
+    raw.lastRun, schedule.lastRun, status.lastRun,
+    raw.lastRunAt, schedule.lastRunAt, status.lastRunAt,
+    raw.lastFireAt, schedule.lastFireAt, status.lastFireAt,
+    raw.lastFiredAt, schedule.lastFiredAt, status.lastFiredAt,
+    raw.lastFired, schedule.lastFired, status.lastFired,
+  ];
+  const lastRun = lastRunCandidates.find((v) => v != null && v !== 0 && v !== '') ?? null;
+  // Explicit flags instead of making every caller re-derive
+  // `field?.startsWith('${')`. Resolving the actual values requires the
+  // app's CPS config + credentials (see features/applications/tabs/
+  // InfrastructureTab.jsx's opt-in "Get Cron Expressions" button) —
+  // deliberately NOT done here: this is a hot, automatically-fanned-out
+  // aggregate endpoint, not a place to silently fetch CPS secrets for every
+  // app on every dashboard load.
+  // Tracked independently — a scheduler can have a fully resolved cron but
+  // a timezone that's still a raw `${cps.property}` placeholder (or vice
+  // versa), and both cases need their own "unresolved" signal so the
+  // frontend doesn't miss resolving/flagging one just because the other
+  // already looks fine.
+  const unresolvedPlaceholder = typeof cron === 'string' && cron.startsWith('${');
+  const unresolvedTzPlaceholder = typeof timeZone === 'string' && timeZone.startsWith('${');
+  return {
+    envId: app.environment?.id,
+    envName: app.environment?.name,
+    appId: app.id,
+    appName: app.name,
+    appStatus: app.status,
+    deploymentType: app.deploymentType,
+    schedulerKey,
+    // Guaranteed-unique identity for React keys / Set-based selection — NOT
+    // sent back to Anypoint. schedulerKey (above) is a best-effort guess at
+    // the real Anypoint identifier (falls back to flow name when the API
+    // omits `name`), so two distinct schedulers CAN legitimately end up with
+    // the same schedulerKey (e.g. the same flow scheduled twice). rowId's
+    // index suffix keeps row identity/selection correct even then; see
+    // markAmbiguousSchedulerKeys for the "same API key, action disabled" case.
+    rowId: `${schedulerKey}::${i}`,
+    flowName,
+    cron,
+    unresolvedPlaceholder,
+    timeZone,
+    unresolvedTzPlaceholder,
+    frequency,
+    timeUnit,
+    enabled: raw.enabled !== false,
+    lastRun,
+  };
+}
+
+/**
+ * Flags rows whose `schedulerKey` is shared by more than one scheduler in
+ * the SAME app — Run Now / Toggle actions send `schedulerKey` back to
+ * Anypoint as the target identifier, so when it's ambiguous we can't tell
+ * which of the colliding schedulers an action would actually hit. Mutates
+ * and returns `rows` with `ambiguousKey: true` set on every row involved in
+ * a collision, so the frontend can disable actions on them instead of
+ * guessing.
+ */
+function markAmbiguousSchedulerKeys(rows) {
+  const counts = new Map();
+  for (const row of rows) counts.set(row.schedulerKey, (counts.get(row.schedulerKey) || 0) + 1);
+  for (const row of rows) {
+    if (counts.get(row.schedulerKey) > 1) row.ambiguousKey = true;
+  }
+  return rows;
+}
+
+
+async function _fetchSchedulersSummary(client, targetOrgId, envIds) {
+  const cachedSummary = summaryCache.get(targetOrgId);
+  const ageMs = cachedSummary ? Date.now() - cachedSummary.ts : Infinity;
+  const isFresh = ageMs < SUMMARY_CACHE_FRESH_MS;
+
+  let summaryData;
+  if (cachedSummary && isFresh) {
+    summaryData = cachedSummary.data;
+  } else if (cachedSummary) {
+    // Stale-but-usable — serve it now (an app roster up to a few minutes
+    // old is fine for a scheduler listing), but kick off a background
+    // refresh of the *app summary* itself so this cache can't silently
+    // keep serving a roster up to SUMMARY_CACHE_TTL_MS (20 min) old with
+    // no self-healing. Shares `inflightSummary` with the /summary/:orgId
+    // route — if that route already triggered a refresh for this org, this
+    // just piggybacks instead of firing a second redundant fan-out.
+    summaryData = cachedSummary.data;
+    if (!inflightSummary.has(targetOrgId)) {
+      const p = _fetchSummary(client, targetOrgId)
+        .catch((err) => logger.warn({ err }, `[SchedulersSummary] BG summary refresh failed for org ${targetOrgId}`))
+        .finally(() => inflightSummary.delete(targetOrgId));
+      inflightSummary.set(targetOrgId, p);
+    }
+  } else {
+    // Cold cache — no choice but to fetch synchronously. Piggyback on an
+    // in-flight fetch if the /summary/:orgId route (or another concurrent
+    // scheduler-summary request) already started one for this org.
+    summaryData = inflightSummary.has(targetOrgId)
+      ? await inflightSummary.get(targetOrgId)
+      : await (() => {
+          const p = _fetchSummary(client, targetOrgId).finally(() => inflightSummary.delete(targetOrgId));
+          inflightSummary.set(targetOrgId, p);
+          return p;
+        })();
+  }
+  let apps = summaryData.data || [];
+
+  // Scope the fan-out to only the requested environments — e.g. the
+  // Schedulers dashboard asking for just "Production" instead of every
+  // environment in the org. Filtering here (before the per-app fan-out)
+  // means fewer Anypoint calls, not just a smaller response — apps outside
+  // the requested envs are never queried for their schedulers at all.
+  if (envIds && envIds.length) {
+    const envIdSet = new Set(envIds);
+    apps = apps.filter((app) => envIdSet.has(app.environment?.id));
+  }
+
+  const fanOutResults = await mapWithConcurrency(apps, SCHEDULERS_FAN_OUT_CONCURRENCY, async (app) => {
+    if (app.deploymentType === 'CloudHub 2.0') {
+      const response = await client.get(
+        `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${app.environment.id}/deployments/${app.id}/schedulers`
+      );
+      // Per Mulesoft's AMC Application Manager API, GET .../schedulers
+      // returns { total, items: [...] } — NOT { schedulers: [...] }. The
+      // old `.schedulers` fallback always missed, silently producing an
+      // empty list for every CH2 app in the aggregate Schedulers dashboard
+      // (the per-app Infrastructure tab already checked `.items` — see
+      // ApplicationDetailPage.jsx's loadCh2Schedulers — this route didn't).
+      const list = Array.isArray(response.data) ? response.data : (response.data?.items || response.data?.schedulers || []);
+      return markAmbiguousSchedulerKeys(list.map((s, i) => normalizeSchedulerRow(s, app, i)));
+    }
+    const response = await client.get(
+      `/cloudhub/api/applications/${app.id}/schedules`,
+      { headers: makeCh1Headers(app.environment.id, targetOrgId) }
+    );
+    const raw = response.data;
+    const list = Array.isArray(raw) ? raw : (raw?.data || raw?.schedules || []);
+    return markAmbiguousSchedulerKeys(list.map((s, i) => normalizeSchedulerRow(s, app, i)));
+  });
+
+  const schedulers = [];
+  const errors = [];
+  fanOutResults.forEach((r, idx) => {
+    if (r.status === 'fulfilled') {
+      schedulers.push(...r.value);
+    } else {
+      const app = apps[idx];
+      const status = r.reason?.response?.status;
+      // 403/401/404 are expected for apps without scheduler access/support —
+      // only surface genuinely unexpected failures.
+      if (status !== 403 && status !== 401 && status !== 404) {
+        errors.push(`${app.name} (${app.environment?.name}): ${r.reason?.response?.data?.message || r.reason?.message || 'fetch failed'}`);
+      }
+    }
+  });
+
+  const responseData = {
+    total: schedulers.length,
+    data: schedulers,
+    orgId: targetOrgId,
+    envIds: envIds && envIds.length ? envIds : undefined,
+    _errors: errors.length > 0 ? errors : undefined,
+    _cachedAt: new Date().toISOString(),
+  };
+  const cacheKey = schedulersSummaryCacheKey(targetOrgId, envIds);
+  schedulersSummaryCache.set(cacheKey, { data: responseData, ts: Date.now() });
+  logger.debug(`[SchedulersSummary] Cache SET for ${cacheKey} (${schedulers.length} schedulers across ${apps.length} apps)`);
+  return responseData;
+}
+
+// Schedulers summary: aggregate every app's schedulers for an org, optionally
+// scoped to a comma-separated list of environment IDs via ?envIds=
+router.get('/schedulers/:orgId', authMiddleware, async (req, res) => {
+  try {
+    const client = createClient(req.anypointToken);
+    const targetOrgId = req.params.orgId;
+    const forceRefresh = req.query.refresh === 'true';
+    const envIds = typeof req.query.envIds === 'string'
+      ? req.query.envIds.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+    const cacheKey = schedulersSummaryCacheKey(targetOrgId, envIds);
+    const data = await swrFetch({
+      cache: schedulersSummaryCache,
+      inflight: inflightSchedulersSummary,
+      key: cacheKey,
+      freshMs: SCHEDULERS_SUMMARY_CACHE_FRESH_MS,
+      forceRefresh,
+      fetchFn: () => _fetchSchedulersSummary(client, targetOrgId, envIds),
+      label: 'SchedulersSummary',
+    });
+    res.json(data);
+  } catch (error) {
+    sendProxyError(res, error, 'Failed to fetch schedulers summary');
   }
 });
 

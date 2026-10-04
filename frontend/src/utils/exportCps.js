@@ -1,10 +1,26 @@
-import * as XLSX from 'xlsx';
-import api from '../services/api';
+import {
+  getCloudhub2AppDetail, getCloudhub1AppDetail, getPrivateSpaceDetail,
+  getCloudhub2Schedulers, getCloudhub1StaticIps, getCloudhub1Schedules,
+} from '../services/applicationsService';
+import { postCpsCredentialsRaw, fetchCpsProperties } from '../services/cpsService';
+import { extractCpsResponseEntries, flattenCpsResponse, normaliseCpsUrl } from './cpsHelpers';
+import { rowsToWorksheet, writeWorkbook } from './xlsxExport';
+import { getErrorMessage } from '../services/http';
+import cronstrue from 'cronstrue';
 
 const SECRET_PATTERNS = /password|secret|passwd|token|credential|\.key$|keypassword|keystorepassword|truststore\.password|ssl\.password|msk\.password/i;
 
 function isSecretKey(k) {
   return SECRET_PATTERNS.test(k);
+}
+
+function decodeCron(expr) {
+  if (!expr || typeof expr !== 'string' || expr.startsWith('${')) return '';
+  try {
+    return cronstrue.toString(expr, { throwExceptionOnParseError: true });
+  } catch {
+    return '';
+  }
 }
 
 function maskSecrets(props) {
@@ -53,12 +69,8 @@ function extractHostsSecure(props) {
 }
 
 function normalisePropsArray(raw, appKey) {
-  if (Array.isArray(raw)) return raw;
-  if (Array.isArray(raw?.responses)) return raw.responses;
-  if (Array.isArray(raw?.properties)) {
-    // Could be wrapper or flat array of entries
-    return raw.properties.every(p => p.key) ? raw.properties : [{ key: appKey, properties: raw.properties }];
-  }
+  const arr = extractCpsResponseEntries(raw);
+  if (arr) return arr;
   if (raw && typeof raw === 'object') {
     return [{ key: appKey, properties: raw }];
   }
@@ -84,7 +96,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   try {
     const envId = app.environment?.id;
     if (isCh2) {
-      const res = await api.get(`/applications/cloudhub2/${effectiveBgOrgId}/${envId}/${app.id}`);
+      const res = await getCloudhub2AppDetail(effectiveBgOrgId, envId, app.id);
       const cfg = res.data?.application?.configuration || {};
       const propsSvc = cfg['mule.agent.application.properties.service'] || {};
       const ds = res.data?.target?.deploymentSettings || {};
@@ -102,7 +114,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
       const isPrivateSpace = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
       if (isPrivateSpace) {
         try {
-          const psRes = await api.get(`/applications/private-spaces/${effectiveBgOrgId}/${targetId}`);
+          const psRes = await getPrivateSpaceDetail(effectiveBgOrgId, targetId);
           const outboundIPs = psRes.data?.network?.outboundStaticIps || [];
           if (Array.isArray(outboundIPs)) staticIPList = outboundIPs.filter(Boolean);
         } catch { /* not a private space or no access — fall through */ }
@@ -114,15 +126,15 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
       }
       // CH2 schedulers from dedicated endpoint — returns { items: [{flowName, type, expression, enabled}] }
       try {
-        const schedRes = await api.get(`/applications/cloudhub2/${effectiveBgOrgId}/${envId}/${app.id}/schedulers`);
+        const schedRes = await getCloudhub2Schedulers(effectiveBgOrgId, envId, app.id);
         schedulers = schedRes.data?.items || schedRes.data?.schedulers || (Array.isArray(schedRes.data) ? schedRes.data : []);
       } catch { /* no schedulers */ }
     } else {
-      const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: effectiveBgOrgId } });
+      const res = await getCloudhub1AppDetail(envId, app.id, effectiveBgOrgId);
       runtimeProps = res.data?.properties || {};
       // CH1 static IPs — try dedicated endpoint first
       try {
-        const sipRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/static-ips`, { params: { orgId: effectiveBgOrgId } });
+        const sipRes = await getCloudhub1StaticIps(envId, app.id, effectiveBgOrgId);
         const sipArr = Array.isArray(sipRes.data) ? sipRes.data
           : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
         staticIPList = sipArr.map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip)).filter(Boolean);
@@ -135,7 +147,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
       }
       // CH1 schedulers from dedicated endpoint
       try {
-        const schedRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/schedules`, { params: { orgId: effectiveBgOrgId } });
+        const schedRes = await getCloudhub1Schedules(envId, app.id, effectiveBgOrgId);
         schedulers = Array.isArray(schedRes.data) ? schedRes.data : (schedRes.data?.schedules || []);
       } catch { /* no schedulers */ }
     }
@@ -152,13 +164,25 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   const effectiveCpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
   if (!effectiveCpsBaseUrl) throw new Error(`No CPS URL in runtime properties for "${app.name}"`);
 
-  const normUrl = effectiveCpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+  const normUrl = normaliseCpsUrl(effectiveCpsBaseUrl);
 
   // ── Per-app credential resolution ────────────────────────────────────────
   // Strategy 1: get the specific cps.clientId from ARM props → look up secret in CSV
   // Strategy 2 (fallback): masked / not in CSV → post all CSV creds as url::clientId entries
   const cpsClientId = allProps['cps.clientId'] || allProps['cps.client_id'] ||
                       allProps['cps.client.id'] || allProps['cps.apiClientId'] || '';
+
+  // Post every loaded CSV credential pair as a `${normUrl}::${clientId}` fallback
+  // entry — shared by both the "specific clientId not in CSV" and the
+  // "clientId masked/absent" branches below (previously duplicated verbatim).
+  const postAllCredentialsFallback = async () => {
+    if (!getAllCredentials) return;
+    const allCreds = getAllCredentials();
+    if (!allCreds.length) return;
+    const credMap = {};
+    for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
+    try { await postCpsCredentialsRaw({ credentials: credMap }); } catch { /* non-fatal */ }
+  };
 
   if (cpsClientId && !isMasked(cpsClientId) && getCredential) {
     const secret = getCredential(cpsClientId);
@@ -175,43 +199,26 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
           }
         }
       }
-      try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
-    } else if (getAllCredentials) {
+      try { await postCpsCredentialsRaw({ credentials: credMap }); } catch { /* non-fatal */ }
+    } else {
       // Specific clientId not in CSV — fall back to all credentials
-      const allCreds = getAllCredentials();
-      if (allCreds.length) {
-        const credMap = {};
-        for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
-        try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
-      }
+      await postAllCredentialsFallback();
     }
-  } else if (getAllCredentials) {
+  } else {
     // clientId is masked or absent — post all as url::clientId fallback entries
-    const allCreds = getAllCredentials();
-    if (allCreds.length) {
-      const credMap = {};
-      for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
-      try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
-    }
+    await postAllCredentialsFallback();
   }
   // ─────────────────────────────────────────────────────────────────────────
 
   // Fetch non-secure — throw on error so the caller can record it in the export
-  const nsRes = await api.get('/cps/fetch', { params: {
+  const nsRaw = await fetchCpsProperties({
     baseUrl: normUrl, type: 'non-secure', environment: cpsEnv,
     keys: cpsKey, deploymentType: depType, bgOrgId: effectiveBgOrgId
-  }});
-  const nsRaw = nsRes.data;
+  });
 
-  // Debug: log raw response to console
-  console.log(`[CPS Export] app="${app.name}" key="${cpsKey}" env="${cpsEnv}" rawResponse:`, JSON.stringify(nsRaw).substring(0, 500));
+  const flatNs = flattenCpsResponse(nsRaw, cpsKey);
 
-  const arr = normalisePropsArray(nsRaw, cpsKey);
-  const match = arr.find(p => p.key === cpsKey) || arr[0];
-  const inner = match?.properties || match;
-  let flatNs = (inner && typeof inner === 'object' && !Array.isArray(inner)) ? inner : {};
-
-  // If flatNs is still empty, the response structure is unexpected — store raw response for debugging
+  // If flatNs is empty, the response structure is unexpected — store raw response for debugging
   if (Object.keys(flatNs).length === 0) {
     throw new Error(`Empty properties for "${cpsKey}". Raw response: ${JSON.stringify(nsRaw).substring(0, 300)}`);
   }
@@ -223,11 +230,10 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   const secureGroups = [];
   if (secureKeys.length > 0) {
     try {
-      const sr = await api.get('/cps/fetch', { params: {
+      const raw = await fetchCpsProperties({
         baseUrl: normUrl, type: 'secure', environment: cpsEnv,
         keys: secureKeyStr, deploymentType: depType, bgOrgId: effectiveBgOrgId
-      }});
-      const raw = sr.data;
+      });
       const arr = normalisePropsArray(raw, secureKeys[0]);
       for (const entry of arr) {
         secureGroups.push({ key: entry.key, properties: entry.properties || {} });
@@ -252,12 +258,20 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
 
   const resolveProp = (val) => {
     if (!val) return val;
-    const m = String(val).match(/^\$\{(.+)\}$/);
-    if (m) {
-      const key = m[1];
-      return flatNs[key] || flatSecure[key] || (fetchedAllProps && fetchedAllProps[key]) || val;
-    }
-    return val;
+    // Mirror InfrastructureTab.jsx's resolution exactly: a global replace
+    // (handles placeholders embedded in a larger string, not just a value
+    // that IS a placeholder) with a case-insensitive fallback — real CPS
+    // property keys can differ in case from the `${...}` reference used in
+    // the deployed app's scheduler config, so an exact-case-only lookup
+    // silently leaves the raw placeholder in the export.
+    return String(val).replace(/\$\{([^}]+)\}/g, (match, propName) =>
+      flatNs[propName] ||
+      flatNs[propName.toLowerCase()] ||
+      flatSecure[propName] ||
+      flatSecure[propName.toLowerCase()] ||
+      (fetchedAllProps && (fetchedAllProps[propName] || fetchedAllProps[propName.toLowerCase()])) ||
+      match
+    );
   };
 
   const schedEnv = app._envName || app.environment?.name || '—';
@@ -269,12 +283,14 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
     const rawPeriod = fixedSched?.period || fixedSched?.frequency || s.schedule?.period || s.schedule?.frequency || s.frequency || s.period || '';
     const rawTimeUnit = fixedSched?.timeUnit || s.schedule?.timeUnit || s.timeUnit || '';
     const rawTimeZone = cronSched?.timeZone || s.schedule?.timeZone || s.timeZone || '';
+    const resolvedCron = resolveProp(rawCron);
     scheduleRows.push({
       environment: schedEnv,
       apiDomainName: app.name,
       scheduleName: s.flow || s.flowName || s.name || s.schedulerName || '',
       enabled: s.enabled !== false ? 'true' : 'false',
-      scheduleCronExpression: resolveProp(rawCron),
+      scheduleCronExpression: resolvedCron,
+      decodedCronExpression: decodeCron(resolvedCron),
       scheduleTimeZone: resolveProp(rawTimeZone),
       scheduleTimeUnit: resolveProp(rawTimeUnit),
       schedulePeriod: String(resolveProp(String(rawPeriod)))
@@ -313,7 +329,7 @@ function buildErrorRow(app, e, allPropsRows, hostApiRows) {
   const environment = app._envName || app.environment?.name || '—';
   const cloudhubVersion = app.deploymentType === 'CloudHub 2.0' ? 'CloudHub 2.0' : 'CloudHub 1.0';
   const appStatus = app.status || '—';
-  const msg = `ERROR: ${e.response?.data?.error || e.message}`;
+  const msg = `ERROR: ${getErrorMessage(e)}`;
   allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', properties: msg, splunkAccessKeyId: '' });
   hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', hostsSecure: '', apiUsers: '', notAccessible: msg });
 }
@@ -379,33 +395,42 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
     }
   }
 
-  // ── Export as Excel (.xlsx) with 3 sheets ─────────────────────────────
-  const wb = XLSX.utils.book_new();
-
-  const ws1 = XLSX.utils.json_to_sheet(allPropsRows, {
-    header: ['environment', 'apiName', 'cloudhubVersion', 'splunkAccessKeyId', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties']
-  });
-  XLSX.utils.book_append_sheet(wb, ws1, 'AllPropertiesCatalog');
-
-  const ws2 = XLSX.utils.json_to_sheet(hostApiRows, {
-    header: ['environment', 'apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible']
-  });
-  XLSX.utils.book_append_sheet(wb, ws2, 'Host_APIUsersCatalog');
-
-  const ws3 = XLSX.utils.json_to_sheet(scheduleRows, {
-    header: ['environment', 'apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod']
-  });
-  XLSX.utils.book_append_sheet(wb, ws3, 'ScheduleCatalog');
-
-  // Sheet 4: StaticIPsCatalog — one row per app, includes env + CloudHub version + status
-  const ws4 = XLSX.utils.json_to_sheet(staticIPsRows, {
-    header: ['apiName', 'environment', 'cloudhubVersion', 'appStatus', 'staticIPsEnabled', 'staticIPs']
-  });
-  XLSX.utils.book_append_sheet(wb, ws4, 'StaticIPsCatalog');
+  // ── Export as Excel (.xlsx) with 4 sheets ─────────────────────────────
+  const sheets = [
+    {
+      name: 'AllPropertiesCatalog',
+      worksheet: rowsToWorksheet(allPropsRows, {
+        headers: ['environment', 'apiName', 'cloudhubVersion', 'splunkAccessKeyId', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties'],
+        colWidths: undefined,
+      }),
+    },
+    {
+      name: 'Host_APIUsersCatalog',
+      worksheet: rowsToWorksheet(hostApiRows, {
+        headers: ['environment', 'apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible'],
+        colWidths: undefined,
+      }),
+    },
+    {
+      name: 'ScheduleCatalog',
+      worksheet: rowsToWorksheet(scheduleRows, {
+        headers: ['environment', 'apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'decodedCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod'],
+        colWidths: undefined,
+      }),
+    },
+    // Sheet 4: StaticIPsCatalog — one row per app, includes env + CloudHub version + status
+    {
+      name: 'StaticIPsCatalog',
+      worksheet: rowsToWorksheet(staticIPsRows, {
+        headers: ['apiName', 'environment', 'cloudhubVersion', 'appStatus', 'staticIPsEnabled', 'staticIPs'],
+        colWidths: undefined,
+      }),
+    },
+  ];
 
   const date = new Date().toISOString().split('T')[0];
   const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   const envPart = safeName(envName);
   const filename = ['CPS-Properties', envPart, date].filter(Boolean).join('-') + '.xlsx';
-  XLSX.writeFile(wb, filename);
+  writeWorkbook(sheets, filename);
 }

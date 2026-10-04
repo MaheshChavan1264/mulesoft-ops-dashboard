@@ -1,0 +1,671 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, Globe, ChevronRight, Building2, Layers, Key, Zap, Search, FileJson } from 'lucide-react';
+import { exportCpsProperties } from '../../utils/exportCps';
+import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
+import { applyBgFilter } from '../../components/shared/BgFilterModal';
+import { getBusinessGroups, getEnvironments, getApplicationsSummary, getCloudhub2AppDetail, getCloudhub1AppDetail } from '../../services/applicationsService';
+import { postCpsCredentialsRaw, fetchCpsProperties, getCpsCredentials } from '../../services/cpsService';
+import { normaliseCpsUrl } from '../../utils/cpsHelpers';
+import Modal from '../../components/ui/Modal';
+import Button from '../../components/ui/Button';
+import CheckboxTile from '../../components/ui/CheckboxTile';
+import { getErrorMessage } from '../../services/http';
+
+/* ── BG + Env multi-selector ────────────────────────────────── */
+function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
+  const [businessGroups, setBusinessGroups] = useState([]);
+  const [envsByBg, setEnvsByBg] = useState({});
+  const [loadingEnvs, setLoadingEnvs] = useState({});
+  const [expandedBgs, setExpandedBgs] = useState(new Set());
+  const [selections, setSelections] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [envSearch, setEnvSearch] = useState('');
+
+  useEffect(() => { loadBusinessGroups(); }, []);
+
+  const loadBusinessGroups = async () => {
+    setLoading(true);
+    try {
+      const res = await getBusinessGroups();
+      const groups = res.data.data || [];
+      setBusinessGroups(groups);
+      const initialBgId = selectedBgId;
+      if (initialBgId) {
+        const sel = new Set();
+        if (selectedEnvId) { sel.add(`${initialBgId}:${selectedEnvId}`); }
+        else { sel.add(`${initialBgId}:*`); }
+        setSelections(sel);
+        setExpandedBgs(new Set([initialBgId]));
+        loadEnvsForBg(initialBgId);
+      }
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  const loadEnvsForBg = useCallback(async (bgId) => {
+    if (envsByBg[bgId]) return;
+    setLoadingEnvs(prev => ({ ...prev, [bgId]: true }));
+    try {
+      const res = await getEnvironments(bgId);
+      const envs = res.data.data || [];
+      setEnvsByBg(prev => ({ ...prev, [bgId]: envs }));
+    } catch { setEnvsByBg(prev => ({ ...prev, [bgId]: [] })); }
+    setLoadingEnvs(prev => ({ ...prev, [bgId]: false }));
+  }, [envsByBg]);
+
+  const toggleBgExpand = (bgId) => {
+    setExpandedBgs(prev => { const n = new Set(prev); n.has(bgId) ? n.delete(bgId) : n.add(bgId); return n; });
+    loadEnvsForBg(bgId);
+  };
+
+  const isBgSelected = (bgId) => selections.has(`${bgId}:*`) || [...selections].some(s => s.startsWith(`${bgId}:`));
+  const isEnvSelected = (bgId, envId) => selections.has(`${bgId}:${envId}`) || selections.has(`${bgId}:*`);
+
+  const toggleBg = (bgId) => {
+    setSelections(prev => {
+      const next = new Set(prev);
+      if (isBgSelected(bgId)) { [...next].filter(s => s.startsWith(`${bgId}:`)).forEach(s => next.delete(s)); }
+      else {
+        const envs = envsByBg[bgId];
+        if (envs?.length) { envs.forEach(e => next.add(`${bgId}:${e.id}`)); }
+        else { next.add(`${bgId}:*`); }
+      }
+      return next;
+    });
+  };
+
+  const toggleEnv = (bgId, envId) => {
+    setSelections(prev => {
+      const next = new Set(prev);
+      const key = `${bgId}:${envId}`;
+      const allKey = `${bgId}:*`;
+      if (next.has(allKey)) {
+        next.delete(allKey);
+        (envsByBg[bgId] || []).forEach(e => next.add(`${bgId}:${e.id}`));
+      }
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const result = [];
+    selections.forEach(sel => {
+      const [bgId, envId] = sel.split(':');
+      const bg = businessGroups.find(g => g.id === bgId);
+      if (!bg) return;
+      if (envId === '*') {
+        const envs = envsByBg[bgId] || [];
+        if (envs.length === 0) { result.push({ bgId, bgName: bg.name, envId: null, envName: 'All Environments' }); }
+        else { envs.forEach(e => result.push({ bgId, bgName: bg.name, envId: e.id, envName: e.name })); }
+      } else {
+        const env = (envsByBg[bgId] || []).find(e => e.id === envId);
+        result.push({ bgId, bgName: bg.name, envId, envName: env?.name || envId });
+      }
+    });
+    onSelectionsChange(result);
+  }, [selections, businessGroups, envsByBg, onSelectionsChange]);
+
+  // ── Compute derived values (before any early return) ────────────────
+  const visible = applyBgFilter(businessGroups);
+  const searchLo = envSearch.toLowerCase().trim();
+
+  // Refs so the effect below can read the latest visible/envsByBg/loadEnvsForBg
+  // without listing them as deps — they're all derived fresh every render
+  // (would make the effect refire every render if listed directly), while
+  // the ref pattern keeps the effect's real trigger (searchLo/loading)
+  // without the previous eslint-disabled stale-closure risk — see
+  // FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #6.
+  const visibleRef = useRef(visible); visibleRef.current = visible;
+  const envsByBgRef = useRef(envsByBg); envsByBgRef.current = envsByBg;
+  const loadEnvsForBgRef = useRef(loadEnvsForBg); loadEnvsForBgRef.current = loadEnvsForBg;
+
+  // Auto-load envs for all visible BGs when search is active — MUST be before early return
+  useEffect(() => {
+    if (!searchLo || loading) return;
+    visibleRef.current.forEach(bg => { if (!envsByBgRef.current[bg.id]) loadEnvsForBgRef.current(bg.id); });
+  }, [searchLo, loading]);
+
+  if (loading) return <div className="flex items-center justify-center py-6"><RefreshCw size={16} className="animate-spin text-gray-500" /></div>;
+
+  const root = visible.find(g => !g.parentId);
+  const children = visible.filter(g => g.parentId);
+  const ordered = root ? [root, ...children] : visible;
+
+  const getFilteredEnvs = (bgId) => {
+    const envs = envsByBg[bgId] || [];
+    if (!searchLo) return envs;
+    return envs.filter(e => e.name.toLowerCase().includes(searchLo) || e.type?.toLowerCase().includes(searchLo));
+  };
+
+  return (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden">
+      {/* Env search input */}
+      <div className="relative border-b border-gray-200 dark:border-gray-700">
+        <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+        <input
+          value={envSearch}
+          onChange={e => setEnvSearch(e.target.value)}
+          placeholder="Search environments…"
+          className="w-full bg-gray-50 dark:bg-gray-900/40 pl-10 pr-9 py-2.5 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:bg-white dark:focus:bg-gray-900 transition-colors"
+        />
+        {envSearch && (
+          <button onClick={() => setEnvSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-xs transition-colors">✕</button>
+        )}
+      </div>
+      <div style={{ maxHeight: '12rem', overflowY: 'auto' }}>
+      {ordered.map(bg => {
+        const isExpanded = expandedBgs.has(bg.id) || !!searchLo;
+        const isChecked = isBgSelected(bg.id);
+        const envs = getFilteredEnvs(bg.id);
+        const loadingE = loadingEnvs[bg.id];
+        // Hide BG if search active and no matching envs (and not still loading)
+        if (searchLo && envs.length === 0 && !loadingE) return null;
+        return (
+          <div key={bg.id} className="border-b border-gray-100 dark:border-gray-700/60 last:border-0">
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+              <CheckboxTile checked={isChecked} accent="blue" onClick={() => toggleBg(bg.id)} />
+              <Building2 size={13} className={isChecked ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} />
+              <span className={`text-sm flex-1 truncate ${isChecked ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{bg.name}</span>
+              {!bg.parentId && <span className="text-[9px] font-bold bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 px-1.5 py-0.5 rounded-full">ROOT</span>}
+              <button onClick={() => toggleBgExpand(bg.id)} className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <ChevronRight size={13} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+              </button>
+            </div>
+            {isExpanded && (
+              <div className="bg-gray-50/60 dark:bg-gray-900/20">
+                {loadingE ? (
+                  <div className="flex items-center gap-2 px-9 py-2.5 text-gray-400 dark:text-gray-500 text-xs"><RefreshCw size={12} className="animate-spin" /> Loading environments…</div>
+                ) : envs.length === 0 ? (
+                  <div className="px-9 py-2.5 text-gray-400 dark:text-gray-500 text-xs">No environments</div>
+                ) : envs.map(env => {
+                  const envChecked = isEnvSelected(bg.id, env.id);
+                  const isProd = env.type === 'production';
+                  return (
+                    <div
+                      key={env.id}
+                      role="checkbox"
+                      aria-checked={envChecked}
+                      tabIndex={0}
+                      onClick={() => toggleEnv(bg.id, env.id)}
+                      onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleEnv(bg.id, env.id); } }}
+                      className="flex items-center gap-2.5 px-9 py-2 hover:bg-gray-100/60 dark:hover:bg-gray-700/30 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50">
+                      <CheckboxTile checked={envChecked} accent="blue" size="sm" />
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                      <span className={`text-xs flex-1 truncate ${envChecked ? 'text-gray-700 dark:text-gray-300 font-semibold' : 'text-gray-500 dark:text-gray-400'}`}>{env.name}</span>
+                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${isProd ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' : 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300'}`}>{env.type}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Modal ─────────────────────────────────────────────── */
+export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envName, selectedEnvId, filterSummary, onClose }) {
+  const { getAllCredentials, hasCredentials: hasCpsCreds, getSecret } = useCpsCredentialStore();
+
+  const [status, setStatus] = useState('idle');
+  const [progress, setProgress] = useState({ current: 0, total: 0, label: '' });
+  const [errorMsg, setErrorMsg] = useState('');
+  const [cpsBaseUrl, setCpsBaseUrl] = useState('');
+  const [cpsEnv, setCpsEnv] = useState('');
+  const [bgEnvSelections, setBgEnvSelections] = useState([]);
+  // Export format: 'excel' | 'json'
+  const [exportFormat, setExportFormat] = useState('excel');
+
+  // Whether to use the pre-passed apps (selected from Applications page) or BG/Env selector
+  const hasPreselected = passedApps?.length > 0;
+  const [usePreselected, setUsePreselected] = useState(hasPreselected);
+
+  // Auto-detect state
+  const [autoDetecting, setAutoDetecting] = useState(false);
+  const [autoDetected, setAutoDetected] = useState(false);
+
+  // ── Auto-detect CPS URL from the first pre-selected app's ARM properties ──
+  const autoDetectFromApp = useCallback(async (app) => {
+    if (!app || cpsBaseUrl) return;
+    setAutoDetecting(true);
+    try {
+      const envId = app.environment?.id;
+      const appBgId = app._bgId || bgOrgId;
+      if (!envId || !appBgId) return;
+      let armProps = {};
+      if (app.deploymentType === 'CloudHub 2.0') {
+        const r = await getCloudhub2AppDetail(appBgId, envId, app.id);
+        const ds = r.data?.target?.deploymentSettings || {};
+        const ps = (r.data?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
+        armProps = { ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}), ...(r.data?.properties || {}) };
+      } else {
+        const r = await getCloudhub1AppDetail(envId, app.id, appBgId);
+        armProps = r.data?.properties || {};
+      }
+      const url = armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'];
+      if (url) {
+        const normUrl = normaliseCpsUrl(url);
+        setCpsBaseUrl(normUrl);
+        const detectedEnv = armProps['cps.prefix'] || armProps['cps.environment'] || '';
+        setCpsEnv(detectedEnv);
+        setAutoDetected(true);
+      }
+    } catch { /* ignore — user can enter manually */ }
+    setAutoDetecting(false);
+  }, [bgOrgId, cpsBaseUrl]);
+
+  // ── Load stored credentials + auto-detect URL on mount ──────────────────
+  // Refs for autoDetectFromApp/passedApps — this effect is intentionally
+  // keyed only on `bgOrgId` (run once per BG, not on every autoDetectFromApp
+  // identity change, which would re-trigger right after it sets cpsBaseUrl).
+  // Refs keep it reading the latest callback/prop without the stale-closure
+  // risk previously masked by eslint-disable — see
+  // FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #6.
+  const autoDetectFromAppRef = useRef(autoDetectFromApp); autoDetectFromAppRef.current = autoDetectFromApp;
+  const passedAppsRef = useRef(passedApps); passedAppsRef.current = passedApps;
+
+  useEffect(() => {
+    // 1. Try stored session credentials first (fast)
+    getCpsCredentials().then(res => {
+      const byUrlBg = res.data?.byUrlBg || {};
+      const byUrl = res.data?.byUrl || {};
+      const bgMatch = Object.keys(byUrlBg).find(k => k.includes(`::${bgOrgId}`));
+      if (bgMatch) {
+        const url = bgMatch.split('::')[0];
+        setCpsBaseUrl(url);
+        setCpsEnv(url.includes('ut') || url.includes('stage') ? 'uat' : 'prod');
+        setAutoDetected(true);
+        return;
+      }
+      if (Object.keys(byUrl).length > 0) {
+        const url = Object.keys(byUrl)[0];
+        setCpsBaseUrl(url);
+        setCpsEnv(url.includes('ut') || url.includes('stage') ? 'uat' : 'prod');
+        setAutoDetected(true);
+        return;
+      }
+      // 2. No stored creds — try to detect from first pre-selected app
+      if (passedAppsRef.current?.length > 0) {
+        autoDetectFromAppRef.current(passedAppsRef.current[0]);
+      }
+    }).catch(() => {
+      if (passedAppsRef.current?.length > 0) autoDetectFromAppRef.current(passedAppsRef.current[0]);
+    });
+  }, [bgOrgId]);
+
+  // ── JSON export helper: fetch CPS non-secure props for one app ──────────
+  // Returns the raw CPS API response exactly as received — no transformation.
+  const fetchAppCpsJson = useCallback(async (app) => {
+    const appBgId = app._bgId || bgOrgId;
+    const envId = app.environment?.id;
+    try {
+      // Step 1: get ARM detail to extract CPS config
+      let armProps = {};
+      if (app.deploymentType === 'CloudHub 2.0') {
+        const r = await getCloudhub2AppDetail(appBgId, envId, app.id);
+        const ds = r.data?.target?.deploymentSettings || {};
+        const ps = (r.data?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
+        armProps = { ...(r.data?.properties || {}), ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}) };
+      } else {
+        const r = await getCloudhub1AppDetail(envId, app.id, appBgId);
+        armProps = r.data?.properties || {};
+      }
+      const detectedUrl = (cpsBaseUrl.trim() || armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] || '').trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
+      // Per-app ARM value wins; modal override is fallback; 'prod' is last resort
+      const detectedEnv = armProps['cps.prefix'] || armProps['cps.environment'] || cpsEnv.trim() || 'prod';
+      const detectedKey = armProps['cps.projectName'] || armProps['cloudhub.api.name'] || app.name;
+      if (!detectedUrl || !detectedKey) return { _app: app.name, _error: 'No CPS config found in deployment properties' };
+
+      // Step 2: post CPS credentials to backend session (mirrors CPS Manager logic)
+      if (hasCpsCreds) {
+        const isMasked = v => !v || /^\*+$/.test(String(v).trim());
+        const cpsClientId = armProps['cps.clientId'] || armProps['cps.client_id'] || armProps['cps.client.id'] || armProps['cps.apiClientId'] || '';
+        const credMap = {};
+        // Try the specific clientId from ARM first
+        if (cpsClientId && !isMasked(cpsClientId)) {
+          const secret = getSecret(cpsClientId);
+          if (secret) credMap[`${detectedUrl}::${appBgId}`] = { clientId: cpsClientId, clientSecret: secret };
+        }
+        // Fall back to all CSV credentials
+        const allCreds = getAllCredentials();
+        for (const { clientId, clientSecret } of allCreds) {
+          credMap[`${detectedUrl}::${clientId}`] = { clientId, clientSecret };
+        }
+        if (Object.keys(credMap).length > 0) {
+          try { await postCpsCredentialsRaw({ credentials: credMap }); } catch { /* non-fatal */ }
+        }
+      }
+
+      // Step 3: fetch non-secure CPS properties — return raw response as-is
+      return await fetchCpsProperties({ baseUrl: detectedUrl, type: 'non-secure', environment: detectedEnv || undefined, keys: detectedKey, bgOrgId: appBgId });
+    } catch (err) {
+      return { _app: app.name, _error: getErrorMessage(err, 'Failed to fetch CPS properties') };
+    }
+  }, [bgOrgId, cpsBaseUrl, cpsEnv, hasCpsCreds, getSecret, getAllCredentials]);
+
+  const handleExport = async () => {
+    if (bgEnvSelections.length === 0 && !usePreselected) {
+      setErrorMsg('Please select at least one Business Group / Environment.');
+      setStatus('error');
+      return;
+    }
+    setStatus('running');
+    setErrorMsg('');
+
+    let allApps = [];
+
+    if (usePreselected && passedApps?.length > 0) {
+      // Use the pre-selected apps directly
+      allApps = passedApps.map(a => ({ ...a, _bgName: a.environment?.name || bgName }));
+    } else {
+      // Collect all apps from selected BG/env combinations
+      for (const sel of bgEnvSelections) {
+        try {
+          const res = await getApplicationsSummary(sel.bgId);
+          const appsForBg = res.data.data || [];
+          const filtered = sel.envId ? appsForBg.filter(a => a.environment?.id === sel.envId) : appsForBg;
+          filtered.forEach(a => {
+            if (!allApps.find(x => x.id === a.id && x.environment?.id === a.environment?.id)) {
+              allApps.push({ ...a, _bgId: sel.bgId, _bgName: sel.bgName, _envName: sel.envName });
+            }
+          });
+        } catch { /* skip */ }
+      }
+    }
+
+    // ── JSON export path ──────────────────────────────────────────────────────
+    if (exportFormat === 'json') {
+      try {
+        setProgress({ current: 0, total: allApps.length, label: 'Fetching CPS properties…' });
+        const results = [];
+        for (let i = 0; i < allApps.length; i++) {
+          setProgress({ current: i, total: allApps.length, label: allApps[i].name });
+          const appResult = await fetchAppCpsJson(allApps[i]);
+          results.push(appResult);
+        }
+        setProgress({ current: allApps.length, total: allApps.length, label: '' });
+        // Build output: single app → just the raw response; multiple → keyed by app name
+        const output = results.length === 1
+          ? results[0]
+          : Object.fromEntries(allApps.map((a, i) => [a.name, results[i]]));
+        // Trigger download
+        const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const safeName = allApps.length === 1
+          ? allApps[0].name.replace(/[^a-z0-9_-]/gi, '-').toLowerCase()
+          : `cps-export-${allApps.length}-apps`;
+        a.href = url;
+        a.download = `${safeName}-cps-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setStatus('done');
+      } catch (e) {
+        setErrorMsg(e.message || 'JSON export failed');
+        setStatus('error');
+      }
+      return;
+    }
+
+    // ── Excel export path ─────────────────────────────────────────────────────
+    if (usePreselected) {
+      // ── Pre-selected apps: single file with Environment column ─────────────
+      const uniqueEnvNames = [...new Set(allApps.map(a => a._envName || a.environment?.name).filter(Boolean))];
+      const combinedEnvName = uniqueEnvNames.length === 1 ? uniqueEnvNames[0] : 'Multi-Env';
+      try {
+        await exportCpsProperties({
+          apps: allApps,
+          bgOrgId,
+          bgName,
+          envName: combinedEnvName,
+          cpsBaseUrl: cpsBaseUrl.trim(),
+          cpsEnvOverride: cpsEnv.trim(),
+          onProgress: (current, total, label) => setProgress({ current, total, label }),
+          getCredential: hasCpsCreds ? getSecret : null,
+          getAllCredentials: hasCpsCreds ? getAllCredentials : null,
+        });
+        setStatus('done');
+      } catch (e) {
+        setErrorMsg(e.message || 'Export failed');
+        setStatus('error');
+      }
+    } else {
+      // ── BG/Env selector: one file per environment ──────────────────────────
+      const appsByEnv = new Map();
+      for (const a of allApps) {
+        const envKey = a._envName || a.environment?.name || 'Unknown';
+        if (!appsByEnv.has(envKey)) appsByEnv.set(envKey, { apps: [], bgName: a._bgName || bgName });
+        appsByEnv.get(envKey).apps.push(a);
+      }
+      const envEntries = [...appsByEnv.entries()];
+      const totalAll = allApps.length;
+      let totalProcessed = 0;
+      try {
+        for (let ei = 0; ei < envEntries.length; ei++) {
+          const [envLabel, { apps: envApps, bgName: envBgName }] = envEntries[ei];
+          await exportCpsProperties({
+            apps: envApps,
+            bgOrgId,
+            bgName: envBgName,
+            envName: envLabel,
+            cpsBaseUrl: cpsBaseUrl.trim(),
+            cpsEnvOverride: cpsEnv.trim(),
+            onProgress: (current, _total, label) => {
+              setProgress({ current: totalProcessed + current, total: totalAll, label });
+            },
+            getCredential: hasCpsCreds ? getSecret : null,
+            getAllCredentials: hasCpsCreds ? getAllCredentials : null,
+          });
+          totalProcessed += envApps.length;
+          if (ei < envEntries.length - 1) await new Promise(r => setTimeout(r, 200));
+        }
+        setStatus('done');
+      } catch (e) {
+        setErrorMsg(e.message || 'Export failed');
+        setStatus('error');
+      }
+    }
+  };
+
+  const progressPct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+  const canExport = usePreselected ? passedApps?.length > 0 : bgEnvSelections.length > 0;
+
+  return (
+    <Modal
+      onClose={onClose}
+      size="lg"
+      icon={FileSpreadsheet}
+      accent="emerald"
+      title="Export CPS Properties"
+      subtitle={usePreselected
+        ? `Exporting ${passedApps.length} selected app${passedApps.length !== 1 ? 's' : ''}`
+        : 'Select Business Groups and Environments to export'}
+      closeDisabled={status === 'running'}
+      footer={
+        <>
+          <p className="text-gray-400 dark:text-gray-500 text-xs font-medium">
+            {usePreselected
+              ? `${passedApps?.length || 0} app${(passedApps?.length || 0) !== 1 ? 's' : ''} selected`
+              : bgEnvSelections.length > 0 ? `${bgEnvSelections.length} env${bgEnvSelections.length !== 1 ? 's' : ''} selected` : 'No selection'}
+          </p>
+          <div className="flex gap-2.5">
+            <Button variant="secondary" size="sm" onClick={onClose} disabled={status === 'running'}>
+              {status === 'done' ? 'Close' : 'Cancel'}
+            </Button>
+            {status !== 'done' && (
+              <Button
+                accent={exportFormat === 'json' ? 'blue' : 'emerald'}
+                size="sm"
+                icon={status === 'error' ? RefreshCw : (exportFormat === 'json' ? FileJson : Download)}
+                onClick={handleExport}
+                disabled={!canExport}
+                loading={status === 'running'}
+              >
+                {status === 'running' ? 'Exporting…' : status === 'error' ? 'Retry' : (exportFormat === 'json' ? 'Export to JSON' : 'Export to Excel')}
+              </Button>
+            )}
+            {status === 'done' && (
+              <button onClick={handleExport} className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl transition-colors">
+                <Download size={13} /> Download Again
+              </button>
+            )}
+          </div>
+        </>
+      }
+    >
+      {/* Pre-selected apps banner + toggle */}
+          {(status === 'idle' || status === 'error') && hasPreselected && (
+            <div className="flex items-center justify-between gap-3 bg-gradient-to-br from-blue-50 to-blue-50/40 dark:from-blue-500/10 dark:to-blue-500/5 border border-blue-200/60 dark:border-blue-400/20 rounded-2xl px-4 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex items-center justify-center w-7 h-7 rounded-xl bg-blue-100 dark:bg-blue-500/20 flex-shrink-0">
+                  <Zap size={13} className="text-blue-600 dark:text-blue-400" />
+                </span>
+                <span className="text-blue-700 dark:text-blue-300 text-xs font-semibold">
+                  {passedApps.length} app{passedApps.length !== 1 ? 's' : ''} pre-selected from Applications page
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => setUsePreselected(!usePreselected)}
+                  className={'text-[11px] px-3 py-1.5 rounded-lg border font-semibold transition-all ' + (usePreselected ? 'bg-blue-600 border-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100')}>
+                  {usePreselected ? '✓ Use Selected Apps' : 'Use BG/Env Selector'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* BG + Env selector (only when not using preselected) */}
+          {(status === 'idle' || status === 'error') && !usePreselected && (
+            <div className="space-y-2.5">
+              <p className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <Layers size={12} /> Business Groups & Environments
+              </p>
+              <BgEnvSelector selectedBgId={bgOrgId} selectedEnvId={selectedEnvId} onSelectionsChange={setBgEnvSelections} />
+              {bgEnvSelections.length > 0 && (
+                <p className="text-blue-600 dark:text-blue-400 text-[11px] font-medium">
+                  {bgEnvSelections.length} environment{bgEnvSelections.length !== 1 ? 's' : ''} selected across {[...new Set(bgEnvSelections.map(s => s.bgId))].length} BG{[...new Set(bgEnvSelections.map(s => s.bgId))].length !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* CPS Server Config */}
+          {(status === 'idle' || status === 'error') && (
+            <div className="space-y-3 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700/60 rounded-2xl p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <Globe size={12} /> CPS Server Configuration
+                </p>
+                <div className="flex items-center gap-2">
+                  {autoDetecting && <span className="flex items-center gap-1 text-[10px] font-medium text-blue-600 dark:text-blue-400"><RefreshCw size={9} className="animate-spin" /> Detecting…</span>}
+                  {autoDetected && !autoDetecting && <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"><Zap size={9} /> Auto-detected</span>}
+                  {hasCpsCreds && <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600/70 dark:text-emerald-400/70"><Key size={9} /> CSV creds loaded</span>}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold mb-1.5">CPS Base URL <span className="normal-case font-medium text-gray-400 dark:text-gray-500">(optional — auto-detected per app)</span></label>
+                  <input value={cpsBaseUrl} onChange={e => { setCpsBaseUrl(e.target.value); setAutoDetected(false); }}
+                    placeholder="Auto-detected from app properties…"
+                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 font-mono transition-all" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold mb-1.5">CPS Env Override <span className="normal-case font-medium text-gray-400 dark:text-gray-500">(optional)</span></label>
+                  <input value={cpsEnv} onChange={e => setCpsEnv(e.target.value)}
+                    placeholder="prod / uat (auto per app)"
+                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 font-mono transition-all" />
+                </div>
+              </div>
+              {!cpsBaseUrl && !autoDetecting && (
+                <p className="text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                  ⚠ No CPS URL set — each app will use its own <code>cps.configServerBaseUrl</code> from deployment properties.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Format selector */}
+          {status === 'idle' && (
+            <div className="space-y-2.5">
+              <p className="text-gray-400 dark:text-gray-500 text-[10px] uppercase tracking-wider font-bold">Export Format</p>
+              <div className="flex gap-2.5">
+                <button
+                  onClick={() => setExportFormat('excel')}
+                  className={`flex items-center gap-2 flex-1 px-3.5 py-3 rounded-xl border text-xs font-semibold transition-all ${
+                    exportFormat === 'excel'
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300/70 dark:border-emerald-400/30 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                      : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}>
+                  <FileSpreadsheet size={14} /> Excel (.xlsx)
+                  <span className="ml-auto text-[9px] opacity-60 font-medium">4 sheets</span>
+                </button>
+                <button
+                  onClick={() => setExportFormat('json')}
+                  className={`flex items-center gap-2 flex-1 px-3.5 py-3 rounded-xl border text-xs font-semibold transition-all ${
+                    exportFormat === 'json'
+                      ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-300/70 dark:border-blue-400/30 text-blue-700 dark:text-blue-300 shadow-sm'
+                      : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}>
+                  <FileJson size={14} /> JSON (.json)
+                  <span className="ml-auto text-[9px] opacity-60 font-medium">raw props</span>
+                </button>
+              </div>
+              {exportFormat === 'excel' && (
+                <div className="space-y-1 mt-1">
+                  {['AllPropertiesCatalog', 'Host_APIUsersCatalog', 'ScheduleCatalog', 'StaticIPsCatalog'].map(s => (
+                    <div key={s} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700/50 rounded-lg px-3 py-1.5">
+                      <ChevronRight size={10} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
+                      <span className="text-gray-600 dark:text-gray-300 text-xs font-mono">{s}</span>
+                    </div>
+                  ))}
+                  <p className="text-gray-400 dark:text-gray-500 text-[10px]">⚠ Sensitive values masked as <code>****</code></p>
+                </div>
+              )}
+              {exportFormat === 'json' && (
+                <p className="text-gray-400 dark:text-gray-500 text-[10px] pl-1">
+                  Exports raw CPS non-secure properties as <code className="text-gray-500 dark:text-gray-400">{`{ appName: { key: value } }`}</code> per app.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Progress */}
+          {(status === 'running' || status === 'done') && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-gray-500 dark:text-gray-400">
+                  {status === 'done' ? 'Export complete!' : `Fetching ${progress.current}/${progress.total} apps in parallel…`}
+                </span>
+                <span className={'font-bold ' + (status === 'done' ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400')}>{progressPct}%</span>
+              </div>
+              <div className="w-full bg-gray-100 dark:bg-gray-700/60 rounded-full h-2 overflow-hidden">
+                <div className={'h-2 rounded-full transition-all duration-300 ' + (status === 'done' ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-blue-400 to-blue-500')} style={{ width: `${progressPct}%` }} />
+              </div>
+              {progress.label && status === 'running' && (
+                <p className="text-gray-400 dark:text-gray-500 text-[10px] font-mono truncate">⚡ {progress.label}</p>
+              )}
+              {status === 'done' && (
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-sm font-semibold"><CheckCircle size={16} /> File downloaded successfully!</div>
+              )}
+            </div>
+          )}
+
+          {/* Error */}
+          {status === 'error' && (
+            <div className="flex items-start gap-3 bg-red-50 dark:bg-red-500/10 border border-red-200/70 dark:border-red-400/30 rounded-2xl px-4 py-3.5">
+              <AlertTriangle size={16} className="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-red-700 dark:text-red-300 text-sm font-semibold">Export failed</p>
+                <p className="text-red-500/90 dark:text-red-400/80 text-xs mt-0.5">{errorMsg}</p>
+              </div>
+            </div>
+          )}
+    </Modal>
+  );
+}

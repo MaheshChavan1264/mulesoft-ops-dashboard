@@ -1,6 +1,7 @@
 import axiosClient from './axiosClient.js';
-import * as mock from './mockData.js';
-import mockCpsData from './mockCpsData.json';
+import { dedupeInflight } from './apiCache.js';
+import * as mock from './mocks/mockData.js';
+import mockCpsData from './mocks/mockCpsCredentials.json';
 
 // ── Demo-mode helpers (re-exported for backwards compatibility) ───────────────
 // Components that already import { isDemoMode } from '../services/api' continue
@@ -153,7 +154,12 @@ const api = {
       const data = await mockHandler(url, config.params);
       return { data };
     }
-    return axiosClient.get(url, config);
+    // Dedupe concurrent identical GETs (same url+params) into one HTTP
+    // call instead of each caller firing its own request — wires api.js
+    // into apiCache.js's inflight-dedup engine instead of bypassing it,
+    // see FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #8.
+    const key = `GET:${url}:${JSON.stringify(config.params || {})}`;
+    return dedupeInflight(key, () => axiosClient.get(url, config));
   },
   post: async (url, payload, config = {}) => {
     if (isDemoMode()) {

@@ -2,6 +2,7 @@ const { Store } = require('express-session');
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const fs = require('fs');
+const logger = require('./logger');
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
@@ -25,6 +26,22 @@ class SQLiteSessionStore extends Store {
       )
     `);
 
+    // Wipe every existing session as soon as the table exists — before this
+    // store is handed to express-session, so no request can race it. Used
+    // so a deliberate stop+start of the server forces everyone to log back
+    // in again, while the table still protects against mid-run crashes
+    // (the table persists during the process's lifetime, this only clears
+    // it once, right at startup).
+    if (options.clearOnStart) {
+      try {
+        this.db.exec('DELETE FROM sessions');
+        const cleared = this.db.prepare('SELECT changes() AS c').get()?.c ?? 0;
+        logger.info({ clearedSessions: cleared }, '[SessionStore] Cleared all sessions on startup');
+      } catch (err) {
+        logger.error({ err }, '[SessionStore] Failed to clear sessions on startup');
+      }
+    }
+
     this._pruneTimer = setInterval(() => this._prune(), options.cleanupInterval || PRUNE_INTERVAL_MS);
     if (this._pruneTimer.unref) this._pruneTimer.unref();
   }
@@ -33,7 +50,7 @@ class SQLiteSessionStore extends Store {
     try {
       this.db.prepare('DELETE FROM sessions WHERE expired < ?').run(Date.now());
     } catch (err) {
-      console.error('[SessionStore] prune error:', err.message);
+      logger.error({ err }, '[SessionStore] prune error');
     }
   }
 

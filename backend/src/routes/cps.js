@@ -1,79 +1,43 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const https = require('https');
 const authMiddleware = require('../middleware/authMiddleware');
+const { sharedHttpAgent, sharedHttpsAgent } = require('../utils/httpAgents');
+const { setCred, getAllCreds, deleteCred } = require('../utils/cpsCredStore');
+const { logCpsAudit } = require('../utils/cpsAudit');
+const db = require('../utils/db');
+const logger = require('../utils/logger');
+const { mapWithConcurrency } = require('../utils/concurrencyPool');
+const {
+  LEGACY_KEYS,
+  normaliseUrl,
+  detectEnvType,
+  detectChType,
+  resolveCredentials,
+  flattenCpsProps,
+  scanCpsProps,
+  findCpsPassword,
+  isEmptyCpsResponse,
+} = require('../utils/cpsHelpers');
 
-// Agent that tolerates self-signed / internal-CA certs (same as health.js)
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
-
-const LEGACY_KEYS = ['ch1_prod', 'ch2_prod', 'ch1_uat', 'ch2_uat'];
-
-/** Strip trailing slash and /api/v2 suffix from a CPS base URL */
-function normaliseUrl(url = '') {
-  return url.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
-}
-
-/** Build compound key: "{normalised-url}::{bgOrgId}" */
-function urlBgKey(rawUrl, bgOrgId) {
-  return `${normaliseUrl(rawUrl)}::${bgOrgId}`;
-}
+// Shared keep-alive agents used by EVERY outbound CPS call in this file
+// (read AND write routes) — see utils/httpAgents.js for why this matters:
+// previously only /fetch and /search-user used an agent that tolerated
+// self-signed / internal-CA certs and reused connections; /write, /auth,
+// /project, /binary and /credentials/test used axios' bare defaults, so the
+// exact same CPS server could succeed on a GET and fail TLS verification
+// (or just be slower) on a PUT/POST/DELETE.
+const httpAgent = sharedHttpAgent;
+const httpsAgent = sharedHttpsAgent;
 
 /**
- * Credential resolution — priority order:
- *  1. Session keyed by "{url}::{bgOrgId}"  ← per-server × per-BG
- *  2. Session keyed by "{url}" only         ← per-server fallback
- *  3. Session keyed by legacy "ch1_prod"    ← backwards-compat
- *  4. Env vars  CPS_CH1_PROD_CLIENT_ID/SECRET
+ * Thin req-aware wrapper around utils/cpsHelpers.resolveCredentials — decrypts
+ * the session's stored CPS credentials (see utils/cpsCredStore.js) and
+ * delegates the actual priority-order resolution to the pure helper.
  */
 function getCredentials(req, rawBaseUrl, bgOrgId, envType, chType) {
-  const sessionCreds = req.session.cpsCreds || {};
-  const normUrl = normaliseUrl(rawBaseUrl);
-
-  // 1. URL + BG composite key
-  if (bgOrgId) {
-    const key = `${normUrl}::${bgOrgId}`;
-    const c = sessionCreds[key];
-    if (c?.clientId && c?.clientSecret) return { clientId: c.clientId, clientSecret: c.clientSecret };
-  }
-
-  // 2. URL-only key (shared across BGs for that server)
-  const byUrl = sessionCreds[normUrl];
-  if (byUrl?.clientId && byUrl?.clientSecret) return { clientId: byUrl.clientId, clientSecret: byUrl.clientSecret };
-
-  // 2b. Any url::clientId* entry stored by Strategy 2 (masked cpsClientId path)
-  //     Mark as _fromFallback so /fetch can also retry on empty 200 responses
-  const urlPrefixEntries = Object.entries(sessionCreds)
-    .filter(([k, v]) => k.startsWith(`${normUrl}::`) && v?.clientId && v?.clientSecret);
-  if (urlPrefixEntries.length > 0) {
-    const [, c] = urlPrefixEntries[0];
-    return { clientId: c.clientId, clientSecret: c.clientSecret, _fromFallback: true };
-  }
-
-  // 3. Legacy ch/env key
-  const legacyKey = `${chType}_${envType}`;
-  const byLegacy = sessionCreds[legacyKey];
-  if (byLegacy?.clientId && byLegacy?.clientSecret) return { clientId: byLegacy.clientId, clientSecret: byLegacy.clientSecret };
-
-  // 4. Env vars
-  const prefix = `CPS_${chType.toUpperCase()}_${envType.toUpperCase()}`;
-  const clientId = process.env[`${prefix}_CLIENT_ID`];
-  const clientSecret = process.env[`${prefix}_CLIENT_SECRET`];
-  if (clientId && clientSecret) return { clientId, clientSecret };
-
-  return null;
-}
-
-function detectEnvType(baseUrl = '', environment = '', envName = '') {
-  const s = `${baseUrl} ${environment} ${envName}`.toLowerCase();
-  if (/\b(prod|pd)\b/.test(s)) return 'prod';
-  // \bstage\b does NOT match "staging" — use stag(e|ing)? to cover both
-  if (/\b(uat|ut|stag(e|ing)?|stg|uap|sandbox)\b/.test(s)) return 'uat';
-  return 'prod';
-}
-
-function detectChType(deploymentType = '') {
-  return deploymentType.includes('2') || deploymentType === 'ch2' ? 'ch2' : 'ch1';
+  const sessionCreds = getAllCreds(req.session);
+  return resolveCredentials(sessionCreds, rawBaseUrl, bgOrgId, envType, chType);
 }
 
 /* ── GET /api/cps/credentials ────────────────────────────────────────────────
@@ -118,7 +82,6 @@ router.get('/credentials', authMiddleware, (req, res) => {
 */
 router.post('/credentials', authMiddleware, (req, res) => {
   const { credentials = {} } = req.body;
-  if (!req.session.cpsCreds) req.session.cpsCreds = {};
 
   for (const [key, creds] of Object.entries(credentials)) {
     if (!creds.clientId && !creds.clientSecret) continue;
@@ -132,7 +95,7 @@ router.post('/credentials', authMiddleware, (req, res) => {
     } else {
       storageKey = normaliseUrl(key);
     }
-    req.session.cpsCreds[storageKey] = { clientId: creds.clientId || '', clientSecret: creds.clientSecret || '' };
+    setCred(req.session, storageKey, { clientId: creds.clientId, clientSecret: creds.clientSecret });
   }
 
   res.json({ success: true });
@@ -143,9 +106,7 @@ router.post('/credentials', authMiddleware, (req, res) => {
 */
 router.delete('/credentials/:key', authMiddleware, (req, res) => {
   const key = decodeURIComponent(req.params.key);
-  if (req.session.cpsCreds) {
-    delete req.session.cpsCreds[key];
-  }
+  deleteCred(req.session, key);
   res.json({ success: true, cleared: key });
 });
 
@@ -191,7 +152,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
   const cleanBaseUrl = normaliseUrl(baseUrl);
   const fullUrl = `${cleanBaseUrl}${cpsPath}`;
   const queryStr = new URLSearchParams(params).toString();
-  console.log(`CPS → GET ${fullUrl}?${queryStr}  [bg: ${bgOrgId || 'none'}]`);
+  logger.debug(`CPS → GET ${fullUrl}?${queryStr}  [bg: ${bgOrgId || 'none'}]`);
 
   // Helper: make one CPS GET call with a specific credential pair
   const makeCpsCall = async (clientId, clientSecret, timeoutMs = 20000) => {
@@ -199,6 +160,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
       headers: { 'client_id': clientId, 'client_secret': clientSecret, 'Content-Type': 'application/json' },
       params,
       timeout: timeoutMs,
+      httpAgent,
       httpsAgent,
       validateStatus: () => true, // handle all statuses ourselves
     });
@@ -206,9 +168,9 @@ router.get('/fetch', authMiddleware, async (req, res) => {
 
   let response;
   try {
-    console.log(`CPS primary call — clientId="${creds.clientId.slice(0,8)}…"`);
+    logger.debug(`CPS primary call — clientId="${creds.clientId.slice(0,8)}…"`);
     response = await makeCpsCall(creds.clientId, creds.clientSecret);
-    console.log(`CPS primary response — HTTP ${response.status} (clientId="${creds.clientId.slice(0,8)}…")`);
+    logger.debug(`CPS primary response — HTTP ${response.status} (clientId="${creds.clientId.slice(0,8)}…")`);
 
     // Helper: check if a CPS response indicates no project access.
     // Detects three patterns:
@@ -251,15 +213,15 @@ router.get('/fetch', authMiddleware, async (req, res) => {
       (response.status === 200 && creds._fromFallback && isNoAccessResponse(response));
 
     if (shouldRetry && response.status === 200) {
-      console.log(`CPS 200 but no project access — credential "${creds.clientId.slice(0,8)}…" ${isCouldNotAccess(response) ? 'returned COULD NOT ACCESS' : 'returned empty response'}; trying other credentials`);
+      logger.debug(`CPS 200 but no project access — credential "${creds.clientId.slice(0,8)}…" ${isCouldNotAccess(response) ? 'returned COULD NOT ACCESS' : 'returned empty response'}; trying other credentials`);
     }
 
     if (shouldRetry) {
-      const sessionCreds = req.session.cpsCreds || {};
+      const sessionCreds = getAllCreds(req.session);
       const altEntries = Object.entries(sessionCreds)
         .filter(([k, v]) => k.startsWith(`${normaliseUrl(baseUrl)}::`) && v?.clientId && v?.clientId !== creds.clientId && v?.clientSecret);
 
-      console.log(`CPS 401 — ${altEntries.length} alt credential(s) available for retry`);
+      logger.debug(`CPS 401 — ${altEntries.length} alt credential(s) available for retry`);
       if (altEntries.length > 0) {
         const BATCH = 5;
         let found = false;
@@ -267,25 +229,25 @@ router.get('/fetch', authMiddleware, async (req, res) => {
           const batch = altEntries.slice(i, i + BATCH);
           const batchNum = Math.floor(i / BATCH) + 1;
           const totalBatches = Math.ceil(altEntries.length / BATCH);
-          console.log(`CPS retry batch ${batchNum}/${totalBatches} — testing clientIds: [${batch.map(([,c]) => c.clientId.slice(0,8)+'…').join(', ')}]`);
+          logger.debug(`CPS retry batch ${batchNum}/${totalBatches} — testing clientIds: [${batch.map(([,c]) => c.clientId.slice(0,8)+'…').join(', ')}]`);
           const settled = await Promise.allSettled(
             batch.map(([, c]) => makeCpsCall(c.clientId, c.clientSecret, 5000).then(r => ({ cred: c, res: r })))
           );
           for (const s of settled) {
             if (s.status === 'rejected') {
-              console.log(`CPS retry — clientId="${s.reason?.config?.headers?.client_id?.slice(0,8) || '?'}…" threw: ${s.reason?.code || s.reason?.message}`);
+              logger.debug(`CPS retry — clientId="${s.reason?.config?.headers?.client_id?.slice(0,8) || '?'}…" threw: ${s.reason?.code || s.reason?.message}`);
             } else {
               const { cred, res: r } = s.value;
               const noAccess = isNoAccessResponse(r);
-              console.log(`CPS retry — clientId="${cred.clientId.slice(0,8)}…" → HTTP ${r.status}${r.status === 200 && noAccess ? ' (no project access)' : r.status === 200 ? ' ✅ has data' : ''}`);
+              logger.debug(`CPS retry — clientId="${cred.clientId.slice(0,8)}…" → HTTP ${r.status}${r.status === 200 && noAccess ? ' (no project access)' : r.status === 200 ? ' ✅ has data' : ''}`);
               // Accept this credential if: not 401 AND not "no project access"
               if (r.status !== 401 && !(r.status === 200 && noAccess)) {
                 response = r;
                 // Promote to url::bgOrgId (when bgOrgId is known) AND url-only
                 // This ensures callers with bgId='__all__' (no bgOrgId) also benefit
-                if (bgOrgId) req.session.cpsCreds[`${normaliseUrl(baseUrl)}::${bgOrgId}`] = { clientId: cred.clientId, clientSecret: cred.clientSecret };
-                req.session.cpsCreds[normaliseUrl(baseUrl)] = { clientId: cred.clientId, clientSecret: cred.clientSecret };
-                console.log(`CPS retry resolved ✅ — promoted clientId "${cred.clientId.slice(0,8)}…" as primary (batch ${batchNum}/${totalBatches})`);
+                if (bgOrgId) setCred(req.session, `${normaliseUrl(baseUrl)}::${bgOrgId}`, { clientId: cred.clientId, clientSecret: cred.clientSecret });
+                setCred(req.session, normaliseUrl(baseUrl), { clientId: cred.clientId, clientSecret: cred.clientSecret });
+                logger.debug(`CPS retry resolved ✅ — promoted clientId "${cred.clientId.slice(0,8)}…" as primary (batch ${batchNum}/${totalBatches})`);
                 found = true;
                 break;
               }
@@ -293,10 +255,10 @@ router.get('/fetch', authMiddleware, async (req, res) => {
           }
         }
         if (!found) {
-          console.warn(`CPS retry ❌ — all ${altEntries.length} credentials returned 401 or empty data`);
+          logger.warn(`CPS retry ❌ — all ${altEntries.length} credentials returned 401 or empty data`);
         }
       } else {
-        console.warn(`CPS 401 — no alt credentials available; CSV may not contain a valid credential for this server`);
+        logger.warn(`CPS 401 — no alt credentials available; CSV may not contain a valid credential for this server`);
       }
     }
 
@@ -316,10 +278,10 @@ router.get('/fetch', authMiddleware, async (req, res) => {
         .filter(Boolean);
 
       if (failedKeys.length > 0) {
-        console.log(`CPS per-group retry — ${failedKeys.length} group(s) still COULD NOT ACCESS after main retry`);
+        logger.debug(`CPS per-group retry — ${failedKeys.length} group(s) still COULD NOT ACCESS after main retry`);
 
         // Collect all unique credentials from session (excluding the one already used)
-        const sessionCreds = req.session.cpsCreds || {};
+        const sessionCreds = getAllCreds(req.session);
         const usedClientId = creds.clientId;
         const altCreds = Object.values(sessionCreds)
           .filter(c => c?.clientId && c?.clientId !== usedClientId && c?.clientSecret)
@@ -336,6 +298,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
               headers: { 'client_id': altCred.clientId, 'client_secret': altCred.clientSecret, 'Content-Type': 'application/json' },
               params: altParams,
               timeout: 8000,
+              httpAgent,
               httpsAgent,
               validateStatus: () => true,
             });
@@ -355,16 +318,16 @@ router.get('/fetch', authMiddleware, async (req, res) => {
                 }
               }
               if (resolved > 0) {
-                console.log(`CPS per-group retry — clientId="${altCred.clientId.slice(0,8)}…" resolved ${resolved} group(s) (${remaining.size} still failing)`);
+                logger.debug(`CPS per-group retry — clientId="${altCred.clientId.slice(0,8)}…" resolved ${resolved} group(s) (${remaining.size} still failing)`);
               }
             }
           } catch { /* skip this credential */ }
         }
 
         if (remaining.size < failedKeys.length) {
-          console.log(`CPS per-group retry complete — resolved ${failedKeys.length - remaining.size}/${failedKeys.length} previously-failing group(s)`);
+          logger.debug(`CPS per-group retry complete — resolved ${failedKeys.length - remaining.size}/${failedKeys.length} previously-failing group(s)`);
         } else {
-          console.log(`CPS per-group retry complete — no additional groups resolved (all ${failedKeys.length} require credentials not in the uploaded CSV)`);
+          logger.debug(`CPS per-group retry complete — no additional groups resolved (all ${failedKeys.length} require credentials not in the uploaded CSV)`);
         }
       }
     }
@@ -372,7 +335,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
     const msg = fetchErr.code === 'ECONNABORTED' || fetchErr.code === 'ETIMEDOUT'
       ? `CPS request timed out after ${fetchErr.config?.timeout || 20000}ms`
       : fetchErr.message || 'CPS network error';
-    console.error(`CPS fetch error for ${fullUrl}: [${fetchErr.code || 'ERR'}] ${msg}`);
+    logger.error(`CPS fetch error for ${fullUrl}: [${fetchErr.code || 'ERR'}] ${msg}`);
     return res.status(504).json({ error: msg, attemptedUrl: `${fullUrl}?${queryStr}` });
   }
 
@@ -380,7 +343,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
     if (response.status >= 400) {
       const errMsg = response.data?.message || response.data?.description || response.data?.error
         || (typeof response.data === 'string' ? response.data : null) || `HTTP ${response.status}`;
-      console.error(`CPS error (${response.status}) ${fullUrl}?${queryStr}: ${errMsg}`);
+      logger.error(`CPS error (${response.status}) ${fullUrl}?${queryStr}: ${errMsg}`);
       return res.status(response.status).json({ error: errMsg, attemptedUrl: `${fullUrl}?${queryStr}`, details: response.data });
     }
 
@@ -408,7 +371,7 @@ router.get('/fetch', authMiddleware, async (req, res) => {
       || (typeof error.response?.data === 'string' ? error.response.data : null)
       || error.message
       || 'CPS request failed';
-    console.error(`CPS error (${status}) ${fullUrl}?${queryStr}: ${msg}`);
+    logger.error(`CPS error (${status}) ${fullUrl}?${queryStr}: ${msg}`);
     res.status(status).json({ error: msg, attemptedUrl: `${fullUrl}?${queryStr}`, details: error.response?.data });
   }
 });
@@ -446,7 +409,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
   // e.g. "john.doe, jane.smith" → search for either "john.doe" OR "jane.smith"
   const searchTerms = username.trim().toLowerCase()
     .split(',').map(t => t.trim()).filter(Boolean);
-  const CONCURRENCY = 30; // increased from 15 for faster fan-out
+  const CONCURRENCY = 30; // max in-flight app lookups at once — see utils/concurrencyPool.js
 
   // ── Circuit breaker: per-URL connection-failure tracking ─────────────────
   // After CIRCUIT_OPEN_THRESHOLD consecutive ECONNABORTED/ETIMEDOUT failures
@@ -456,110 +419,11 @@ router.post('/search-user', authMiddleware, async (req, res) => {
   const failedUrls = new Map(); // normalisedUrl → failure count
   const CIRCUIT_OPEN_THRESHOLD = 3;
 
-  /** Flatten CPS response (all formats) into a flat {key:value} map */
-  function flattenProps(data) {
-    if (!data) return {};
-    let flat = {};
-
-    const propsArray =
-      Array.isArray(data) ? data
-      : Array.isArray(data?.responses) ? data.responses
-      : Array.isArray(data?.properties) ? data.properties
-      : null;
-
-    if (propsArray) {
-      propsArray.forEach(entry => {
-        const inner = entry?.properties;
-        if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
-          Object.assign(flat, inner);
-        } else if (Array.isArray(inner)) {
-          inner.forEach(p => { if (p?.key != null) flat[String(p.key)] = p.value ?? p.val ?? ''; });
-        } else if (entry && typeof entry === 'object' && !Array.isArray(entry) && !entry.key && !entry.environment) {
-          Object.assign(flat, entry);
-        }
-      });
-    } else if (data && typeof data === 'object') {
-      const firstVal = Object.values(data)[0];
-      if (firstVal && typeof firstVal === 'object' && !Array.isArray(firstVal)) {
-        flat = data[Object.keys(data)[0]] || firstVal;
-      } else {
-        flat = data;
-      }
-    }
-    return flat;
-  }
-
-  /** Scan a flat props map for any of the search terms in values */
-  function scanProps(flat, source) {
-    const hits = [];
-    for (const [k, v] of Object.entries(flat)) {
-      if (v != null) {
-        const target = searchMode === 'key' ? String(k) : String(v);
-        const matchFound = searchTerms.some(term => {
-          return exactMatch 
-            ? target.toLowerCase() === term 
-            : target.toLowerCase().includes(term);
-        });
-        if (matchFound) {
-          hits.push({ key: k, value: String(v), source });
-        }
-      }
-    }
-    return hits;
-  }
-
-  /** Find a related password property in the same namespace as matchedKey.
-   *
-   * Pass 1 (preferred): prefix-restricted match — same top-level namespace as
-   *   the matched key (e.g., matchedKey="db.username" → looks for "db.*password*").
-   *   Skips values that are themselves masked (all-asterisk placeholders).
-   *
-   * Pass 2 (fallback): no prefix restriction — returns the first non-masked
-   *   password-like value found anywhere in props.  Used when the secure group
-   *   stores credentials under a different namespace (e.g., non-secure key uses
-   *   "anypoint.mq.*" prefix but the secure group just has "password").
-   */
-  function findPassword(props, matchedKey) {
-    const PWD_PATTERN = /password|passwd|\.secret$|_secret$|\.pwd$|_pwd$/i;
-    const prefix = matchedKey.includes('.') ? matchedKey.split('.')[0] : '';
-
-    // Pass 1: prefix-restricted, skip masked (***) values
-    for (const [k, v] of Object.entries(props || {})) {
-      if (!PWD_PATTERN.test(k)) continue;
-      if (prefix && !k.startsWith(prefix)) continue;
-      const val = v != null ? String(v) : '';
-      if (val && !/^\*+$/.test(val)) return val;   // real value found ✅
-    }
-
-    // Pass 2: cross-namespace fallback — any password-like key with a real value
-    // Only run when a prefix was in play (no-prefix keys already searched above exhaustively)
-    if (prefix) {
-      for (const [k, v] of Object.entries(props || {})) {
-        if (!PWD_PATTERN.test(k)) continue;
-        const val = v != null ? String(v) : '';
-        if (val && !/^\*+$/.test(val)) return val;  // cross-namespace real value ✅
-      }
-    }
-
-    return '';
-  }
-
-  /** Check if a non-secure CPS response contains no usable data or only access-denied entries */
-  function isEmptyNsResponse(data) {
-    if (!data) return true;
-    if (Array.isArray(data?.responses)) {
-      if (data.responses.length === 0) return true;
-      // "COULD NOT ACCESS" stored as a string → credential lacks project-level access
-      // Treat this the same as an empty response so the retry loop kicks in
-      if (data.responses.some(r => typeof r?.properties === 'string')) return true;
-      return data.responses.every(r => !r?.properties ||
-        (typeof r.properties === 'object' && Object.keys(r.properties).length === 0)
-      );
-    }
-    if (Array.isArray(data)) return data.length === 0;
-    if (typeof data === 'object') return Object.keys(data).length === 0;
-    return true;
-  }
+  // flattenCpsProps / scanCpsProps / findCpsPassword / isEmptyCpsResponse are
+  // imported from utils/cpsHelpers.js — see that file for the shared,
+  // unit-tested implementations (previously duplicated here under the names
+  // flattenProps / scanProps / findPassword / isEmptyNsResponse).
+  const scanProps = (flat, source) => scanCpsProps(flat, source, { searchTerms, searchMode, exactMatch });
 
   /** Process one app — fetch non-secure + optionally secure, return matched props */
   async function processApp(appEntry) {
@@ -592,22 +456,24 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
         params,
         timeout: 8000,       // reduced from 15 s — fast enough for a healthy CPS server
+        httpAgent,
         httpsAgent,          // tolerates internal CA certs (prevents UNABLE_TO_GET_ISSUER_CERT_LOCALLY)
         validateStatus: () => true,
       });
       nsSearched++;
 
       // Retry on 401 or empty response — try all other session credentials
-      if (nsRes.status === 401 || (nsRes.status === 200 && isEmptyNsResponse(nsRes.data))) {
+      if (nsRes.status === 401 || (nsRes.status === 200 && isEmptyCpsResponse(nsRes.data))) {
         const reason = nsRes.status === 401 ? '401' : 'empty response';
-        const sessionCreds = req.session.cpsCreds || {};
+        const sessionCreds = getAllCreds(req.session);
         const altEntries = Object.entries(sessionCreds)
           .filter(([k, v]) => k.startsWith(`${cleanBase}::`) && v?.clientId && v?.clientId !== creds.clientId && v?.clientSecret);
         if (altEntries.length > 0) {
-          console.log(`[search-user] "${appName}" — ${reason}, trying ${altEntries.length} alt credential(s)`);
-          // Parallel batches of 5 — same pattern as /fetch route.
-          // Serial retries were O(N × timeout) when the CPS server is slow;
-          // batching reduces that to O(ceil(N/5) × timeout).
+          logger.debug(`[search-user] "${appName}" — ${reason}, trying ${altEntries.length} alt credential(s)`);
+          // Parallel batches of 5, stopping at the first credential that works —
+          // intentionally kept as early-exit batches (not the general-purpose
+          // concurrency pool) since we want to STOP as soon as one succeeds,
+          // not run every alt credential to completion.
           const RETRY_BATCH = 5;
           let resolvedAlt = null;
           for (let ri = 0; ri < altEntries.length && !resolvedAlt; ri += RETRY_BATCH) {
@@ -618,6 +484,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
                   headers: { client_id: altCred.clientId, client_secret: altCred.clientSecret, 'Content-Type': 'application/json' },
                   params,
                   timeout: 5000,
+                  httpAgent,
                   httpsAgent,
                   validateStatus: () => true,
                 }).then(r => ({ altCred, r }))
@@ -626,7 +493,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             for (const s of retrySettled) {
               if (s.status === 'fulfilled') {
                 const { altCred, r } = s.value;
-                if (r.status !== 401 && !(r.status === 200 && isEmptyNsResponse(r.data))) {
+                if (r.status !== 401 && !(r.status === 200 && isEmptyCpsResponse(r.data))) {
                   resolvedAlt = { altCred, r };
                   break;
                 }
@@ -637,9 +504,9 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             nsRes = resolvedAlt.r;
             creds = resolvedAlt.altCred;
             // Promote working credential so subsequent apps on this server skip the retry loop
-            req.session.cpsCreds[`${cleanBase}::${bgOrgId}`] = { clientId: resolvedAlt.altCred.clientId, clientSecret: resolvedAlt.altCred.clientSecret };
-            req.session.cpsCreds[cleanBase] = { clientId: resolvedAlt.altCred.clientId, clientSecret: resolvedAlt.altCred.clientSecret };
-            console.log(`[search-user] "${appName}" — alt credential resolved ✅ (promoted to session for ${cleanBase})`);
+            setCred(req.session, `${cleanBase}::${bgOrgId}`, { clientId: resolvedAlt.altCred.clientId, clientSecret: resolvedAlt.altCred.clientSecret });
+            setCred(req.session, cleanBase, { clientId: resolvedAlt.altCred.clientId, clientSecret: resolvedAlt.altCred.clientSecret });
+            logger.debug(`[search-user] "${appName}" — alt credential resolved (promoted to session for ${cleanBase})`);
           }
         }
       }
@@ -653,9 +520,9 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         return null;
       }
 
-      const nsFlat = flattenProps(nsRes.data);
+      const nsFlat = flattenCpsProps(nsRes.data);
       const nsHits = scanProps(nsFlat, 'non-secure').map(h => ({
-        ...h, secureGroupKey: '', password: findPassword(nsFlat, h.key),
+        ...h, secureGroupKey: '', password: findCpsPassword(nsFlat, h.key),
       }));
       matchedProps = matchedProps.concat(nsHits);
 
@@ -676,6 +543,8 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
             params: { environment: cpsEnv, keys: secureKeyStr },
             timeout: 8000,   // reduced from 15 s
+            httpAgent,
+            httpsAgent,      // was missing entirely — same CPS server could fail TLS verification here but not on the non-secure call above
             validateStatus: () => true,
           });
           // Parse per-group to track which secure group each match came from
@@ -683,19 +552,13 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           const groups = Array.isArray(sData?.responses) ? sData.responses
             : Array.isArray(sData) ? sData
             : (sData && typeof sData === 'object' ? [{ key: secureKeyStr.split(',')[0].trim(), properties: sData }] : []);
-          const accessDeniedGroups = groups.filter(g => typeof g.properties === 'string').length;
-          if (sRes.status !== 200 || accessDeniedGroups > 0) {
-            const secureGroupKeys = groups.map(g => g.key || '?').join(', ');
-            const securePropsCount = groups.reduce((n, g) => n + (typeof g.properties === 'object' ? Object.keys(g.properties || {}).length : 0), 0);
-            //console.log(`[search-user][SEC-REF] "${appName}" HTTP=${sRes.status} groups=[${secureGroupKeys}] props=${securePropsCount} denied=${accessDeniedGroups}`);
-          }
           for (const group of groups) {
             if (!group) continue;
             const gKey = group.key || secureKeyStr.split(',')[0].trim() || '';
             const gProps = group.properties || {};
             if (typeof gProps !== 'object' || Array.isArray(gProps)) continue;
             const sHits = scanProps(gProps, 'secure').map(h => ({
-              ...h, secureGroupKey: gKey, password: findPassword(gProps, h.key),
+              ...h, secureGroupKey: gKey, password: findCpsPassword(gProps, h.key),
             }));
             matchedProps = matchedProps.concat(sHits);
             // ── Unmask non-secure passwords ─────────────────────────────────
@@ -706,14 +569,12 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             matchedProps.forEach(hit => {
               if (hit.source === 'non-secure' &&
                   (!hit.password || /^\*+$/.test(String(hit.password)))) {
-                const pw = findPassword(gProps, hit.key);
+                const pw = findCpsPassword(gProps, hit.key);
                 if (pw && !/^\*+$/.test(pw)) hit.password = pw;
               }
             });
           }
-        } catch (sErr) {
-          //console.log(`[search-user] "${appName}" secure fetch FAILED: ${sErr.code || sErr.message}`);
-        }
+        } catch { /* secure fetch failed — skip, non-secure matches already captured */ }
       } else {
         // ── No reference key in non-secure — try secure fetch anyway ──────
         secureFallbackSearched++;
@@ -722,11 +583,11 @@ router.post('/search-user', authMiddleware, async (req, res) => {
           const sRes2 = await axios.get(sUrl2, {
             headers: { client_id: creds.clientId, client_secret: creds.clientSecret, 'Content-Type': 'application/json' },
             params: { environment: cpsEnv, keys: cpsKey },
-            timeout: 8000, httpsAgent, validateStatus: () => true,
+            timeout: 8000, httpAgent, httpsAgent, validateStatus: () => true,
           });
           if (sRes2.status === 200) {
-            const s2Flat = flattenProps(sRes2.data);
-            const s2Hits = scanProps(s2Flat, 'secure').map(h => ({ ...h, secureGroupKey: cpsKey, password: findPassword(s2Flat, h.key) }));
+            const s2Flat = flattenCpsProps(sRes2.data);
+            const s2Hits = scanProps(s2Flat, 'secure').map(h => ({ ...h, secureGroupKey: cpsKey, password: findCpsPassword(s2Flat, h.key) }));
             if (s2Hits.length > 0) matchedProps = matchedProps.concat(s2Hits);
             // ── Unmask non-secure passwords (fallback path) ─────────────────
             // Same logic as above: replace *** placeholders in non-secure hits
@@ -734,7 +595,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
             matchedProps.forEach(hit => {
               if (hit.source === 'non-secure' &&
                   (!hit.password || /^\*+$/.test(String(hit.password)))) {
-                const pw = findPassword(s2Flat, hit.key);
+                const pw = findCpsPassword(s2Flat, hit.key);
                 if (pw && !/^\*+$/.test(pw)) hit.password = pw;
               }
             });
@@ -744,7 +605,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     } catch (err) {
       // Log the error type so logs distinguish timeout/network from no-match
       const code = err.code || (err.response?.status ? `HTTP ${err.response.status}` : 'ERR');
-      console.warn(`[search-user] processApp failed for "${appName}" [${code}]: ${err.message}`);
+      logger.warn(`[search-user] processApp failed for "${appName}" [${code}]: ${err.message}`);
       // Circuit breaker: count connection-level failures per CPS URL.
       // ECONNABORTED = axios timeout, ETIMEDOUT = OS-level timeout,
       // ECONNREFUSED / ENOTFOUND = server unreachable / DNS failure.
@@ -753,7 +614,7 @@ router.post('/search-user', authMiddleware, async (req, res) => {
         const count = (failedUrls.get(cleanBase) || 0) + 1;
         failedUrls.set(cleanBase, count);
         if (count === CIRCUIT_OPEN_THRESHOLD) {
-          console.warn(`[search-user] Circuit breaker OPEN for "${cleanBase}" — remaining apps on this CPS server will be skipped instantly`);
+          logger.warn(`[search-user] Circuit breaker OPEN for "${cleanBase}" — remaining apps on this CPS server will be skipped instantly`);
         }
       }
       return null;
@@ -777,41 +638,42 @@ router.post('/search-user', authMiddleware, async (req, res) => {
   let secureRefSearched = 0;      // apps where secure was fetched via reference key
   let secureFallbackSearched = 0; // apps where fallback secure (no reference key) was attempted
 
-  // ── Concurrency-limited fan-out ──────────────────────────────────────────
+  // ── Concurrency-pool fan-out ──────────────────────────────────────────────
+  // Previously a fixed-batch loop (`for (i += CONCURRENCY) await Promise.allSettled(batch)`):
+  // a single slow app in a batch of 30 blocked the next 30 from starting even
+  // though 29 of 30 had already resolved. mapWithConcurrency (utils/concurrencyPool.js)
+  // keeps a constant number of in-flight requests instead, bound by the
+  // slowest INDIVIDUAL app rather than the slowest-per-batch.
+  const settled = await mapWithConcurrency(apps, CONCURRENCY, processApp);
+
   const results = [];
   let skipped = 0;            // apps with no CPS config or no credentials
-  let scanned = 0;            // apps successfully queried (with or without matches)
   let matched = 0;            // apps with at least one matching property
   let credentialErrors = 0;   // apps skipped due to 401 (missing / invalid CPS credentials)
   let circuitBrokenCount = 0; // apps skipped instantly because their CPS URL hit the circuit breaker
 
-  for (let i = 0; i < apps.length; i += CONCURRENCY) {
-    const batch = apps.slice(i, i + CONCURRENCY);
-    const settled = await Promise.allSettled(batch.map(a => processApp(a)));
-    for (const outcome of settled) {
-      if (outcome.status === 'fulfilled') {
-        if (outcome.value?._circuitBroken) {
-          circuitBrokenCount++;
-          skipped++;
-        } else if (outcome.value === null) {
-          skipped++;
-        } else if (outcome.value?._authError) {
-          // 401 after exhausting all credentials — count separately
-          credentialErrors++;
-          skipped++;
-        } else {
-          scanned++;
-          matched++;
-          results.push(outcome.value);
-        }
-      } else {
+  for (const outcome of settled) {
+    if (outcome.status === 'fulfilled') {
+      if (outcome.value?._circuitBroken) {
+        circuitBrokenCount++;
         skipped++;
+      } else if (outcome.value === null) {
+        skipped++;
+      } else if (outcome.value?._authError) {
+        // 401 after exhausting all credentials — count separately
+        credentialErrors++;
+        skipped++;
+      } else {
+        matched++;
+        results.push(outcome.value);
       }
+    } else {
+      skipped++;
     }
   }
 
   if (credentialErrors > 0) {
-    console.warn(`[search-user] "${username}" — ${credentialErrors} app(s) returned HTTP 401 for all credentials; upload a CPS CSV with broader credentials to include those apps`);
+    logger.warn(`[search-user] "${username}" — ${credentialErrors} app(s) returned HTTP 401 for all credentials; upload a CPS CSV with broader credentials to include those apps`);
   }
 
   // Collect circuit-broken URLs for the response so the frontend can surface them
@@ -819,10 +681,10 @@ router.post('/search-user', authMiddleware, async (req, res) => {
     .filter(([, count]) => count >= CIRCUIT_OPEN_THRESHOLD)
     .map(([url]) => url);
   if (circuitBrokenUrls.length > 0) {
-    console.warn(`[search-user] Unreachable CPS servers (circuit open): [${circuitBrokenUrls.join(', ')}] — ${circuitBrokenCount} app(s) skipped without timeout`);
+    logger.warn(`[search-user] Unreachable CPS servers (circuit open): [${circuitBrokenUrls.join(', ')}] — ${circuitBrokenCount} app(s) skipped without timeout`);
   }
 
-  console.log(`[search-user] terms=[${searchTerms.join(' | ')}] — total: ${apps.length}, matched: ${matched}, credentialErrors: ${credentialErrors}, circuitBroken: ${circuitBrokenCount}, skipped/no-match: ${skipped - credentialErrors - circuitBrokenCount}`);
+  logger.info(`[search-user] terms=[${searchTerms.join(' | ')}] — total: ${apps.length}, matched: ${matched}, credentialErrors: ${credentialErrors}, circuitBroken: ${circuitBrokenCount}, skipped/no-match: ${skipped - credentialErrors - circuitBrokenCount}`);
   res.json({ results, scanned: apps.length, matched, skipped, credentialErrors,
     circuitBrokenUrls, circuitBrokenCount,
     searchStats: { nonSecureSearched: nsSearched, secureRefSearched, secureFallbackSearched } });
@@ -898,7 +760,7 @@ router.post('/write', authMiddleware, async (req, res) => {
     properties: [{ environment, key: projectKey, properties }],
   };
 
-  console.info(`[CPS Write] user=${req.session?.username || 'unknown'} op=${httpMethod} project=${projectKey} env=${environment} type=${type} base=${cleanBaseUrl}`);
+  logger.info(`[CPS Write] user=${req.session?.username || 'unknown'} op=${httpMethod} project=${projectKey} env=${environment} type=${type} base=${cleanBaseUrl}`);
 
   try {
     const response = await axios({
@@ -911,6 +773,8 @@ router.post('/write', authMiddleware, async (req, res) => {
       },
       data: body,
       timeout: 20000,
+      httpAgent,
+      httpsAgent,
       validateStatus: () => true,
     });
 
@@ -921,13 +785,23 @@ router.post('/write', authMiddleware, async (req, res) => {
       const errMsg = response.data?.message || response.data?.description || response.data?.error
         || (typeof response.data === 'string' ? response.data : null)
         || `CPS ${httpMethod} failed with HTTP ${response.status}`;
-      console.error(`[CPS Write] ${httpMethod} failed (${response.status}): ${errMsg}`);
+      logger.error(`[CPS Write] ${httpMethod} failed (${response.status}): ${errMsg}`);
+      logCpsAudit({
+        sessionId: req.sessionID, username: req.session?.username, operation: httpMethod === 'POST' ? 'CREATE' : 'UPDATE',
+        cpsBaseUrl: cleanBaseUrl, projectKey, environment, propType: type,
+        success: false, httpStatus: response.status, detail: errMsg,
+      });
       return res.status(response.status).json({
         error: errMsg, details: response.data,
         requestDetails: reqDetails, responseDetails: resDetails,
       });
     }
 
+    logCpsAudit({
+      sessionId: req.sessionID, username: req.session?.username, operation: httpMethod === 'POST' ? 'CREATE' : 'UPDATE',
+      cpsBaseUrl: cleanBaseUrl, projectKey, environment, propType: type,
+      success: true, httpStatus: response.status, detail: `${Object.keys(properties).length} property key(s)`,
+    });
     return res.json({
       success: true,
       method: httpMethod,
@@ -942,7 +816,12 @@ router.post('/write', authMiddleware, async (req, res) => {
     const msg = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT'
       ? `CPS request timed out after 20s`
       : err.message || 'CPS write request failed';
-    console.error(`[CPS Write] Network error for ${fullUrl}: ${msg}`);
+    logger.error(`[CPS Write] Network error for ${fullUrl}: ${msg}`);
+    logCpsAudit({
+      sessionId: req.sessionID, username: req.session?.username, operation: httpMethod === 'POST' ? 'CREATE' : 'UPDATE',
+      cpsBaseUrl: cleanBaseUrl, projectKey, environment, propType: type,
+      success: false, detail: msg,
+    });
     return res.status(504).json({ error: msg });
   }
 });
@@ -985,13 +864,15 @@ router.delete('/project', authMiddleware, async (req, res) => {
   const cleanBaseUrl = normaliseUrl(baseUrl);
   const fullUrl = `${cleanBaseUrl}${pathMap[type] || pathMap['non-secure']}`;
 
-  console.info(`[CPS Write] user=${req.session?.username || 'unknown'} op=DELETE project=${projectKey} env=${environment} type=${type} base=${cleanBaseUrl}`);
+  logger.info(`[CPS Write] user=${req.session?.username || 'unknown'} op=DELETE project=${projectKey} env=${environment} type=${type} base=${cleanBaseUrl}`);
 
   try {
     const response = await axios.delete(fullUrl, {
       headers: { client_id: creds.clientId, client_secret: creds.clientSecret },
       params: { environment, keys: projectKey },
       timeout: 20000,
+      httpAgent,
+      httpsAgent,
       validateStatus: () => true,
     });
 
@@ -1004,13 +885,23 @@ router.delete('/project', authMiddleware, async (req, res) => {
     if (response.status >= 400) {
       const errMsg = response.data?.message || response.data?.error
         || `CPS DELETE failed with HTTP ${response.status}`;
-      console.error(`[CPS Write] DELETE failed (${response.status}): ${errMsg}`);
+      logger.error(`[CPS Write] DELETE failed (${response.status}): ${errMsg}`);
+      logCpsAudit({
+        sessionId: req.sessionID, username: req.session?.username, operation: 'DELETE',
+        cpsBaseUrl: cleanBaseUrl, projectKey, environment, propType: type,
+        success: false, httpStatus: response.status, detail: errMsg,
+      });
       return res.status(response.status).json({
         error: errMsg,
         requestDetails: delReqDetails, responseDetails: delResDetails,
       });
     }
 
+    logCpsAudit({
+      sessionId: req.sessionID, username: req.session?.username, operation: 'DELETE',
+      cpsBaseUrl: cleanBaseUrl, projectKey, environment, propType: type,
+      success: true, httpStatus: response.status,
+    });
     return res.json({
       success: true, deleted: projectKey, environment, type,
       requestDetails: delReqDetails,
@@ -1018,6 +909,11 @@ router.delete('/project', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     const msg = err.code === 'ECONNABORTED' ? 'CPS request timed out' : err.message;
+    logCpsAudit({
+      sessionId: req.sessionID, username: req.session?.username, operation: 'DELETE',
+      cpsBaseUrl: cleanBaseUrl, projectKey, environment, propType: type,
+      success: false, detail: msg,
+    });
     return res.status(504).json({ error: msg });
   }
 });
@@ -1056,6 +952,8 @@ router.get('/auth', authMiddleware, async (req, res) => {
       headers: { client_id: creds.clientId, client_secret: creds.clientSecret },
       params: { environment, keys: projectKey },
       timeout: 15000,
+      httpAgent,
+      httpsAgent,
       validateStatus: () => true,
     });
     res.status(response.status).json(response.data);
@@ -1126,7 +1024,7 @@ router.post('/auth', authMiddleware, async (req, res) => {
     }],
   };
 
-  console.info(`[CPS Auth] user=${req.session?.username || 'unknown'} op=${replace ? 'REPLACE' : 'ADD'} project=${projectKey} env=${environment} type=${type} allowedCount=${allowedClientIds.length}`);
+  logger.info(`[CPS Auth] user=${req.session?.username || 'unknown'} op=${replace ? 'REPLACE' : 'ADD'} project=${projectKey} env=${environment} type=${type} allowedCount=${allowedClientIds.length}`);
 
   try {
     const response = await axios.put(fullUrl, body, {
@@ -1136,6 +1034,8 @@ router.post('/auth', authMiddleware, async (req, res) => {
         'Content-Type': 'application/json',
       },
       timeout: 15000,
+      httpAgent,
+      httpsAgent,
       validateStatus: () => true,
     });
 
@@ -1145,12 +1045,23 @@ router.post('/auth', authMiddleware, async (req, res) => {
     if (response.status >= 400) {
       const errMsg = response.data?.message || response.data?.error
         || `CPS auth update failed with HTTP ${response.status}`;
+      logCpsAudit({
+        sessionId: req.sessionID, username: req.session?.username, operation: replace ? 'AUTH_REPLACE' : 'AUTH_ADD',
+        cpsBaseUrl: cleanBaseUrl, projectKey, environment, propType: type,
+        success: false, httpStatus: response.status, detail: errMsg,
+      });
       return res.status(response.status).json({
         error: errMsg,
         requestDetails: authReqDetails, responseDetails: authResDetails,
       });
     }
 
+    logCpsAudit({
+      sessionId: req.sessionID, username: req.session?.username, operation: replace ? 'AUTH_REPLACE' : 'AUTH_ADD',
+      cpsBaseUrl: cleanBaseUrl, projectKey, environment, propType: type,
+      success: true, httpStatus: response.status,
+      detail: `allowed=${allowedClientIds.length} readOnly=${readOnlyClientIds.length}`,
+    });
     return res.json({
       success: true,
       mode: replace ? 'replace' : 'add',
@@ -1162,6 +1073,11 @@ router.post('/auth', authMiddleware, async (req, res) => {
       responseDetails: authResDetails,
     });
   } catch (err) {
+    logCpsAudit({
+      sessionId: req.sessionID, username: req.session?.username, operation: replace ? 'AUTH_REPLACE' : 'AUTH_ADD',
+      cpsBaseUrl: cleanBaseUrl, projectKey, environment, propType: type,
+      success: false, detail: err.message,
+    });
     return res.status(504).json({ error: err.message || 'CPS auth update failed' });
   }
 });
@@ -1188,6 +1104,8 @@ router.post('/credentials/test', authMiddleware, async (req, res) => {
       headers: { client_id: clientId, client_secret: clientSecret, 'Content-Type': 'application/json' },
       params: { environment: environment || 'prod', keys: projectKey || '' },
       timeout: 10000,
+      httpAgent,
+      httpsAgent,
       validateStatus: () => true,
     });
 
@@ -1265,7 +1183,7 @@ router.post('/binary', authMiddleware, async (req, res) => {
   const cleanBaseUrl = normaliseUrl(baseUrl);
   const fullUrl = `${cleanBaseUrl}/api/v2/binaries/secure`;
 
-  console.info(`[CPS Binary] user=${req.session?.username || 'unknown'} op=UPLOAD file=${fileName} env=${environment} base=${cleanBaseUrl} size=${fileBuffer.length}`);
+  logger.info(`[CPS Binary] user=${req.session?.username || 'unknown'} op=UPLOAD file=${fileName} env=${environment} base=${cleanBaseUrl} size=${fileBuffer.length}`);
 
   try {
     const response = await axios.post(fullUrl, fileBuffer, {
@@ -1277,6 +1195,8 @@ router.post('/binary', authMiddleware, async (req, res) => {
         environment,
       },
       timeout: 60000, // binaries can be large — 60s timeout
+      httpAgent,
+      httpsAgent,
       validateStatus: () => true,
       maxBodyLength: 50 * 1024 * 1024, // 50MB max
       maxContentLength: 50 * 1024 * 1024,
@@ -1292,13 +1212,23 @@ router.post('/binary', authMiddleware, async (req, res) => {
     if (response.status >= 400) {
       const errMsg = response.data?.message || response.data?.error
         || `CPS binary upload failed with HTTP ${response.status}`;
-      console.error(`[CPS Binary] Upload failed (${response.status}): ${errMsg}`);
+      logger.error(`[CPS Binary] Upload failed (${response.status}): ${errMsg}`);
+      logCpsAudit({
+        sessionId: req.sessionID, username: req.session?.username, operation: 'BINARY_UPLOAD',
+        cpsBaseUrl: cleanBaseUrl, projectKey: fileName, environment, propType: 'binaries',
+        success: false, httpStatus: response.status, detail: errMsg,
+      });
       return res.status(response.status).json({
         error: errMsg,
         requestDetails: binReqDetails, responseDetails: binResDetails,
       });
     }
 
+    logCpsAudit({
+      sessionId: req.sessionID, username: req.session?.username, operation: 'BINARY_UPLOAD',
+      cpsBaseUrl: cleanBaseUrl, projectKey: fileName, environment, propType: 'binaries',
+      success: true, httpStatus: response.status, detail: `${fileBuffer.length} bytes`,
+    });
     return res.json({
       success: true,
       uploaded: fileName,
@@ -1309,9 +1239,49 @@ router.post('/binary', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     const msg = err.code === 'ECONNABORTED' ? 'CPS binary upload timed out' : err.message;
-    console.error(`[CPS Binary] Network error for ${fullUrl}: ${msg}`);
+    logger.error(`[CPS Binary] Network error for ${fullUrl}: ${msg}`);
+    logCpsAudit({
+      sessionId: req.sessionID, username: req.session?.username, operation: 'BINARY_UPLOAD',
+      cpsBaseUrl: cleanBaseUrl, projectKey: fileName, environment, propType: 'binaries',
+      success: false, detail: msg,
+    });
     return res.status(504).json({ error: msg });
   }
+});
+
+/* ── GET /api/cps/audit-log ───────────────────────────────────────────────
+   Durable audit trail of CPS write/delete/auth mutations for the current
+   session (mirrors GET /api/health/ping/history's shape and scoping).
+   Query: limit? (default 100, max 500)
+*/
+router.get('/audit-log', authMiddleware, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+  db.all(
+    `SELECT * FROM cps_audit_log WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?`,
+    [req.sessionID, limit],
+    (err, rows) => {
+      if (err) {
+        logger.error({ err }, '[cps/audit-log] Error fetching audit log');
+        return res.status(500).json({ error: 'Failed to fetch CPS audit log' });
+      }
+      res.json({
+        total: rows.length,
+        entries: rows.map((r) => ({
+          id: r.id,
+          timestamp: r.timestamp,
+          username: r.username,
+          operation: r.operation,
+          cpsBaseUrl: r.cps_base_url,
+          projectKey: r.project_key,
+          environment: r.environment,
+          propType: r.prop_type,
+          success: !!r.success,
+          httpStatus: r.http_status,
+          detail: r.detail,
+        })),
+      });
+    }
+  );
 });
 
 router.detectEnvType = detectEnvType;

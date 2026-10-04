@@ -4,6 +4,7 @@ const router = express.Router();
 
 const { ANYPOINT_URL } = require('../utils/anypointClient');
 const { mapOrgShape } = require('../utils/orgHelpers');
+const logger = require('../utils/logger');
 
 // Helper: fetch user profile and store session
 async function storeSession(req, token) {
@@ -61,7 +62,7 @@ async function storeSession(req, token) {
 
   // Log for debugging
   const totalEnvs = Object.values(accessibleEnvironments).flat().length;
-  console.log(`Session: ${memberOrgs.length} orgs, ${roleEnvIds.size} role-scoped envs, ${totalEnvs} accessible envs`);
+  logger.info(`Session: ${memberOrgs.length} orgs, ${roleEnvIds.size} role-scoped envs, ${totalEnvs} accessible envs`);
 
   req.session.accessibleEnvironments = accessibleEnvironments;
   req.session.user = {
@@ -85,9 +86,10 @@ router.post('/login', async (req, res) => {
     const response = await axios.post(`${ANYPOINT_URL}/accounts/login`, { username, password });
     const { access_token } = response.data;
     const result = await storeSession(req, access_token);
+    logger.info({ method: 'password', username, orgId: result.orgId, orgName: result.orgName }, 'Login succeeded');
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('Login error:', error.response?.data || error.message);
+    logger.warn({ method: 'password', username, status: error.response?.status, reason: error.response?.data?.message || error.message }, 'Login failed');
     res.status(error.response?.status || 500).json({
       error: error.response?.data?.message || 'Login failed. Check your credentials.'
     });
@@ -104,9 +106,10 @@ router.post('/token-login', async (req, res) => {
     // Strip "Bearer " prefix if user accidentally included it, and trim whitespace/newlines
     let cleanToken = token.trim().replace(/^Bearer\s+/i, '').trim();
     const result = await storeSession(req, cleanToken);
+    logger.info({ method: 'token', username: result.user?.username, orgId: result.orgId, orgName: result.orgName }, 'Login succeeded');
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('Token login error:', error.response?.data || error.message);
+    logger.warn({ method: 'token', status: error.response?.status, reason: error.response?.data?.message || error.message }, 'Login failed');
     const status = error.response?.status || 401;
     let msg = 'Invalid or expired access token.';
     if (status === 400) msg = 'Token format is invalid. Make sure you copied only the token value (not "Bearer <token>").';
@@ -140,9 +143,10 @@ router.post('/connected-app-login', async (req, res) => {
     }
 
     const result = await storeSession(req, access_token);
+    logger.info({ method: 'connected-app', clientId, orgId: result.orgId, orgName: result.orgName }, 'Login succeeded');
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('Connected App login error:', error.response?.data || error.message);
+    logger.warn({ method: 'connected-app', clientId, status: error.response?.status, reason: error.response?.data?.error_description || error.response?.data?.message || error.message }, 'Login failed');
     const msg = error.response?.data?.error_description
       || error.response?.data?.message
       || 'Connected App authentication failed. Check your Client ID and Secret.';
@@ -152,7 +156,10 @@ router.post('/connected-app-login', async (req, res) => {
 
 // ── Logout ───────────────────────────────────────────────────────────────────
 router.post('/logout', (req, res) => {
+  const username = req.session?.username;
+  const orgId = req.session?.orgId;
   req.session.destroy();
+  logger.info({ username, orgId }, 'Logout');
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
