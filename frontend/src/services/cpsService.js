@@ -93,19 +93,33 @@ export async function resolveAndPostCpsCredentials({
 
   const isMasked = (v) => !v || /^\*+$/.test(v.trim());
 
+  let postedScoped = false;
   if (cpsClientId && !isMasked(cpsClientId)) {
     const secret = getSecret(cpsClientId);
     if (secret) {
-      const ok = await postScopedCpsCredential(cpsBaseUrl, scopeId, cpsClientId, secret);
-      if (ok) return true;
+      postedScoped = await postScopedCpsCredential(cpsBaseUrl, scopeId, cpsClientId, secret);
     }
   }
 
+  // Always ALSO post every other CSV credential under its own `url::clientId`
+  // slot — not just when the scoped post above was skipped/failed. The
+  // backend's per-group secure-property retry (routes/cps.js) tries every
+  // OTHER credential already in the session when a specific secure group
+  // "COULD NOT ACCESS" with the primary one (different secure groups on the
+  // same CPS server commonly require different credentials). If this
+  // function stopped at the first successful post (as it used to), the
+  // session only ever held ONE credential for that URL, so the backend had
+  // nothing left to retry with — any secure group not covered by that one
+  // credential would permanently fail to resolve, even though a working
+  // credential for it was sitting right there in the loaded CSV the whole
+  // time. See the Schedulers dashboard's "Resolve CPS Crons" / the
+  // Infrastructure tab's "Get Cron Expressions" — this is why some
+  // schedulers whose cron/timezone live in a secure property group never
+  // resolved while others on the same app did.
   const allCreds = getAllCredentials();
-  if (allCreds.length > 0) {
-    return postAllCpsCredentials(cpsBaseUrl, allCreds);
-  }
-  return false;
+  const postedAll = allCreds.length > 0 ? await postAllCpsCredentials(cpsBaseUrl, allCreds) : false;
+
+  return postedScoped || postedAll;
 }
 
 /**

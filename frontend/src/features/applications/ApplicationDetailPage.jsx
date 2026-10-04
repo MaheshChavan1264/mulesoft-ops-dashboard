@@ -1335,6 +1335,7 @@ export default function ApplicationDetailPage() {
           cpsSchedulerProps={cpsSchedulerProps}
           setCpsSchedulerProps={setCpsSchedulerProps}
           cpsBaseUrl={cpsBaseUrl}
+          cpsClientId={cpsClientId}
           effectiveCpsKey={effectiveCpsKey}
           effectiveCpsEnv={effectiveCpsEnv}
           orgId={orgId}

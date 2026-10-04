@@ -1,8 +1,9 @@
 import React, { useMemo, useEffect } from 'react';
 import { Clock, Zap, Activity, Key, RefreshCw, X, Search, Power, CheckSquare, Square, AlertTriangle, History, CalendarClock, Info } from 'lucide-react';
 import cronstrue from 'cronstrue';
-import { fetchCpsProperties } from '../../../services/cpsService';
+import { fetchCpsProperties, resolveAndPostCpsCredentials } from '../../../services/cpsService';
 import { rememberResolvedSchedule } from '../../../services/cpsCronResolutionCache';
+import { useCpsCredentialStore } from '../../../context/CpsCredentialStoreContext';
 import { GlassCard, StatTile, PulseDot, MetaTag, getNextCronRun } from '../shared';
 
 /**
@@ -14,7 +15,7 @@ import { GlassCard, StatTile, PulseDot, MetaTag, getNextCronRun } from '../share
 export default function InfrastructureTab({
   appId,
   allSchedulers, schedulers, isRunning, rStatus,
-  cpsSchedulerProps, setCpsSchedulerProps, cpsBaseUrl, effectiveCpsKey, effectiveCpsEnv, orgId,
+  cpsSchedulerProps, setCpsSchedulerProps, cpsBaseUrl, cpsClientId, effectiveCpsKey, effectiveCpsEnv, orgId,
   cpsSecureSchedulerLoading, setCpsSecureSchedulerLoading,
   triggerResult, setTriggerResult,
   schedulerSearch, setSchedulerSearch,
@@ -23,6 +24,8 @@ export default function InfrastructureTab({
   toggleLoadingSet, setSchedulerToggleConfirm,
   selectedSchedulers, setSelectedSchedulers, setBulkSchedulerToggleConfirm, setBulkSchedulerRunConfirm,
 }) {
+  const { hasCredentials: hasCpsCsvCredentials, getSecret, getAllCredentials } = useCpsCredentialStore();
+
   const enabledCount = allSchedulers.filter(s => s.enabled !== false).length;
   const disabledCount = allSchedulers.length - enabledCount;
 
@@ -230,6 +233,24 @@ export default function InfrastructureTab({
               onClick={async () => {
                 setCpsSecureSchedulerLoading(true);
                 try {
+                  // Re-resolve/post CPS credentials on every click (not just
+                  // once on page load) — the user may have uploaded or
+                  // updated their CPS credentials CSV AFTER this app's
+                  // detail page already loaded, in which case the
+                  // automatic page-load fetch never had a credential to
+                  // post, and simply retrying the fetch below would fail
+                  // the exact same way forever. Also posts every other CSV
+                  // credential (not just this app's own clientId) so the
+                  // backend's per-group secure-property retry has
+                  // alternates to try — some secure property GROUPS on the
+                  // same CPS server require a different credential than
+                  // the one scoped to this app.
+                  if (hasCpsCsvCredentials) {
+                    await resolveAndPostCpsCredentials({
+                      cpsBaseUrl, cpsClientId, scopeId: orgId,
+                      hasCredentials: hasCpsCsvCredentials, getSecret, getAllCredentials,
+                    });
+                  }
                   // Step 1: If cps.secure.properties key is not yet known, fetch non-secure to discover it
                   let secureKeys = cpsSchedulerProps['cps.secure.properties'];
                   if (!secureKeys) {
