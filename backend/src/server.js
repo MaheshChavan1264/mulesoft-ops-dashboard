@@ -4,10 +4,10 @@ const compression = require('compression');
 const helmet = require('helmet');
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
-const pinoHttp = require('pino-http');
 
 const config = require('./config');
 const logger = require('./utils/logger');
+const requestLogger = require('./middleware/requestLogger');
 
 // ── Session secret validation ─────────────────────────────────────────────────
 // Fail fast in production if SESSION_SECRET is not set or is the known default.
@@ -63,12 +63,10 @@ if (config.isProd) {
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 // ── Structured request logging ────────────────────────────────────────────────
-// Attaches req.log (a pino child logger with a request id) to every request,
-// and emits one structured completion log line per request/response.
-app.use(pinoHttp({
-  logger,
-  autoLogging: { ignore: (req) => req.url === '/api/ping' },
-}));
+// Assigns/propagates an x-request-id, runs the request inside an
+// AsyncLocalStorage context so every log line downstream is correlated, and
+// emits one structured completion log line per request/response.
+app.use(requestLogger);
 
 // Middleware
 app.use(cors({
@@ -185,8 +183,17 @@ app.get('/api/ping', (req, res) => {
 // Any route that calls next(err) or throws will land here instead of hanging.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  (req.log || logger).error({ err }, 'Unhandled route error');
-  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+  const statusCode = err.status || 500;
+  (req.log || logger).error(
+    {
+      requestId: req.requestId,
+      route: req.originalUrl || req.path,
+      statusCode,
+      stack: err.stack,
+    },
+    'Unhandled route error'
+  );
+  res.status(statusCode).json({ error: err.message || 'Internal server error' });
 });
 
 const server = app.listen(config.port, () => {

@@ -701,7 +701,7 @@ export default function ApplicationsPage() {
     : visibleGroups.find((g) => g.id === selectedBg)?.name || 'Organization';
 
   return (
-    <div className="space-y-5">
+    <div className="h-full flex flex-col gap-5">
       {/* Modals */}
       <ConfirmModal
         state={confirmState}
@@ -996,7 +996,7 @@ export default function ApplicationsPage() {
 
       {loading ? (
         /* Feature 1.1: skeleton table rows matching the real table structure */
-        <div className="card-surface overflow-hidden">
+        <div className="card-surface overflow-hidden flex-1 flex flex-col min-h-0">
           <table className="w-full text-sm">
             <TableHeader>
               <tr className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider">
@@ -1036,10 +1036,10 @@ export default function ApplicationsPage() {
           </table>
         </div>
       ) : (
-        <div className="relative card-surface overflow-hidden">
+        <div className="relative card-surface overflow-hidden flex-1 flex flex-col min-h-0">
           {/* Feature 6: overflow-y-auto on this inner div makes sticky thead work.
               The outer div keeps overflow-hidden for border-radius clipping. */}
-          <div className="overflow-y-auto max-h-[72vh]">
+          <div className="overflow-y-auto flex-1">
           <table className="w-full text-sm">
             <TableHeader sticky>
               <tr className="text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider border-b border-gray-200 dark:border-white/[0.08]">
@@ -1204,7 +1204,7 @@ export default function ApplicationsPage() {
 
       {/* Pagination controls */}
       {!loading && filtered.length > 0 && (
-        <div className="flex items-center justify-between flex-wrap gap-3 px-1">
+        <div className="flex items-center justify-between flex-wrap gap-3 px-1 flex-shrink-0">
           {/* Left: selected + total info */}
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             {selectedApps.length > 0 && (
