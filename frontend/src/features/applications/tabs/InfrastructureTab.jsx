@@ -336,7 +336,7 @@ export default function InfrastructureTab({
               return (
                 <div key={rowId} className={`group relative rounded-2xl border bg-white/70 dark:bg-gray-900/40 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden ${active ? 'border-gray-200/70 dark:border-gray-700/60' : 'border-gray-200/50 dark:border-gray-800/60 opacity-70'}`}>
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${active ? 'bg-gradient-to-b from-sfpurple-400 to-sfpurple-600' : 'bg-gray-300 dark:bg-gray-700'}`} />
-                  <div className="flex flex-wrap items-center gap-5 px-5 py-3.5 pl-6">
+                  <div className="grid grid-cols-[auto_200px_minmax(200px,1fr)_84px_84px_auto] items-center gap-4 px-5 py-3.5 pl-6">
                     {/* Select checkbox */}
                     <input
                       type="checkbox"
@@ -345,7 +345,7 @@ export default function InfrastructureTab({
                       className="flex-shrink-0 rounded border-gray-300 dark:border-gray-600 text-sfpurple-600 focus:ring-sfpurple-500"
                     />
                     {/* Flow identity */}
-                    <div className="flex items-center gap-2.5 w-[180px] min-w-0 flex-shrink-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <PulseDot active={active}/>
                       <div className="min-w-0">
                         <p title={flowName} className="text-gray-800 dark:text-gray-100 text-sm font-semibold font-mono truncate leading-tight">{flowName}</p>
@@ -362,7 +362,7 @@ export default function InfrastructureTab({
                     </div>
 
                     {/* Cron / frequency */}
-                    <div className="w-[240px] min-w-0 flex-shrink-0">
+                    <div className="min-w-0">
                       {cron && !isUnresolvedPlaceholder ? (
                         <div className="space-y-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -391,13 +391,13 @@ export default function InfrastructureTab({
                     </div>
 
                     {/* Last run */}
-                    <div className="w-[88px] flex-shrink-0">
+                    <div className="min-w-0">
                       <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1">Last Run</p>
                       {lastRunNode}
                     </div>
 
                     {/* Next run */}
-                    <div className="w-[88px] flex-shrink-0">
+                    <div className="min-w-0">
                       <p className="text-[9px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase mb-1">Next Run</p>
                       {computedNextRun ? (
                         <>
@@ -412,7 +412,7 @@ export default function InfrastructureTab({
                     </div>
 
                     {/* Action */}
-                    <div className="flex-shrink-0 flex items-center gap-2">
+                    <div className="flex items-center gap-2 justify-self-end">
                       <button
                         onClick={() => setSchedulerToggleConfirm({ schedulerKey, nextEnabled: !active })}
                         disabled={isToggling || isAmbiguous}
