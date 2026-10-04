@@ -253,6 +253,21 @@ export default function ApplicationDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    // Reset all per-app fetched/derived state before loading. The route
+    // (`applications/:orgId/:envId/:appId`) has no `key`, so React Router
+    // reuses this same mounted component when navigating directly from one
+    // app's detail page to another's — without this reset, `cpsData` (and
+    // the scheduler/contract/ping caches) would still hold the PREVIOUS
+    // app's data, and loadCpsData()'s "already loaded" guard would then
+    // skip fetching the new app's CPS properties entirely, making it look
+    // like CPS never auto-loads without a manual tab visit + Refresh.
+    setApp(null);
+    setCpsData(null); setCpsError(''); setCpsMissingCred(null); setCpsAttemptedUrl('');
+    setCpsCredsResolved(false);
+    setCpsKeyOverride(''); setCpsEnvOverride('');
+    setCh2Schedulers(null); setCpsSchedulerProps({});
+    setContracts(null); setContractsError(''); setContractApiInstanceId(null);
+    setPingSpec(null);
     try {
       const res = await getCloudhub2AppDetail(orgId, envId, appId);
       setApp(res.data);
@@ -373,14 +388,22 @@ export default function ApplicationDetailPage() {
   const loadCpsDataRef = useRef(null);
 
   useEffect(() => {
-    if (!app) return;
+    if (!app || loading) return;
     // Derive cpsBaseUrl from raw app data so we know whether CPS is
     // configured — delegate to the shared extractCpsConfig() — see
     // FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
     const _url = extractCpsConfig(app).cpsBaseUrl;
     // Only auto-load when CPS is configured and data isn't already present
     if (_url && loadCpsDataRef.current) loadCpsDataRef.current();
-  }, [app]); // eslint-disable-line react-hooks/exhaustive-deps
+    // `loading` is also a dependency (not just `app`): for CH2 apps deployed
+    // to a Private Space, `load()` awaits a second request (static IPs)
+    // between `setApp(...)` and `setLoading(false)`, so `app` changes on an
+    // intermediate render where `loading` is still true — the component's
+    // early-return guard skips the line that syncs `loadCpsDataRef.current`
+    // on that render, leaving the ref null and silently no-op-ing this
+    // effect. Re-running once `loading` flips to false retries with the by
+    // -then-populated ref instead of only ever firing on the stale pass.
+  }, [app, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const requestAction = (action) => {
     setActionResult(null);
