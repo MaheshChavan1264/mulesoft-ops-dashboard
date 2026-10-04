@@ -151,7 +151,7 @@ export default function ContractsTab({
               <table className="w-full text-sm border-collapse">
                 <TableHeader>
                   <tr className="border-b border-gray-200/60 dark:border-gray-700/60">
-                    {['Client App', 'Client ID', 'Status', 'SLA Tier', 'Requested', 'Actions'].map(h => (
+                    {['Client App', 'Client ID', 'Status', 'SLA Tier', 'Actions'].map(h => (
                       <th key={h} className={`px-5 py-3 text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase ${h === 'Actions' ? 'text-right' : 'text-left'}`}>{h}</th>
                     ))}
                   </tr>
@@ -167,9 +167,6 @@ export default function ContractsTab({
                       c.clientApplication?.coreServicesId ||
                       c.clientId || '—';
                     const slaTier = c.tier?.name || c.slaTier?.name || c.tierLabel || '—';
-                    const reqDate = c.requestedAt || c.createdDate
-                      ? new Date(c.requestedAt || c.createdDate).toLocaleDateString()
-                      : '—';
                     const appName = c.application?.name || c.clientApplication?.name || '—';
                     const contractId = c.id;
                     const isActioning = contractActionLoading === contractId;
@@ -206,7 +203,6 @@ export default function ContractsTab({
                             <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>
                           )}
                         </td>
-                        <td className="px-5 py-3 text-gray-500 dark:text-gray-400 text-xs">{reqDate}</td>
                         <td className="px-5 py-3">
                           {contractId ? (
                             <div className="flex items-center justify-end gap-1.5">

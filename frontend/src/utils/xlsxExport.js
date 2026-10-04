@@ -89,6 +89,13 @@ export function aoaToWorksheet(aoa, { colWidths } = {}) {
  * Assemble a workbook from one or more named worksheets and trigger the
  * browser download. Sheet names are sanitized/truncated automatically.
  *
+ * `bookSST: true` forces SheetJS to emit a proper Shared Strings Table
+ * (xl/sharedStrings.xml) with `t="s"` cell references. Without it, SheetJS
+ * writes plain string cells as `t="str"` — a type ECMA-376 reserves for
+ * cached *formula* results — which Excel tolerates but stricter readers
+ * (Zoho Sheets, some LibreOffice/Google Sheets import paths) flag as a
+ * corrupt/invalid file on open.
+ *
  * @param {Array<{name: string, worksheet: XLSX.WorkSheet}>} sheets
  * @param {string} filename
  */
@@ -97,7 +104,7 @@ export function writeWorkbook(sheets, filename) {
   sheets.forEach(({ name, worksheet }) => {
     XLSX.utils.book_append_sheet(wb, worksheet, sanitizeSheetName(name));
   });
-  XLSX.writeFile(wb, filename);
+  XLSX.writeFile(wb, filename, { bookSST: true });
 }
 
 /**
