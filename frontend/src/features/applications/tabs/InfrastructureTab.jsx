@@ -298,17 +298,17 @@ export default function InfrastructureTab({
                   disabled={!isRunning}
                   title={!isRunning ? 'App must be RUNNING to trigger schedulers' : 'Run the selected schedulers now'}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-white dark:bg-gray-900 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/70 dark:border-sfpurple-400/20 shadow-sm hover:bg-sfpurple-600 hover:text-white hover:border-sfpurple-600 hover:shadow-md hover:shadow-sfpurple-500/25">
-                  <Zap size={12} /> Run Selected
+                  <Zap size={12} /> Run
                 </button>
                 <button
                   onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: selectedSchedulerKeys(visibleKeys), nextEnabled: true })}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-white dark:bg-gray-900 text-emerald-700 dark:text-emerald-300 border-emerald-200/70 dark:border-emerald-400/20 shadow-sm hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-md hover:shadow-emerald-500/25">
-                  <Power size={12} /> Enable Selected
+                  <Power size={12} /> Enable
                 </button>
                 <button
                   onClick={() => setBulkSchedulerToggleConfirm({ schedulerKeys: selectedSchedulerKeys(visibleKeys), nextEnabled: false })}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-all bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 border-red-200/70 dark:border-red-400/20 shadow-sm hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-md hover:shadow-red-500/25">
-                  <Power size={12} /> Disable Selected
+                  <Power size={12} /> Disable
                 </button>
                 <span className="w-px h-5 bg-sfpurple-200/70 dark:bg-sfpurple-400/20 mx-0.5" />
                 <button
