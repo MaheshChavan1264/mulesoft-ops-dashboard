@@ -1,8 +1,7 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ArrowLeft, RefreshCw, Copy, Check, Clock, Database, Server, Settings, Globe, Search, Eye, EyeOff, Zap, AlertTriangle, X, Key, Package, ChevronDown, ExternalLink, Activity, Share2, ShieldCheck, Trash2, GitBranch, Layers, Hash, Boxes } from 'lucide-react';
-import api from '../../services/api';
 import {
   getBusinessGroups, getEnvironments, getCloudhub2AppDetail, getCloudhub1AppDetail,
   getPrivateSpaceDetail, getCloudhub1Schedules, getCloudhub2Schedulers, getCloudhub1StaticIps,
@@ -11,6 +10,7 @@ import {
 } from '../../services/applicationsService';
 import { postCpsCredentialsRaw, fetchCpsProperties, resolveAndPostCpsCredentials } from '../../services/cpsService';
 import { getAutoCredentials } from '../../services/healthService';
+import { getExchangePingSpec } from '../../services/exchangeService';
 import CpsSettingsModal from '../cps/CpsSettingsModal';
 import CpsRawJsonModal from '../cps/CpsRawJsonModal';
 import PostmanJsonViewer from '../../components/shared/PostmanJsonViewer';
@@ -18,6 +18,7 @@ import PingTestPanel from '../ping-test/PingTestPanel';
 import CopyBtn from '../../components/shared/CopyBtn';
 import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
 import { availableActions, ACTION_CONFIG } from '../../utils/appUtils';
+import { extractCpsConfig, guessCpsEnvFromAppEnvironment } from '../../utils/cpsHelpers';
 import ConfirmActionModal from '../../components/ui/ConfirmActionModal';
 import TableHeader from '../../components/ui/TableHeader';
 import { getErrorMessage } from '../../services/http';
@@ -116,20 +117,13 @@ export default function ApplicationDetailPage() {
 
       // ── Step 1-3: get api.id from CPS non-secure properties ──────────────
       if (appData) {
-        const ds = appData.target?.deploymentSettings || {};
-        const appCfg = appData.application?.configuration || {};
-        const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
-        const armProps = {
-          ...appData.properties,
-          ...(propsSvc.properties || {}),
-          ...(ds.properties || {}),
-          ...(ds.environmentVariables || ds.environmentVars || {}),
-        };
-        const cpsUrl  = armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] || '';
-        const cpsKey  = armProps['cps.projectName'] || armProps['cloudhub.api.name'] || appData.name || '';
-        const cpsPfx  = armProps['cps.prefix'] || armProps['cps.environment'] || '';
-        const cpsCId  = armProps['cps.clientId'] || armProps['cps.client_id'] ||
-                        armProps['cps.client.id'] || armProps['cps.apiClientId'] || '';
+        // Delegate to the shared extractCpsConfig() — see
+        // FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
+        const cpsConfig = extractCpsConfig(appData);
+        const cpsUrl  = cpsConfig.cpsBaseUrl;
+        const cpsKey  = cpsConfig.cpsKey || appData.name || '';
+        const cpsPfx  = cpsConfig.cpsEnv;
+        const cpsCId  = cpsConfig.cpsClientId;
 
         if (cpsUrl && cpsKey) {
           // Post CPS creds to backend session if available
@@ -328,15 +322,13 @@ export default function ApplicationDetailPage() {
         (s.expression || s.schedule?.expression || '').includes('${')
       );
       if (hasPlaceholders) {
-        // Extract CPS config from app ARM props
-        const appDs = app.target?.deploymentSettings || {};
-        const appCfg2 = app.application?.configuration || {};
-        const ps2 = appCfg2['mule.agent.application.properties.service'] || {};
-        const rp = { ...ps2.properties, ...appDs.properties, ...appDs.environmentVariables, ...app.properties };
-        const cpsBUrl = rp['cps.configServerBaseUrl'] || rp['config.server.base.url'];
-        const cpsK = rp['cps.projectName'] || rp['cloudhub.api.name'] || app.name;
-        const cpsE = rp['cps.prefix'] || rp['cps.environment'];
-        const cpsCId = rp['cps.clientId'] || rp['cps.client_id'] || rp['cps.client.id'] || rp['cps.apiClientId'];
+        // Extract CPS config from app ARM props — delegate to the shared
+        // extractCpsConfig() — see FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
+        const cpsConfig2 = extractCpsConfig(app);
+        const cpsBUrl = cpsConfig2.cpsBaseUrl;
+        const cpsK = cpsConfig2.cpsKey || app.name;
+        const cpsE = cpsConfig2.cpsEnv;
+        const cpsCId = cpsConfig2.cpsClientId;
         if (cpsBUrl && cpsK) {
           try {
             // Post CPS credentials if available
@@ -374,17 +366,10 @@ export default function ApplicationDetailPage() {
 
   useEffect(() => {
     if (!app) return;
-    // Derive cpsBaseUrl from raw app data so we know whether CPS is configured
-    const _ds  = app.target?.deploymentSettings || {};
-    const _cfg = app.application?.configuration || {};
-    const _ps  = _cfg['mule.agent.application.properties.service'] || {};
-    const _allP = {
-      ...(_ps.properties || {}),
-      ...(_ds.properties || {}),
-      ...(_ds.environmentVariables || _ds.environmentVars || {}),
-      ...(app.properties || {}),
-    };
-    const _url = _allP['cps.configServerBaseUrl'] || _allP['config.server.base.url'] || '';
+    // Derive cpsBaseUrl from raw app data so we know whether CPS is
+    // configured — delegate to the shared extractCpsConfig() — see
+    // FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
+    const _url = extractCpsConfig(app).cpsBaseUrl;
     // Only auto-load when CPS is configured and data isn't already present
     if (_url && loadCpsDataRef.current) loadCpsDataRef.current();
   }, [app]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -430,11 +415,9 @@ export default function ApplicationDetailPage() {
     if (!a) return;
     setPingSpecLoading(true);
     setPingSpec(null);
-    api.get('/exchange/ping-spec', {
-      params: {
-        orgId,
-        appName: a.name,   // backend always searches Exchange by name
-      }
+    getExchangePingSpec({
+      orgId,
+      appName: a.name,   // backend always searches Exchange by name
     }).then(r => {
       setPingSpec(r.data);
       const total = r.data?.allEndpoints?.length ?? 0;
@@ -472,27 +455,67 @@ export default function ApplicationDetailPage() {
 
   const isCH1 = app?._type === 'ch1';
 
+  // Derived values depend only on `app`/`isCH1`/`ch2Schedulers` — none of them
+  // change on unrelated keystrokes (propSearch, schedulerSearch, depSearch,
+  // cpsSearch, etc.), so memoizing here avoids rebuilding allProps/CPS config
+  // extraction on every render of this ~2900-line page — see
+  // FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #1.
+  const derived = useMemo(() => {
+    if (!app) return null;
+    const ds = app.target?.deploymentSettings || {};
+    const appCfg = app.application?.configuration || {};
+    const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
+    const schedSvc = appCfg['mule.agent.scheduling.service'] || {};
+    const runtimeProps = propsSvc.properties || {};
+    const secureProps = propsSvc.secureProperties || {};
+    // CH2: use dedicated /schedulers endpoint result; fallback to configuration-embedded schedulers
+    // CH1: use schedules fetched at load time
+    const allSchedulers = isCH1
+      ? (app._ch1Schedules || [])
+      : (ch2Schedulers ?? schedSvc.schedulers ?? []);
+    const httpInbound = ds.http?.inbound || {};
+    const endpoints = httpInbound.endpoints || [];
+    const envVars = ds.environmentVariables || ds.environmentVars || {};
+    const replicas = app.target?.replicas ?? ds.replicas;
+    const osEnabled = ds.persistentObjectStore ?? ds.hasPersistentObjectStore ?? false;
+    const replicaList = app.replicas || [];
+    const allProps = { ...runtimeProps, ...ds.properties, ...envVars, ...app.properties };
+
+    // CPS computed values — delegate to the shared extractCpsConfig()
+    // instead of an inline fallback chain, so this page resolves CPS config
+    // identically to CpsComparisonPage/GlobalSearchPage — see
+    // FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7 (correctness bug: 4
+    // pages previously drifted on fallback-key ordering).
+    const cpsConfig = extractCpsConfig(app);
+    const cpsBaseUrl = cpsConfig.cpsBaseUrl;
+    const cpsClientId = cpsConfig.cpsClientId;
+    const cpsProjectName = cpsConfig.cpsKey || app.name;
+    const cpsEnv = cpsConfig.cpsEnv || guessCpsEnvFromAppEnvironment(app.environment?.name, app.environment?.type);
+    const appEnvName = app.environment?.name || '';
+    const cpsDepType = isCH1 ? 'ch1' : 'ch2';
+
+    return {
+      actions: availableActions(app.application?.status || app.status),
+      ds, appCfg, propsSvc, schedSvc, runtimeProps, secureProps,
+      allSchedulers, httpInbound, endpoints, envVars, replicas, osEnabled, replicaList,
+      allProps, cpsBaseUrl, cpsClientId, cpsProjectName, cpsEnv, appEnvName, cpsDepType,
+    };
+  }, [app, isCH1, ch2Schedulers]);
+
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"/></div>;
-  if (!app) return (
+  if (!app || !derived) return (
     <div className="space-y-4">
       <button onClick={()=>navigate('/applications')} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 text-sm"><ArrowLeft size={16}/> Back</button>
       <div className="bg-red-50/30 border border-red-200/50 rounded-2xl p-10 text-center text-red-600">Application not found or access denied.</div>
     </div>
   );
 
-  const actions = availableActions(app.application?.status || app.status);
+  const {
+    actions, ds, appCfg, propsSvc, schedSvc, runtimeProps, secureProps,
+    allSchedulers, httpInbound, endpoints, envVars, replicas, osEnabled, replicaList,
+    allProps, cpsBaseUrl, cpsClientId, cpsProjectName, cpsEnv, appEnvName, cpsDepType,
+  } = derived;
 
-  const ds = app.target?.deploymentSettings || {};
-  const appCfg = app.application?.configuration || {};
-  const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
-  const schedSvc = appCfg['mule.agent.scheduling.service'] || {};
-  const runtimeProps = propsSvc.properties || {};
-  const secureProps = propsSvc.secureProperties || {};
-  // CH2: use dedicated /schedulers endpoint result; fallback to configuration-embedded schedulers
-  // CH1: use schedules fetched at load time
-  const allSchedulers = isCH1
-    ? (app._ch1Schedules || [])
-    : (ch2Schedulers ?? schedSvc.schedulers ?? []);
   const schedulers = schedulerSearch
     ? allSchedulers.filter((s) => {
         const q = schedulerSearch.toLowerCase();
@@ -502,28 +525,7 @@ export default function ApplicationDetailPage() {
         return flow.includes(q) || cron.includes(q) || freq.includes(q);
       })
     : allSchedulers;
-  const httpInbound = ds.http?.inbound || {};
-  const endpoints = httpInbound.endpoints || [];
-  const envVars = ds.environmentVariables || ds.environmentVars || {};
-  const replicas = app.target?.replicas ?? ds.replicas;
-  const osEnabled = ds.persistentObjectStore ?? ds.hasPersistentObjectStore ?? false;
-  const replicaList = app.replicas || [];
-  const allProps = { ...runtimeProps, ...ds.properties, ...envVars, ...app.properties };
   const filteredProps = Object.entries(allProps).filter(([k]) => !propSearch || k.toLowerCase().includes(propSearch.toLowerCase()));
-
-  // CPS computed values — read directly from runtime properties
-  const cpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
-  const cpsClientId = allProps['cps.clientId'] || allProps['cps.client_id'] || allProps['cps.client.id'] || allProps['cps.apiClientId'] || '';
-  const cpsProjectName = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
-  const cpsEnv = allProps['cps.prefix'] || allProps['cps.environment'] || (() => {
-    // fallback: derive from Anypoint env name if cps.prefix not set
-    const s = `${app.environment?.name || ''} ${app.environment?.type || ''}`.toLowerCase();
-    if (/\b(prod|pd)\b/.test(s)) return 'prod';
-    if (/\b(uat|ut|stg|stage|sandbox|uap)\b/.test(s)) return 'uat';
-    return app.environment?.type === 'production' ? 'prod' : 'uat';
-  })();
-  const appEnvName = app.environment?.name || '';
-  const cpsDepType = isCH1 ? 'ch1' : 'ch2';
 
   const effectiveCpsKey = cpsKeyOverride || cpsProjectName;
   const effectiveCpsEnv = cpsEnvOverride || cpsEnv;

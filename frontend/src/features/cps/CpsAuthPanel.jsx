@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ShieldCheck, RefreshCw, AlertTriangle, Code } from 'lucide-react';
-import api from '../../services/api';
+import { getCpsAuth, postCpsAuth } from '../../services/cpsService';
 import CpsRawJsonModal from './CpsRawJsonModal';
 import ErrorBanner from '../../components/ui/ErrorBanner';
 import ClientIdList from '../../components/ui/ClientIdList';
@@ -38,14 +38,17 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
 
   const canLoad = !!(baseUrl && environment && projectKey);
 
-  const loadAuth = async () => {
+  // useCallback (keyed on the exact fields it reads) instead of a plain
+  // function + eslint-disabled effect deps — the effect below can now list
+  // `loadAuth` as a real dependency instead of silently masking the
+  // stale-closure risk — see FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance
+  // Review, finding #6.
+  const loadAuth = useCallback(async () => {
     if (!canLoad) return;
     setLoading(true);
     setError('');
     try {
-      const res = await api.get('/cps/auth', {
-        params: { baseUrl, type, environment, projectKey, bgOrgId },
-      });
+      const res = await getCpsAuth({ baseUrl, type, environment, projectKey, bgOrgId });
       const data = res.data;
       const props = Array.isArray(data?.properties) ? data.properties[0]
         : Array.isArray(data?.responses) ? data.responses[0]
@@ -56,11 +59,11 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
       setError(getErrorMessage(err, 'Failed to load access control list'));
     }
     setLoading(false);
-  };
+  }, [canLoad, baseUrl, type, environment, projectKey, bgOrgId]);
 
   useEffect(() => {
     if (canLoad) loadAuth();
-  }, [baseUrl, type, environment, projectKey, bgOrgId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canLoad, loadAuth]);
 
   const addId = (setList, value) => setList(prev => prev.includes(value) ? prev : [...prev, value]);
   const removeId = (setList, value) => setList(prev => prev.filter(id => id !== value));
@@ -85,7 +88,7 @@ export default function CpsAuthPanel({ baseUrl, type = 'non-secure', environment
     };
 
     try {
-      const resp = await api.post('/cps/auth', {
+      const resp = await postCpsAuth({
         baseUrl, type, environment, projectKey,
         allowedClientIds, readOnlyClientIds,
         replace: replaceMode, bgOrgId,

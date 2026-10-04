@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, Globe, ChevronRight, Building2, Layers, Key, Zap, Search, FileJson } from 'lucide-react';
 import { exportCpsProperties } from '../../utils/exportCps';
 import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
 import { applyBgFilter } from '../../components/shared/BgFilterModal';
-import api from '../../services/api';
-import { getBusinessGroups } from '../../services/applicationsService';
+import { getBusinessGroups, getEnvironments, getApplicationsSummary, getCloudhub2AppDetail, getCloudhub1AppDetail } from '../../services/applicationsService';
+import { postCpsCredentialsRaw, fetchCpsProperties, getCpsCredentials } from '../../services/cpsService';
 import { normaliseCpsUrl } from '../../utils/cpsHelpers';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
@@ -46,7 +46,7 @@ function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
     if (envsByBg[bgId]) return;
     setLoadingEnvs(prev => ({ ...prev, [bgId]: true }));
     try {
-      const res = await api.get(`/environments/${bgId}`);
+      const res = await getEnvironments(bgId);
       const envs = res.data.data || [];
       setEnvsByBg(prev => ({ ...prev, [bgId]: envs }));
     } catch { setEnvsByBg(prev => ({ ...prev, [bgId]: [] })); }
@@ -104,17 +104,27 @@ function BgEnvSelector({ selectedBgId, selectedEnvId, onSelectionsChange }) {
       }
     });
     onSelectionsChange(result);
-  }, [selections, businessGroups, envsByBg]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selections, businessGroups, envsByBg, onSelectionsChange]);
 
   // ── Compute derived values (before any early return) ────────────────
   const visible = applyBgFilter(businessGroups);
   const searchLo = envSearch.toLowerCase().trim();
 
+  // Refs so the effect below can read the latest visible/envsByBg/loadEnvsForBg
+  // without listing them as deps — they're all derived fresh every render
+  // (would make the effect refire every render if listed directly), while
+  // the ref pattern keeps the effect's real trigger (searchLo/loading)
+  // without the previous eslint-disabled stale-closure risk — see
+  // FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #6.
+  const visibleRef = useRef(visible); visibleRef.current = visible;
+  const envsByBgRef = useRef(envsByBg); envsByBgRef.current = envsByBg;
+  const loadEnvsForBgRef = useRef(loadEnvsForBg); loadEnvsForBgRef.current = loadEnvsForBg;
+
   // Auto-load envs for all visible BGs when search is active — MUST be before early return
   useEffect(() => {
     if (!searchLo || loading) return;
-    visible.forEach(bg => { if (!envsByBg[bg.id]) loadEnvsForBg(bg.id); });
-  }, [searchLo, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+    visibleRef.current.forEach(bg => { if (!envsByBgRef.current[bg.id]) loadEnvsForBgRef.current(bg.id); });
+  }, [searchLo, loading]);
 
   if (loading) return <div className="flex items-center justify-center py-6"><RefreshCw size={16} className="animate-spin text-gray-500" /></div>;
 
@@ -228,12 +238,12 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
       if (!envId || !appBgId) return;
       let armProps = {};
       if (app.deploymentType === 'CloudHub 2.0') {
-        const r = await api.get(`/applications/cloudhub2/${appBgId}/${envId}/${app.id}`);
+        const r = await getCloudhub2AppDetail(appBgId, envId, app.id);
         const ds = r.data?.target?.deploymentSettings || {};
         const ps = (r.data?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
         armProps = { ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}), ...(r.data?.properties || {}) };
       } else {
-        const r = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: appBgId } });
+        const r = await getCloudhub1AppDetail(envId, app.id, appBgId);
         armProps = r.data?.properties || {};
       }
       const url = armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'];
@@ -249,9 +259,18 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
   }, [bgOrgId, cpsBaseUrl]);
 
   // ── Load stored credentials + auto-detect URL on mount ──────────────────
+  // Refs for autoDetectFromApp/passedApps — this effect is intentionally
+  // keyed only on `bgOrgId` (run once per BG, not on every autoDetectFromApp
+  // identity change, which would re-trigger right after it sets cpsBaseUrl).
+  // Refs keep it reading the latest callback/prop without the stale-closure
+  // risk previously masked by eslint-disable — see
+  // FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #6.
+  const autoDetectFromAppRef = useRef(autoDetectFromApp); autoDetectFromAppRef.current = autoDetectFromApp;
+  const passedAppsRef = useRef(passedApps); passedAppsRef.current = passedApps;
+
   useEffect(() => {
     // 1. Try stored session credentials first (fast)
-    api.get('/cps/credentials').then(res => {
+    getCpsCredentials().then(res => {
       const byUrlBg = res.data?.byUrlBg || {};
       const byUrl = res.data?.byUrl || {};
       const bgMatch = Object.keys(byUrlBg).find(k => k.includes(`::${bgOrgId}`));
@@ -270,13 +289,13 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
         return;
       }
       // 2. No stored creds — try to detect from first pre-selected app
-      if (passedApps?.length > 0) {
-        autoDetectFromApp(passedApps[0]);
+      if (passedAppsRef.current?.length > 0) {
+        autoDetectFromAppRef.current(passedAppsRef.current[0]);
       }
     }).catch(() => {
-      if (passedApps?.length > 0) autoDetectFromApp(passedApps[0]);
+      if (passedAppsRef.current?.length > 0) autoDetectFromAppRef.current(passedAppsRef.current[0]);
     });
-  }, [bgOrgId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bgOrgId]);
 
   // ── JSON export helper: fetch CPS non-secure props for one app ──────────
   // Returns the raw CPS API response exactly as received — no transformation.
@@ -287,12 +306,12 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
       // Step 1: get ARM detail to extract CPS config
       let armProps = {};
       if (app.deploymentType === 'CloudHub 2.0') {
-        const r = await api.get(`/applications/cloudhub2/${appBgId}/${envId}/${app.id}`);
+        const r = await getCloudhub2AppDetail(appBgId, envId, app.id);
         const ds = r.data?.target?.deploymentSettings || {};
         const ps = (r.data?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
         armProps = { ...(r.data?.properties || {}), ...(ps.properties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || ds.environmentVars || {}) };
       } else {
-        const r = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: appBgId } });
+        const r = await getCloudhub1AppDetail(envId, app.id, appBgId);
         armProps = r.data?.properties || {};
       }
       const detectedUrl = (cpsBaseUrl.trim() || armProps['cps.configServerBaseUrl'] || armProps['config.server.base.url'] || '').trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
@@ -317,19 +336,16 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
           credMap[`${detectedUrl}::${clientId}`] = { clientId, clientSecret };
         }
         if (Object.keys(credMap).length > 0) {
-          try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
+          try { await postCpsCredentialsRaw({ credentials: credMap }); } catch { /* non-fatal */ }
         }
       }
 
       // Step 3: fetch non-secure CPS properties — return raw response as-is
-      const nsRes = await api.get('/cps/fetch', {
-        params: { baseUrl: detectedUrl, type: 'non-secure', environment: detectedEnv || undefined, keys: detectedKey, bgOrgId: appBgId },
-      });
-      return nsRes.data;
+      return await fetchCpsProperties({ baseUrl: detectedUrl, type: 'non-secure', environment: detectedEnv || undefined, keys: detectedKey, bgOrgId: appBgId });
     } catch (err) {
       return { _app: app.name, _error: getErrorMessage(err, 'Failed to fetch CPS properties') };
     }
-  }, [bgOrgId, cpsBaseUrl, cpsEnv, hasCpsCreds, getSecret, getAllCredentials]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bgOrgId, cpsBaseUrl, cpsEnv, hasCpsCreds, getSecret, getAllCredentials]);
 
   const handleExport = async () => {
     if (bgEnvSelections.length === 0 && !usePreselected) {
@@ -349,7 +365,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
       // Collect all apps from selected BG/env combinations
       for (const sel of bgEnvSelections) {
         try {
-          const res = await api.get(`/applications/summary/${sel.bgId}`);
+          const res = await getApplicationsSummary(sel.bgId);
           const appsForBg = res.data.data || [];
           const filtered = sel.envId ? appsForBg.filter(a => a.environment?.id === sel.envId) : appsForBg;
           filtered.forEach(a => {

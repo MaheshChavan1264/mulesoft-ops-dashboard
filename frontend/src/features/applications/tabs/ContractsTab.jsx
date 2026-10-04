@@ -2,7 +2,9 @@ import React from 'react';
 import { Key, Check, AlertTriangle, X, Trash2, RefreshCw, ShieldCheck } from 'lucide-react';
 import TableHeader from '../../../components/ui/TableHeader';
 import CopyBtn from '../../../components/shared/CopyBtn';
+import Tooltip from '../../../components/ui/Tooltip';
 import { GlassCard, StatTile } from '../shared';
+import { getContractStatusClasses } from '../../../utils/accentColors';
 
 /**
  * ContractsTab — ApplicationDetailPage's "Contracts" tab.
@@ -10,6 +12,47 @@ import { GlassCard, StatTile } from '../shared';
  * Extracted from pages/ApplicationDetailPage.jsx — see
  * FRONTEND_ARCHITECTURE_REVIEW.md §4 "god component" finding.
  */
+
+// Toolbar button — mirrors the icon-chip "ghost pill" convention already
+// established by features/applications/shared.jsx's HeroActionBtn, kept
+// local to this file since it needs disabled/spinning support that
+// HeroActionBtn's shared API doesn't expose.
+function ToolbarBtn({ icon: Icon, label, accent = 'sf', onClick, disabled, spinning, title }) {
+  const chip = accent === 'teal'
+    ? 'bg-sfteal-100 dark:bg-sfteal-500/15 text-sfteal-600 dark:text-sfteal-400 group-hover:bg-sfteal-600 group-hover:text-white'
+    : 'bg-sf-100 dark:bg-sf-500/15 text-sf-600 dark:text-sf-400 group-hover:bg-sf-600 group-hover:text-white';
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} title={title}
+      className="group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-xl text-xs font-semibold text-gray-500 dark:text-gray-400 bg-white/70 dark:bg-gray-800/60 border border-gray-200/70 dark:border-gray-700/60 hover:border-transparent hover:bg-white dark:hover:bg-gray-800 hover:shadow-md disabled:opacity-50 disabled:pointer-events-none transition-all">
+      <span className={`flex items-center justify-center w-6 h-6 rounded-lg transition-all duration-200 ${chip}`}>
+        <Icon size={12} className={spinning ? 'animate-spin' : ''} />
+      </span>
+      {label}
+    </button>
+  );
+}
+
+// Compact circular icon-button used for row-level contract actions — denser
+// and quieter than the previous text pills, with the tooltip surfacing the
+// label instead of crowding the row.
+function RowActionBtn({ icon: Icon, tone, muted, onClick, label }) {
+  const toneCls = tone === 'emerald'
+    ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-emerald-500/30'
+    : muted
+      ? 'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-red-500/30'
+      : 'bg-red-50 dark:bg-red-500/10 border-red-200/60 dark:border-red-400/20 text-red-600 dark:text-red-400 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-red-500/30';
+  return (
+    <Tooltip content={label}>
+      <button
+        onClick={onClick}
+        aria-label={label}
+        className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 hover:shadow-md ${toneCls}`}>
+        <Icon size={13} />
+      </button>
+    </Tooltip>
+  );
+}
+
 export default function ContractsTab({
   contracts, contractApiInstanceId, orgId, envId, navigate, loadContracts, contractsLoading,
   contractActionResult, setContractActionResult, contractsError, contractActionLoading, setContractConfirmState,
@@ -35,34 +78,43 @@ export default function ContractsTab({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <ToolbarBtn
+            icon={ShieldCheck}
+            label="Open in API Manager"
+            accent="sf"
+            title="Open API Manager for this environment"
             onClick={() => {
               localStorage.setItem('mule_apimgr_bg', orgId);
               if (envId) localStorage.setItem('mule_apimgr_env', envId);
               if (contractApiInstanceId) localStorage.setItem('mule_apimgr_instance', String(contractApiInstanceId));
               navigate('/api-manager');
             }}
-            title="Open API Manager for this environment"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sf-700 dark:text-sf-300 hover:text-white bg-sf-50 dark:bg-sf-500/10 hover:bg-sf-600 border border-sf-200/60 dark:border-sf-400/20 hover:border-sf-600 rounded-lg transition-all">
-            <ShieldCheck size={11} /> Open in API Manager
-          </button>
-          <button onClick={loadContracts} disabled={contractsLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-50/80 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200/70 dark:border-gray-700/60 rounded-lg transition-all">
-            <RefreshCw size={11} className={contractsLoading ? 'animate-spin' : ''} />
-            {contracts ? 'Refresh' : 'Load'}
-          </button>
+          />
+          <ToolbarBtn
+            icon={RefreshCw}
+            label={contracts ? 'Refresh' : 'Load'}
+            accent="teal"
+            disabled={contractsLoading}
+            spinning={contractsLoading}
+            onClick={loadContracts}
+          />
         </div>
       </div>
 
       {/* Contract action result toast */}
       {contractActionResult && (
-        <div className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm ${
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm ${
           contractActionResult.success
             ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300'
             : 'bg-red-50 dark:bg-red-500/10 border-red-200/60 dark:border-red-400/20 text-red-700 dark:text-red-300'
         }`}>
-          <span>{contractActionResult.message}</span>
-          <button onClick={() => setContractActionResult(null)} className="ml-4 opacity-60 hover:opacity-100"><X size={14} /></button>
+          <span className={`flex items-center justify-center w-7 h-7 rounded-xl flex-shrink-0 ${
+            contractActionResult.success ? 'bg-emerald-100 dark:bg-emerald-500/20' : 'bg-red-100 dark:bg-red-500/20'
+          }`}>
+            {contractActionResult.success ? <Check size={13} /> : <AlertTriangle size={13} />}
+          </span>
+          <span className="flex-1">{contractActionResult.message}</span>
+          <button onClick={() => setContractActionResult(null)} className="opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"><X size={14} /></button>
         </div>
       )}
 
@@ -100,18 +152,15 @@ export default function ContractsTab({
                 <TableHeader>
                   <tr className="border-b border-gray-200/60 dark:border-gray-700/60">
                     {['Client App', 'Client ID', 'Status', 'SLA Tier', 'Requested', 'Actions'].map(h => (
-                      <th key={h} className="px-5 py-3 text-left text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase">{h}</th>
+                      <th key={h} className={`px-5 py-3 text-[10px] font-bold tracking-wider text-gray-500 dark:text-gray-400 uppercase ${h === 'Actions' ? 'text-right' : 'text-left'}`}>{h}</th>
                     ))}
                   </tr>
                 </TableHeader>
                 <tbody>
                   {contracts.map((c, i) => {
                     const status = (c.status || 'UNKNOWN').toUpperCase();
-                    const statusCls = status === 'APPROVED'
-                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20'
-                      : status === 'REVOKED'
-                      ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20'
-                      : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-400/20';
+                    const statusCls = getContractStatusClasses(status);
+                    const isPending = status === 'PENDING' || status === 'PENDING_APPROVAL';
                     const clientId =
                       c.application?.coreServicesId ||
                       c.application?.clientId ||
@@ -128,7 +177,7 @@ export default function ContractsTab({
                     const canApprove = status === 'PENDING' || status === 'REVOKED';
                     const canRevoke  = status === 'APPROVED' || status === 'PENDING';
                     return (
-                      <tr key={i} className="border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
+                      <tr key={i} className="group border-b border-gray-100 dark:border-gray-800 hover:bg-sf-50/40 dark:hover:bg-sf-500/5 transition-colors">
                         <td className="px-5 py-3">
                           <p className="text-gray-700 dark:text-gray-200 text-xs font-medium">{appName}</p>
                           {c.application?.description && (
@@ -142,46 +191,57 @@ export default function ContractsTab({
                           </div>
                         </td>
                         <td className="px-5 py-3">
-                          <span className={`inline-flex text-[10px] px-2 py-0.5 rounded-full border font-bold ${statusCls}`}>{status}</span>
+                          <span className={`inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border font-bold ${statusCls}`}>
+                            <span className="relative flex w-1.5 h-1.5 flex-shrink-0">
+                              {isPending && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-60" />}
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current" />
+                            </span>
+                            {status}
+                          </span>
                         </td>
-                        <td className="px-5 py-3 text-gray-500 dark:text-gray-400 text-xs">{slaTier}</td>
+                        <td className="px-5 py-3">
+                          {slaTier !== '—' ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-sf-50 dark:bg-sf-500/10 text-sf-600 dark:text-sf-400 border border-sf-200/60 dark:border-sf-400/30">{slaTier}</span>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>
+                          )}
+                        </td>
                         <td className="px-5 py-3 text-gray-500 dark:text-gray-400 text-xs">{reqDate}</td>
                         <td className="px-5 py-3">
                           {contractId ? (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center justify-end gap-1.5">
                               {isActioning ? (
-                                <span className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 px-2 py-1">
+                                <span className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800/60 rounded-full px-2.5 py-1.5">
                                   <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-400 dark:border-gray-500" /> Working…
                                 </span>
                               ) : (
                                 <>
                                   {canApprove && (
-                                    <button
+                                    <RowActionBtn
+                                      icon={Check}
+                                      tone="emerald"
+                                      label={`Approve contract for ${appName}`}
                                       onClick={() => setContractConfirmState({ contractId, action: 'approve', appName })}
-                                      title={`Approve contract for ${appName}`}
-                                      className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded-lg border transition-all bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-md hover:shadow-emerald-500/30">
-                                      <Check size={9} /> Approve
-                                    </button>
+                                    />
                                   )}
                                   {canRevoke && (
-                                    <button
+                                    <RowActionBtn
+                                      icon={X}
+                                      label={`Revoke contract for ${appName}`}
                                       onClick={() => setContractConfirmState({ contractId, action: 'revoke', appName })}
-                                      title={`Revoke contract for ${appName}`}
-                                      className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded-lg border transition-all bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-400/20 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-md hover:shadow-red-500/30">
-                                      <X size={9} /> Revoke
-                                    </button>
+                                    />
                                   )}
-                                  <button
+                                  <RowActionBtn
+                                    icon={Trash2}
+                                    muted
+                                    label={`Permanently delete contract for ${appName}`}
                                     onClick={() => setContractConfirmState({ contractId, action: 'delete', appName })}
-                                    title={`Permanently delete contract for ${appName}`}
-                                    className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded-lg border transition-all bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200/50 dark:border-red-400/20 hover:bg-red-700 hover:text-white hover:border-red-700 hover:shadow-md hover:shadow-red-500/30">
-                                    <Trash2 size={9} /> Delete
-                                  </button>
+                                  />
                                 </>
                               )}
                             </div>
                           ) : (
-                            <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>
+                            <div className="text-right text-gray-400 dark:text-gray-600 text-xs">—</div>
                           )}
                         </td>
                       </tr>

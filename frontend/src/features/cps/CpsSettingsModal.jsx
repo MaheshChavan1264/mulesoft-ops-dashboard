@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Key, Check, RefreshCw, Eye, EyeOff, AlertTriangle, Shield, Plus, Trash2, Globe } from 'lucide-react';
-import api from '../../services/api';
+import { postCpsCredentialsRaw, getCpsCredentials, deleteCpsCredential } from '../../services/cpsService';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import { getErrorMessage } from '../../services/http';
@@ -44,7 +44,7 @@ function AddServerForm({ prefilledUrl = '', prefilledBgId = '', prefilledBgName 
     setSaving(true);
     setError('');
     try {
-      await api.post('/cps/credentials', { credentials: { [credKey]: { clientId: clientId.trim(), clientSecret: clientSecret.trim() } } });
+      await postCpsCredentialsRaw({ credentials: { [credKey]: { clientId: clientId.trim(), clientSecret: clientSecret.trim() } } });
       setSaved(true);
       setTimeout(() => { onSaved(); }, 600);
     } catch (e) {
@@ -137,7 +137,7 @@ export default function CpsSettingsModal({ onClose, prefilledUrl = '', prefilled
   const loadStatus = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/cps/credentials');
+      const res = await getCpsCredentials();
       setStatus(res.data || { credentials: {}, byUrl: {} });
     } catch { /* ignore */ }
     setLoading(false);
@@ -146,7 +146,7 @@ export default function CpsSettingsModal({ onClose, prefilledUrl = '', prefilled
   const handleDelete = async (urlKey) => {
     setDeleting(urlKey);
     try {
-      await api.delete(`/cps/credentials/${encodeURIComponent(urlKey)}`);
+      await deleteCpsCredential(encodeURIComponent(urlKey));
       await loadStatus();
     } catch { /* ignore */ }
     setDeleting(null);

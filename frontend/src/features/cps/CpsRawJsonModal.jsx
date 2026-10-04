@@ -7,6 +7,13 @@ const tokenizeJSON = (text) => tokenizeJSONShared(text, { withOffsets: true });
 
 /* ═══════════════════════════════════════════════════
    Component
+   NOTE: intentionally does NOT use the shared components/ui/Modal.jsx
+   shell. This is a bespoke Postman-style JSON editor with its own
+   light/dark theme engine (postmanJsonTheme.js, decoupled from Tailwind's
+   dark: classes), a tab-bar header instead of a title/icon header, and a
+   fullscreen toggle (0-radius, 100vh) that Modal's fixed sm/md/lg/xl sizes
+   don't support. Forcing it into Modal would mean dropping fullscreen mode
+   and the Postman chrome — see FRONTEND_ARCHITECTURE_REVIEW.md §10.
 ═══════════════════════════════════════════════════ */
 export default function CpsRawJsonModal({
   isOpen,

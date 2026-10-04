@@ -1,11 +1,13 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef, memo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, ChevronDown, ChevronRight, CheckCircle2, XCircle,
   AlertCircle, Globe, ShieldCheck, ArrowLeft, Download, RefreshCw,
   UploadCloud, X, Lock, Terminal, Check, History, Trash2, Clock, Zap
 } from 'lucide-react';
-import api from '../../services/api';
+import { getAutoContractCreds, getAutoCredentials, getOAuth2Token, pingApp as pingAppRequest, getPingHistory, clearPingHistory } from '../../services/healthService';
+import { getCloudhub2AppDetail, getCloudhub1AppProperties } from '../../services/applicationsService';
+import { fetchCpsProperties } from '../../services/cpsService';
 import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId, downloadCsv } from '../../utils/appUtils';
 import { findOAuth2Url, findApiIdInProps as findApiId, flattenCpsResponse } from '../../utils/cpsHelpers';
 import PostmanJsonViewer from '../../components/shared/PostmanJsonViewer';
@@ -13,6 +15,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import { useCredentialStore } from '../../context/CredentialStoreContext';
 import { getErrorMessage } from '../../services/http';
 import { parseCsvAppNames, matchAppsByCsvNames } from '../../hooks/useCsvAppMatcher';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -43,12 +46,16 @@ const STATUS_PILL = {
 };
 
 // ─── Result Row (Feature 1: retry button) ────────────────────────────────────
-
+// Wrapped in React.memo — rendered once per app in potentially large result
+// lists; its callback props (onRetry/onCheckContract/onGetJwt) are already
+// useCallback-wrapped and setExpandedId/navigate are stable, so memo
+// actually skips re-renders for unrelated rows — see
+// FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #4.
 function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRetry, onCheckContract, checkingContract, retrying, onGetJwt, jwtLoading, navigate, rowNum }) {
   const rowKey = `${app.id}|${app.environment?.id}`;
   const isExpanded = expandedId === rowKey;
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
-  const [copiedCurl, setCopiedCurl] = useState(false);
+  const [copiedCurl, copyCurl] = useCopyToClipboard(2000);
 
   const buildRowCurl = () => {
     const url = result?.activeEndpoint;
@@ -237,11 +244,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 onClick={(e) => {
                   e.stopPropagation();
                   const curl = buildRowCurl();
-                  if (curl) {
-                    navigator.clipboard.writeText(curl);
-                    setCopiedCurl(true);
-                    setTimeout(() => setCopiedCurl(false), 2000);
-                  }
+                  if (curl) copyCurl(curl);
                 }}
                 title="Copy cURL for this endpoint"
                 className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-sf-700 dark:hover:text-sf-300 hover:bg-sf-50 dark:hover:bg-sf-500/10 transition-colors">
@@ -391,6 +394,8 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
     </>
   );
 }
+
+const MemoResultRow = memo(ResultRow);
 
 const SESSION_KEY = 'pingTestResults_v1';
 
@@ -675,12 +680,11 @@ export default function PingTestPage() {
 
     setCheckingContractIds(prev => new Set([...prev, appId]));
     try {
-      const contractRes = await api.post('/health/auto-contract-creds', {
+      const cd = await getAutoContractCreds({
         orgId: bgId, envId, apiId: prevResult.apiInstanceId,
         envType: app.environment?.type || '',
         envName: app.environment?.name || '',
       });
-      const cd = contractRes.data;
       if (cd.contractStatus === 'approved' && cd.clientId && cd.clientSecret) {
         // Store credentials — user can now click "Retry Ping"
         setAutoResolvedMap(prev => ({ ...prev, [appId]: {
@@ -723,7 +727,7 @@ export default function PingTestPage() {
       let ch2IngressUrl;
       if (!isCH1 && app._bgId && app.environment?.id) {
         try {
-          const detail = await api.get(`/applications/cloudhub2/${app._bgId}/${app.environment.id}/${app.id}`);
+          const detail = await getCloudhub2AppDetail(app._bgId, app.environment.id, app.id);
           const ds = detail.data?.target?.deploymentSettings || {};
           const httpInbound = ds.http?.inbound || {};
           const endpoints = httpInbound.endpoints || [];
@@ -734,7 +738,7 @@ export default function PingTestPage() {
             undefined;
         } catch {}
       }
-      const { data } = await api.post('/health/ping', {
+      const data = await pingAppRequest({
         targetType: isCH1 ? 'CH1' : 'CH2',
         appName: app.name,
         ch2IngressUrl,
@@ -773,7 +777,7 @@ export default function PingTestPage() {
 
       if (!isCH1 && orgId && app.environment?.id) {
         try {
-          const r = await api.get(`/applications/cloudhub2/${orgId}/${app.environment.id}/${app.id}`);
+          const r = await getCloudhub2AppDetail(orgId, app.environment.id, app.id);
           const detail = r.data;
           const ds = detail?.target?.deploymentSettings || {};
           const ps = (detail?.application?.configuration || {})['mule.agent.application.properties.service'] || {};
@@ -794,8 +798,7 @@ export default function PingTestPage() {
       } else if (isCH1 && app.environment?.id && app.name) {
         // CH1: properties are returned by the list/detail endpoint directly
         try {
-          const r = await api.get(`/applications/cloudhub1/${app.environment.id}/${app.name}/properties`,
-            { params: { orgId: orgId || app._bgId } });
+          const r = await getCloudhub1AppProperties(app.environment.id, app.name, orgId || app._bgId);
           allProps = { ...(r.data?.properties || {}) };
         } catch {}
       }
@@ -807,8 +810,8 @@ export default function PingTestPage() {
       if (!cpsBaseUrl) throw new Error('No CPS URL configured for this app');
 
       // Step 2: Scan CPS non-secure — extract both apiId and OAuth2 token URL
-      const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
-      const nsFlat = flattenCpsResponse(nsRes.data, cpsKey);
+      const nsData = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId });
+      const nsFlat = flattenCpsResponse(nsData, cpsKey);
 
       const cpsApiId = findApiId(nsFlat);
       let tokenUrl = findOAuth2Url(nsFlat);
@@ -819,8 +822,8 @@ export default function PingTestPage() {
         const secureKeys = (nsFlat['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean);
         if (secureKeys.length > 0) {
           try {
-            const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: secureKeys.join(','), ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
-            const sg = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
+            const srData = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'secure', keys: secureKeys.join(','), ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId });
+            const sg = Array.isArray(srData?.responses) ? srData.responses : Array.isArray(srData?.properties) ? srData.properties : Array.isArray(srData) ? srData : [];
             for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } }
           } catch {}
         }
@@ -831,17 +834,17 @@ export default function PingTestPage() {
       let auto = autoResolvedMap[appId];
       if (!auto?.clientId || !auto?.clientSecret) {
         try {
-          const acRes = await api.post('/health/auto-credentials', {
+          const acData = await getAutoCredentials({
             orgId, envId: app.environment?.id, appName: app.name,
             ...(cpsApiId && { apiId: cpsApiId }),
           });
-          const apiInstanceId = acRes.data?.matchedApis?.[0]?.id;
+          const apiInstanceId = acData?.matchedApis?.[0]?.id;
           if (apiInstanceId) {
-            const cd = (await api.post('/health/auto-contract-creds', {
+            const cd = await getAutoContractCreds({
               orgId, envId: app.environment?.id, apiId: apiInstanceId,
               envType: app.environment?.type || '',
               envName: app.environment?.name || '',
-            })).data;
+            });
             if (cd.clientId && cd.clientSecret) {
               auto = { clientId: cd.clientId, clientSecret: cd.clientSecret };
               setAutoResolvedMap(prev => ({
@@ -857,11 +860,11 @@ export default function PingTestPage() {
       }
 
       // Step 5: Fetch JWT
-      const tokenRes = await api.post('/health/oauth2-token', { tokenUrl, clientId: auto.clientId, clientSecret: auto.clientSecret });
-      const jwt = tokenRes.data.access_token;
+      const tokenData = await getOAuth2Token({ tokenUrl, clientId: auto.clientId, clientSecret: auto.clientSecret });
+      const jwt = tokenData.access_token;
 
       // Step 6: Retry ping with JWT Bearer token
-      const pingRes = await api.post('/health/ping', {
+      const pingData = await pingAppRequest({
         targetType: isCH1 ? 'CH1' : 'CH2',
         appName: app.name,
         ch2IngressUrl,
@@ -873,7 +876,7 @@ export default function PingTestPage() {
         envId: app.environment?.id,
         credentialsLabel: auto ? `Auto (${auto.contractApp})` : 'Manual / None',
       });
-      setResults(prev => ({ ...prev, [appId]: { ...pingRes.data, _jwtUsed: true } }));
+      setResults(prev => ({ ...prev, [appId]: { ...pingData, _jwtUsed: true } }));
     } catch (err) {
       setResults(prev => ({ ...prev, [appId]: { ...prev[appId], _jwtError: getErrorMessage(err) } }));
     } finally {
@@ -989,7 +992,7 @@ export default function PingTestPage() {
   const fetchGlobalHistory = useCallback(async () => {
     try {
       setHistoryLoading(true);
-      const { data } = await api.get('/health/ping/history');
+      const data = await getPingHistory();
       setGlobalHistory(data || []);
     } catch (e) {
       console.error('Failed to fetch global history', e);
@@ -1001,7 +1004,7 @@ export default function PingTestPage() {
   const clearGlobalHistory = async () => {
     try {
       setHistoryLoading(true);
-      await api.delete('/health/ping/history');
+      await clearPingHistory();
       setGlobalHistory([]);
     } catch (e) {
       console.error('Failed to clear global history', e);
@@ -1059,7 +1062,7 @@ export default function PingTestPage() {
         const envId = app.environment?.id;
         if (!bgId || !envId) return null;
         try {
-          const { data } = await api.post('/health/auto-credentials', {
+          const data = await getAutoCredentials({
             orgId: bgId, envId, appName: app.name,
           });
           if (data.found && data.matchInfo?.length > 0) {
@@ -1077,11 +1080,11 @@ export default function PingTestPage() {
             const apiInstanceId = data.matchedApis?.[0]?.id;
             if (apiInstanceId) {
               try {
-                const cd = (await api.post('/health/auto-contract-creds', {
+                const cd = await getAutoContractCreds({
                   orgId: bgId, envId, apiId: apiInstanceId,
                   envType: app.environment?.type || '',
                   envName: app.environment?.name || '',
-                })).data;
+                });
                 if (cd.clientId && cd.clientSecret && cd.contractStatus === 'approved') {
                   return {
                     appId: app.id,
@@ -1366,7 +1369,7 @@ export default function PingTestPage() {
             </thead>
             <tbody>
               {displayApps.map((app, idx) => (
-                <ResultRow
+                <MemoResultRow
                   key={`${app.id}|${app.environment?.id}`}
                   app={app}
                   result={results[app.id]}

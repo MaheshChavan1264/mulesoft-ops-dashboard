@@ -10,8 +10,8 @@ import {
 import Select from '../../components/ui/Select';
 import CopyBtn from '../../components/shared/CopyBtn';
 import BgFilterModal, { applyBgFilter } from '../../components/shared/BgFilterModal';
-import api from '../../services/api';
 import { getBusinessGroups } from '../../services/applicationsService';
+import { searchExchangeAssets, getExchangeAssetDetail } from '../../services/exchangeService';
 import { useBgEnvFilter } from '../../hooks/useBgEnvFilter';
 import PageHeader from '../../components/ui/PageHeader';
 import { SkeletonListRows } from '../../components/ui/SkeletonTable';
@@ -111,10 +111,8 @@ export default function ExchangePage() {
   const loadAssets = useCallback(async (off) => {
     setLoading(true);
     try {
-      const res = await api.get('/exchange/search', {
-        params: { search: search || undefined, type: assetType || undefined,
-          organizationId: selectedOrgId || undefined, offset: off, limit: LIMIT }
-      });
+      const res = await searchExchangeAssets({ search: search || undefined, type: assetType || undefined,
+        organizationId: selectedOrgId || undefined, offset: off, limit: LIMIT });
       const data = res.data;
       const list = Array.isArray(data) ? data : (data.assets || data.data || []);
       setAssets(list);
@@ -140,7 +138,7 @@ export default function ExchangePage() {
     // Fetch full asset details
     setDetailLoading(true);
     try {
-      const r = await api.get(`/exchange/${asset.groupId}/${asset.assetId}/${asset.version}`);
+      const r = await getExchangeAssetDetail(asset.groupId, asset.assetId, asset.version);
       setAssetDetail(r.data);
     } catch {}
     setDetailLoading(false);
@@ -149,10 +147,8 @@ export default function ExchangePage() {
     if (['rest-api', 'http-api', 'soap-api'].includes(asset.type)) {
       setPingSpecLoading(true);
       try {
-        const r = await api.get('/exchange/ping-spec', {
-          params: { groupId: asset.groupId, assetId: asset.assetId,
-            version: asset.version, orgId: asset.groupId, appName: asset.name || asset.assetId }
-        });
+        const r = await getExchangePingSpec({ groupId: asset.groupId, assetId: asset.assetId,
+          version: asset.version, orgId: asset.groupId, appName: asset.name || asset.assetId });
         setPingSpec(r.data);
       } catch {}
       setPingSpecLoading(false);

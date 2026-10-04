@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Trash2 } from 'lucide-react';
+import { getContractStatusClasses } from '../../utils/accentColors';
 
 /**
  * ContractCard — a single API Manager consumer-contract card with inline
@@ -7,8 +8,13 @@ import { RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Trash2 } from 'luc
  *
  * Extracted from features/api-manager/ApiManagerPage.jsx — see
  * FRONTEND_ARCHITECTURE_REVIEW.md §10 folder-structure recommendation.
+ *
+ * Wrapped in React.memo — ApiManagerPage renders one of these per contract
+ * in potentially large lists; without memoization every card re-renders on
+ * any sibling's state change or unrelated page re-render — see
+ * FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #4.
  */
-export default function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
+function ContractCard({ c, i, onUpdateContract, onDeleteContract }) {
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -68,11 +74,7 @@ export default function ContractCard({ c, i, onUpdateContract, onDeleteContract 
     isPending ? <Clock size={12} className="text-amber-600 dark:text-amber-400 flex-shrink-0" /> :
     <AlertCircle size={12} className="text-gray-500 dark:text-gray-400 flex-shrink-0" />;
 
-  const statusColor =
-    isApproved ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/80 dark:border-emerald-400/30' :
-    status === 'REVOKED' ? 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border-red-200/80 dark:border-red-400/30' :
-    isPending ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border-amber-200/80 dark:border-amber-400/30' :
-    'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/40 border-gray-200/80 dark:border-gray-600/40';
+  const statusColor = getContractStatusClasses(status);
 
   return (
     <div key={c.id || i} className="px-5 py-3.5 hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors">
@@ -170,3 +172,5 @@ export default function ContractCard({ c, i, onUpdateContract, onDeleteContract 
     </div>
   );
 }
+
+export default memo(ContractCard);

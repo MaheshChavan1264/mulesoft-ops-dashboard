@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Key, RefreshCw, Save, X, AlertTriangle, ShieldCheck, Trash2,
 } from 'lucide-react';
-import api from '../../services/api';
+import { writeCpsProperties, deleteCpsProject } from '../../services/cpsService';
 import { getErrorMessage } from '../../services/http';
 import { usePendingPropertyChanges } from '../../hooks/usePendingPropertyChanges';
 import CpsAuthPanel from './CpsAuthPanel';
@@ -41,7 +41,7 @@ export function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd
       body: { properties: [{ environment, key: group.key, properties: mergedProps }] },
     };
     try {
-      const resp = await api.post('/cps/write', {
+      const resp = await writeCpsProperties({
         baseUrl, type: 'secure', method: 'PUT',
         environment, projectKey: group.key, properties: mergedProps, bgOrgId,
       });
@@ -79,9 +79,7 @@ export function SecureGroupEditor({ group, baseUrl, environment, bgOrgId, isProd
       params: { environment, keys: group.key },
     };
     try {
-      const resp = await api.delete('/cps/project', {
-        data: { baseUrl, type: 'secure', environment, projectKey: group.key, bgOrgId },
-      });
+      const resp = await deleteCpsProject({ baseUrl, type: 'secure', environment, projectKey: group.key, bgOrgId });
       const { requestDetails, responseDetails } = resp.data || {};
       onResult?.({
         label: `Delete Secure Group (${group.key})`,

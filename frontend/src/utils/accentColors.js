@@ -54,3 +54,35 @@ export const ACCENT_PALETTE = {
 export function getAccentClasses(accent) {
   return ACCENT_PALETTE[accent] || ACCENT_PALETTE.slate;
 }
+
+/**
+ * Contract-status → badge classes (bg+text+border), aligned with
+ * components/ui/StatusBadge.jsx's app-status pill convention
+ * (`border-X-200/80 dark:border-X-400/30`).
+ *
+ * Previously defined independently in features/api-manager/ContractCard.jsx
+ * (badge pill) and features/applications/tabs/ContractsTab.jsx (table-cell
+ * badge) with slightly different border opacities — see
+ * FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #17.
+ */
+export const CONTRACT_STATUS_COLOR = {
+  APPROVED: 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/80 dark:border-emerald-400/30',
+  REVOKED: 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border-red-200/80 dark:border-red-400/30',
+  PENDING: 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border-amber-200/80 dark:border-amber-400/30',
+  UNKNOWN: 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/40 border-gray-200/80 dark:border-gray-600/40',
+};
+
+/**
+ * Normalise a raw Anypoint contract status string (which can be
+ * 'ACTIVE'/'APPROVED', 'PENDING'/'PENDING_APPROVAL', 'REVOKED', or
+ * anything else) and resolve the matching badge classes from
+ * `CONTRACT_STATUS_COLOR`.
+ * @param {string} [rawStatus]
+ */
+export function getContractStatusClasses(rawStatus) {
+  const status = (rawStatus || 'ACTIVE').toUpperCase();
+  if (status === 'ACTIVE' || status === 'APPROVED') return CONTRACT_STATUS_COLOR.APPROVED;
+  if (status === 'REVOKED') return CONTRACT_STATUS_COLOR.REVOKED;
+  if (status === 'PENDING' || status === 'PENDING_APPROVAL') return CONTRACT_STATUS_COLOR.PENDING;
+  return CONTRACT_STATUS_COLOR.UNKNOWN;
+}

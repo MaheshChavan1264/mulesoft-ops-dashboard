@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle, XCircle, RefreshCw, Wifi } from 'lucide-react';
-import api from '../../services/api';
+import { testCpsCredential } from '../../services/cpsService';
 import { getErrorMessage } from '../../services/http';
 
 /**
@@ -35,7 +35,7 @@ export default function CpsCredTestButton({
     setStatus('testing');
     setMessage('');
     try {
-      const res = await api.post('/cps/credentials/test', {
+      const res = await testCpsCredential({
         baseUrl,
         clientId,
         clientSecret,

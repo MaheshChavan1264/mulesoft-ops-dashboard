@@ -85,6 +85,26 @@ export function extractCpsConfig(appDetail) {
   };
 }
 
+/**
+ * Best-effort fallback for `cpsEnv` when none of `extractCpsConfig`'s
+ * property-based lookups (`cps.prefix`/`cps.environment`/etc.) found a
+ * value — derives 'prod' vs 'uat' from the Anypoint environment's own
+ * name/type instead. Previously only implemented inline in
+ * ApplicationDetailPage.jsx; extracted here so any caller can opt into the
+ * same heuristic instead of re-deriving it — see
+ * FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
+ *
+ * @param {string} [envName]  Anypoint environment display name, e.g. "EI-FI-PROD"
+ * @param {string} [envType]  Anypoint environment type, e.g. "production" | "sandbox"
+ * @returns {'prod'|'uat'}
+ */
+export function guessCpsEnvFromAppEnvironment(envName, envType) {
+  const s = `${envName || ''} ${envType || ''}`.toLowerCase();
+  if (/\b(prod|pd)\b/.test(s)) return 'prod';
+  if (/\b(uat|ut|stg|stage|sandbox|uap)\b/.test(s)) return 'uat';
+  return envType === 'production' ? 'prod' : 'uat';
+}
+
 // ── CPS response normalisation ────────────────────────────────────────────────
 
 /**

@@ -1,4 +1,8 @@
-import api from '../services/api';
+import {
+  getCloudhub2AppDetail, getCloudhub1AppDetail, getPrivateSpaceDetail,
+  getCloudhub2Schedulers, getCloudhub1StaticIps, getCloudhub1Schedules,
+} from '../services/applicationsService';
+import { postCpsCredentialsRaw, fetchCpsProperties } from '../services/cpsService';
 import { extractCpsResponseEntries, flattenCpsResponse, normaliseCpsUrl } from './cpsHelpers';
 import { rowsToWorksheet, writeWorkbook } from './xlsxExport';
 import { getErrorMessage } from '../services/http';
@@ -82,7 +86,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   try {
     const envId = app.environment?.id;
     if (isCh2) {
-      const res = await api.get(`/applications/cloudhub2/${effectiveBgOrgId}/${envId}/${app.id}`);
+      const res = await getCloudhub2AppDetail(effectiveBgOrgId, envId, app.id);
       const cfg = res.data?.application?.configuration || {};
       const propsSvc = cfg['mule.agent.application.properties.service'] || {};
       const ds = res.data?.target?.deploymentSettings || {};
@@ -100,7 +104,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
       const isPrivateSpace = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
       if (isPrivateSpace) {
         try {
-          const psRes = await api.get(`/applications/private-spaces/${effectiveBgOrgId}/${targetId}`);
+          const psRes = await getPrivateSpaceDetail(effectiveBgOrgId, targetId);
           const outboundIPs = psRes.data?.network?.outboundStaticIps || [];
           if (Array.isArray(outboundIPs)) staticIPList = outboundIPs.filter(Boolean);
         } catch { /* not a private space or no access — fall through */ }
@@ -112,15 +116,15 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
       }
       // CH2 schedulers from dedicated endpoint — returns { items: [{flowName, type, expression, enabled}] }
       try {
-        const schedRes = await api.get(`/applications/cloudhub2/${effectiveBgOrgId}/${envId}/${app.id}/schedulers`);
+        const schedRes = await getCloudhub2Schedulers(effectiveBgOrgId, envId, app.id);
         schedulers = schedRes.data?.items || schedRes.data?.schedulers || (Array.isArray(schedRes.data) ? schedRes.data : []);
       } catch { /* no schedulers */ }
     } else {
-      const res = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: effectiveBgOrgId } });
+      const res = await getCloudhub1AppDetail(envId, app.id, effectiveBgOrgId);
       runtimeProps = res.data?.properties || {};
       // CH1 static IPs — try dedicated endpoint first
       try {
-        const sipRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/static-ips`, { params: { orgId: effectiveBgOrgId } });
+        const sipRes = await getCloudhub1StaticIps(envId, app.id, effectiveBgOrgId);
         const sipArr = Array.isArray(sipRes.data) ? sipRes.data
           : (sipRes.data?.staticIps || sipRes.data?.staticIPs || sipRes.data?.items || []);
         staticIPList = sipArr.map(s => typeof s === 'string' ? s : (s.ipAddress || s.staticIPAddress || s.address || s.ip)).filter(Boolean);
@@ -133,7 +137,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
       }
       // CH1 schedulers from dedicated endpoint
       try {
-        const schedRes = await api.get(`/applications/cloudhub1/${envId}/${app.id}/schedules`, { params: { orgId: effectiveBgOrgId } });
+        const schedRes = await getCloudhub1Schedules(envId, app.id, effectiveBgOrgId);
         schedulers = Array.isArray(schedRes.data) ? schedRes.data : (schedRes.data?.schedules || []);
       } catch { /* no schedulers */ }
     }
@@ -167,7 +171,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
     if (!allCreds.length) return;
     const credMap = {};
     for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
-    try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
+    try { await postCpsCredentialsRaw({ credentials: credMap }); } catch { /* non-fatal */ }
   };
 
   if (cpsClientId && !isMasked(cpsClientId) && getCredential) {
@@ -185,7 +189,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
           }
         }
       }
-      try { await api.post('/cps/credentials', { credentials: credMap }); } catch { /* non-fatal */ }
+      try { await postCpsCredentialsRaw({ credentials: credMap }); } catch { /* non-fatal */ }
     } else {
       // Specific clientId not in CSV — fall back to all credentials
       await postAllCredentialsFallback();
@@ -197,11 +201,10 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   // ─────────────────────────────────────────────────────────────────────────
 
   // Fetch non-secure — throw on error so the caller can record it in the export
-  const nsRes = await api.get('/cps/fetch', { params: {
+  const nsRaw = await fetchCpsProperties({
     baseUrl: normUrl, type: 'non-secure', environment: cpsEnv,
     keys: cpsKey, deploymentType: depType, bgOrgId: effectiveBgOrgId
-  }});
-  const nsRaw = nsRes.data;
+  });
 
   const flatNs = flattenCpsResponse(nsRaw, cpsKey);
 
@@ -217,11 +220,10 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   const secureGroups = [];
   if (secureKeys.length > 0) {
     try {
-      const sr = await api.get('/cps/fetch', { params: {
+      const raw = await fetchCpsProperties({
         baseUrl: normUrl, type: 'secure', environment: cpsEnv,
         keys: secureKeyStr, deploymentType: depType, bgOrgId: effectiveBgOrgId
-      }});
-      const raw = sr.data;
+      });
       const arr = normalisePropsArray(raw, secureKeys[0]);
       for (const entry of arr) {
         secureGroups.push({ key: entry.key, properties: entry.properties || {} });

@@ -25,12 +25,15 @@ import { X } from 'lucide-react';
  *   title         {ReactNode}           Header title
  *   subtitle      {ReactNode}           Header subtitle (optional)
  *   closeDisabled {boolean}             Disables the close button (e.g. while saving)
+ *   headerExtra   {ReactNode}           Extra controls rendered in the header, just
+ *                                       before the close button (e.g. an import button)
  *   footer        {ReactNode}           Footer content (typically Cancel + primary Button)
  *   children      {ReactNode}           Modal body content (scrollable)
  *   bodyClassName {string}              Extra classes for the scrollable body wrapper
  */
 const SIZE_CLASS = {
   sm: 'max-w-md',
+  base: 'max-w-lg',
   md: 'max-w-xl',
   lg: 'max-w-2xl',
   xl: 'max-w-3xl',
@@ -75,6 +78,11 @@ const ACCENT_CLASS = {
     chip: 'p-3 rounded-2xl bg-slate-100 dark:bg-slate-500/15 shadow-sm',
     icon: 'text-slate-600 dark:text-slate-400',
   },
+  teal: {
+    gradient: 'absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-teal-50/80 dark:from-teal-500/[0.07] to-transparent pointer-events-none',
+    chip: 'p-3 rounded-2xl bg-teal-100 dark:bg-teal-500/15 shadow-sm',
+    icon: 'text-teal-600 dark:text-teal-400',
+  },
 };
 
 export default function Modal({
@@ -85,6 +93,7 @@ export default function Modal({
   title,
   subtitle,
   closeDisabled = false,
+  headerExtra,
   footer,
   children,
   bodyClassName = '',
@@ -107,14 +116,17 @@ export default function Modal({
                 {subtitle && <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{subtitle}</p>}
               </div>
             </div>
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              disabled={closeDisabled}
-              className="relative text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1.5 rounded-xl transition-colors disabled:opacity-30 flex-shrink-0"
-            >
-              <X size={16} />
-            </button>
+            <div className="relative flex items-center gap-2 flex-shrink-0">
+              {headerExtra}
+              <button
+                onClick={onClose}
+                aria-label="Close"
+                disabled={closeDisabled}
+                className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1.5 rounded-xl transition-colors disabled:opacity-30 flex-shrink-0"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
         )}
 

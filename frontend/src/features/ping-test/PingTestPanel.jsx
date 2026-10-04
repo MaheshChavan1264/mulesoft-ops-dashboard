@@ -1,12 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X, Copy, Check, Terminal, History, Trash2 } from 'lucide-react';
-import api from '../../services/api';
+import { getPingHistory, clearPingHistory, getAutoCredentials, getAutoContractCreds, getOAuth2Token, pingApp as pingAppRequest } from '../../services/healthService';
+import { postCpsCredentialsRaw, fetchCpsProperties } from '../../services/cpsService';
 import { useCredentialStore } from '../../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
 import { findOAuth2Url, flattenCpsResponse, normaliseCpsUrl } from '../../utils/cpsHelpers';
 import AttemptLog from './AttemptLog';
 import PostmanJsonViewer from '../../components/shared/PostmanJsonViewer';
 import { buildPingUrl, latencyColor } from '../../utils/appUtils';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { getErrorMessage } from '../../services/http';
 export default function PingTestPanel({
   appName, isCH1, ch2IngressUrl, orgId, envId,
@@ -37,7 +39,7 @@ export default function PingTestPanel({
   const [gettingJwt, setGettingJwt] = useState(false);
   const [jwtError, setJwtError] = useState(null);
   const [jwtTokenUrl, setJwtTokenUrl] = useState(''); // stored once found, reused on refresh
-  const [copiedCurl, setCopiedCurl] = useState(false);
+  const [copiedCurl, copyCurl] = useCopyToClipboard(2000);
 
   const [transactionId, setTransactionId] = useState('');
   const [queryParams, setQueryParams] = useState('');
@@ -53,9 +55,7 @@ export default function PingTestPanel({
     if (!orgId || !envId || !appName) return;
     try {
       setHistoryLoading(true);
-      const { data } = await api.get('/health/ping/history', {
-        params: { orgId, envId, appName }
-      });
+      const data = await getPingHistory({ orgId, envId, appName });
       setPingHistory(data || []);
     } catch (e) {
       console.error('Failed to fetch ping history', e);
@@ -68,7 +68,7 @@ export default function PingTestPanel({
     if (!orgId || !envId || !appName) return;
     try {
       setHistoryLoading(true);
-      await api.delete('/health/ping/history', { params: { orgId, envId, appName } });
+      await clearPingHistory({ orgId, envId, appName });
       setPingHistory([]);
     } catch (e) {
       console.error('Failed to clear ping history', e);
@@ -104,17 +104,17 @@ export default function PingTestPanel({
           if (secret) {
             try {
               const credKey = `${normaliseCpsUrl(cpsBaseUrl)}::${orgId}`;
-              await api.post('/cps/credentials', { credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } } });
+              await postCpsCredentialsRaw({ credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } } });
             } catch { /* non-fatal */ }
           }
         }
         try {
-          const r = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
-          const apiId = extractApiId(flattenCpsResponse(r.data));
+          const nsData = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId });
+          const apiId = extractApiId(flattenCpsResponse(nsData));
           if (apiId) body.apiId = apiId;
         } catch { /* continue */ }
       }
-      const { data } = await api.post('/health/auto-credentials', body);
+      const data = await getAutoCredentials(body);
       if (data.found && data.matchInfo?.length > 0) {
         const matched = resolveFromCandidates(data.matchInfo.map(m => m.clientId));
         if (matched) {
@@ -126,7 +126,7 @@ export default function PingTestPanel({
         const apiInstanceId = data.matchedApis?.[0]?.id;
         if (apiInstanceId) {
           try {
-            const cd = (await api.post('/health/auto-contract-creds', { orgId, envId, apiId: apiInstanceId, envType: envType || '', envName: envName || '' })).data;
+            const cd = await getAutoContractCreds({ orgId, envId, apiId: apiInstanceId, envType: envType || '', envName: envName || '' });
             if (cd.clientId && cd.clientSecret) {
               setClientId(cd.clientId); setClientSecret(cd.clientSecret);
               setAutoResolved({ clientId: cd.clientId, apiInstanceName: data.matchedApis[0]?.label || '—', contractApp: cd.appName || '—', source: cd.contractStatus === 'approved' ? 'contract' : 'contract-pending', contractStatus: cd.contractStatus });
@@ -147,7 +147,7 @@ export default function PingTestPanel({
     if (!tokenUrl || !tokenClientId || !tokenClientSecret) return;
     setFetchingToken(true); setTokenError(null); setTokenExpiresIn(null);
     try {
-      const { data } = await api.post('/health/oauth2-token', { tokenUrl: tokenUrl.trim(), clientId: tokenClientId.trim(), clientSecret: tokenClientSecret.trim() });
+      const data = await getOAuth2Token({ tokenUrl: tokenUrl.trim(), clientId: tokenClientId.trim(), clientSecret: tokenClientSecret.trim() });
       setBearerToken(data.access_token);
       setTokenExpiresIn(data.expires_in || null);
     } catch (err) { setTokenError(getErrorMessage(err, 'Failed to fetch token')); }
@@ -168,10 +168,8 @@ export default function PingTestPanel({
 
       if (!foundTokenUrl && cpsBaseUrl && cpsKey) {
         // Scan CPS non-secure first
-        const nsRes = await api.get('/cps/fetch', {
-          params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId }
-        });
-        const nsProps = flattenCpsResponse(nsRes.data);
+        const nsData = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId });
+        const nsProps = flattenCpsResponse(nsData);
         foundTokenUrl = findOAuth2Url(nsProps);
 
         // If not found in non-secure, scan ALL secure keys for an OAuth2 token URL.
@@ -185,12 +183,12 @@ export default function PingTestPanel({
                 const secret = getCpsSecret(cpsClientId);
                 if (secret) {
                   const credKey = `${cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${orgId}`;
-                  await api.post('/cps/credentials', { credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } } });
+                  await postCpsCredentialsRaw({ credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } } });
                 }
               }
               // Fetch all secure keys at once — each group is a separate response entry
-              const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: secureKeys.join(','), ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId } });
-              const sg = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data?.properties) ? sr.data.properties : Array.isArray(sr.data) ? sr.data : [];
+              const srData = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'secure', keys: secureKeys.join(','), ...(cpsEnv && { environment: cpsEnv }), bgOrgId: orgId });
+              const sg = Array.isArray(srData?.responses) ? srData.responses : Array.isArray(srData?.properties) ? srData.properties : Array.isArray(srData) ? srData : [];
               for (const g of sg) { const u = findOAuth2Url(g.properties || {}); if (u) { foundTokenUrl = u; break; } }
             } catch { /* continue */ }
           }
@@ -205,7 +203,7 @@ export default function PingTestPanel({
       setJwtTokenUrl(foundTokenUrl); // cache for re-fetches
 
       // Fetch JWT token using resolved client credentials
-      const { data } = await api.post('/health/oauth2-token', {
+      const data = await getOAuth2Token({
         tokenUrl: foundTokenUrl,
         clientId: clientId.trim(),
         clientSecret: clientSecret.trim(),
@@ -285,7 +283,7 @@ export default function PingTestPanel({
     }, 95000);
 
     try {
-      const { data } = await api.post('/health/ping', {
+      const data = await pingAppRequest({
         targetType, appName, orgId, envId,
         ch2IngressUrl: isCH1 ? undefined : ch2IngressUrl,
         envType: isCH1 ? envType : undefined,
@@ -354,9 +352,7 @@ export default function PingTestPanel({
               <button
                 onClick={() => {
                   const url = result?.activeEndpoint || `${displayBase}/api/v1/ping${queryParams ? `?${queryParams}` : ''}`;
-                  navigator.clipboard.writeText(buildCurl(url, false));
-                  setCopiedCurl(true);
-                  setTimeout(() => setCopiedCurl(false), 2000);
+                  copyCurl(buildCurl(url, false));
                 }}
                 title="Copy cURL"
                 className="flex items-center gap-1.5 px-3 py-2 bg-gray-50/80 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200/70 dark:border-gray-700/60 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-xs font-semibold rounded-xl transition-all">

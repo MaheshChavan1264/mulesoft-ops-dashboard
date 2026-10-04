@@ -1,13 +1,16 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, X, Activity, ShieldCheck } from 'lucide-react';
+import { RefreshCw, Activity, ShieldCheck } from 'lucide-react';
 import { useCredentialStore } from '../../../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../../../context/CpsCredentialStoreContext';
+import Modal from '../../../components/ui/Modal';
 import CredentialImportButton from '../../../components/shared/CredentialImportButton';
 import PingResultCard from '../../ping-test/PingResultCard';
-import api from '../../../services/api';
+import { getCloudhub2AppDetail, getCloudhub1AppDetail } from '../../../services/applicationsService';
+import { postCpsCredentialsRaw, fetchCpsProperties } from '../../../services/cpsService';
+import { getAutoCredentials, getAutoContractCreds, getOAuth2Token, pingApp as pingAppRequest } from '../../../services/healthService';
 import { generateTxId } from '../../../utils/appUtils';
-import { findOAuth2Url, flattenCpsResponse } from '../../../utils/cpsHelpers';
+import { findOAuth2Url, flattenCpsResponse, extractCpsConfig } from '../../../utils/cpsHelpers';
 
 /**
  * BulkPingModal — runs ping tests across a selected set of applications,
@@ -53,29 +56,22 @@ export default function BulkPingModal({ apps, onClose }) {
       // ── Step 1: Get ARM detail to extract CPS connection properties ────────
       let armDetail = null;
       if (app.deploymentType === 'CloudHub 2.0') {
-        const r = await api.get(`/applications/cloudhub2/${bgId}/${envId}/${app.id}`);
+        const r = await getCloudhub2AppDetail(bgId, envId, app.id);
         armDetail = r.data;
       } else {
-        const r = await api.get(`/applications/cloudhub1/${envId}/${app.id}`, { params: { orgId: bgId } });
+        const r = await getCloudhub1AppDetail(envId, app.id, bgId);
         armDetail = { name: app.name, properties: r.data?.properties || {} };
       }
 
-      // Merge all ARM property sources (same logic as extractCpsProps in CpsComparisonPage)
-      const ds = armDetail?.target?.deploymentSettings || {};
-      const appCfg = armDetail?.application?.configuration || {};
-      const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
-      const allArmProps = {
-        ...armDetail?.properties,
-        ...(propsSvc.properties || {}),
-        ...(ds.properties || {}),
-        ...(ds.environmentVariables || ds.environmentVars || {}),
-      };
-
-      const cpsBaseUrl  = allArmProps['cps.configServerBaseUrl'] || allArmProps['config.server.base.url'] || '';
-      const cpsKey      = allArmProps['cps.projectName'] || allArmProps['cloudhub.api.name'] || app.name || '';
-      const cpsEnv      = allArmProps['cps.prefix'] || allArmProps['cps.environment'] || '';
-      const cpsClientId = allArmProps['cps.clientId'] || allArmProps['cps.client_id'] ||
-                          allArmProps['cps.client.id'] || allArmProps['cps.apiClientId'] || '';
+      // CPS connection config — delegate to the shared extractCpsConfig()
+      // instead of an inline fallback chain, so this modal resolves CPS
+      // config identically to CpsComparisonPage/GlobalSearchPage — see
+      // FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
+      const cpsConfig = extractCpsConfig(armDetail);
+      const cpsBaseUrl = cpsConfig.cpsBaseUrl;
+      const cpsClientId = cpsConfig.cpsClientId;
+      const cpsKey = cpsConfig.cpsKey || app.name || '';
+      const cpsEnv = cpsConfig.cpsEnv || '';
 
       if (!cpsBaseUrl || !cpsKey) return {}; // no CPS config → skip
 
@@ -87,7 +83,7 @@ export default function BulkPingModal({ apps, onClose }) {
         if (secret) {
           try {
             const credKey = `${cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${bgId}`;
-            await api.post('/cps/credentials', {
+            await postCpsCredentialsRaw({
               credentials: { [credKey]: { clientId: cpsClientId, clientSecret: secret } },
             });
           } catch { /* non-fatal — CPS fetch will fail with 422 if creds are wrong */ }
@@ -95,18 +91,15 @@ export default function BulkPingModal({ apps, onClose }) {
       }
 
       // ── Step 2b: Fetch CPS non-secure properties ──────────────────────────
-      const cpsRes = await api.get('/cps/fetch', {
-        params: {
-          baseUrl: cpsBaseUrl,
-          type: 'non-secure',
-          keys: cpsKey,
-          ...(cpsEnv && { environment: cpsEnv }),
-          bgOrgId: bgId,
-        },
+      const data = await fetchCpsProperties({
+        baseUrl: cpsBaseUrl,
+        type: 'non-secure',
+        keys: cpsKey,
+        ...(cpsEnv && { environment: cpsEnv }),
+        bgOrgId: bgId,
       });
 
       // Flatten the CPS response to a plain {key: value} map
-      const data = cpsRes.data;
       let cpsProps = {};
       if (Array.isArray(data?.responses)) {
         data.responses.forEach(r => Object.assign(cpsProps, r.properties || {}));
@@ -189,7 +182,7 @@ export default function BulkPingModal({ apps, onClose }) {
           // Fetch Autodiscovery properties (api.id) in parallel with cred resolution
           const { apiId, assetId } = await fetchAppApiProps(app);
 
-          const { data } = await api.post('/health/auto-credentials', {
+          const data = await getAutoCredentials({
             orgId: bgId,
             envId,
             appName: app.name,
@@ -213,11 +206,10 @@ export default function BulkPingModal({ apps, onClose }) {
             const apiInstanceId = data.matchedApis?.[0]?.id;
             if (apiInstanceId) {
               try {
-                const contractRes = await api.post('/health/auto-contract-creds', {
+                const cd = await getAutoContractCreds({
                   orgId: bgId, envId, apiId: apiInstanceId,
                   envType: app.environment?.type || '',
                 });
-                const cd = contractRes.data;
                 // Only use credentials if the contract is APPROVED.
                 // If pending, do NOT ping with these creds — the API will reject them.
                 if (cd.clientId && cd.clientSecret && cd.contractStatus === 'approved') {
@@ -283,34 +275,33 @@ export default function BulkPingModal({ apps, onClose }) {
       try {
         let cpsBaseUrl = '', cpsKey = '', cpsEnv = '';
         try {
-          const r = await api.get(`/applications/cloudhub2/${bgId}/${envId}/${app.id}`);
-          const ds = r.data?.target?.deploymentSettings || {};
-          const appCfg = r.data?.application?.configuration || {};
-          const ps = appCfg['mule.agent.application.properties.service'] || {};
-          const rp = { ...r.data?.properties, ...(ps.properties || {}), ...(ds.runtimeProperties || {}), ...(ds.properties || {}), ...(ds.environmentVariables || {}) };
-          cpsBaseUrl = rp['cps.configServerBaseUrl'] || rp['config.server.base.url'] || '';
-          cpsKey = rp['cps.projectName'] || rp['cloudhub.api.name'] || app.name;
-          cpsEnv = rp['cps.prefix'] || rp['cps.environment'] || '';
+          const r = await getCloudhub2AppDetail(bgId, envId, app.id);
+          // Delegate to the shared extractCpsConfig() — see
+          // FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #7.
+          const cpsConfig = extractCpsConfig(r.data);
+          cpsBaseUrl = cpsConfig.cpsBaseUrl;
+          cpsKey = cpsConfig.cpsKey || app.name;
+          cpsEnv = cpsConfig.cpsEnv || '';
         } catch { return null; }
         if (!cpsBaseUrl || !cpsKey) return null;
         let tokenUrl = null;
         try {
-          const nsRes = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: bgId } });
-          const nsProps = flattenCpsResponse(nsRes.data);
+          const nsData = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'non-secure', keys: cpsKey, ...(cpsEnv && { environment: cpsEnv }), bgOrgId: bgId });
+          const nsProps = flattenCpsResponse(nsData);
           tokenUrl = findOAuth2Url(nsProps) || null;
           if (!tokenUrl) {
             // Scan ALL secure keys for an OAuth2 token URL (not just jwt/auth named keys)
             const secKeys = (nsProps['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean);
             if (secKeys.length > 0) {
-              const sr = await api.get('/cps/fetch', { params: { baseUrl: cpsBaseUrl, type: 'secure', keys: secKeys.join(','), ...(cpsEnv && { environment: cpsEnv }), bgOrgId: bgId } });
-              const groups = Array.isArray(sr.data?.responses) ? sr.data.responses : Array.isArray(sr.data) ? sr.data : [];
+              const srData = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'secure', keys: secKeys.join(','), ...(cpsEnv && { environment: cpsEnv }), bgOrgId: bgId });
+              const groups = Array.isArray(srData?.responses) ? srData.responses : Array.isArray(srData) ? srData : [];
               for (const g of groups) { const u = findOAuth2Url(g.properties || {}); if (u) { tokenUrl = u; break; } }
             }
           }
         } catch { return null; }
         if (!tokenUrl) return null;
-        const tr = await api.post('/health/oauth2-token', { tokenUrl, clientId: appClientId, clientSecret: appClientSecret });
-        return tr.data?.access_token || null;
+        const tr = await getOAuth2Token({ tokenUrl, clientId: appClientId, clientSecret: appClientSecret });
+        return tr?.access_token || null;
       } catch { return null; }
     };
 
@@ -325,7 +316,7 @@ export default function BulkPingModal({ apps, onClose }) {
 
       if (!isCH1 && app._bgId && app.environment?.id && app.id) {
         try {
-          const detail = await api.get(`/applications/cloudhub2/${app._bgId}/${app.environment.id}/${app.id}`);
+          const detail = await getCloudhub2AppDetail(app._bgId, app.environment.id, app.id);
           const ds = detail.data?.target?.deploymentSettings || {};
           const httpInbound = ds.http?.inbound || {};
           const endpoints = httpInbound.endpoints || [];
@@ -356,7 +347,7 @@ export default function BulkPingModal({ apps, onClose }) {
       const useClientSecret = clientSecret.trim() || auto?.clientSecret || undefined;
 
       try {
-        const { data } = await api.post('/health/ping', {
+        const data = await pingAppRequest({
           targetType: isCH1 ? 'CH1' : 'CH2',
           appName: app.name,
           ch2IngressUrl,
@@ -374,7 +365,7 @@ export default function BulkPingModal({ apps, onClose }) {
           const jwt = await fetchJwtForApp(app, useClientId, useClientSecret);
           if (jwt) {
             try {
-              const jwtData = await api.post('/health/ping', {
+              const jwtData = await pingAppRequest({
                 targetType: 'CH2',
                 appName: app.name,
                 ch2IngressUrl,
@@ -385,7 +376,7 @@ export default function BulkPingModal({ apps, onClose }) {
                 orgId: app._bgId,
                 envId: app.environment?.id,
               });
-              return { appId: app.id, result: { ...jwtData.data, _jwtUsed: true } };
+              return { appId: app.id, result: { ...jwtData, _jwtUsed: true } };
             } catch { /* fall through to original result */ }
           }
         }
@@ -423,97 +414,17 @@ export default function BulkPingModal({ apps, onClose }) {
   const failed = Object.values(results).filter(r => r.status === 'FAILED').length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700/80 rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
-        {/* Header */}
-        <div className="relative flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-700/60 flex-shrink-0">
-          <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-teal-50/80 dark:from-teal-500/[0.07] to-transparent pointer-events-none" />
-          <div className="relative flex items-center gap-3.5">
-            <div className="p-3 rounded-2xl bg-teal-100 dark:bg-teal-500/15 shadow-sm">
-              <Activity size={18} className="text-teal-600 dark:text-teal-400" />
-            </div>
-            <div>
-              <h2 className="text-gray-900 dark:text-gray-100 font-bold text-base">Bulk Ping Test</h2>
-              <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{apps.length} application{apps.length !== 1 ? 's' : ''} selected</p>
-            </div>
-          </div>
-          <div className="relative flex items-center gap-2 flex-shrink-0">
-            <CredentialImportButton compact />
-            <button onClick={onClose} className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1.5 rounded-xl transition-colors"><X size={16} /></button>
-          </div>
-        </div>
-
-        {/* Credential inputs */}
-        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700/60 flex-shrink-0 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold block mb-1.5">
-                client_id <span className="normal-case font-medium text-gray-400 dark:text-gray-500">(overrides auto)</span>
-              </label>
-              <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="leave blank to auto-resolve"
-                className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 transition-all" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold block mb-1.5">client_secret</label>
-              <div className="relative">
-                <input value={clientSecret} onChange={e => setClientSecret(e.target.value)} type={showSecret ? 'text' : 'password'} placeholder="optional"
-                  className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 pr-8 text-xs text-gray-700 dark:text-gray-300 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 transition-all" />
-                <button onClick={() => setShowSecret(!showSecret)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-xs transition-colors">{showSecret ? '🙈' : '👁'}</button>
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold block mb-1.5">x-transaction-id</label>
-              <input value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="smokeTest"
-                className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 transition-all" />
-            </div>
-          </div>
-          {/* Credential import status */}
-          {hasCredentials && !clientId.trim() && (
-            <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-              <ShieldCheck size={11} />
-              Credentials CSV loaded — will auto-resolve per app from API Manager
-            </div>
-          )}
-        </div>
-
-        {/* Resolving banner */}
-        {resolving && (
-          <div className="px-6 py-2.5 border-b border-gray-100 dark:border-gray-700/60 flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400 flex-shrink-0 bg-emerald-50/40 dark:bg-emerald-500/5">
-            <RefreshCw size={12} className="animate-spin" />
-            Resolving credentials from API Manager…
-          </div>
-        )}
-
-        {/* Progress summary */}
-        {done > 0 && (
-          <div className="px-6 py-3 border-b border-gray-100 dark:border-gray-700/60 flex items-center gap-2.5 text-xs flex-shrink-0 flex-wrap">
-            <span className="font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/60 px-2 py-1 rounded-lg">{done}/{apps.length} tested</span>
-            {success > 0 && <span className="font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded-lg">✓ {success} healthy</span>}
-            {partial > 0 && <span className="font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg">~ {partial} partial</span>}
-            {failed > 0 && <span className="font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 px-2 py-1 rounded-lg">✗ {failed} failed</span>}
-            {Object.keys(autoResolvedMap).length > 0 && (
-              <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
-                <ShieldCheck size={11} className="text-emerald-500" />{Object.keys(autoResolvedMap).length} auto-creds
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Results list — each app gets a full PingResultCard */}
-        <div className="overflow-y-auto flex-1 p-4 space-y-3 bg-gray-50/40 dark:bg-gray-900/20">
-          {apps.map(app => (
-            <PingResultCard
-              key={app.id}
-              app={app}
-              result={results[app.id]}
-              loading={running && !results[app.id]}
-              autoResolved={autoResolvedMap[app.id]}
-            />
-          ))}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700/60 flex items-center justify-between flex-shrink-0 bg-white dark:bg-gray-800 gap-3">
+    <Modal
+      onClose={onClose}
+      size="lg"
+      icon={Activity}
+      accent="teal"
+      title="Bulk Ping Test"
+      subtitle={`${apps.length} application${apps.length !== 1 ? 's' : ''} selected`}
+      headerExtra={<CredentialImportButton compact />}
+      bodyClassName="!px-0 !py-0 space-y-0"
+      footer={
+        <>
           <p className="text-gray-400 dark:text-gray-500 text-[11px] hidden sm:block">Pings /api/v1/ping → /api/v2/ping → /api/ping → /ping in order</p>
           <div className="flex items-center gap-2.5 ml-auto">
             <button onClick={onClose} className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors">Close</button>
@@ -522,8 +433,77 @@ export default function BulkPingModal({ apps, onClose }) {
               {resolving ? <><RefreshCw size={13} className="animate-spin" /> Resolving…</> : running ? <><RefreshCw size={13} className="animate-spin" /> Running…</> : <><Activity size={13} /> Run All Pings</>}
             </button>
           </div>
+        </>
+      }
+    >
+      {/* Credential inputs */}
+      <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700/60 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold block mb-1.5">
+              client_id <span className="normal-case font-medium text-gray-400 dark:text-gray-500">(overrides auto)</span>
+            </label>
+            <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="leave blank to auto-resolve"
+              className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 transition-all" />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold block mb-1.5">client_secret</label>
+            <div className="relative">
+              <input value={clientSecret} onChange={e => setClientSecret(e.target.value)} type={showSecret ? 'text' : 'password'} placeholder="optional"
+                className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 pr-8 text-xs text-gray-700 dark:text-gray-300 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 transition-all" />
+              <button onClick={() => setShowSecret(!showSecret)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-xs transition-colors">{showSecret ? '🙈' : '👁'}</button>
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold block mb-1.5">x-transaction-id</label>
+            <input value={transactionId} onChange={e => setTransactionId(e.target.value)} placeholder="smokeTest"
+              className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 font-mono placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 transition-all" />
+          </div>
         </div>
+        {/* Credential import status */}
+        {hasCredentials && !clientId.trim() && (
+          <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+            <ShieldCheck size={11} />
+            Credentials CSV loaded — will auto-resolve per app from API Manager
+          </div>
+        )}
       </div>
-    </div>
+
+      {/* Resolving banner */}
+      {resolving && (
+        <div className="px-6 py-2.5 border-b border-gray-100 dark:border-gray-700/60 flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50/40 dark:bg-emerald-500/5">
+          <RefreshCw size={12} className="animate-spin" />
+          Resolving credentials from API Manager…
+        </div>
+      )}
+
+      {/* Progress summary */}
+      {done > 0 && (
+        <div className="px-6 py-3 border-b border-gray-100 dark:border-gray-700/60 flex items-center gap-2.5 text-xs flex-wrap">
+          <span className="font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/60 px-2 py-1 rounded-lg">{done}/{apps.length} tested</span>
+          {success > 0 && <span className="font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded-lg">✓ {success} healthy</span>}
+          {partial > 0 && <span className="font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg">~ {partial} partial</span>}
+          {failed > 0 && <span className="font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 px-2 py-1 rounded-lg">✗ {failed} failed</span>}
+          {Object.keys(autoResolvedMap).length > 0 && (
+            <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
+              <ShieldCheck size={11} className="text-emerald-500" />{Object.keys(autoResolvedMap).length} auto-creds
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Results list — each app gets a full PingResultCard */}
+      <div className="p-4 space-y-3 bg-gray-50/40 dark:bg-gray-900/20">
+        {apps.map(app => (
+          <PingResultCard
+            key={app.id}
+            app={app}
+            result={results[app.id]}
+            loading={running && !results[app.id]}
+            autoResolved={autoResolvedMap[app.id]}
+          />
+        ))}
+      </div>
+    </Modal>
   );
 }

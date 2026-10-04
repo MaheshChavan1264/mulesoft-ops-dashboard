@@ -47,6 +47,11 @@ export function getCloudhub1AppDetail(envId, appId, orgId) {
   return api.get(`/applications/cloudhub1/${envId}/${appId}`, { params: { orgId } });
 }
 
+/** GET /applications/cloudhub1/{envId}/{appName}/properties — CH1 app runtime properties by name. */
+export function getCloudhub1AppProperties(envId, appName, orgId) {
+  return api.get(`/applications/cloudhub1/${envId}/${appName}/properties`, { params: { orgId } });
+}
+
 export function getPrivateSpaceDetail(orgId, targetId) {
   return api.get(`/applications/private-spaces/${orgId}/${targetId}`);
 }

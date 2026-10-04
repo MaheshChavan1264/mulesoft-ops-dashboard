@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock, Zap, Activity, Key, RefreshCw, X, Search } from 'lucide-react';
 import cronstrue from 'cronstrue';
-import api from '../../../services/api';
+import { fetchCpsProperties } from '../../../services/cpsService';
 import { GlassCard, StatTile, PulseDot, MetaTag, getNextCronRun } from '../shared';
 
 /**
@@ -54,10 +54,7 @@ export default function InfrastructureTab({
                   let secureKeys = cpsSchedulerProps['cps.secure.properties'];
                   if (!secureKeys) {
                     try {
-                      const nsRes = await api.get('/cps/fetch', {
-                        params: { baseUrl: cpsBaseUrl, type: 'non-secure', keys: effectiveCpsKey, environment: effectiveCpsEnv, bgOrgId: orgId }
-                      });
-                      const data = nsRes.data;
+                      const data = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'non-secure', keys: effectiveCpsKey, environment: effectiveCpsEnv, bgOrgId: orgId });
                       let flat = {};
                       if (Array.isArray(data?.responses)) data.responses.forEach(r => Object.assign(flat, r.properties || {}));
                       else if (Array.isArray(data)) data.forEach(r => { if (r?.properties) Object.assign(flat, r.properties); });
@@ -73,10 +70,7 @@ export default function InfrastructureTab({
                   }
                   if (!secureKeys) { setCpsSecureSchedulerLoading(false); return; }
                   // Step 2: Fetch secure properties using the discovered keys
-                  const sr = await api.get('/cps/fetch', {
-                    params: { baseUrl: cpsBaseUrl, type: 'secure', environment: effectiveCpsEnv, keys: secureKeys, bgOrgId: orgId }
-                  });
-                  const data = sr.data;
+                  const data = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'secure', environment: effectiveCpsEnv, keys: secureKeys, bgOrgId: orgId });
                   const groups = Array.isArray(data?.responses) ? data.responses
                     : Array.isArray(data?.properties) ? data.properties
                     : Array.isArray(data) ? data : [];

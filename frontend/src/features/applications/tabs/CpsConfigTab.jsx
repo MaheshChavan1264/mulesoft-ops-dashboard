@@ -1,6 +1,6 @@
 import React from 'react';
 import { Settings, Key, Package, Database, Check, Copy, RefreshCw, AlertTriangle, Search } from 'lucide-react';
-import api from '../../../services/api';
+import { postCpsCredentialsRaw, fetchCpsProperties } from '../../../services/cpsService';
 import { getErrorMessage } from '../../../services/http';
 import TableHeader from '../../../components/ui/TableHeader';
 import CopyBtn from '../../../components/shared/CopyBtn';
@@ -292,14 +292,13 @@ export default function CpsConfigTab({
                         for (const { clientId, clientSecret } of allCreds) {
                           credMap[`${normBase}::${clientId}`] = { clientId, clientSecret };
                         }
-                        try { await api.post('/cps/credentials', { credentials: credMap }); } catch {}
+                        try { await postCpsCredentialsRaw({ credentials: credMap }); } catch {}
                       }
                     }
-                    const sr = await api.get('/cps/fetch', { params: {
+                    const raw = await fetchCpsProperties({
                       baseUrl: cpsBaseUrl, type: 'secure', environment: cpsData.useEnv,
                       keys: cpsData.secureKeys, deploymentType: cpsDepType, envName: appEnvName, bgOrgId: orgId
-                    }});
-                    const raw = sr.data;
+                    });
                     const groups = Array.isArray(raw?.responses) ? raw.responses
                       : Array.isArray(raw?.properties) ? raw.properties
                       : Array.isArray(raw) ? raw : [];

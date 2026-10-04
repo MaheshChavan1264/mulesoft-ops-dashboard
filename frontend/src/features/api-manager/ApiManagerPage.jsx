@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { RefreshCw, ShieldCheck, Search, SlidersHorizontal, FileText, ChevronRight, Globe, X } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -334,7 +334,11 @@ export default function ApiManagerPage() {
     setContractsLoading(false);
   };
 
-  const updateContractStatus = async (contractId, newStatus) => {
+  // useCallback — ContractCard is React.memo'd (see FRONTEND_ARCHITECTURE_REVIEW.md
+  // §8 Performance Review, finding #4/#7); without stabilizing these handler
+  // props every ContractCard would still re-render on every unrelated
+  // ApiManagerPage re-render, defeating the memo.
+  const updateContractStatus = useCallback(async (contractId, newStatus) => {
     const bgId = selectedBg === '__all__'
       ? (selectedApi?.organizationId || authOrgId)
       : selectedBg;
@@ -347,9 +351,9 @@ export default function ApiManagerPage() {
     } catch (e) {
       alert(`Failed to update contract: ${getErrorMessage(e)}`);
     }
-  };
+  }, [selectedBg, selectedApi, authOrgId, selectedEnv]);
 
-  const deleteContract = async (contractId) => {
+  const deleteContract = useCallback(async (contractId) => {
     const bgId = selectedBg === '__all__'
       ? (selectedApi?.organizationId || authOrgId)
       : selectedBg;
@@ -361,7 +365,7 @@ export default function ApiManagerPage() {
     } catch (e) {
       alert(`Failed to delete contract: ${getErrorMessage(e)}`);
     }
-  };
+  }, [selectedBg, selectedApi, authOrgId, selectedEnv]);
 
   // ── Derived values ──────────────────────────────────────────────────────────
   const visibleGroups = applyBgFilter(allBusinessGroups);

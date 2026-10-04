@@ -18,18 +18,14 @@ import { useBgEnvFilter } from '../../hooks/useBgEnvFilter';
 import PageHeader from '../../components/ui/PageHeader';
 import TableHeader from '../../components/ui/TableHeader';
 import CopyBtn from '../../components/shared/CopyBtn';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 /** Copy all unique matched values for a term — shown in the term group header. */
 const CopyAllBtn = ({ values = [] }) => {
-  const [done, setDone] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(values.join('\n'));
-    setDone(true);
-    setTimeout(() => setDone(false), 2000);
-  };
+  const [done, copy] = useCopyToClipboard(2000);
   return (
     <button
-      onClick={copy}
+      onClick={() => copy(values.join('\n'))}
       title={`Copy all ${values.length} unique value${values.length !== 1 ? 's' : ''} for this term`}
       className="flex items-center gap-1 px-3 py-3 text-[10px] text-gray-400 dark:text-gray-500 hover:text-sfpurple-700 dark:hover:text-sfpurple-400 border-l border-gray-200 dark:border-white/10 transition-colors flex-shrink-0 font-semibold">
       {done
@@ -965,6 +961,130 @@ export default function GlobalSearchPage() {
   const selCount = bgEnvSelections.length;
   const COL_HEADERS = ['#', 'Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Status', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
 
+  // ── Memoized result-processing (sort + grouping Maps) ───────────────────
+  // Previously rebuilt inline in the JSX return's IIFEs on every render —
+  // including re-sorting + re-grouping potentially thousands of rows on
+  // every unrelated keystroke/state change (sidebar toggles, filter changes,
+  // etc.) — see FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review,
+  // finding #2.
+  const activeTerms = useMemo(
+    () => query.trim().split(',').map(t => t.trim()).filter(Boolean),
+    [query]
+  );
+
+  const sortedResults = useMemo(() => (
+    sortCol
+      ? [...results].sort((a, b) => {
+          const v = r => String(r[sortCol] ?? '').toLowerCase();
+          const cmp = v(a).localeCompare(v(b));
+          return sortDir === 'asc' ? cmp : -cmp;
+        })
+      : results
+  ), [results, sortCol, sortDir]);
+
+  // Full "group by term" breakdown — term → { rows, appMap, allValues,
+  // bgMap: bgName → { appMap, skMap: secureKey → { rows, appMap } } } —
+  // computed once per (sortedResults, activeTerms, searchMode) change
+  // instead of being rebuilt (termGroups/appMap/bgMap/skMap, 4 separate
+  // Map builds) inline in JSX on every render while a term is expanded.
+  const termGroupData = useMemo(() => {
+    if (!(groupByTerm && activeTerms.length > 1)) return null;
+
+    const getMatchedTerm = (row) => {
+      const field = searchMode === 'key' ? row.propKey : row.apiUser;
+      return activeTerms.find(t => String(field || '').toLowerCase().includes(t.toLowerCase()))
+        || activeTerms[0];
+    };
+
+    const termGroups = new Map();
+    activeTerms.forEach(t => termGroups.set(t, []));
+    sortedResults.forEach(row => {
+      const term = getMatchedTerm(row);
+      if (!termGroups.has(term)) termGroups.set(term, []);
+      termGroups.get(term).push(row);
+    });
+
+    const nonEmptyTerms = activeTerms.filter(t => (termGroups.get(t)?.length || 0) > 0);
+
+    const perTerm = new Map();
+    for (const term of activeTerms) {
+      const termRows = termGroups.get(term) || [];
+      if (termRows.length === 0) { perTerm.set(term, null); continue; }
+
+      const appMap = new Map();
+      termRows.forEach(row => {
+        if (!appMap.has(row.appName)) appMap.set(row.appName, []);
+        appMap.get(row.appName).push(row);
+      });
+      const allValues = [...new Set(termRows.map(r => r.apiUser))];
+
+      const bgMap = new Map();
+      termRows.forEach(row => {
+        const key = row.bgName || '—';
+        if (!bgMap.has(key)) bgMap.set(key, new Map());
+        const ba = bgMap.get(key);
+        if (!ba.has(row.appName)) ba.set(row.appName, []);
+        ba.get(row.appName).push(row);
+      });
+
+      const bgBreakdown = [...bgMap.entries()].map(([bgName, bgAppMap]) => {
+        const bgMatchCount = [...bgAppMap.values()].reduce((n, r) => n + r.length, 0);
+        const allBgRows = [...bgAppMap.values()].flat();
+        const skMap = new Map();
+        allBgRows.forEach(row => {
+          const sk = row.secureKey || 'Non-Secure';
+          if (!skMap.has(sk)) skMap.set(sk, []);
+          skMap.get(sk).push(row);
+        });
+        const sortedSk = [...skMap.entries()].sort(([a], [b]) => {
+          if (a === 'Non-Secure') return -1;
+          if (b === 'Non-Secure') return 1;
+          return a.localeCompare(b);
+        }).map(([skName, skRows]) => {
+          const skAppMap = new Map();
+          skRows.forEach(row => {
+            if (!skAppMap.has(row.appName)) skAppMap.set(row.appName, []);
+            skAppMap.get(row.appName).push(row);
+          });
+          return { skName, skRows, skAppMap };
+        });
+        return { bgName, bgAppMap, bgMatchCount, sortedSk };
+      });
+
+      perTerm.set(term, { termRows, appMap, allValues, bgBreakdown });
+    }
+
+    return { termGroups, nonEmptyTerms, perTerm };
+  }, [groupByTerm, activeTerms, sortedResults, searchMode]);
+
+  // "Group by App" view — term grouping disabled or single-term search
+  const appGroupsData = useMemo(() => {
+    if (!(groupByApp && !(groupByTerm && activeTerms.length > 1))) return null;
+    const appGroups = new Map();
+    sortedResults.forEach(row => {
+      const key = row.appName;
+      if (!appGroups.has(key)) appGroups.set(key, { row, rows: [] });
+      appGroups.get(key).rows.push(row);
+    });
+    return appGroups;
+  }, [groupByApp, groupByTerm, activeTerms, sortedResults]);
+
+  // "Group by Term" XLSX export button's term→rows breakdown — built from
+  // the unsorted `results` (not sortedResults, since export order follows
+  // term order) and `activeTerms`/`searchMode`. Was rebuilt inline in JSX on
+  // every render just to decide whether to show the Export XLSX button.
+  const exportTermGroups = useMemo(() => {
+    if (!(results.length > 0 && groupByTerm && activeTerms.length > 1)) return null;
+    const tg = new Map();
+    activeTerms.forEach(t => tg.set(t, []));
+    results.forEach(row => {
+      const field = searchMode === 'key' ? row.propKey : row.apiUser;
+      const term = activeTerms.find(t => String(field || '').toLowerCase().includes(t.toLowerCase())) || activeTerms[0];
+      tg.get(term)?.push(row);
+    });
+    return tg;
+  }, [groupByTerm, activeTerms, results, searchMode]);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -1231,24 +1351,13 @@ export default function GlobalSearchPage() {
                 </button>
               )}
               {/* XLSX export — only shown in Group by Term mode (multi-sheet, one per term) */}
-              {results.length > 0 && groupByTerm && (() => {
-                const at = query.trim().split(',').map(t => t.trim()).filter(Boolean);
-                if (at.length <= 1) return null;
-                const tg = new Map();
-                at.forEach(t => tg.set(t, []));
-                results.forEach(row => {
-                  const field = searchMode === 'key' ? row.propKey : row.apiUser;
-                  const term = at.find(t => String(field || '').toLowerCase().includes(t.toLowerCase())) || at[0];
-                  tg.get(term)?.push(row);
-                });
-                return (
-                  <button
-                    onClick={() => exportGroupedXlsx(tg, null, at, searchMode)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-sfpurple-700 dark:text-sfpurple-300 hover:text-sfpurple-800 dark:hover:text-sfpurple-200 bg-sfpurple-50 dark:bg-sfpurple-500/10 border border-sfpurple-200/70 dark:border-sfpurple-400/30 rounded-xl shadow-sm hover:shadow-md transition-all">
-                    <Download size={13} /> Export XLSX
-                  </button>
-                );
-              })()}
+              {exportTermGroups && (
+                <button
+                  onClick={() => exportGroupedXlsx(exportTermGroups, null, activeTerms, searchMode)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-sfpurple-700 dark:text-sfpurple-300 hover:text-sfpurple-800 dark:hover:text-sfpurple-200 bg-sfpurple-50 dark:bg-sfpurple-500/10 border border-sfpurple-200/70 dark:border-sfpurple-400/30 rounded-xl shadow-sm hover:shadow-md transition-all">
+                  <Download size={13} /> Export XLSX
+                </button>
+              )}
             </div>
           </div>
 
@@ -1294,35 +1403,10 @@ export default function GlobalSearchPage() {
               <p className="text-gray-500 dark:text-gray-400 text-sm">No apps found with <span className="font-mono text-gray-700 dark:text-gray-300">"{query.trim()}"</span> in CPS properties</p>
             </div>
           ) : (() => {
-            // Feature 9: derive active search terms for highlighting
-            const activeTerms = query.trim().split(',').map(t => t.trim()).filter(Boolean);
-            // Feature 15: sort results
-            const sortedResults = sortCol
-              ? [...results].sort((a, b) => {
-                  const v = r => String(r[sortCol] ?? '').toLowerCase();
-                  const cmp = v(a).localeCompare(v(b));
-                  return sortDir === 'asc' ? cmp : -cmp;
-                })
-              : results;
-
-            // Group by matched search term
-            if (groupByTerm && activeTerms.length > 1) {
-              const getMatchedTerm = (row) => {
-                const field = searchMode === 'key' ? row.propKey : row.apiUser;
-                return activeTerms.find(t => String(field || '').toLowerCase().includes(t.toLowerCase()))
-                  || activeTerms[0];
-              };
-
-              // Build ALL term groups (including empty ones for 0-match display)
-              const termGroups = new Map();
-              activeTerms.forEach(t => termGroups.set(t, []));
-              sortedResults.forEach(row => {
-                const term = getMatchedTerm(row);
-                if (!termGroups.has(term)) termGroups.set(term, []);
-                termGroups.get(term).push(row);
-              });
-
-              const nonEmptyTerms = activeTerms.filter(t => (termGroups.get(t)?.length || 0) > 0);
+            // Group by matched search term — termGroupData is precomputed in
+            // the useMemo above (termGroups/appMap/bgMap/skMap for every term).
+            if (termGroupData) {
+              const { termGroups, nonEmptyTerms, perTerm } = termGroupData;
               // Auto-expand if only 1 non-empty group and nothing manually expanded yet
               const autoExpanded = nonEmptyTerms.length === 1 && expandedTerms.size === 0
                 ? new Set(nonEmptyTerms) : expandedTerms;
@@ -1359,15 +1443,8 @@ export default function GlobalSearchPage() {
                       );
                     }
 
-                    // Sub-group by app within this term
-                    const appMap = new Map();
-                    termRows.forEach(row => {
-                      if (!appMap.has(row.appName)) appMap.set(row.appName, []);
-                      appMap.get(row.appName).push(row);
-                    });
-
-                    // Collect all matched values for this term (for "Copy all" button)
-                    const allValues = [...new Set(termRows.map(r => r.apiUser))];
+                    // Sub-group by app within this term (precomputed)
+                    const { appMap, allValues } = perTerm.get(term);
 
                     return (
                       <div key={term} className="card-surface border-sfpurple-200/60 dark:border-sfpurple-400/20 overflow-hidden">
@@ -1398,19 +1475,11 @@ export default function GlobalSearchPage() {
 
                         {/* Expanded: Business Group (bgName) → Apps → Properties */}
                         {isExp && (() => {
-                          // Group by bgName (e.g. "EI-FI-PROD"), then by appName within each BG
-                          const bgMap = new Map();
-                          termRows.forEach(row => {
-                            const key = row.bgName || '—';
-                            if (!bgMap.has(key)) bgMap.set(key, new Map());
-                            const ba = bgMap.get(key);
-                            if (!ba.has(row.appName)) ba.set(row.appName, []);
-                            ba.get(row.appName).push(row);
-                          });
+                          // bgBreakdown is precomputed in termGroupData (useMemo above)
+                          const { bgBreakdown } = perTerm.get(term);
                           return (
                             <div>
-                              {[...bgMap.entries()].map(([bgName, bgAppMap]) => {
-                                const bgMatchCount = [...bgAppMap.values()].reduce((n, r) => n + r.length, 0);
+                              {bgBreakdown.map(({ bgName, bgAppMap, bgMatchCount, sortedSk }) => {
                                 // Colour dot — green if BG name contains "PROD", yellow otherwise
                                 const isProd = /prod/i.test(bgName);
                                 const dotCls = isProd ? 'bg-sfgreen-500' : 'bg-sforange-500';
@@ -1425,125 +1494,100 @@ export default function GlobalSearchPage() {
                                       </span>
                                     </div>
                                     {/* Secure key sub-groups → full-field mini table */}
-                                    {(() => {
-                                      const allBgRows = [...bgAppMap.values()].flat();
-                                      const skMap = new Map();
-                                      allBgRows.forEach(row => {
-                                        const sk = row.secureKey || 'Non-Secure';
-                                        if (!skMap.has(sk)) skMap.set(sk, []);
-                                        skMap.get(sk).push(row);
-                                      });
-                                      // Non-Secure first, then secure groups alphabetically
-                                      const sortedSk = [...skMap.entries()].sort(([a], [b]) => {
-                                        if (a === 'Non-Secure') return -1;
-                                        if (b === 'Non-Secure') return 1;
-                                        return a.localeCompare(b);
-                                      });
-                                      return (
-                                        <div>
-                                          {sortedSk.map(([skName, skRows]) => (
-                                            <div key={skName} className="border-t border-gray-100 dark:border-white/[0.04]">
-                                              {/* Secure key sub-header */}
-                                              <div className="flex items-center gap-2 px-6 py-1.5 bg-gray-50/60 dark:bg-gray-900/20">
-                                                {skName === 'Non-Secure'
-                                                  ? <span className="flex items-center gap-1 text-[9px] font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/40 border border-gray-200/70 dark:border-gray-700 px-1.5 py-0.5 rounded"><Key size={8} /> Non-Secure</span>
-                                                  : <span className="flex items-center gap-1 text-[9px] font-semibold text-sforange-600 dark:text-sforange-400 bg-sforange-50 dark:bg-sforange-500/10 border border-sforange-200/60 dark:border-sforange-400/30 px-1.5 py-0.5 rounded"><Lock size={8} /> {skName}</span>
-                                                }
-                                                <span className="text-[9px] text-gray-400 dark:text-gray-500">{skRows.length} result{skRows.length !== 1 ? 's' : ''}</span>
+                                    {/* Secure key sub-groups → full-field mini table (sortedSk precomputed) */}
+                                    <div>
+                                      {sortedSk.map(({ skName, skRows, skAppMap }) => (
+                                        <div key={skName} className="border-t border-gray-100 dark:border-white/[0.04]">
+                                          {/* Secure key sub-header */}
+                                          <div className="flex items-center gap-2 px-6 py-1.5 bg-gray-50/60 dark:bg-gray-900/20">
+                                            {skName === 'Non-Secure'
+                                              ? <span className="flex items-center gap-1 text-[9px] font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/40 border border-gray-200/70 dark:border-gray-700 px-1.5 py-0.5 rounded"><Key size={8} /> Non-Secure</span>
+                                              : <span className="flex items-center gap-1 text-[9px] font-semibold text-sforange-600 dark:text-sforange-400 bg-sforange-50 dark:bg-sforange-500/10 border border-sforange-200/60 dark:border-sforange-400/30 px-1.5 py-0.5 rounded"><Lock size={8} /> {skName}</span>
+                                            }
+                                            <span className="text-[9px] text-gray-400 dark:text-gray-500">{skRows.length} result{skRows.length !== 1 ? 's' : ''}</span>
+                                          </div>
+                                          {/* Grouped by Integration Name within each SK section (skAppMap precomputed) */}
+                                          <div className="divide-y divide-gray-100 dark:divide-white/[0.04]">
+                                            {[...skAppMap.entries()].map(([appName, appRows]) => (
+                                              <div key={appName} className="px-6 py-2.5 hover:bg-gray-50/60 dark:hover:bg-white/[0.015]">
+                                                {/* Integration name header */}
+                                                <div className="flex items-center gap-2 mb-2">
+                                                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border flex-shrink-0 ${
+                                                    appRows[0].chVersion === 'CloudHub 2.0'
+                                                      ? 'bg-sf-50 dark:bg-sf-500/10 text-sf-600 dark:text-sf-400 border-sf-300/40 dark:border-sf-400/30'
+                                                      : 'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-600 dark:text-sfpurple-400 border-sfpurple-300/40 dark:border-sfpurple-400/30'
+                                                  }`}>
+                                                    {appRows[0].chVersion === 'CloudHub 2.0' ? 'CH2' : 'CH1'}
+                                                  </span>
+                                                  <button
+                                                    onClick={() => { const r = appRows[0]; if (r.bgOrgId && r.envId && r.appId) navigate(`/applications/${r.bgOrgId}/${r.envId}/${r.appId}`); }}
+                                                    className="text-[10px] font-mono text-sf-600 dark:text-sf-400 hover:text-sf-800 dark:hover:text-sf-200 font-medium hover:underline underline-offset-2 truncate transition-colors">
+                                                    {appName}
+                                                  </button>
+                                                  <span className="text-[9px] text-gray-400 dark:text-gray-500 flex-shrink-0">{appRows[0].chEnv}</span>
+                                                  {appRows[0].status && (
+                                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold flex-shrink-0 ${
+                                                      appRows[0].status.toUpperCase() === 'RUNNING'
+                                                        ? 'bg-sfgreen-50 dark:bg-sfgreen-500/10 text-sfgreen-600 dark:text-sfgreen-400 border-sfgreen-300/40 dark:border-sfgreen-400/30'
+                                                        : appRows[0].status.toUpperCase() === 'FAILED'
+                                                        ? 'bg-sfred-50 dark:bg-sfred-500/10 text-sfred-600 dark:text-sfred-400 border-sfred-300/40 dark:border-sfred-400/30'
+                                                        : 'bg-gray-100 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                                                    }`}>
+                                                      {appRows[0].status}
+                                                    </span>
+                                                  )}
+                                                  <span className="text-[9px] text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">
+                                                    {appRows.length} prop{appRows.length !== 1 ? 's' : ''}
+                                                  </span>
+                                                </div>
+                                                {/* Property rows — compact table without Env/Type/App (already in header) */}
+                                                <div className="overflow-x-auto pl-2">
+                                                  <table className="w-full border-collapse">
+                                                  <TableHeader>
+                                                    <tr className="text-gray-400 dark:text-gray-500 text-[9px] uppercase tracking-wider border-b border-gray-100 dark:border-white/[0.04]">
+                                                      <th className="px-2 py-1 text-left font-bold whitespace-nowrap">NS Key</th>
+                                                      <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Prefix</th>
+                                                      <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Property Key</th>
+                                                      <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Value</th>
+                                                      <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Password</th>
+                                                    </tr>
+                                                  </TableHeader>
+                                                    <tbody>
+                                                      {appRows.map((row, ri) => (
+                                                        <tr key={ri} className="group border-b border-gray-100 dark:border-white/[0.03] hover:bg-gray-50 dark:hover:bg-white/[0.02] last:border-0">
+                                                          <td className="px-2 py-1.5 text-[10px] font-mono text-gray-500 dark:text-gray-400 whitespace-nowrap">{row.nsKey}</td>
+                                                          <td className="px-2 py-1.5 text-[10px] font-mono text-gray-400 dark:text-gray-500 whitespace-nowrap">{row.cpsPrefix}</td>
+                                                          <td className="px-2 py-1.5">
+                                                            <div className="flex items-center gap-1 group/cell">
+                                                              <span className="text-[10px] font-mono text-sf-600 dark:text-sf-400 whitespace-nowrap">{row.propKey}</span>
+                                                              <CopyBtn text={row.propKey} size={10} hoverColor="sf" />
+                                                            </div>
+                                                          </td>
+                                                          <td className="px-2 py-1.5">
+                                                            <div className="flex items-center gap-1 group/cell">
+                                                              <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 break-all max-w-[200px]">
+                                                                <Highlight text={row.apiUser} terms={[term]} />
+                                                              </span>
+                                                              <CopyBtn text={row.apiUser} />
+                                                            </div>
+                                                          </td>
+                                                          <td className="px-2 py-1.5 whitespace-nowrap">
+                                                            <div className="flex items-center gap-1 group/cell">
+                                                              <span className={`text-[10px] font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400 dark:text-gray-500'}`}>{row.password}</span>
+                                                              {row.password && row.password !== '—' && !/^\*+$/.test(row.password) && <CopyBtn text={row.password} />}
+                                                            </div>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
                                               </div>
-                                              {/* Grouped by Integration Name within each SK section */}
-                                              {(() => {
-                                                const skAppMap = new Map();
-                                                skRows.forEach(row => {
-                                                  if (!skAppMap.has(row.appName)) skAppMap.set(row.appName, []);
-                                                  skAppMap.get(row.appName).push(row);
-                                                });
-                                                return (
-                                                  <div className="divide-y divide-gray-100 dark:divide-white/[0.04]">
-                                                    {[...skAppMap.entries()].map(([appName, appRows]) => (
-                                                      <div key={appName} className="px-6 py-2.5 hover:bg-gray-50/60 dark:hover:bg-white/[0.015]">
-                                                        {/* Integration name header */}
-                                                        <div className="flex items-center gap-2 mb-2">
-                                                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border flex-shrink-0 ${
-                                                            appRows[0].chVersion === 'CloudHub 2.0'
-                                                              ? 'bg-sf-50 dark:bg-sf-500/10 text-sf-600 dark:text-sf-400 border-sf-300/40 dark:border-sf-400/30'
-                                                              : 'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-600 dark:text-sfpurple-400 border-sfpurple-300/40 dark:border-sfpurple-400/30'
-                                                          }`}>
-                                                            {appRows[0].chVersion === 'CloudHub 2.0' ? 'CH2' : 'CH1'}
-                                                          </span>
-                                                          <button
-                                                            onClick={() => { const r = appRows[0]; if (r.bgOrgId && r.envId && r.appId) navigate(`/applications/${r.bgOrgId}/${r.envId}/${r.appId}`); }}
-                                                            className="text-[10px] font-mono text-sf-600 dark:text-sf-400 hover:text-sf-800 dark:hover:text-sf-200 font-medium hover:underline underline-offset-2 truncate transition-colors">
-                                                            {appName}
-                                                          </button>
-                                                          <span className="text-[9px] text-gray-400 dark:text-gray-500 flex-shrink-0">{appRows[0].chEnv}</span>
-                                                          {appRows[0].status && (
-                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold flex-shrink-0 ${
-                                                              appRows[0].status.toUpperCase() === 'RUNNING'
-                                                                ? 'bg-sfgreen-50 dark:bg-sfgreen-500/10 text-sfgreen-600 dark:text-sfgreen-400 border-sfgreen-300/40 dark:border-sfgreen-400/30'
-                                                                : appRows[0].status.toUpperCase() === 'FAILED'
-                                                                ? 'bg-sfred-50 dark:bg-sfred-500/10 text-sfred-600 dark:text-sfred-400 border-sfred-300/40 dark:border-sfred-400/30'
-                                                                : 'bg-gray-100 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
-                                                            }`}>
-                                                              {appRows[0].status}
-                                                            </span>
-                                                          )}
-                                                          <span className="text-[9px] text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">
-                                                            {appRows.length} prop{appRows.length !== 1 ? 's' : ''}
-                                                          </span>
-                                                        </div>
-                                                        {/* Property rows — compact table without Env/Type/App (already in header) */}
-                                                        <div className="overflow-x-auto pl-2">
-                                                          <table className="w-full border-collapse">
-                                                          <TableHeader>
-                                                            <tr className="text-gray-400 dark:text-gray-500 text-[9px] uppercase tracking-wider border-b border-gray-100 dark:border-white/[0.04]">
-                                                              <th className="px-2 py-1 text-left font-bold whitespace-nowrap">NS Key</th>
-                                                              <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Prefix</th>
-                                                              <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Property Key</th>
-                                                              <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Value</th>
-                                                              <th className="px-2 py-1 text-left font-bold whitespace-nowrap">Password</th>
-                                                            </tr>
-                                                          </TableHeader>
-                                                            <tbody>
-                                                              {appRows.map((row, ri) => (
-                                                                <tr key={ri} className="group border-b border-gray-100 dark:border-white/[0.03] hover:bg-gray-50 dark:hover:bg-white/[0.02] last:border-0">
-                                                                  <td className="px-2 py-1.5 text-[10px] font-mono text-gray-500 dark:text-gray-400 whitespace-nowrap">{row.nsKey}</td>
-                                                                  <td className="px-2 py-1.5 text-[10px] font-mono text-gray-400 dark:text-gray-500 whitespace-nowrap">{row.cpsPrefix}</td>
-                                                                  <td className="px-2 py-1.5">
-                                                                    <div className="flex items-center gap-1 group/cell">
-                                                                      <span className="text-[10px] font-mono text-sf-600 dark:text-sf-400 whitespace-nowrap">{row.propKey}</span>
-                                                                      <CopyBtn text={row.propKey} size={10} hoverColor="sf" />
-                                                                    </div>
-                                                                  </td>
-                                                                  <td className="px-2 py-1.5">
-                                                                    <div className="flex items-center gap-1 group/cell">
-                                                                      <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 break-all max-w-[200px]">
-                                                                        <Highlight text={row.apiUser} terms={[term]} />
-                                                                      </span>
-                                                                      <CopyBtn text={row.apiUser} />
-                                                                    </div>
-                                                                  </td>
-                                                                  <td className="px-2 py-1.5 whitespace-nowrap">
-                                                                    <div className="flex items-center gap-1 group/cell">
-                                                                      <span className={`text-[10px] font-mono ${row.password && row.password !== '—' && !/^\*+$/.test(row.password) ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400 dark:text-gray-500'}`}>{row.password}</span>
-                                                                      {row.password && row.password !== '—' && !/^\*+$/.test(row.password) && <CopyBtn text={row.password} />}
-                                                                    </div>
-                                                                  </td>
-                                                                </tr>
-                                                              ))}
-                                                            </tbody>
-                                                          </table>
-                                                        </div>
-                                                      </div>
-                                                    ))}
-                                                  </div>
-                                                );
-                                              })()}
-                                            </div>
-                                          ))}
+                                            ))}
+                                          </div>
                                         </div>
-                                      );
-                                    })()}
+                                      ))}
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -1557,14 +1601,9 @@ export default function GlobalSearchPage() {
               );
             }
 
-            // Feature 2: grouped view by app
-            if (groupByApp) {
-              const appGroups = new Map();
-              sortedResults.forEach(row => {
-                const key = row.appName;
-                if (!appGroups.has(key)) appGroups.set(key, { row, rows: [] });
-                appGroups.get(key).rows.push(row);
-              });
+            // Feature 2: grouped view by app (appGroupsData precomputed in useMemo above)
+            if (appGroupsData) {
+              const appGroups = appGroupsData;
               return (
                 <div className="space-y-2">
                   {[...appGroups.entries()].map(([appName, { row: first, rows }]) => {

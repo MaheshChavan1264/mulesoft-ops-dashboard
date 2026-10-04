@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, X, FileSpreadsheet, Check } from 'lucide-react';
+import { Search, FileSpreadsheet, Check } from 'lucide-react';
+import Modal from '../../../components/ui/Modal';
 import { applyBgFilter } from '../../../components/shared/BgFilterModal';
 import { applyEnvFilter } from '../../../components/shared/EnvFilterModal';
 import { rowsToWorksheet, writeWorkbook, timestampedFilename } from '../../../utils/xlsxExport';
@@ -80,135 +81,15 @@ export default function ExportAppsModal({ apps, allBusinessGroups, environments,
   const filteredEnvs = availableEnvs.filter(e => e.name.toLowerCase().includes(envSearch.toLowerCase()));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700/80 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[88vh] overflow-hidden">
-        {/* Header */}
-        <div className="relative flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-700/60 flex-shrink-0">
-          <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-purple-50/80 dark:from-purple-500/[0.07] to-transparent pointer-events-none" />
-          <div className="relative flex items-center gap-3.5">
-            <div className="p-3 rounded-2xl bg-purple-100 dark:bg-purple-500/15 shadow-sm">
-              <FileSpreadsheet size={18} className="text-purple-600 dark:text-purple-400" />
-            </div>
-            <div>
-              <h3 className="text-gray-900 dark:text-gray-100 font-bold text-base">Export Applications</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">Download as an Excel workbook</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="relative text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1.5 rounded-xl transition-colors flex-shrink-0"><X size={16} /></button>
-        </div>
-
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
-
-          {/* ── Business Groups ── */}
-          <div>
-            <div className="flex items-center justify-between mb-2.5">
-              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold">
-                Business Groups
-                <span className="ml-1.5 text-gray-400 dark:text-gray-500 normal-case font-medium">({selBgIds.size}/{globalBgs.length} selected)</span>
-              </label>
-              <button
-                onClick={() => setSelBgIds(allBgsChecked ? new Set() : new Set(globalBgs.map(g => g.id)))}
-                className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors">
-                {allBgsChecked ? 'Deselect All' : 'Select All'}
-              </button>
-            </div>
-            {globalBgs.length > 6 && (
-              <div className="relative mb-2">
-                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
-                <input value={bgSearch} onChange={e => setBgSearch(e.target.value)} placeholder="Filter BGs…"
-                  className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl pl-9 pr-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/15 transition-all" />
-              </div>
-            )}
-            <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1 rounded-xl border border-gray-100 dark:border-gray-700/50 p-1">
-              {filteredBgs.map(g => (
-                <button key={g.id} onClick={() => toggleBg(g.id)}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors text-left">
-                  <div className={`w-[18px] h-[18px] rounded-md border flex-shrink-0 flex items-center justify-center transition-all ${
-                    selBgIds.has(g.id) ? 'bg-purple-600 border-purple-500 shadow-sm shadow-purple-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-purple-500'
-                  }`}>
-                    {selBgIds.has(g.id) && <Check size={11} className="text-white" />}
-                  </div>
-                  {g.parentId && <span className="w-3 flex-shrink-0" />}
-                  <span className={`text-sm truncate flex-1 ${selBgIds.has(g.id) ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{g.name}</span>
-                  {!g.parentId && (
-                    <span className="text-[9px] bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 px-1.5 py-0.5 rounded-full flex-shrink-0 font-bold">Root</span>
-                  )}
-                </button>
-              ))}
-              {filteredBgs.length === 0 && (
-                <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No BGs match</p>
-              )}
-            </div>
-          </div>
-
-          {/* ── Environments (each = one sheet tab) ── */}
-          <div>
-            <div className="flex items-center justify-between mb-2.5">
-              <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold">
-                Environments
-                <span className="ml-1 text-gray-400 dark:text-gray-500 normal-case font-medium">— each = one sheet</span>
-              </label>
-              <button
-                onClick={() => setSelEnvIds(allEnvsChecked ? new Set() : new Set(availableEnvs.map(e => e.id)))}
-                className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors">
-                {allEnvsChecked ? 'Deselect All' : 'Select All'}
-              </button>
-            </div>
-            {availableEnvs.length > 6 && (
-              <div className="relative mb-2">
-                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
-                <input value={envSearch} onChange={e => setEnvSearch(e.target.value)} placeholder="Filter environments…"
-                  className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl pl-9 pr-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/15 transition-all" />
-              </div>
-            )}
-            <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1 rounded-xl border border-gray-100 dark:border-gray-700/50 p-1">
-              {availableEnvs.length === 0 ? (
-                <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No environments found for selected BGs</p>
-              ) : filteredEnvs.length === 0 ? (
-                <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No environments match</p>
-              ) : (
-                filteredEnvs.map(e => {
-                  const isProd = e.type === 'production';
-                  const count  = envCounts[e.id] || 0;
-                  return (
-                    <button key={e.id} onClick={() => toggleEnv(e.id)}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors text-left">
-                      <div className={`w-[18px] h-[18px] rounded-md border flex-shrink-0 flex items-center justify-center transition-all ${
-                        selEnvIds.has(e.id) ? 'bg-purple-600 border-purple-500 shadow-sm shadow-purple-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-purple-500'
-                      }`}>
-                        {selEnvIds.has(e.id) && <Check size={11} className="text-white" />}
-                      </div>
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                      <span className={`text-sm flex-1 truncate ${selEnvIds.has(e.id) ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{e.name}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full flex-shrink-0 font-bold ${
-                        isProd ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300'
-                      }`}>{e.type}</span>
-                      {selEnvIds.has(e.id) && count > 0 && (
-                        <span className="text-[9px] font-semibold text-gray-400 dark:text-gray-500 flex-shrink-0 tabular-nums">{count} apps</span>
-                      )}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* ── Preview ── */}
-          <div className="bg-gradient-to-br from-purple-50 to-purple-50/40 dark:from-purple-500/10 dark:to-purple-500/5 border border-purple-200/60 dark:border-purple-400/20 rounded-2xl px-4 py-3.5">
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              <span className="text-purple-700 dark:text-purple-300 font-bold text-lg">{exportApps.length}</span>
-              {' '}app{exportApps.length !== 1 ? 's' : ''} across{' '}
-              <span className="text-purple-700 dark:text-purple-300 font-bold text-lg">{selectedEnvCount}</span>
-              {' '}sheet{selectedEnvCount !== 1 ? 's' : ''}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Columns per sheet: Integration Name · Mule Version · Status · Deployment Type
-            </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-2.5 px-6 py-4 border-t border-gray-100 dark:border-gray-700/60 flex-shrink-0 bg-gray-50/50 dark:bg-gray-900/30">
+    <Modal
+      onClose={onClose}
+      size="base"
+      icon={FileSpreadsheet}
+      accent="purple"
+      title="Export Applications"
+      subtitle="Download as an Excel workbook"
+      footer={
+        <>
           <button onClick={onClose}
             className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors">
             Cancel
@@ -218,8 +99,115 @@ export default function ExportAppsModal({ apps, allBusinessGroups, environments,
             <FileSpreadsheet size={14} />
             Export{exportApps.length > 0 ? ` (${exportApps.length} · ${selectedEnvCount} sheets)` : ''}
           </button>
+        </>
+      }
+    >
+      {/* ── Business Groups ── */}
+      <div>
+        <div className="flex items-center justify-between mb-2.5">
+          <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold">
+            Business Groups
+            <span className="ml-1.5 text-gray-400 dark:text-gray-500 normal-case font-medium">({selBgIds.size}/{globalBgs.length} selected)</span>
+          </label>
+          <button
+            onClick={() => setSelBgIds(allBgsChecked ? new Set() : new Set(globalBgs.map(g => g.id)))}
+            className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors">
+            {allBgsChecked ? 'Deselect All' : 'Select All'}
+          </button>
+        </div>
+        {globalBgs.length > 6 && (
+          <div className="relative mb-2">
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+            <input value={bgSearch} onChange={e => setBgSearch(e.target.value)} placeholder="Filter BGs…"
+              className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl pl-9 pr-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/15 transition-all" />
+          </div>
+        )}
+        <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1 rounded-xl border border-gray-100 dark:border-gray-700/50 p-1">
+          {filteredBgs.map(g => (
+            <button key={g.id} onClick={() => toggleBg(g.id)}
+              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors text-left">
+              <div className={`w-[18px] h-[18px] rounded-md border flex-shrink-0 flex items-center justify-center transition-all ${
+                selBgIds.has(g.id) ? 'bg-purple-600 border-purple-500 shadow-sm shadow-purple-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-purple-500'
+              }`}>
+                {selBgIds.has(g.id) && <Check size={11} className="text-white" />}
+              </div>
+              {g.parentId && <span className="w-3 flex-shrink-0" />}
+              <span className={`text-sm truncate flex-1 ${selBgIds.has(g.id) ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{g.name}</span>
+              {!g.parentId && (
+                <span className="text-[9px] bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 px-1.5 py-0.5 rounded-full flex-shrink-0 font-bold">Root</span>
+              )}
+            </button>
+          ))}
+          {filteredBgs.length === 0 && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No BGs match</p>
+          )}
         </div>
       </div>
-    </div>
+
+      {/* ── Environments (each = one sheet tab) ── */}
+      <div>
+        <div className="flex items-center justify-between mb-2.5">
+          <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold">
+            Environments
+            <span className="ml-1 text-gray-400 dark:text-gray-500 normal-case font-medium">— each = one sheet</span>
+          </label>
+          <button
+            onClick={() => setSelEnvIds(allEnvsChecked ? new Set() : new Set(availableEnvs.map(e => e.id)))}
+            className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors">
+            {allEnvsChecked ? 'Deselect All' : 'Select All'}
+          </button>
+        </div>
+        {availableEnvs.length > 6 && (
+          <div className="relative mb-2">
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+            <input value={envSearch} onChange={e => setEnvSearch(e.target.value)} placeholder="Filter environments…"
+              className="w-full bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-xl pl-9 pr-3 py-2 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/15 transition-all" />
+          </div>
+        )}
+        <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1 rounded-xl border border-gray-100 dark:border-gray-700/50 p-1">
+          {availableEnvs.length === 0 ? (
+            <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No environments found for selected BGs</p>
+          ) : filteredEnvs.length === 0 ? (
+            <p className="text-xs text-gray-400 dark:text-gray-500 px-3 py-2">No environments match</p>
+          ) : (
+            filteredEnvs.map(e => {
+              const isProd = e.type === 'production';
+              const count  = envCounts[e.id] || 0;
+              return (
+                <button key={e.id} onClick={() => toggleEnv(e.id)}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors text-left">
+                  <div className={`w-[18px] h-[18px] rounded-md border flex-shrink-0 flex items-center justify-center transition-all ${
+                    selEnvIds.has(e.id) ? 'bg-purple-600 border-purple-500 shadow-sm shadow-purple-500/40' : 'border-gray-300 dark:border-gray-600 hover:border-purple-500'
+                  }`}>
+                    {selEnvIds.has(e.id) && <Check size={11} className="text-white" />}
+                  </div>
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isProd ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                  <span className={`text-sm flex-1 truncate ${selEnvIds.has(e.id) ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{e.name}</span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full flex-shrink-0 font-bold ${
+                    isProd ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                  }`}>{e.type}</span>
+                  {selEnvIds.has(e.id) && count > 0 && (
+                    <span className="text-[9px] font-semibold text-gray-400 dark:text-gray-500 flex-shrink-0 tabular-nums">{count} apps</span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* ── Preview ── */}
+      <div className="bg-gradient-to-br from-purple-50 to-purple-50/40 dark:from-purple-500/10 dark:to-purple-500/5 border border-purple-200/60 dark:border-purple-400/20 rounded-2xl px-4 py-3.5">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          <span className="text-purple-700 dark:text-purple-300 font-bold text-lg">{exportApps.length}</span>
+          {' '}app{exportApps.length !== 1 ? 's' : ''} across{' '}
+          <span className="text-purple-700 dark:text-purple-300 font-bold text-lg">{selectedEnvCount}</span>
+          {' '}sheet{selectedEnvCount !== 1 ? 's' : ''}
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Columns per sheet: Integration Name · Mule Version · Status · Deployment Type
+        </p>
+      </div>
+    </Modal>
   );
 }

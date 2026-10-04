@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Share2, ShieldCheck, Globe, Search } from 'lucide-react';
 import TableHeader from '../../../components/ui/TableHeader';
 import CopyBtn from '../../../components/shared/CopyBtn';
@@ -13,69 +13,82 @@ import { GlassCard, StatTile } from '../shared';
 export default function DependenciesTab({
   app, allProps, cpsData, cpsBaseUrl, depSearch, setDepSearch, setTab, loadCpsData,
 }) {
-  // ── Dependency-detection helpers ──────────────────────────────────────
-  // Matches property keys that typically point to upstream hosts / URLs.
-  const DEP_KEY_RE = /(host|url|uri|endpoint|address|base[-_.]?url|server|upstream|callback|redirect|webhook)/i;
+  // The regex-scan over every ARM/CPS property (host/url detection + URL
+  // parsing + internal/external classification) only depends on
+  // app/allProps/cpsData — not on depSearch — so it's memoized separately
+  // from the (cheap) search filter below. Without this it re-ran on every
+  // keystroke in the search box — see FRONTEND_ARCHITECTURE_REVIEW.md §8
+  // Performance Review, finding #1.
+  const seen = useMemo(() => {
+    // ── Dependency-detection helpers ──────────────────────────────────────
+    // Matches property keys that typically point to upstream hosts / URLs.
+    const DEP_KEY_RE = /(host|url|uri|endpoint|address|base[-_.]?url|server|upstream|callback|redirect|webhook)/i;
 
-  const isLikelyUrl = (v) => {
-    if (typeof v !== 'string' || !v.trim()) return false;
-    const s = v.trim();
-    if (s.startsWith('${')) return false; // unresolved placeholder
-    if (/^(true|false|\d+)$/i.test(s)) return false; // booleans / plain numbers
-    return (
-      s.startsWith('http://') || s.startsWith('https://') ||
-      /^[a-z0-9]([a-z0-9-]*\.)+[a-z]{2,}(:\d+)?(\/.*)?$/i.test(s)
-    );
-  };
+    const isLikelyUrl = (v) => {
+      if (typeof v !== 'string' || !v.trim()) return false;
+      const s = v.trim();
+      if (s.startsWith('${')) return false; // unresolved placeholder
+      if (/^(true|false|\d+)$/i.test(s)) return false; // booleans / plain numbers
+      return (
+        s.startsWith('http://') || s.startsWith('https://') ||
+        /^[a-z0-9]([a-z0-9-]*\.)+[a-z]{2,}(:\d+)?(\/.*)?$/i.test(s)
+      );
+    };
 
-  const classifyHost = (h) => {
-    if (h.endsWith('.cloudhub.io'))
-      return { type: 'CH1', label: 'CloudHub 1.0', color: 'purple', internal: true };
-    if (h.endsWith('.sfdcbt.net') || h.endsWith('.msap.io') || /\.[a-z]+-[a-z0-9]+\.msap\.io$/.test(h))
-      return { type: 'CH2', label: 'CloudHub 2.0', color: 'blue', internal: true };
-    if (h.endsWith('.mulesoft.com') || h.includes('anypoint.mulesoft'))
-      return { type: 'ANYPOINT', label: 'Anypoint Platform', color: 'cyan', internal: true };
-    return { type: 'EXTERNAL', label: 'External', color: 'gray', internal: false };
-  };
+    const classifyHost = (h) => {
+      if (h.endsWith('.cloudhub.io'))
+        return { type: 'CH1', label: 'CloudHub 1.0', color: 'purple', internal: true };
+      if (h.endsWith('.sfdcbt.net') || h.endsWith('.msap.io') || /\.[a-z]+-[a-z0-9]+\.msap\.io$/.test(h))
+        return { type: 'CH2', label: 'CloudHub 2.0', color: 'blue', internal: true };
+      if (h.endsWith('.mulesoft.com') || h.includes('anypoint.mulesoft'))
+        return { type: 'ANYPOINT', label: 'Anypoint Platform', color: 'cyan', internal: true };
+      return { type: 'EXTERNAL', label: 'External', color: 'gray', internal: false };
+    };
 
-  const seen = new Map();
-  const addEntry = (key, rawVal, source) => {
-    if (!DEP_KEY_RE.test(key)) return;
-    const v = String(rawVal ?? '').trim();
-    if (!isLikelyUrl(v)) return;
-    let host;
-    try {
-      host = new URL(v.startsWith('http') ? v : `https://${v}`).hostname.toLowerCase();
-    } catch { host = v.toLowerCase(); }
-    if (!host || host === 'localhost' || host.startsWith('127.') || host.startsWith('0.0.0.')) return;
-    const appNameLo = (app.name || '').toLowerCase().replace(/-/g, '');
-    if (appNameLo && host.replace(/-/g, '').startsWith(appNameLo)) return;
+    const map = new Map();
+    const addEntry = (key, rawVal, source) => {
+      if (!DEP_KEY_RE.test(key)) return;
+      const v = String(rawVal ?? '').trim();
+      if (!isLikelyUrl(v)) return;
+      let host;
+      try {
+        host = new URL(v.startsWith('http') ? v : `https://${v}`).hostname.toLowerCase();
+      } catch { host = v.toLowerCase(); }
+      if (!host || host === 'localhost' || host.startsWith('127.') || host.startsWith('0.0.0.')) return;
+      const appNameLo = (app.name || '').toLowerCase().replace(/-/g, '');
+      if (appNameLo && host.replace(/-/g, '').startsWith(appNameLo)) return;
 
-    if (!seen.has(host)) seen.set(host, { host, ...classifyHost(host), refs: [], _dup: new Set() });
-    const entry = seen.get(host);
-    const triplet = `${key}::${v}::${source}`;
-    if (entry._dup.has(triplet)) return;
-    entry._dup.add(triplet);
-    entry.refs.push({ key, value: v, source });
-  };
+      if (!map.has(host)) map.set(host, { host, ...classifyHost(host), refs: [], _dup: new Set() });
+      const entry = map.get(host);
+      const triplet = `${key}::${v}::${source}`;
+      if (entry._dup.has(triplet)) return;
+      entry._dup.add(triplet);
+      entry.refs.push({ key, value: v, source });
+    };
 
-  // Scan all three sources
-  Object.entries(allProps).forEach(([k, v]) => addEntry(k, v, 'ARM'));
-  if (cpsData?.nonSecure)
-    Object.entries(cpsData.nonSecure).forEach(([k, v]) => addEntry(k, v, 'CPS (non-secure)'));
-  if (cpsData?.secureGroups)
-    cpsData.secureGroups.forEach(g => {
-      if (g.properties && typeof g.properties === 'object')
-        Object.entries(g.properties).forEach(([k, v]) => addEntry(k, v, 'CPS (secure)'));
-    });
+    // Scan all three sources
+    Object.entries(allProps).forEach(([k, v]) => addEntry(k, v, 'ARM'));
+    if (cpsData?.nonSecure)
+      Object.entries(cpsData.nonSecure).forEach(([k, v]) => addEntry(k, v, 'CPS (non-secure)'));
+    if (cpsData?.secureGroups)
+      cpsData.secureGroups.forEach(g => {
+        if (g.properties && typeof g.properties === 'object')
+          Object.entries(g.properties).forEach(([k, v]) => addEntry(k, v, 'CPS (secure)'));
+      });
 
-  let deps = [...seen.values()];
-  const searchLo = depSearch.toLowerCase();
-  if (searchLo)
-    deps = deps.filter(d =>
-      d.host.includes(searchLo) ||
-      d.refs.some(r => r.key.toLowerCase().includes(searchLo) || r.value.toLowerCase().includes(searchLo))
-    );
+    return map;
+  }, [app, allProps, cpsData]);
+
+  const { deps, searchLo } = useMemo(() => {
+    let d = [...seen.values()];
+    const sLo = depSearch.toLowerCase();
+    if (sLo)
+      d = d.filter(dep =>
+        dep.host.includes(sLo) ||
+        dep.refs.some(r => r.key.toLowerCase().includes(sLo) || r.value.toLowerCase().includes(sLo))
+      );
+    return { deps: d, searchLo: sLo };
+  }, [seen, depSearch]);
 
   const internal = deps.filter(d => d.internal);
   const external = deps.filter(d => !d.internal);

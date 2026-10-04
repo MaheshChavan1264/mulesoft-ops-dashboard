@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { memo } from 'react';
 
 /**
  * PolicyCard — a single API Manager policy summary card.
  *
  * Extracted from features/api-manager/ApiManagerPage.jsx — see
  * FRONTEND_ARCHITECTURE_REVIEW.md §10 folder-structure recommendation.
+ *
+ * Wrapped in React.memo — see FRONTEND_ARCHITECTURE_REVIEW.md §8
+ * Performance Review, finding #4.
  */
-export default function PolicyCard({ p, i }) {
+function PolicyCard({ p, i }) {
   const policyName =
     p.template?.name || p.template?.assetId || p.assetId ||
     (typeof p.policyTemplateId === 'string' && isNaN(p.policyTemplateId) ? p.policyTemplateId : null) ||
@@ -28,3 +31,5 @@ export default function PolicyCard({ p, i }) {
     </div>
   );
 }
+
+export default memo(PolicyCard);

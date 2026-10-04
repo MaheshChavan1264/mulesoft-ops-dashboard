@@ -238,10 +238,16 @@ export default function ApplicationsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  const handleSort = (col) => {
-    if (sortColumn === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+  const sortColumnRef = useRef(sortColumn); sortColumnRef.current = sortColumn;
+  const sortDirRef = useRef(sortDir); sortDirRef.current = sortDir;
+  // Stable (deps-free) handler — reads current sort state via refs instead
+  // of closing over sortColumn/sortDir, so it isn't recreated on every
+  // render — see FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review,
+  // finding #7.
+  const handleSort = useCallback((col) => {
+    if (sortColumnRef.current === col) setSortDir(sortDirRef.current === 'asc' ? 'desc' : 'asc');
     else { setSortColumn(col); setSortDir('asc'); }
-  };
+  }, []);
 
   const SortIcon = ({ col }) => {
     if (sortColumn !== col) return <span className="text-gray-300 dark:text-gray-600 ml-0.5">⇅</span>;
@@ -433,11 +439,11 @@ export default function ApplicationsPage() {
   };
 
   /* ── Single-app action ─────────────────────────────── */
-  const requestAction = (e, app, action) => {
+  const requestAction = useCallback((e, app, action) => {
     e.stopPropagation();
     setActionResult(null);
     setConfirmState({ app, action });
-  };
+  }, []);
 
   const executeAction = async () => {
     if (!confirmState) return;
@@ -539,16 +545,16 @@ export default function ApplicationsPage() {
   const totalPages = Math.max(1, Math.ceil(displayFiltered.length / pageSize));
   const paginatedItems = displayFiltered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const toggleRow = (e, appId) => {
+  const toggleRow = useCallback((e, appId) => {
     e.stopPropagation();
     setSelectedIds((prev) => {
       const next = new Set(prev);
       next.has(appId) ? next.delete(appId) : next.add(appId);
       return next;
     });
-  };
+  }, []);
 
-  const toggleAll = (e) => {
+  const toggleAll = useCallback((e) => {
     e.stopPropagation();
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -559,7 +565,7 @@ export default function ApplicationsPage() {
       }
       return next;
     });
-  };
+  }, [allSelected, someSelected, filtered]);
 
   /* ── Bulk action ───────────────────────────────────── */
   const requestBulkAction = (action) => {

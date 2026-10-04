@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import TableHeader from '../../components/ui/TableHeader';
 import CopyBtn from '../../components/shared/CopyBtn';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import CpsRawJsonModal from './CpsRawJsonModal';
 
 // ── Feature 9: Property type detection ───────────────────────────────────────
@@ -61,7 +62,7 @@ export function PropertyTable({
   const [bulkText, setBulkText] = useState('');
   // Feature 6: copy as formats
   const [showCopyMenu, setShowCopyMenu] = useState(false);
-  const [copyDone, setCopyDone] = useState('');
+  const [copyDone, copyToClipboard] = useCopyToClipboard(2000);
   // Feature 7: find & replace
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [findText, setFindText] = useState('');
@@ -142,10 +143,8 @@ export function PropertyTable({
     } else if (format === 'env') {
       text = entries.map(([k, v]) => `export ${k.toUpperCase().replace(/\./g, '_')}="${String(v).replace(/"/g, '\\"')}"`).join('\n');
     }
-    navigator.clipboard.writeText(text);
-    setCopyDone(format);
+    copyToClipboard(text);
     setShowCopyMenu(false);
-    setTimeout(() => setCopyDone(''), 2000);
   };
 
   // ── Feature 7: find & replace ─────────────────────────────────────────────

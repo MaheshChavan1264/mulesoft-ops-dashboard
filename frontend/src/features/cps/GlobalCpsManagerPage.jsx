@@ -12,7 +12,7 @@ import CpsBinaryUploadPanel from './CpsBinaryUploadPanel';
 import CpsImportModal from './CpsImportModal';
 import CpsDeleteProjectModal from './CpsDeleteProjectModal';
 import CpsRawJsonModal from './CpsRawJsonModal';
-import api from '../../services/api';
+import { postCpsCredentialsRaw, fetchCpsProperties, writeCpsProperties } from '../../services/cpsService';
 import axios from 'axios';
 import { flattenCpsResponse } from '../../utils/cpsHelpers';
 import { getErrorMessage } from '../../services/http';
@@ -136,7 +136,7 @@ export default function GlobalCpsManagerPage() {
     try {
       // Seed the credentials into the backend session for this specific host/BG combination
       const storageKey = `${activeHost}::${bg}`;
-      await api.post('/cps/credentials', {
+      await postCpsCredentialsRaw({
         credentials: {
           [storageKey]: { 
             clientId: activeHeaders.client_id || cred?.clientId, 
@@ -172,16 +172,14 @@ export default function GlobalCpsManagerPage() {
 
       if (typeToUse === 'secure') {
         try {
-          const secRes = await api.get('/cps/fetch', {
-            params: { baseUrl: activeHost, type: 'secure', environment: activeParams.environment, keys: activeParams.keys, bgOrgId: bg }
-          });
-          const groups = Array.isArray(secRes.data?.responses) ? secRes.data.responses : [];
+          const secData = await fetchCpsProperties({ baseUrl: activeHost, type: 'secure', environment: activeParams.environment, keys: activeParams.keys, bgOrgId: bg });
+          const groups = Array.isArray(secData?.responses) ? secData.responses : [];
           setSecureGroups(groups);
           setLastOperation({
             label: 'Fetch Secure Properties',
             timestamp: new Date().toISOString(),
-            requestDetails: secRes.data?.requestDetails || { method: 'GET', params: { ...activeParams, type: 'secure' } },
-            responseDetails: secRes.data?.responseDetails || { status: 200, body: secRes.data },
+            requestDetails: secData?.requestDetails || { method: 'GET', params: { ...activeParams, type: 'secure' } },
+            responseDetails: secData?.responseDetails || { status: 200, body: secData },
             success: true
           });
         } catch (err) {
@@ -200,24 +198,22 @@ export default function GlobalCpsManagerPage() {
       }
 
       // Fetch via backend proxy for non-secure
-      const nsRes = await api.get('/cps/fetch', {
-        params: {
-          baseUrl: activeHost,
-          type: 'non-secure',
-          bgOrgId: bg,
-          ...activeParams
-        }
+      const nsData = await fetchCpsProperties({
+        baseUrl: activeHost,
+        type: 'non-secure',
+        bgOrgId: bg,
+        ...activeParams
       });
       
-      const flat = flattenCpsResponse(nsRes.data, activeParams.keys);
+      const flat = flattenCpsResponse(nsData, activeParams.keys);
       setOriginalProps(flat);
       setPendingChanges({ added: {}, modified: {}, deleted: new Set() });
 
       setLastOperation({
         label: 'Fetch Non-Secure Properties',
         timestamp: new Date().toISOString(),
-        requestDetails: nsRes.data?.requestDetails || { method: 'GET', params: { ...activeParams, type: 'non-secure' } },
-        responseDetails: nsRes.data?.responseDetails || { status: 200, body: nsRes.data },
+        requestDetails: nsData?.requestDetails || { method: 'GET', params: { ...activeParams, type: 'non-secure' } },
+        responseDetails: nsData?.responseDetails || { status: 200, body: nsData },
         success: true
       });
 
@@ -229,10 +225,8 @@ export default function GlobalCpsManagerPage() {
       const secStr = flat['cps.secure.properties'] || '';
       if (secStr) {
         try {
-          const secRes = await api.get('/cps/fetch', {
-            params: { baseUrl: activeHost, type: 'secure', environment: activeParams.environment, keys: secStr, bgOrgId: bg }
-          });
-          const groups = Array.isArray(secRes.data?.responses) ? secRes.data.responses : [];
+          const secData = await fetchCpsProperties({ baseUrl: activeHost, type: 'secure', environment: activeParams.environment, keys: secStr, bgOrgId: bg });
+          const groups = Array.isArray(secData?.responses) ? secData.responses : [];
           setSecureGroups(groups);
         } catch {}
       }
@@ -318,7 +312,7 @@ export default function GlobalCpsManagerPage() {
     try {
       // Seed the credentials into the backend session
       const storageKey = `${activeHost}::${bg}`;
-      await api.post('/cps/credentials', {
+      await postCpsCredentialsRaw({
         credentials: {
           [storageKey]: { 
             clientId: activeHeaders.client_id || cred?.clientId, 
@@ -335,7 +329,7 @@ export default function GlobalCpsManagerPage() {
         body: mergedProps
       };
       
-      const saveRes = await api.post('/cps/write', {
+      const saveData = await writeCpsProperties({
         baseUrl: activeHost,
         type: 'non-secure',
         method: 'PUT',
@@ -348,8 +342,8 @@ export default function GlobalCpsManagerPage() {
       setLastOperation({
         label: 'Save Properties',
         timestamp: new Date().toISOString(),
-        requestDetails: saveRes.data?.requestDetails || reqDetails,
-        responseDetails: saveRes.data?.responseDetails || { status: 200, body: saveRes.data },
+        requestDetails: saveData.data?.requestDetails || reqDetails,
+        responseDetails: saveData.data?.responseDetails || { status: 200, body: saveData.data },
         success: true
       });
       

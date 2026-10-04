@@ -5,18 +5,24 @@ import BgFilterModal, { applyBgFilter } from '../../components/shared/BgFilterMo
 import { applyEnvFilter } from '../../components/shared/EnvFilterModal';
 import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
 import CpsCredentialImportButton from './CpsCredentialImportButton';
-import api from '../../services/api';
+import {
+  getEnvironments, getBusinessGroups, getApplicationsSummary,
+  getCloudhub2AppDetail, getCloudhub1AppDetail,
+} from '../../services/applicationsService';
 import { getCachedSWR, setCached } from '../../services/apiCache';
 import { CK } from '../../services/cacheKeys';
 import { extractCpsConfig, flattenCpsResponse } from '../../utils/cpsHelpers';
-import { ENV_BADGE } from '../../utils/appUtils';
+import { ENV_BADGE, downloadCsv } from '../../utils/appUtils';
 import { ENV_TAG_COLOR as ENV_TAG } from '../../utils/accentColors';
 import { useBgEnvFilter } from '../../hooks/useBgEnvFilter';
 import PageHeader from '../../components/ui/PageHeader';
 import CopyBtn from '../../components/shared/CopyBtn';
 import { getErrorMessage } from '../../services/http';
-import { postScopedCpsCredential, postAllCpsCredentials } from '../../services/cpsService';
-import { getBusinessGroups } from '../../services/applicationsService';
+import {
+  postScopedCpsCredential, postAllCpsCredentials, postCpsCredentialsRaw,
+  fetchCpsProperties, getCpsCredentials,
+} from '../../services/cpsService';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -29,8 +35,8 @@ const PROP_TYPE_OPTS = [
 // ─── Copy Diffs button ───────────────────────────────────────────────────────
 
 function CopyDiffsBtn({ diff, keyA, keyB }) {
-  const [done, setDone] = useState(false);
-  const copy = () => {
+  const [done, copy] = useCopyToClipboard(2000);
+  const handleCopy = () => {
     const diffRows = diff.filter(d => d.status !== 'matching');
     const lines = [`CPS Diff Summary — Side A: ${keyA || 'A'} vs Side B: ${keyB || 'B'}`, `${diffRows.length} difference(s) found`, ''];
     diffRows.forEach(d => {
@@ -46,12 +52,10 @@ function CopyDiffsBtn({ diff, keyA, keyB }) {
         lines.push(`  B: ${d.valB}`);
       }
     });
-    navigator.clipboard.writeText(lines.join('\n'));
-    setDone(true);
-    setTimeout(() => setDone(false), 2000);
+    copy(lines.join('\n'));
   };
   return (
-    <button onClick={copy}
+    <button onClick={handleCopy}
       className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border text-sfpurple-600 dark:text-sfpurple-400 bg-sfpurple-50 dark:bg-sfpurple-500/10 border-sfpurple-200/60 dark:border-sfpurple-400/30 hover:bg-sfpurple-100 dark:hover:bg-sfpurple-500/20 transition-colors shadow-sm">
       {done ? <><Check size={11} className="text-emerald-600 dark:text-emerald-400" /> Copied!</> : <><ClipboardCopy size={11} /> Copy Diffs</>}
     </button>
@@ -239,6 +243,31 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
   const selCount = (state.selectedAppIds || []).length;
   const appSummary = hideAppSelector ? (selCount > 0 ? `${selCount} apps selected` : `${apps.length} apps`) : (cpsKey || '—');
 
+  // Option lists for the BG/Env/App <Select>s — memoized so typing in the
+  // CPS URL/Env/Key/ClientId/Secret fields below (which replaces the whole
+  // `state` object on every keystroke) doesn't force these to be rebuilt by
+  // mapping over `apps`/`envs`/`filteredBgs` on every render — see
+  // FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #5.
+  // Declared before the `collapsed` early return so hook order stays stable.
+  const bgOptions = useMemo(() => [
+    { value: '__all__', label: 'All Organizations', tag: `${filteredBgs.length}`, tagColor: 'bg-gray-200 text-gray-600' },
+    ...filteredBgs.map(g => ({ value: g.id, label: g.name, tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-sf-100 text-sf-600', indent: !!g.parentId })),
+  ], [filteredBgs]);
+
+  const visibleEnvs = useMemo(() => applyEnvFilter(envs), [envs]);
+  const envOptions = useMemo(() => [
+    { value: '__all__', label: 'All Environments' },
+    ...visibleEnvs.map(e => ({ value: e.id, label: e.name, badge: true, badgeColor: ENV_BADGE[e.type] || 'bg-gray-400', tag: e.type, tagColor: ENV_TAG[e.type] || 'bg-gray-200 text-gray-500' })),
+  ], [visibleEnvs]);
+
+  // App options: when showing all, include env name in label for disambiguation
+  const appOptions = useMemo(() => apps.map(a => ({
+    value: `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`,
+    label: showEnvInLabel ? `${a.name} (${a.environment?.name || ''})` : a.name,
+    tag: a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1',
+    tagColor: a.deploymentType === 'CloudHub 2.0' ? 'bg-sf-100 text-sf-600' : 'bg-sfpurple-100 text-sfpurple-600',
+  })), [apps, showEnvInLabel]);
+
   if (collapsed) {
     return (
       <div className={`flex-1 min-w-0 bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border ${color} rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)]`}>
@@ -269,25 +298,6 @@ function SidePanel({ label, color, state, filteredBgs, propType, onPropTypeChang
       </div>
     );
   }
-
-  const bgOptions = [
-    { value: '__all__', label: 'All Organizations', tag: `${filteredBgs.length}`, tagColor: 'bg-gray-200 text-gray-600' },
-    ...filteredBgs.map(g => ({ value: g.id, label: g.name, tag: !g.parentId ? 'Root' : undefined, tagColor: 'bg-sf-100 text-sf-600', indent: !!g.parentId })),
-  ];
-
-  const visibleEnvs = applyEnvFilter(envs);
-  const envOptions = [
-    { value: '__all__', label: 'All Environments' },
-    ...visibleEnvs.map(e => ({ value: e.id, label: e.name, badge: true, badgeColor: ENV_BADGE[e.type] || 'bg-gray-400', tag: e.type, tagColor: ENV_TAG[e.type] || 'bg-gray-200 text-gray-500' })),
-  ];
-
-  // App options: when showing all, include env name in label for disambiguation
-  const appOptions = apps.map(a => ({
-    value: `${a.id}|${a.environment?.id || ''}|${a._bgId || ''}`,
-    label: showEnvInLabel ? `${a.name} (${a.environment?.name || ''})` : a.name,
-    tag: a.deploymentType === 'CloudHub 2.0' ? 'CH2' : 'CH1',
-    tagColor: a.deploymentType === 'CloudHub 2.0' ? 'bg-sf-100 text-sf-600' : 'bg-sfpurple-100 text-sfpurple-600',
-  }));
 
   return (
     <div className={`flex-1 min-w-0 bg-white dark:bg-gradient-to-b dark:from-gray-800 dark:to-gray-800/90 border ${color} rounded-2xl shadow-sm dark:shadow-[0_8px_30px_-6px_rgba(0,0,0,0.5)] p-4 space-y-3.5`}>
@@ -504,7 +514,7 @@ export default function CpsComparisonPage() {
     }
     updateSide(side, { loadingEnvs: true, envs: [] });
     try {
-      const r = await api.get(`/environments/${bgId}`);
+      const r = await getEnvironments(bgId);
       updateSide(side, { envs: r.data.data || [], loadingEnvs: false });
     } catch {
       updateSide(side, { loadingEnvs: false });
@@ -534,7 +544,7 @@ export default function CpsComparisonPage() {
         updateSide(side, { apps: envFiltered, loadingApps: false });
         // If stale, silently re-fetch in background and update the side
         if (swr.stale) {
-          Promise.allSettled(bgIds.map(id => api.get(`/applications/summary/${id}`)))
+          Promise.allSettled(bgIds.map(id => getApplicationsSummary(id)))
             .then(results => {
               const fresh = [];
               const seen = new Set();
@@ -558,7 +568,7 @@ export default function CpsComparisonPage() {
       }
       // ─────────────────────────────────────────────────────────────────────────
 
-      const results = await Promise.allSettled(bgIds.map(id => api.get(`/applications/summary/${id}`)));
+      const results = await Promise.allSettled(bgIds.map(id => getApplicationsSummary(id)));
       const mergedAll = [];
       const seen = new Set();
       results.forEach((r, i) => {
@@ -598,10 +608,10 @@ export default function CpsComparisonPage() {
     try {
       let detail;
       if (app.deploymentType === 'CloudHub 2.0') {
-        const r = await api.get(`/applications/cloudhub2/${resolvedBgId}/${resolvedEnvId}/${app.id}`);
+        const r = await getCloudhub2AppDetail(resolvedBgId, resolvedEnvId, app.id);
         detail = r.data;
       } else {
-        const r = await api.get(`/applications/cloudhub1/${resolvedEnvId}/${app.id}`, { params: { orgId: resolvedBgId } });
+        const r = await getCloudhub1AppDetail(resolvedEnvId, app.id, resolvedBgId);
         detail = { name: app.name, properties: r.data.properties || {} };
       }
       const extracted = extractCpsConfig(detail);
@@ -726,10 +736,10 @@ export default function CpsComparisonPage() {
       try {
         let detail;
         if (app.deploymentType === 'CloudHub 2.0') {
-          const r = await api.get(`/applications/cloudhub2/${resolvedBgId}/${resolvedEnvId}/${app.id}`);
+          const r = await getCloudhub2AppDetail(resolvedBgId, resolvedEnvId, app.id);
           detail = r.data;
         } else {
-          const r = await api.get(`/applications/cloudhub1/${resolvedEnvId}/${app.id}`, { params: { orgId: resolvedBgId } });
+          const r = await getCloudhub1AppDetail(resolvedEnvId, app.id, resolvedBgId);
           detail = { name: app.name, properties: r.data.properties || {} };
         }
         const extracted = extractCpsConfig(detail);
@@ -741,7 +751,7 @@ export default function CpsComparisonPage() {
           if (secret) {
             try {
               const credKey = `${extracted.cpsBaseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '')}::${resolvedBgId}`;
-              await api.post('/cps/credentials', { credentials: { [credKey]: { clientId: extracted.cpsClientId, clientSecret: secret } } });
+              await postCpsCredentialsRaw({ credentials: { [credKey]: { clientId: extracted.cpsClientId, clientSecret: secret } } });
             } catch {}
           }
         }
@@ -750,18 +760,16 @@ export default function CpsComparisonPage() {
         const pt = propTypeForSide;
 
         if (pt === 'non-secure') {
-          const r = await api.get('/cps/fetch', { params: { ...baseP, type: 'non-secure', keys: extracted.cpsKey } });
-          return flattenCpsResponse(r.data);
+          const r = await fetchCpsProperties({ ...baseP, type: 'non-secure', keys: extracted.cpsKey });
+          return flattenCpsResponse(r);
         }
         // secure/binaries: get non-secure first to discover keys
-        const nsR = await api.get('/cps/fetch', { params: { ...baseP, type: 'non-secure', keys: extracted.cpsKey } });
-        const nsFlat = flattenCpsResponse(nsR.data);
+        const nsFlat = flattenCpsResponse(await fetchCpsProperties({ ...baseP, type: 'non-secure', keys: extracted.cpsKey }));
 
         if (pt === 'secure') {
           const secKeys = (nsFlat['cps.secure.properties'] || '').split(',').map(k => k.trim()).filter(Boolean).sort();
           if (!secKeys.length) return {};
-          const r = await api.get('/cps/fetch', { params: { ...baseP, type: 'secure', keys: secKeys.join(',') } });
-          const raw = r.data;
+          const raw = await fetchCpsProperties({ ...baseP, type: 'secure', keys: secKeys.join(',') });
           const groups = Array.isArray(raw?.responses) ? raw.responses : Array.isArray(raw) ? raw : [];
           const map = {};
           [...groups].sort((a, b) => (a.key || '').localeCompare(b.key || '')).forEach(g => {
@@ -773,8 +781,8 @@ export default function CpsComparisonPage() {
         if (pt === 'binaries') {
           const binKeys = (nsFlat['cps.secure.binaries'] || '').split(',').map(k => k.trim()).filter(Boolean).sort();
           if (!binKeys.length) return {};
-          const r = await api.get('/cps/fetch', { params: { ...baseP, type: 'binaries', keys: binKeys.join(',') } });
-          const binData = r.data?.binaries || r.data || [];
+          const raw = await fetchCpsProperties({ ...baseP, type: 'binaries', keys: binKeys.join(',') });
+          const binData = raw?.binaries || raw || [];
           const map = {};
           (Array.isArray(binData) ? binData : []).forEach(b => {
             const fn = b.key || b.name || '?';
@@ -869,7 +877,7 @@ export default function CpsComparisonPage() {
       if (s.cpsClientId && s.cpsClientSecret) {
         try {
           const normBase = s.cpsUrl.trim().replace(/\/+$/, '').replace(/\/api\/v2\/?$/, '');
-          await api.post('/cps/credentials', {
+          await postCpsCredentialsRaw({
             credentials: {
               [`${normBase}::${s.cpsClientId}`]: { clientId: s.cpsClientId, clientSecret: s.cpsClientSecret },
             }
@@ -884,13 +892,12 @@ export default function CpsComparisonPage() {
       };
 
       if (pt === 'non-secure') {
-        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'non-secure', keys: s.cpsKey } });
-        return flattenCpsResponse(r.data);
+        const r = await fetchCpsProperties({ ...baseParams, type: 'non-secure', keys: s.cpsKey });
+        return flattenCpsResponse(r);
       }
 
       // For secure or binaries — first fetch non-secure to discover the sub-keys
-      const nsR = await api.get('/cps/fetch', { params: { ...baseParams, type: 'non-secure', keys: s.cpsKey } });
-      const nsFlat = flattenCpsResponse(nsR.data);
+      const nsFlat = flattenCpsResponse(await fetchCpsProperties({ ...baseParams, type: 'non-secure', keys: s.cpsKey }));
 
       if (pt === 'secure') {
         const secureKeysRaw = nsFlat['cps.secure.properties'] || '';
@@ -899,8 +906,7 @@ export default function CpsComparisonPage() {
         // Sort group names alphabetically — ensures both sides produce identical
         // groupName prefixes even if cps.secure.properties lists them in different order.
         const groupNames = secureKeysRaw.split(',').map(k => k.trim()).filter(Boolean).sort();
-        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'secure', keys: groupNames.join(',') } });
-        const raw = r.data;
+        const raw = await fetchCpsProperties({ ...baseParams, type: 'secure', keys: groupNames.join(',') });
 
         // Normalize response to array of { key, properties }
         const groups = Array.isArray(raw?.responses) ? raw.responses
@@ -936,8 +942,8 @@ export default function CpsComparisonPage() {
         // Build a set for fast group lookup
         const groupSet = new Set(groupNames);
 
-        const r = await api.get('/cps/fetch', { params: { ...baseParams, type: 'binaries', keys: groupNames.join(',') } });
-        const binData = r.data?.binaries || r.data || [];
+        const r = await fetchCpsProperties({ ...baseParams, type: 'binaries', keys: groupNames.join(',') });
+        const binData = r?.binaries || r || [];
 
         // Binaries: use "groupName::fileName" as the key.
         // Priority for group resolution:
@@ -981,7 +987,7 @@ export default function CpsComparisonPage() {
     // After compare — query stored credentials and populate the credential fields
     // if they are still empty (e.g., cpsClientId was masked and backend auto-discovered)
     try {
-      const credRes = await api.get('/cps/credentials');
+      const credRes = await getCpsCredentials();
       const byUrlBg = credRes.data?.byUrlBg || {};
 
       const fillCredsFromStore = (s, side) => {
@@ -1068,18 +1074,13 @@ export default function CpsComparisonPage() {
   const canCompare = compareMode === 'multi' ? canMultiCompare : (sideA.cpsUrl && sideA.cpsKey) || (sideB.cpsUrl && sideB.cpsKey);
   const hasResults = propsA !== null || propsB !== null;
 
-  // Export CSV
+  // Export CSV — delegate to the shared utils/appUtils.downloadCsv() instead
+  // of hand-rolling Blob/anchor logic — see
+  // FRONTEND_ARCHITECTURE_REVIEW.md §1 finding #18.
   const exportCsv = () => {
     const rows = [['Property Key', `Side A (${sideA.cpsKey || 'A'})`, `Side B (${sideB.cpsKey || 'B'})`, 'Status']];
     diff.forEach(d => rows.push([d.key, d.valA ?? '(not set)', d.valB ?? '(not set)', d.status.toUpperCase()]));
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cps-comparison-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadCsv(rows, `cps-comparison-${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
   const STATUS_ROW = {

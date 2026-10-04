@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import api, { isDemoMode, enableDemoMode, disableDemoMode } from '../services/api';
+import { isDemoMode, enableDemoMode, disableDemoMode } from '../services/api';
 import { MOCK_USER } from '../services/mocks/mockData.js';
 import { clearCache } from '../services/apiCache';
 import { warmCache } from '../services/prefetch';
+import * as authService from '../services/authService';
 
 const AuthContext = createContext(null);
 
@@ -21,7 +22,7 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
         return;
       }
-      const res = await api.get('/auth/session');
+      const res = await authService.getSession();
       if (res.data.authenticated) {
         setUser(res.data.user);
         setOrgId(res.data.orgId);
@@ -66,21 +67,21 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = useCallback(async (username, password) => {
-    const res = await api.post('/auth/login', { username, password });
+    const res = await authService.login(username, password);
     applyResult(res.data);
     warmCache(res.data.orgId); // fire-and-forget background prefetch
     return res.data;
   }, [applyResult]);
 
   const tokenLogin = useCallback(async (token) => {
-    const res = await api.post('/auth/token-login', { token });
+    const res = await authService.tokenLogin(token);
     applyResult(res.data);
     warmCache(res.data.orgId); // fire-and-forget background prefetch
     return res.data;
   }, [applyResult]);
 
   const connectedAppLogin = useCallback(async (clientId, clientSecret) => {
-    const res = await api.post('/auth/connected-app-login', { clientId, clientSecret });
+    const res = await authService.connectedAppLogin(clientId, clientSecret);
     applyResult(res.data);
     warmCache(res.data.orgId); // fire-and-forget background prefetch
     return res.data;
@@ -95,7 +96,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(async () => {
     disableDemoMode();
-    await api.post('/auth/logout');
+    await authService.logout();
     clearCache(); // flush stale data so next user never sees previous session
     setUser(null);
     setOrgId(null);

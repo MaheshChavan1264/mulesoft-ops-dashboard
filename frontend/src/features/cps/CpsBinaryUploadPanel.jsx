@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Upload, RefreshCw, CheckCircle, AlertTriangle, FileArchive } from 'lucide-react';
-import api from '../../services/api';
+import { uploadCpsBinary } from '../../services/cpsService';
 import ErrorBanner from '../../components/ui/ErrorBanner';
 import { normaliseCpsUrl } from '../../utils/cpsHelpers';
 import FileDropZone from '../../components/ui/FileDropZone';
@@ -66,7 +66,7 @@ export default function CpsBinaryUploadPanel({
         body: `[Binary data: ${selectedFile.size} bytes]`,
       };
 
-      const resp = await api.post('/cps/binary', {
+      const resp = await uploadCpsBinary({
         baseUrl,
         environment,
         key: fileNameOverride.trim(),

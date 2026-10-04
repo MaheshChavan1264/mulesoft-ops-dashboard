@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Database, AlertTriangle } from 'lucide-react';
-import api from '../../services/api';
+import { writeCpsProperties } from '../../services/cpsService';
 import ErrorBanner from '../../components/ui/ErrorBanner';
 import { normaliseCpsUrl } from '../../utils/cpsHelpers';
 import Modal from '../../components/ui/Modal';
@@ -66,7 +66,7 @@ export default function CpsCreateModal({
     };
 
     try {
-      const resp = await api.post('/cps/write', {
+      const resp = await writeCpsProperties({
         baseUrl,
         type,
         method: 'POST',

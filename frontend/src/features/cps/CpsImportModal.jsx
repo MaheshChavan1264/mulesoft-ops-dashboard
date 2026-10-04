@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Upload, AlertTriangle, Check, FileText } from 'lucide-react';
 import { parseCsvLine } from '../../utils/csvCredentialStore';
-import api from '../../services/api';
+import { writeCpsProperties } from '../../services/cpsService';
 import ErrorBanner from '../../components/ui/ErrorBanner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
@@ -126,7 +126,7 @@ export default function CpsImportModal({
     toImport.forEach(({ key, value }) => { merged[key] = value; });
 
     try {
-      await api.post('/cps/write', {
+      await writeCpsProperties({
         baseUrl,
         type,
         method: 'PUT',

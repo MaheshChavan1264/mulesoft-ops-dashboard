@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Trash2, AlertTriangle } from 'lucide-react';
-import api from '../../services/api';
+import { deleteCpsProject } from '../../services/cpsService';
 import ErrorBanner from '../../components/ui/ErrorBanner';
 import { normaliseCpsUrl } from '../../utils/cpsHelpers';
 import Modal from '../../components/ui/Modal';
@@ -57,9 +57,7 @@ export default function CpsDeleteProjectModal({
     };
 
     try {
-      const resp = await api.delete('/cps/project', {
-        data: { baseUrl, type, environment, projectKey, bgOrgId },
-      });
+      const resp = await deleteCpsProject({ baseUrl, type, environment, projectKey, bgOrgId });
       const { requestDetails, responseDetails } = resp.data || {};
       onResult?.({
         label: 'Delete Project',

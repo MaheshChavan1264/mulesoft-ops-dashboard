@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Check, Search, SlidersHorizontal, RefreshCw, Building2, ChevronDown } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -17,7 +17,10 @@ const ENV_TYPE_COLOR = {
 };
 
 // ── Env row sub-item ──────────────────────────────────────────────────────────
-function EnvRow({ e, isChecked, toggle, indent = 'pl-10' }) {
+// Wrapped in React.memo — see FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance
+// Review, finding #4/#9 (requires `toggle` to be a stable useCallback in the
+// parent, otherwise memo is a no-op).
+const EnvRow = memo(function EnvRow({ e, isChecked, toggle, indent = 'pl-10' }) {
   const isProd = e.type === 'production';
   return (
     <label
@@ -33,10 +36,10 @@ function EnvRow({ e, isChecked, toggle, indent = 'pl-10' }) {
       <span className={`text-sm flex-1 truncate ${isChecked ? 'text-gray-900 dark:text-gray-100 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium'}`}>{e.name}</span>
     </label>
   );
-}
+});
 
 // ── Type sub-group header (Production / Sandbox) inside a BG ─────────────────
-function TypeGroupHeader({ label, ids, selected, toggleGroup, accent }) {
+const TypeGroupHeader = memo(function TypeGroupHeader({ label, ids, selected, toggleGroup, accent }) {
   const allSel = ids.every(id => selected.has(id));
   const someSel = !allSel && ids.some(id => selected.has(id));
   const cls = accent === 'green'
@@ -56,32 +59,40 @@ function TypeGroupHeader({ label, ids, selected, toggleGroup, accent }) {
       <span className="text-[9px] font-semibold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700/60 px-1.5 py-0.5 rounded-full">{ids.length}</span>
     </div>
   );
-}
+});
 
 // ── BG-grouped collapsible list ───────────────────────────────────────────────
-function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
+// Wrapped in React.memo. The per-BG bgIds/allSel/someSel/selCount/prodEnvs/
+// otherEnvs breakdown is now computed once in a useMemo keyed on
+// (byBg, selected) instead of being recomputed inline inside the .map() on
+// every render (including re-renders triggered by unrelated parent state) —
+// see FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #9.
+const BgGroupedList = memo(function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
   const [collapsed, setCollapsed] = useState(new Set());
 
-  const toggleCollapse = (bgId, e) => {
+  const toggleCollapse = useCallback((bgId, e) => {
     e.stopPropagation();
     setCollapsed(prev => {
       const n = new Set(prev);
       n.has(bgId) ? n.delete(bgId) : n.add(bgId);
       return n;
     });
-  };
+  }, []);
+
+  const enrichedBgs = useMemo(() => byBg.map(({ bgId, bgName, envs }) => {
+    const bgIds = envs.map(e => e.id);
+    const allSel = bgIds.every(id => selected.has(id));
+    const someSel = !allSel && bgIds.some(id => selected.has(id));
+    const selCount = bgIds.filter(id => selected.has(id)).length;
+    const prodEnvs = envs.filter(e => e.type === 'production');
+    const otherEnvs = envs.filter(e => e.type !== 'production');
+    return { bgId, bgName, envs, bgIds, allSel, someSel, selCount, prodEnvs, otherEnvs };
+  }), [byBg, selected]);
 
   return (
     <div className="space-y-2 py-1">
-      {byBg.map(({ bgId, bgName, envs }) => {
-        const bgIds = envs.map(e => e.id);
-        const allSel = bgIds.every(id => selected.has(id));
-        const someSel = !allSel && bgIds.some(id => selected.has(id));
+      {enrichedBgs.map(({ bgId, bgName, bgIds, allSel, someSel, selCount, prodEnvs, otherEnvs, envs }) => {
         const isCollapsed = collapsed.has(bgId);
-        const selCount = bgIds.filter(id => selected.has(id)).length;
-
-        const prodEnvs  = envs.filter(e => e.type === 'production');
-        const otherEnvs = envs.filter(e => e.type !== 'production');
 
         return (
           <div key={bgId} className="rounded-2xl border border-gray-200/80 dark:border-gray-700/60 overflow-hidden mx-1 shadow-sm">
@@ -148,7 +159,7 @@ function BgGroupedList({ byBg, selected, toggle, toggleGroup }) {
       })}
     </div>
   );
-}
+});
 
 export default function EnvFilterModal({ environments = [], onClose, onSaved }) {
   const [search, setSearch] = useState('');
@@ -172,15 +183,15 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
     (e.type || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const toggle = (id) => {
+  const toggle = useCallback((id) => {
     setSelected((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const deselectAll = () => setSelected(new Set());
+  const deselectAll = useCallback(() => setSelected(new Set()), []);
 
   // Detect if envs carry BG context (new format from Header)
   const hasBgContext = environments.some(e => e.bgId);
@@ -204,18 +215,18 @@ export default function EnvFilterModal({ environments = [], onClose, onSaved }) 
   const allProdIds = environments.filter(e => e.type === 'production').map(e => e.id);
   const allOtherIds = environments.filter(e => e.type !== 'production').map(e => e.id);
 
-  const selectByType = (ids) =>
-    setSelected(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
+  const selectByType = useCallback((ids) =>
+    setSelected(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; }), []);
 
-  const toggleGroup = (ids) => {
-    const allSel = ids.every(id => selected.has(id));
+  const toggleGroup = useCallback((ids) => {
     setSelected(prev => {
+      const allSel = ids.every(id => prev.has(id));
       const n = new Set(prev);
       if (allSel) ids.forEach(id => n.delete(id));
       else ids.forEach(id => n.add(id));
       return n;
     });
-  };
+  }, []);
 
   // Keep old name as alias for the non-BG path
   const toggleTypeGroup = toggleGroup;
