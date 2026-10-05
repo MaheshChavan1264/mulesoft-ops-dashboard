@@ -972,14 +972,19 @@ export default function GlobalSearchPage() {
     [query]
   );
 
+  // `results` is `null` until the first search completes (initial state and
+  // reset-on-new-search both set it to null — see setResults(null) above) —
+  // guard with `|| []` so this memo (which runs on every render, before any
+  // `results === null` JSX guard further down ever gets a chance to apply)
+  // doesn't spread/read .length off null.
   const sortedResults = useMemo(() => (
     sortCol
-      ? [...results].sort((a, b) => {
+      ? [...(results || [])].sort((a, b) => {
           const v = r => String(r[sortCol] ?? '').toLowerCase();
           const cmp = v(a).localeCompare(v(b));
           return sortDir === 'asc' ? cmp : -cmp;
         })
-      : results
+      : (results || [])
   ), [results, sortCol, sortDir]);
 
   // Full "group by term" breakdown — term → { rows, appMap, allValues,
@@ -1074,7 +1079,10 @@ export default function GlobalSearchPage() {
   // term order) and `activeTerms`/`searchMode`. Was rebuilt inline in JSX on
   // every render just to decide whether to show the Export XLSX button.
   const exportTermGroups = useMemo(() => {
-    if (!(results.length > 0 && groupByTerm && activeTerms.length > 1)) return null;
+    // `results` is `null` until the first search completes — guard before
+    // `.length`, same reasoning as sortedResults above (this crashed on
+    // every fresh page load / reset-to-no-search state otherwise).
+    if (!(results?.length > 0 && groupByTerm && activeTerms.length > 1)) return null;
     const tg = new Map();
     activeTerms.forEach(t => tg.set(t, []));
     results.forEach(row => {

@@ -81,7 +81,7 @@ function requestLogger(req, res, next) {
     const url = redactUrl(req.originalUrl || req.url);
     const statusCode = res.statusCode;
 
-    logger.info({ method, url, statusCode }, 'HTTP request completed');
+    //logger.info({ method, url, statusCode }, 'HTTP request completed');
 
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
     if (durationMs > slowThresholdFor(path)) {
