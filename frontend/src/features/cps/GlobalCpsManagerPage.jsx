@@ -30,20 +30,24 @@ const PROP_TYPE_TABS = [
 
 // Build-time env var overrides — one fixed CPS host per CH version + env,
 // for deployments where that's always true regardless of business group
-// (e.g. VITE_CPS_CH1_UAT, VITE_CPS_CH2_PROD). Looked up dynamically by key
-// below; Vite exposes every VITE_-prefixed var on the real `import.meta.env`
-// object, so bracket access works the same as the dot-notation form.
+// (frontend/.env: VITE_CPS_CH1_UAT, VITE_CPS_CH1_PROD, VITE_CPS_CH2_UAT,
+// VITE_CPS_CH2_PROD).
 //
-// Previously this also had hardcoded fallback strings (including literal
-// `https://ch2-uat-cps.example.com` placeholders for CH2, since no
-// VITE_CPS_CH2_* var is ever actually set) that silently stood in for a real
-// URL — the UI showed, and requests were sent to, a fake host with no
-// indication it wasn't real. Removed entirely: with no CSV-provided URL (see
-// parseGlobalCpsCsv) and no env var override, cpsBaseUrl below now resolves
-// to '' and the UI clearly shows "Not configured" instead of a URL that
-// looks real but isn't.
+// IMPORTANT: these must be referenced as literal `import.meta.env.VITE_XXX`
+// member expressions, NOT via a dynamically-built key like
+// `import.meta.env[\`VITE_CPS_${chVersion}_${env}\`]`. Vite only statically
+// replaces literal dot-access patterns it can see in the source at build
+// time — a computed/bracket lookup into `import.meta.env` always resolves to
+// undefined, even with the vars correctly set in .env and the dev server
+// restarted. (This bit us once already: see the earlier CPS_URLS removal —
+// this static table replaces that, but keeps the per-row CSV override and
+// the "Not configured" fallback described there.)
+const ENV_CPS_URLS = {
+  ch1: { uat: import.meta.env.VITE_CPS_CH1_UAT || '', prod: import.meta.env.VITE_CPS_CH1_PROD || '' },
+  ch2: { uat: import.meta.env.VITE_CPS_CH2_UAT || '', prod: import.meta.env.VITE_CPS_CH2_PROD || '' },
+};
 function envVarCpsUrl(chVersion, env) {
-  return import.meta.env[`VITE_CPS_${chVersion.toUpperCase()}_${env.toUpperCase()}`] || '';
+  return ENV_CPS_URLS[chVersion.toLowerCase()]?.[env.toLowerCase()] || '';
 }
 
 export default function GlobalCpsManagerPage() {
