@@ -701,8 +701,13 @@ const SCHEDULERS_SUMMARY_CACHE_FRESH_MS =  3 * 60 * 1000; // 3 min SWR freshness
 // apps per org (seen in practice: 500-1200+ apps in a single BG), a
 // concurrency of 8 meant a cold fetch took 30-90+ seconds (apps/8 sequential
 // batches). Raised to 20 — comfortably inside the Anypoint agent's
-// maxSockets (100, see anypointClient.js) even with the frontend's
-// BG_FAN_OUT_CONCURRENCY (6) running several orgs in parallel at once.
+// maxSockets (150, see anypointClient.js) even with the frontend's
+// BG_FAN_OUT_CONCURRENCY (6) running several orgs in parallel at once
+// (worst case 6 × 20 = 120 concurrent Anypoint calls, vs. the 150 cap).
+// Deliberately NOT raised further without first confirming against a real
+// large org that Anypoint's own rate limiting / 429 handling tolerates it —
+// unlike maxSockets (purely a local resource cap, safe to raise), this
+// number controls how hard we hammer Anypoint's actual API.
 const SCHEDULERS_FAN_OUT_CONCURRENCY = 20;
 
 const schedulersSummaryCache = new NodeCache({

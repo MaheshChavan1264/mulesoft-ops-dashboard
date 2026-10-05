@@ -8,7 +8,7 @@ import TableHeader from '../../components/ui/TableHeader';
 import { applyBgFilter } from '../../components/shared/BgFilterModal';
 import { applyEnvFilter } from '../../components/shared/EnvFilterModal';
 import { getBusinessGroups, getEnvironments, getAllSchedulers, runCloudhub1SchedulerNow, runCloudhub2SchedulerNow, setCloudhub1SchedulerEnabled, setCloudhub2SchedulerEnabled } from '../../services/applicationsService';
-import { getCachedSWR, setCached, bustCache, keepFresh, stopKeepingFresh } from '../../services/apiCache';
+import { getCached, getCachedSWR, setCached, bustCache, keepFresh, stopKeepingFresh } from '../../services/apiCache';
 import { CK } from '../../services/cacheKeys';
 import { ENV_BADGE } from '../../utils/appUtils';
 import { ENV_TAG_COLOR } from '../../utils/accentColors';
@@ -27,7 +27,7 @@ import { StatTile, MetaTag, PulseDot, getNextCronRun, SchedulerConfirmModal, Sch
 // concurrent per-app calls internally — without this cap, total in-flight
 // Anypoint calls would scale as (visible BG count) × 20, unbounded.
 // At 6 (not 4) this still comfortably fits the Anypoint agent's maxSockets
-// (100 — see anypointClient.js) alongside the per-org fan-out below.
+// (150 — see anypointClient.js) alongside the per-org fan-out below.
 const BG_FAN_OUT_CONCURRENCY = 6;
 
 // ── Cache TTL constants ──────────────────────────────────────────────────
@@ -56,36 +56,72 @@ const SCHED_STALE_MS = 20 * 60 * 1000; // 20 min eviction
  *   the backend so it only fans out requests for apps in these envs.
  * @param {string}   cacheKey
  */
-async function _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey) {
+// Normalizes one BG's getAllSchedulers settlement into deduped rows + error
+// strings. Dedup is scoped to THIS bgId only (rowId, not schedulerKey — see
+// inline comment below) — safe to call independently per BG as each one
+// settles, since every row's key is prefixed with its own bgId and can
+// never collide with a row from a different BG.
+function _processOneSchedResult(bgId, r) {
+  const rows = [];
+  const errors = [];
+  const seen = new Set();
+  if (r.status === 'fulfilled') {
+    (r.value.data.data || []).forEach((s) => {
+      // rowId (not schedulerKey) — schedulerKey can legitimately collide
+      // between two distinct schedulers in the same app (e.g. the same
+      // flow scheduled twice); deduping on it would silently drop one of
+      // them instead of just failing to disambiguate which action it maps to.
+      const key = `${bgId}|${s.envId}|${s.appId}|${s.rowId}`;
+      if (!seen.has(key)) { seen.add(key); rows.push({ ...s, _bgId: bgId }); }
+    });
+    if (r.value.data._errors?.length) errors.push(...r.value.data._errors);
+  } else {
+    errors.push(`BG ${bgId}: ${r.reason?.message || 'fetch failed'}`);
+  }
+  return { rows, errors };
+}
+
+/**
+ * @param {(rows: object[], errors: string[]) => void} [onBgSettled] optional
+ *   streaming hook — invoked once per BG as soon as ITS OWN getAllSchedulers
+ *   call settles (not waiting for the slowest BG in the batch). Lets callers
+ *   render rows incrementally on "All Organizations" instead of blocking the
+ *   whole table behind the single slowest BG.
+ */
+async function _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey, onBgSettled) {
+  const schedPromise = mapWithConcurrency(
+    bgIds, BG_FAN_OUT_CONCURRENCY, (id) => getAllSchedulers(id, envIds),
+    onBgSettled && ((id, i, result) => {
+      const { rows, errors } = _processOneSchedResult(bgIds[i], result);
+      onBgSettled(rows, errors);
+    })
+  );
   const [schedResults, envResults] = await Promise.all([
-    mapWithConcurrency(bgIds, BG_FAN_OUT_CONCURRENCY, (id) => getAllSchedulers(id, envIds)),
+    schedPromise,
     Promise.allSettled(bgIds.map((id) => getEnvironments(id))),
   ]);
 
   const merged = [];
   const errors = [];
-  const seen = new Set();
   schedResults.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      (r.value.data.data || []).forEach((s) => {
-        // rowId (not schedulerKey) — schedulerKey can legitimately collide
-        // between two distinct schedulers in the same app (e.g. the same
-        // flow scheduled twice); deduping on it would silently drop one of
-        // them instead of just failing to disambiguate which action it maps to.
-        const key = `${bgIds[i]}|${s.envId}|${s.appId}|${s.rowId}`;
-        if (!seen.has(key)) { seen.add(key); merged.push({ ...s, _bgId: bgIds[i] }); }
-      });
-      if (r.value.data._errors?.length) errors.push(...r.value.data._errors);
-    } else {
-      errors.push(`BG ${bgIds[i]}: ${r.reason?.message || 'fetch failed'}`);
-    }
+    const { rows, errors: errs } = _processOneSchedResult(bgIds[i], r);
+    merged.push(...rows);
+    errors.push(...errs);
   });
 
   const mergedEnvs = [];
   const seenEnvs = new Set();
-  envResults.forEach((r) => {
+  envResults.forEach((r, i) => {
     if (r.status === 'fulfilled') {
-      (r.value.data.data || []).forEach((e) => {
+      const envsForBg = r.value.data.data || [];
+      // Opportunistically populate the per-BG env cache (CK.envs) too — not
+      // read by this function itself, but lets a later "All Organizations"
+      // fetch skip querying a BG whose cached envs are already known to have
+      // zero overlap with an active env filter (see the bgIds filtering in
+      // loadSchedulers below) without this fetch paying any extra cost to
+      // provide that.
+      setCached(CK.envs(bgIds[i]), envsForBg, 30 * 60 * 1000);
+      envsForBg.forEach((e) => {
         if (!seenEnvs.has(e.id)) { seenEnvs.add(e.id); mergedEnvs.push(e); }
       });
     }
@@ -338,10 +374,43 @@ export default function SchedulersPage() {
     if (keepFreshKeyRef.current) stopKeepingFresh(keepFreshKeyRef.current);
   }, []);
 
+  // Single coordinated toast timer — every action handler used to schedule
+  // its own independent `setTimeout(() => setTriggerResult(null), 6000)`.
+  // Firing two actions within 6s meant the first timer could wipe out the
+  // second action's toast early. Routing every toast through showToast()
+  // clears any pending timer before arming a new one, so only the latest
+  // toast's own timeout ever fires, and guards against setting state after
+  // this page has unmounted.
+  const toastTimeoutRef = useRef(null);
+  useEffect(() => () => { if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current); }, []);
+  const showToast = useCallback((result) => {
+    if (!isMounted.current) return;
+    setTriggerResult(result);
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => {
+      if (isMounted.current) setTriggerResult(null);
+      toastTimeoutRef.current = null;
+    }, 6000);
+  }, []);
+
   // Uses rowId (guaranteed unique within an app — see backend's
   // normalizeSchedulerRow) rather than schedulerKey, which can legitimately
   // collide when two schedulers in the same app share a derived name/flow.
   const rowKey = useCallback((s) => `${s._bgId}|${s.envId}|${s.appId}|${s.rowId}`, []);
+
+  // Picks the BG to show on load: the saved preference if still valid,
+  // otherwise the first real BG (NOT '__all__') when nothing is saved yet.
+  // For an account with hundreds/thousands of apps spread across many BGs,
+  // "All Organizations" is the single most expensive fetch this page can
+  // make (one HTTP call per app, PER BG) — defaulting a brand-new user into
+  // it means their very first page load pays that full cost before they've
+  // even chosen to see it. "All Organizations" stays one dropdown click away.
+  const pickDefaultBg = (groups, savedBg) => {
+    const isValidSaved = savedBg && (savedBg === '__all__' || groups.some((g) => g.id === savedBg));
+    if (isValidSaved) return savedBg;
+    const visible = applyBgFilter(groups);
+    return visible.length > 0 ? visible[0].id : '__all__';
+  };
 
   const loadBusinessGroups = async () => {
     setBgLoading(true);
@@ -351,8 +420,7 @@ export default function SchedulersPage() {
       if (swr) {
         setAllBusinessGroups(swr.data);
         const savedBg = localStorage.getItem('mule_schedulers_selected_bg');
-        const isValidSaved = savedBg && (savedBg === '__all__' || swr.data.some((g) => g.id === savedBg));
-        const newBg = isValidSaved ? savedBg : '__all__';
+        const newBg = pickDefaultBg(swr.data, savedBg);
         setSelectedBg(newBg);
         setBgLoading(false);
         await loadSchedulers(newBg, false, swr.data);
@@ -371,8 +439,7 @@ export default function SchedulersPage() {
       setCached(cacheKey, groups, 30 * 60 * 1000);
       setAllBusinessGroups(groups);
       const savedBg = localStorage.getItem('mule_schedulers_selected_bg');
-      const isValidSaved = savedBg && (savedBg === '__all__' || groups.some((g) => g.id === savedBg));
-      const newBg = isValidSaved ? savedBg : '__all__';
+      const newBg = pickDefaultBg(groups, savedBg);
       setSelectedBg(newBg);
       await loadSchedulers(newBg, false, groups);
     } catch {
@@ -383,12 +450,55 @@ export default function SchedulersPage() {
 
   const loadSchedulers = async (bgId, forceRefresh = false, bgsOverride) => {
     const visible = applyBgFilter(bgsOverride || allBusinessGroups);
-    const bgIds = bgId === '__all__'
+    let bgIds = bgId === '__all__'
       ? (visible.length > 0 ? visible.map((g) => g.id) : [orgId])
       : [bgId];
     const envIds = envIdsFilter;
 
+    // Opportunistic skip: when an env filter is active and "All
+    // Organizations" is selected, drop any BG we already KNOW (from a
+    // previously cached CK.envs(bgId) entry — see _fetchAndCacheSchedulers,
+    // which populates it as a side effect) has zero environments matching
+    // the filter. That BG's getAllSchedulers call would always return an
+    // empty list anyway, so skipping it is a pure win — one fewer full
+    // per-app fan-out, at zero correctness risk. Only acts on BGs with a
+    // cached answer; a BG with no cached envs yet is always kept (never
+    // blocks on fetching envs just to decide whether to skip).
+    if (envIds && envIds.length > 0 && bgIds.length > 1) {
+      const envIdSet = new Set(envIds);
+      bgIds = bgIds.filter((id) => {
+        const cachedEnvs = getCached(CK.envs(id));
+        if (!cachedEnvs) return true; // unknown — never skip
+        return cachedEnvs.some((e) => envIdSet.has(e.id));
+      });
+      if (bgIds.length === 0) bgIds = [orgId]; // all skipped — fall back rather than fetch nothing
+    }
+
     const cacheKey = CK.allSchedulers(bgId, bgIds, envIds);
+
+    // Registers (or re-registers) the proactive keep-fresh job for this exact
+    // cache scope. Previously only ever called from the cold-fetch branch
+    // below — both cache-HIT branches (fresh or stale) returned early before
+    // reaching it, so revisiting this page while the cache was still warm
+    // silently left no recurring background refresh running. That matters
+    // more here than on most pages: this refresh is a full per-app fan-out
+    // (no bulk endpoint exists on the Anypoint side), so once lost it could
+    // stay un-refreshed for the full 20-min eviction window with no
+    // self-healing in between.
+    const registerKeepFresh = () => {
+      if (keepFreshKeyRef.current && keepFreshKeyRef.current !== cacheKey) {
+        stopKeepingFresh(keepFreshKeyRef.current);
+      }
+      keepFreshKeyRef.current = cacheKey;
+      keepFresh(cacheKey, () =>
+        _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey).then(({ merged: m, environments: e2, errors: e }) => {
+          if (isMounted.current) { setSchedulers(m); setEnvironments(e2); setFetchErrors(e); }
+          // Keep the shape consistent with what setCached stores internally
+          // (apiCache's keepFresh sweep re-stores whatever this returns).
+          return { schedulers: m, environments: e2 };
+        })
+      );
+    };
 
     if (!forceRefresh) {
       const swr = getCachedSWR(cacheKey);
@@ -400,6 +510,7 @@ export default function SchedulersPage() {
         setEnvironments(swr.data.environments);
         setError(swr.data.schedulers.length === 0 ? 'No schedulers found.' : '');
         setSelectedKeys(new Set());
+        registerKeepFresh();
         if (swr.stale) {
           // Guard against setting state after unmount — the user may navigate
           // away before this background refresh resolves.
@@ -419,29 +530,38 @@ export default function SchedulersPage() {
     setError('');
     setSelectedKeys(new Set());
     try {
-      const { merged, environments: envs, errors } = await _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey);
+      // Stream rows in as each BG's fan-out settles instead of blocking the
+      // whole table behind the single slowest BG — on "All Organizations"
+      // this can be dozens of independent per-BG fan-outs, each taking tens
+      // of seconds for large accounts. The row `key` includes `_bgId`, so
+      // chunks from different BGs can never collide — safe to append as they
+      // arrive without waiting for a full cross-BG dedup pass.
+      const accumulated = [];
+      const accumulatedErrors = [];
+      let firstChunkReceived = false;
+      const { merged, environments: envs, errors } = await _fetchAndCacheSchedulers(
+        bgId, bgIds, envIds, cacheKey,
+        (rows, errs) => {
+          if (!isMounted.current) return;
+          accumulated.push(...rows);
+          accumulatedErrors.push(...errs);
+          setSchedulers([...accumulated]);
+          if (!firstChunkReceived) { firstChunkReceived = true; setLoading(false); }
+        }
+      );
+      if (!isMounted.current) return;
       setSchedulers(merged);
       setEnvironments(envs);
       setFetchErrors(errors);
       if (merged.length === 0) setError('No schedulers found.');
-
-      if (keepFreshKeyRef.current && keepFreshKeyRef.current !== cacheKey) {
-        stopKeepingFresh(keepFreshKeyRef.current);
-      }
-      keepFreshKeyRef.current = cacheKey;
-      keepFresh(cacheKey, () =>
-        _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey).then(({ merged: m, environments: e2, errors: e }) => {
-          if (isMounted.current) { setSchedulers(m); setEnvironments(e2); setFetchErrors(e); }
-          // Keep the shape consistent with what setCached stores internally
-          // (apiCache's keepFresh sweep re-stores whatever this returns).
-          return { schedulers: m, environments: e2 };
-        })
-      );
+      registerKeepFresh();
     } catch (e) {
-      setError(getErrorMessage(e, 'Failed to load schedulers.'));
-      setSchedulers([]);
+      if (isMounted.current) {
+        setError(getErrorMessage(e, 'Failed to load schedulers.'));
+        setSchedulers([]);
+      }
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   useEffect(() => { if (orgId) loadBusinessGroups(); }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -450,10 +570,15 @@ export default function SchedulersPage() {
   // env-visibility filter, bumped via a window event when EnvFilterModal
   // saves) both change `envIdsFilter`, and since schedulers are now fetched
   // scoped to that env set server-side (not just filtered client-side
-  // afterwards), a change there must trigger a real re-fetch.
+  // afterwards), a change there must trigger a real re-fetch. bgFilterVersion
+  // (bumped when the global BG-visibility filter saves) must ALSO trigger a
+  // re-fetch while on "All Organizations" — otherwise hiding a BG there only
+  // updated the dropdown/labels (computed at render time) while the already-
+  // fetched scheduler rows for that now-hidden BG kept showing until the next
+  // manual refresh or BG re-selection.
   useEffect(() => {
     if (selectedBg && allBusinessGroups.length > 0) loadSchedulers(selectedBg);
-  }, [selectedBg, filterEnv, envFilterVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedBg, filterEnv, envFilterVersion, bgFilterVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setSelectedKeys(new Set()); }, [selectedBg]);
 
   /* ── Filtering ──────────────────────────────────────── */
@@ -475,8 +600,10 @@ export default function SchedulersPage() {
     });
   }, [schedulers, environments, debouncedSearch, filterEnv, filterStatus, filterType, envFilterVersion]);
 
-  const enabledCount = filtered.filter((s) => s.enabled !== false).length;
-  const disabledCount = filtered.length - enabledCount;
+  const { enabledCount, disabledCount } = useMemo(() => {
+    const enabled = filtered.filter((s) => s.enabled !== false).length;
+    return { enabledCount: enabled, disabledCount: filtered.length - enabled };
+  }, [filtered]);
   // Still-unresolved count — re-derived whenever cpsResolveVersion bumps so
   // the "Resolve CPS Crons" button's badge/disabled-state reflects rows the
   // resolution cache has already filled in, not just the static
@@ -491,12 +618,21 @@ export default function SchedulersPage() {
     [filtered, cpsResolveVersion]
   );
 
-  // Reset to page 1 whenever filters/search/BG change
+  // Reset to page 1 on an actual user-driven filter/search/BG change —
+  // deliberately NOT keyed on `filtered.length`, which also changes on
+  // every background keepFresh refresh (rows appearing/disappearing,
+  // enabled/disabled counts shifting) and would otherwise yank the user
+  // back to page 1 mid-session with no interaction from them.
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterEnv, filterStatus, filterType, selectedBg, filtered.length]);
+  }, [search, filterEnv, filterStatus, filterType, selectedBg]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  // Correction (not a user-facing "reset"): clamp down if a background
+  // refresh shrinks the result set below the page the user is currently on.
+  useEffect(() => {
+    setCurrentPage((p) => Math.min(p, totalPages));
+  }, [totalPages]);
   const paginatedItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Precomputed so SchedulerRow gets a stable primitive (env type string)
@@ -516,8 +652,19 @@ export default function SchedulersPage() {
     navigate(`/applications/${bgId}/${envId}/${appId}`);
   }, [navigate]);
 
-  const visibleKeys = filtered.map(rowKey);
-  const selectedVisibleCount = visibleKeys.filter((k) => selectedKeys.has(k)).length;
+  const visibleKeys = useMemo(() => filtered.map(rowKey), [filtered, rowKey]);
+  // O(1) lookup map instead of findRow's old `schedulers.find(...)` — called
+  // once per selected row in every bulk action (O(k·n) → O(k)), and reused
+  // below for confirm-modal display labels.
+  const rowByKey = useMemo(() => {
+    const m = new Map();
+    schedulers.forEach((s) => m.set(rowKey(s), s));
+    return m;
+  }, [schedulers, rowKey]);
+  const selectedVisibleCount = useMemo(
+    () => visibleKeys.filter((k) => selectedKeys.has(k)).length,
+    [visibleKeys, selectedKeys]
+  );
   const allVisibleSelected = visibleKeys.length > 0 && selectedVisibleCount === visibleKeys.length;
 
   const toggleSelectAll = () => {
@@ -537,7 +684,16 @@ export default function SchedulersPage() {
   }, []);
 
   /* ── Actions ────────────────────────────────────────── */
-  const findRow = (key) => schedulers.find((s) => rowKey(s) === key);
+  const findRow = useCallback((key) => rowByKey.get(key), [rowByKey]);
+  // Human-readable identifier for confirm-modal display — `key` here is the
+  // internal cross-app rowKey (bgId|envId|appId|rowId), which must stay the
+  // lookup/state identifier (schedulerKey alone can collide across apps),
+  // but must NEVER be shown to the user directly. See shared.jsx's
+  // SchedulerConfirmModal/SchedulerToggleConfirmModal `label` prop.
+  const describeRow = useCallback((key) => {
+    const row = findRow(key);
+    return row ? `${row.schedulerKey} (${row.appName})` : undefined;
+  }, [findRow]);
 
   const executeTrigger = async () => {
     const key = schedulerConfirmKey;
@@ -551,13 +707,14 @@ export default function SchedulersPage() {
       } else {
         await runCloudhub1SchedulerNow(row.envId, row.appId, row.schedulerKey, row._bgId);
       }
-      setTriggerResult({ success: true, message: `✓ "${row.schedulerKey}" triggered on ${row.appName}` });
+      showToast({ success: true, message: `✓ "${row.schedulerKey}" triggered on ${row.appName}` });
     } catch (e) {
-      setTriggerResult({ success: false, message: `✗ Failed to trigger "${row.schedulerKey}": ${getErrorMessage(e)}` });
+      showToast({ success: false, message: `✗ Failed to trigger "${row.schedulerKey}": ${getErrorMessage(e)}` });
     } finally {
-      setTriggerLoadingSet((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      setSchedulerConfirmKey(null);
-      setTimeout(() => setTriggerResult(null), 6000);
+      if (isMounted.current) {
+        setTriggerLoadingSet((prev) => { const n = new Set(prev); n.delete(key); return n; });
+        setSchedulerConfirmKey(null);
+      }
     }
   };
 
@@ -578,20 +735,23 @@ export default function SchedulersPage() {
     setToggleLoadingSet((prev) => new Set(prev).add(key));
     try {
       await setRowEnabled(row, nextEnabled);
-      setSchedulers((prev) => prev.map((s) => rowKey(s) === key ? { ...s, enabled: nextEnabled } : s));
+      if (isMounted.current) {
+        setSchedulers((prev) => prev.map((s) => rowKey(s) === key ? { ...s, enabled: nextEnabled } : s));
+      }
       bustCache(CK.PREFIX.allSchedulers);
       // The per-app Infrastructure tab caches its own scheduler list under
       // CK.schedulers(orgId, envId, appId) — bust it too, or toggling here
       // then opening that tab within the SWR freshness window shows the
       // pre-toggle state.
       bustCache(CK.schedulers(row._bgId, row.envId, row.appId));
-      setTriggerResult({ success: true, message: `✓ "${row.schedulerKey}" ${nextEnabled ? 'enabled' : 'disabled'}` });
+      showToast({ success: true, message: `✓ "${row.schedulerKey}" ${nextEnabled ? 'enabled' : 'disabled'}` });
     } catch (e) {
-      setTriggerResult({ success: false, message: `✗ Failed to ${nextEnabled ? 'enable' : 'disable'} "${row.schedulerKey}": ${getErrorMessage(e)}` });
+      showToast({ success: false, message: `✗ Failed to ${nextEnabled ? 'enable' : 'disable'} "${row.schedulerKey}": ${getErrorMessage(e)}` });
     } finally {
-      setToggleLoadingSet((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      setSchedulerToggleConfirm(null);
-      setTimeout(() => setTriggerResult(null), 6000);
+      if (isMounted.current) {
+        setToggleLoadingSet((prev) => { const n = new Set(prev); n.delete(key); return n; });
+        setSchedulerToggleConfirm(null);
+      }
     }
   };
 
@@ -609,6 +769,7 @@ export default function SchedulersPage() {
       await setRowEnabled(row, nextEnabled);
       return key;
     }));
+    if (!isMounted.current) return;
     const succeeded = new Set(results.filter((r) => r.status === 'fulfilled').map((r) => r.value));
     setSchedulers((prev) => prev.map((s) => succeeded.has(rowKey(s)) ? { ...s, enabled: nextEnabled } : s));
     bustCache(CK.PREFIX.allSchedulers);
@@ -618,7 +779,7 @@ export default function SchedulersPage() {
       if (row) bustCache(CK.schedulers(row._bgId, row.envId, row.appId));
     });
     const failCount = schedulerKeys.length - succeeded.size;
-    setTriggerResult({
+    showToast({
       success: failCount === 0,
       message: failCount === 0
         ? `✓ ${succeeded.size} scheduler${succeeded.size !== 1 ? 's' : ''} ${nextEnabled ? 'enabled' : 'disabled'}`
@@ -627,7 +788,6 @@ export default function SchedulersPage() {
     setBulkLoading(false);
     setBulkSchedulerToggleConfirm(null);
     setSelectedKeys(new Set());
-    setTimeout(() => setTriggerResult(null), 6000);
   };
 
   const executeBulkRun = async () => {
@@ -650,9 +810,10 @@ export default function SchedulersPage() {
       }
       return key;
     }));
+    if (!isMounted.current) return;
     const succeeded = results.filter((r) => r.status === 'fulfilled').length;
     const failCount = schedulerKeys.length - succeeded;
-    setTriggerResult({
+    showToast({
       success: failCount === 0,
       message: failCount === 0
         ? `✓ ${succeeded} scheduler${succeeded !== 1 ? 's' : ''} triggered`
@@ -662,7 +823,6 @@ export default function SchedulersPage() {
     setBulkRunLoading(false);
     setBulkSchedulerRunConfirm(null);
     setSelectedKeys(new Set());
-    setTimeout(() => setTriggerResult(null), 6000);
   };
 
   /**
@@ -713,8 +873,9 @@ export default function SchedulersPage() {
         }
       });
 
+      if (!isMounted.current) return;
       setCpsResolveVersion((v) => v + 1); // force rows to re-check the resolution cache
-      setTriggerResult({
+      showToast({
         success: failedApps === 0,
         message: resolvedCount > 0
           ? `✓ Resolved ${resolvedCount} scheduler${resolvedCount !== 1 ? 's' : ''} from CPS${failedApps > 0 ? ` (${failedApps} app${failedApps !== 1 ? 's' : ''} failed)` : ''}`
@@ -723,17 +884,18 @@ export default function SchedulersPage() {
             : 'No crons could be resolved — property not found in CPS',
       });
     } catch (e) {
-      setTriggerResult({ success: false, message: `✗ Failed to resolve CPS crons: ${getErrorMessage(e)}` });
+      showToast({ success: false, message: `✗ Failed to resolve CPS crons: ${getErrorMessage(e)}` });
     } finally {
-      setCpsResolveLoading(false);
-      setTimeout(() => setTriggerResult(null), 6000);
+      if (isMounted.current) setCpsResolveLoading(false);
     }
   };
 
   /* ── Select options ────────────────────────────────── */
-  const visibleGroups = applyBgFilter(allBusinessGroups);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const visibleGroups = useMemo(() => applyBgFilter(allBusinessGroups), [allBusinessGroups, bgFilterVersion]);
   const filterActive = visibleGroups.length < allBusinessGroups.length;
-  const visibleEnvs = applyEnvFilter(environments);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const visibleEnvs = useMemo(() => applyEnvFilter(environments), [environments, envFilterVersion]);
 
   const bgOptions = [
     { value: '__all__', label: 'All Organizations', tag: `${visibleGroups.length}`, tagColor: 'bg-gray-200 text-gray-600' },
@@ -767,26 +929,29 @@ export default function SchedulersPage() {
 
   return (
     <div className="h-full flex flex-col gap-5">
+      {/* `label`/`labels` resolve the internal cross-app rowKey(s) to a real
+          schedulerKey + app name for display — see describeRow's comment. */}
       <SchedulerConfirmModal
         schedulerKey={schedulerConfirmKey}
+        label={schedulerConfirmKey ? describeRow(schedulerConfirmKey) : undefined}
         onConfirm={executeTrigger}
         onCancel={() => setSchedulerConfirmKey(null)}
         loading={triggerLoadingSet.has(schedulerConfirmKey)}
       />
       <SchedulerToggleConfirmModal
-        state={schedulerToggleConfirm}
+        state={schedulerToggleConfirm ? { ...schedulerToggleConfirm, label: describeRow(schedulerToggleConfirm.schedulerKey) } : null}
         onConfirm={executeToggle}
         onCancel={() => setSchedulerToggleConfirm(null)}
         loading={toggleLoadingSet.has(schedulerToggleConfirm?.schedulerKey)}
       />
       <BulkSchedulerToggleConfirmModal
-        state={bulkSchedulerToggleConfirm}
+        state={bulkSchedulerToggleConfirm ? { ...bulkSchedulerToggleConfirm, labels: bulkSchedulerToggleConfirm.schedulerKeys.map(describeRow) } : null}
         onConfirm={executeBulkToggle}
         onCancel={() => setBulkSchedulerToggleConfirm(null)}
         loading={bulkLoading}
       />
       <BulkSchedulerRunConfirmModal
-        state={bulkSchedulerRunConfirm}
+        state={bulkSchedulerRunConfirm ? { ...bulkSchedulerRunConfirm, labels: bulkSchedulerRunConfirm.schedulerKeys.map(describeRow) } : null}
         onConfirm={executeBulkRun}
         onCancel={() => setBulkSchedulerRunConfirm(null)}
         loading={bulkRunLoading}

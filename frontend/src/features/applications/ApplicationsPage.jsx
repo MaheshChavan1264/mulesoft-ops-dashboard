@@ -292,9 +292,14 @@ export default function ApplicationsPage() {
   // Only re-load when selectedBg changes AND BGs are already loaded.
   // On initial mount, loadBusinessGroups calls loadApps directly with fresh BGs,
   // so this effect should only fire for subsequent user-driven BG changes.
+  // bgFilterVersion (bumped when the global BG-visibility filter saves) must
+  // ALSO trigger a re-fetch while on "All Organizations" — otherwise hiding
+  // a BG there only updated the dropdown/labels (computed at render time)
+  // while the already-fetched app rows for that now-hidden BG kept showing
+  // until the next manual refresh or BG re-selection.
   useEffect(() => {
     if (selectedBg && allBusinessGroups.length > 0) loadApps(selectedBg);
-  }, [selectedBg]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedBg, bgFilterVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   // Track mount state so background refresh doesn't set state on unmounted component
   // We intentionally do NOT stop keepFresh on unmount so the cache stays warm globally.
   const isMounted = useRef(true);
@@ -351,21 +356,46 @@ export default function ApplicationsPage() {
     const bgIds = bgId === '__all__'
       ? (visible.length > 0 ? visible.map(g => g.id) : [orgId])
       : [bgId];
+    const cacheKey = CK.apps(bgId, bgIds);
+
+    // Registers (or re-registers) the proactive keep-fresh job for this exact
+    // cache scope. Previously only called from the cold-fetch branch below —
+    // both cache-HIT branches (fresh or stale) `return`ed before ever
+    // reaching it, so revisiting this page while the cache was still warm
+    // silently left no recurring background refresh running, defeating the
+    // "navigation to this page will always be instant" guarantee the comment
+    // below describes.
+    const registerKeepFresh = () => {
+      if (keepFreshKeyRef.current && keepFreshKeyRef.current !== cacheKey) {
+        stopKeepingFresh(keepFreshKeyRef.current); // unregister previous BG key
+      }
+      keepFreshKeyRef.current = cacheKey;
+      keepFresh(cacheKey, () =>
+        _fetchAndCacheApps(bgId, bgIds, cacheKey).then(({ mergedApps: ma, mergedEnvs: me }) => {
+          if (isMounted.current) {
+            setApps(ma);
+            setEnvironments(me);
+          }
+          return { apps: ma, envs: me }; // returned value is stored by the sweep
+        })
+      );
+    };
 
     // ── Frontend cache — SWR (stale-while-revalidate) ────────────────────────
     // Render instantly from any usable cached value, then silently re-fetch
     // in the background when the entry is older than FRESH_MS (3 min).
     if (!forceRefresh) {
-      const cacheKey = CK.apps(bgId, bgIds);
       const swr = getCachedSWR(cacheKey);
       if (swr) {
         setApps(swr.data.apps);
         setEnvironments(swr.data.envs);
         setError(swr.data.apps.length === 0 ? 'No applications found.' : '');
         setSelectedIds(new Set());
+        registerKeepFresh();
         if (swr.stale) {
           // Background refresh — no loading spinner, UI stays responsive
           _fetchAndCacheApps(bgId, bgIds, cacheKey).then(({ mergedApps, mergedEnvs }) => {
+            if (!isMounted.current) return;
             setApps(mergedApps);
             setEnvironments(mergedEnvs);
             if (mergedApps.length === 0) setError('No applications found.');
@@ -406,36 +436,26 @@ export default function ApplicationsPage() {
         }
       });
 
+      if (!isMounted.current) return;
       setApps(mergedApps);
       setEnvironments(mergedEnvs);
       if (mergedApps.length === 0) setError('No applications found.');
 
       // Store in frontend cache — APP_STALE_MS eviction window (20 min)
       // FRESH_MS (3 min) is fixed inside apiCache.js, giving a 17-min SWR window.
-      const cacheKey = CK.apps(bgId, bgIds);
       setCached(cacheKey, { apps: mergedApps, envs: mergedEnvs }, APP_STALE_MS);
 
       // Proactive background refresh — the idle sweep will re-fetch this entry
       // when it goes stale (after 3 min), so the cache is NEVER cold while the
       // page is open. Navigation to this page will always be instant.
-      if (keepFreshKeyRef.current && keepFreshKeyRef.current !== cacheKey) {
-        stopKeepingFresh(keepFreshKeyRef.current); // unregister previous BG key
-      }
-      keepFreshKeyRef.current = cacheKey;
-      keepFresh(cacheKey, () =>
-        _fetchAndCacheApps(bgId, bgIds, cacheKey).then(({ mergedApps: ma, mergedEnvs: me }) => {
-          if (isMounted.current) {
-            setApps(ma);
-            setEnvironments(me);
-          }
-          return { apps: ma, envs: me }; // returned value is stored by the sweep
-        })
-      );
+      registerKeepFresh();
     } catch (e) {
-      setError(getErrorMessage(e, 'Failed to load applications.'));
-      setApps([]);
+      if (isMounted.current) {
+        setError(getErrorMessage(e, 'Failed to load applications.'));
+        setApps([]);
+      }
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   /* ── Single-app action ─────────────────────────────── */

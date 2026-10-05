@@ -69,6 +69,15 @@ export function getCloudhub1AppsList(envId, orgId) {
 }
 
 // ── Schedulers ─────────────────────────────────────────────────────────────
+// NOTE on argument order: CH1 and CH2 scheduler functions below deliberately
+// keep each other's existing (inconsistent) parameter order — CH1 puts
+// `orgId` last, CH2 puts it first; see each function's JSDoc for its exact
+// order. This was flagged as an easy foot-gun for new call sites (swap two
+// args of the same type and nothing complains at the call site until the
+// backend 404s) but intentionally NOT changed here, since every current
+// call site already matches these signatures and a reorder would be a
+// breaking change across every caller for cosmetic benefit only. Double-
+// check the JSDoc order below before adding a new call site.
 
 export function getCloudhub1Schedules(envId, appId, orgId) {
   return api.get(`/applications/cloudhub1/${envId}/${appId}/schedules`, { params: { orgId } });
@@ -82,7 +91,15 @@ export function getCloudhub1StaticIps(envId, appId, orgId) {
   return api.get(`/applications/cloudhub1/${envId}/${appId}/static-ips`, { params: { orgId } });
 }
 
-/** POST /applications/cloudhub1/{envId}/{appId}/schedules/{schedulerKey}/run — trigger a CH1 scheduler immediately. */
+/**
+ * POST /applications/cloudhub1/{envId}/{appId}/schedules/{schedulerKey}/run
+ * — trigger a CH1 scheduler immediately.
+ * @param {string} envId
+ * @param {string} appId
+ * @param {string} schedulerKey
+ * @param {string} orgId  LAST here — contrast with runCloudhub2SchedulerNow
+ *   below, where orgId is FIRST. Do not assume the two are interchangeable.
+ */
 export function runCloudhub1SchedulerNow(envId, appId, schedulerKey, orgId) {
   return api.post(
     `/applications/cloudhub1/${envId}/${appId}/schedules/${encodeURIComponent(schedulerKey)}/run`,
@@ -91,10 +108,25 @@ export function runCloudhub1SchedulerNow(envId, appId, schedulerKey, orgId) {
   );
 }
 
+/**
+ * @param {string} orgId  FIRST here — contrast with runCloudhub1SchedulerNow
+ *   above, where orgId is LAST.
+ * @param {string} envId
+ * @param {string} appId
+ * @param {string} schedulerKey
+ */
 export function runCloudhub2SchedulerNow(orgId, envId, appId, schedulerKey) {
   return api.post(`/applications/cloudhub2/${orgId}/${envId}/${appId}/schedulers/${encodeURIComponent(schedulerKey)}/run`);
 }
 
+/**
+ * @param {string} envId
+ * @param {string} appId
+ * @param {string} schedulerKey
+ * @param {string} orgId  4th param here — contrast with
+ *   setCloudhub2SchedulerEnabled below, where orgId is 1st.
+ * @param {boolean} enabled
+ */
 export function setCloudhub1SchedulerEnabled(envId, appId, schedulerKey, orgId, enabled) {
   return api.put(
     `/applications/cloudhub1/${envId}/${appId}/schedules/${encodeURIComponent(schedulerKey)}`,
@@ -103,6 +135,14 @@ export function setCloudhub1SchedulerEnabled(envId, appId, schedulerKey, orgId, 
   );
 }
 
+/**
+ * @param {string} orgId  1st param here — contrast with
+ *   setCloudhub1SchedulerEnabled above, where orgId is 4th.
+ * @param {string} envId
+ * @param {string} appId
+ * @param {string} schedulerKey
+ * @param {boolean} enabled
+ */
 export function setCloudhub2SchedulerEnabled(orgId, envId, appId, schedulerKey, enabled) {
   return api.put(
     `/applications/cloudhub2/${orgId}/${envId}/${appId}/schedulers/${encodeURIComponent(schedulerKey)}`,

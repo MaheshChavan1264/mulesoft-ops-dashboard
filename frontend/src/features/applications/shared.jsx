@@ -94,6 +94,17 @@ export function getNextCronRun(cronExpr) {
     const domWild = domRaw === '*' || domRaw === '?';
     const dowWild = dowRaw === '*' || dowRaw === '?';
 
+    // Quartz supports special tokens in DOM/DOW ('L' = last day/weekday,
+    // 'W' = nearest weekday, '#' = nth weekday-of-month) that parseField()
+    // above does not understand — unparseable segments are silently dropped,
+    // which can make a restricted field look like a wildcard and compute a
+    // confidently-wrong next-run time instead of surfacing that this
+    // expression can't be evaluated. Bail to "unknown" (null) instead.
+    // 'W' is checked narrowly (not adjacent to another letter) so it doesn't
+    // false-positive on weekday abbreviations like "WED".
+    const hasSpecialToken = (f) => /[L#]/i.test(f) || /(^|[^A-Za-z])W([^A-Za-z]|$)/i.test(f);
+    if (hasSpecialToken(domRaw) || hasSpecialToken(dowRaw)) return null;
+
     const d = new Date();
     d.setMilliseconds(0);
     d.setSeconds(d.getSeconds() + 1); // start searching from the next second
@@ -322,7 +333,14 @@ export function AppConfirmModal({ state, onConfirm, onCancel, loading }) {
   );
 }
 
-export function SchedulerConfirmModal({ schedulerKey, onConfirm, onCancel, loading }) {
+// `label` is the human-readable identifier to display (e.g. real
+// schedulerKey + app name) — defaults to `schedulerKey` for callers (like
+// InfrastructureTab, scoped to a single app) where schedulerKey IS already
+// the real, unambiguous Anypoint identifier. Callers that key this modal by
+// something else (e.g. SchedulersPage's cross-app composite rowKey, needed
+// because schedulerKey alone can collide between apps) must pass `label`
+// explicitly or users would see that internal id instead of a real name.
+export function SchedulerConfirmModal({ schedulerKey, label, onConfirm, onCancel, loading }) {
   if (!schedulerKey) return null;
   return (
     <ConfirmActionModal
@@ -338,7 +356,7 @@ export function SchedulerConfirmModal({ schedulerKey, onConfirm, onCancel, loadi
         <>
           <p className="text-gray-500 dark:text-gray-400 text-sm">
             Are you sure you want to trigger{' '}
-            <span className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-xs bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{schedulerKey}</span>{' '}
+            <span className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-xs bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{label || schedulerKey}</span>{' '}
             immediately?
           </p>
           <p className="text-amber-600 dark:text-amber-400 text-xs mt-2 font-medium">⚠ This will execute the scheduler flow outside its normal schedule.</p>
@@ -348,9 +366,11 @@ export function SchedulerConfirmModal({ schedulerKey, onConfirm, onCancel, loadi
   );
 }
 
+// See SchedulerConfirmModal's comment re: `label` — same rationale applies
+// here (`state.label` optional, falls back to the raw `schedulerKey`).
 export function SchedulerToggleConfirmModal({ state, onConfirm, onCancel, loading }) {
   if (!state) return null;
-  const { schedulerKey, nextEnabled } = state;
+  const { schedulerKey, nextEnabled, label } = state;
   return (
     <ConfirmActionModal
       icon={Power}
@@ -371,7 +391,7 @@ export function SchedulerToggleConfirmModal({ state, onConfirm, onCancel, loadin
               {nextEnabled ? 'enable' : 'disable'}
             </span>{' '}
             the scheduler{' '}
-            <span className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-xs bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{schedulerKey}</span>?
+            <span className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-xs bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{label || schedulerKey}</span>?
           </p>
           {!nextEnabled && (
             <p className="text-amber-600 dark:text-amber-400 text-xs mt-2 font-medium">⚠ The flow will no longer run on its schedule until re-enabled.</p>
@@ -382,9 +402,14 @@ export function SchedulerToggleConfirmModal({ state, onConfirm, onCancel, loadin
   );
 }
 
+// `labels` (optional) is a display-text array parallel to `schedulerKeys` —
+// see SchedulerConfirmModal's comment re: internal id vs. display label.
+// Falls back to the raw key per-entry when omitted. List items are keyed by
+// `${k}-${i}` (not just `k`) since `schedulerKeys` can legitimately contain
+// the same raw value more than once across different apps.
 export function BulkSchedulerToggleConfirmModal({ state, onConfirm, onCancel, loading }) {
   if (!state) return null;
-  const { schedulerKeys, nextEnabled } = state;
+  const { schedulerKeys, nextEnabled, labels } = state;
   const count = schedulerKeys?.length || 0;
   return (
     <ConfirmActionModal
@@ -408,8 +433,8 @@ export function BulkSchedulerToggleConfirmModal({ state, onConfirm, onCancel, lo
             these {count} scheduler{count !== 1 ? 's' : ''}?
           </p>
           <div className="flex flex-wrap gap-1.5 mt-2 max-h-24 overflow-y-auto">
-            {(schedulerKeys || []).map(k => (
-              <span key={k} className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-[10px] bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{k}</span>
+            {(schedulerKeys || []).map((k, i) => (
+              <span key={`${k}-${i}`} className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-[10px] bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{labels?.[i] || k}</span>
             ))}
           </div>
           {!nextEnabled && (
@@ -421,9 +446,10 @@ export function BulkSchedulerToggleConfirmModal({ state, onConfirm, onCancel, lo
   );
 }
 
+// Same `labels` convention as BulkSchedulerToggleConfirmModal above.
 export function BulkSchedulerRunConfirmModal({ state, onConfirm, onCancel, loading }) {
   if (!state) return null;
-  const { schedulerKeys } = state;
+  const { schedulerKeys, labels } = state;
   const count = schedulerKeys?.length || 0;
   return (
     <ConfirmActionModal
@@ -441,8 +467,8 @@ export function BulkSchedulerRunConfirmModal({ state, onConfirm, onCancel, loadi
             Are you sure you want to trigger these {count} scheduler{count !== 1 ? 's' : ''} immediately?
           </p>
           <div className="flex flex-wrap gap-1.5 mt-2 max-h-24 overflow-y-auto">
-            {(schedulerKeys || []).map(k => (
-              <span key={k} className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-[10px] bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{k}</span>
+            {(schedulerKeys || []).map((k, i) => (
+              <span key={`${k}-${i}`} className="font-mono text-sfpurple-700 dark:text-sfpurple-300 text-[10px] bg-sfpurple-50 dark:bg-sfpurple-500/15 px-1.5 py-0.5 rounded-md">{labels?.[i] || k}</span>
             ))}
           </div>
           <p className="text-amber-600 dark:text-amber-400 text-xs mt-2 font-medium">⚠ This will execute each scheduler flow outside its normal schedule.</p>

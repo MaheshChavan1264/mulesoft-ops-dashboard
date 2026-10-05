@@ -20,9 +20,13 @@
  * @param {T[]} items
  * @param {number} limit  max concurrent in-flight worker calls
  * @param {(item: T, index: number) => Promise<R>} worker
+ * @param {(item: T, index: number, result: {status:'fulfilled',value:R}|{status:'rejected',reason:any}) => void} [onItemDone]
+ *   optional streaming hook — called synchronously the instant EACH item
+ *   settles (not waiting for the whole batch), so callers can render partial
+ *   progress incrementally instead of blocking on the slowest item.
  * @returns {Promise<Array<{status:'fulfilled',value:R}|{status:'rejected',reason:any}>>}
  */
-export async function mapWithConcurrency(items, limit, worker) {
+export async function mapWithConcurrency(items, limit, worker, onItemDone) {
   const results = new Array(items.length);
   let nextIndex = 0;
 
@@ -35,6 +39,7 @@ export async function mapWithConcurrency(items, limit, worker) {
       } catch (reason) {
         results[i] = { status: 'rejected', reason };
       }
+      onItemDone?.(items[i], i, results[i]);
     }
   }
 

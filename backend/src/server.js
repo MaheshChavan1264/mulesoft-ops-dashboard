@@ -7,7 +7,6 @@ const rateLimit = require('express-rate-limit');
 
 const config = require('./config');
 const logger = require('./utils/logger');
-const requestLogger = require('./middleware/requestLogger');
 
 // ── Session secret validation ─────────────────────────────────────────────────
 // Fail fast in production if SESSION_SECRET is not set or is the known default.
@@ -64,12 +63,6 @@ if (config.isProd) {
 // on API responses adds no protection and risks breaking tooling that inspects
 // headers; revisit if this process ever also serves the frontend bundle.
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-
-// ── Structured request logging ────────────────────────────────────────────────
-// Assigns/propagates an x-request-id, runs the request inside an
-// AsyncLocalStorage context so every log line downstream is correlated, and
-// emits one structured completion log line per request/response.
-app.use(requestLogger);
 
 // Middleware
 app.use(cors({
