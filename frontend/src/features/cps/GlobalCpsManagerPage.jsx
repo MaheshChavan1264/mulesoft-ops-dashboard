@@ -28,16 +28,23 @@ const PROP_TYPE_TABS = [
   { id: 'auth', label: '🔐 Access Control' },
 ];
 
-const CPS_URLS = {
-  ch1: {
-    uat: import.meta.env.VITE_CPS_CH1_UAT || 'https://cps-server-uat.internalapi.sfdcbt.net',
-    prod: import.meta.env.VITE_CPS_CH1_PROD || 'https://cps-server.internalapi.sfdcbt.net'
-  },
-  ch2: {
-    uat: import.meta.env.VITE_CPS_CH2_UAT || 'https://ch2-uat-cps.example.com',
-    prod: import.meta.env.VITE_CPS_CH2_PROD || 'https://ch2-prod-cps.example.com'
-  }
-};
+// Build-time env var overrides — one fixed CPS host per CH version + env,
+// for deployments where that's always true regardless of business group
+// (e.g. VITE_CPS_CH1_UAT, VITE_CPS_CH2_PROD). Looked up dynamically by key
+// below; Vite exposes every VITE_-prefixed var on the real `import.meta.env`
+// object, so bracket access works the same as the dot-notation form.
+//
+// Previously this also had hardcoded fallback strings (including literal
+// `https://ch2-uat-cps.example.com` placeholders for CH2, since no
+// VITE_CPS_CH2_* var is ever actually set) that silently stood in for a real
+// URL — the UI showed, and requests were sent to, a fake host with no
+// indication it wasn't real. Removed entirely: with no CSV-provided URL (see
+// parseGlobalCpsCsv) and no env var override, cpsBaseUrl below now resolves
+// to '' and the UI clearly shows "Not configured" instead of a URL that
+// looks real but isn't.
+function envVarCpsUrl(chVersion, env) {
+  return import.meta.env[`VITE_CPS_${chVersion.toUpperCase()}_${env.toUpperCase()}`] || '';
+}
 
 export default function GlobalCpsManagerPage() {
   const { globalCredentials, hasGlobalCredentials, getGlobalCredential, loadGlobalFromCsv } = useGlobalCpsCredentialStore();
@@ -99,7 +106,16 @@ export default function GlobalCpsManagerPage() {
     }
   }, [bgOptions, bg]);
 
-  const cpsBaseUrl = CPS_URLS[chVersion]?.[env] || '';
+  const cred = useMemo(() => getGlobalCredential(bg, env, chVersion), [getGlobalCredential, bg, env, chVersion]);
+
+  // Resolution priority:
+  // 1. Per-row URL from the uploaded Global CPS CSV (business-group-specific,
+  //    authoritative — see parseGlobalCpsCsv's optional ch{1,2}_{uat,prod}_url columns)
+  // 2. VITE_CPS_CH{1,2}_{UAT,PROD} build-time override, for deployments that
+  //    always use one fixed CPS host per CH version + env
+  // 3. '' (not configured) — deliberately never falls back to an invented
+  //    URL; see envVarCpsUrl's comment for why that used to be the bug here.
+  const cpsBaseUrl = cred?.url || envVarCpsUrl(chVersion, env);
   const isProd = env.toLowerCase() === 'prod';
   // hasPendingChanges / pendingCount come from usePendingPropertyChanges above.
 
@@ -116,12 +132,20 @@ export default function GlobalCpsManagerPage() {
       return;
     }
 
+    const activeHost = customHost.trim() || cpsBaseUrl;
+    if (!activeHost) {
+      // No CSV-provided URL for this BG, no env var override, and no manual
+      // Custom CPS Host override typed in — refuse to send the request to a
+      // blank/invalid host instead of letting it fail opaquely downstream.
+      setError(`No CPS URL configured for "${bg || 'this business group'}" (${chVersion.toUpperCase()} / ${env.toUpperCase()}). Re-upload the Global CPS CSV with a url column for this row, or set a Custom CPS Host under Advanced Request Overrides.`);
+      return;
+    }
+
     setLoading(true);
     setError('');
     
     const cred = getGlobalCredential(bg, env, chVersion);
 
-    const activeHost = customHost.trim() || cpsBaseUrl;
     const activeParams = { 
       environment: envToUse, 
       keys: keysToUse
@@ -290,6 +314,13 @@ export default function GlobalCpsManagerPage() {
 
   const saveProperties = async () => {
     if (!hasPendingChanges) return;
+
+    const activeHost = customHost.trim() || cpsBaseUrl;
+    if (!activeHost) {
+      setError(`No CPS URL configured for "${bg || 'this business group'}" (${chVersion.toUpperCase()} / ${env.toUpperCase()}). Re-upload the Global CPS CSV with a url column for this row, or set a Custom CPS Host under Advanced Request Overrides.`);
+      return;
+    }
+
     setSaving(true);
     setError('');
 
@@ -297,7 +328,6 @@ export default function GlobalCpsManagerPage() {
     const mergedProps = { ...originalProps, ...pendingChanges.modified, ...pendingChanges.added };
     pendingChanges.deleted.forEach(k => delete mergedProps[k]);
 
-    const activeHost = customHost.trim() || cpsBaseUrl;
     const activeParams = { 
       environment: queryEnv.trim() || env, 
       keys: queryKeys.trim() 
@@ -488,9 +518,15 @@ export default function GlobalCpsManagerPage() {
                 <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
                   CPS Config URL (Auto)
                 </label>
-                <div className="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-600 dark:text-gray-300 font-mono flex items-center gap-2 h-[42px]">
-                  <Database size={14} className="text-sfpurple-600 dark:text-sfpurple-400 flex-shrink-0" />
-                  <span className="truncate">{cpsBaseUrl}</span>
+                <div
+                  title={cpsBaseUrl ? undefined : 'No URL configured for this business group / CH version / env combination — upload a Global CPS CSV with a url column, or set a Custom CPS Host below'}
+                  className={`border rounded-xl px-3 py-2 text-sm font-mono flex items-center gap-2 h-[42px] ${
+                    cpsBaseUrl
+                      ? 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300'
+                      : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200/80 dark:border-amber-400/30 text-amber-700 dark:text-amber-300'
+                  }`}>
+                  {cpsBaseUrl ? <Database size={14} className="text-sfpurple-600 dark:text-sfpurple-400 flex-shrink-0" /> : <AlertTriangle size={14} className="flex-shrink-0" />}
+                  <span className="truncate">{cpsBaseUrl || 'Not configured — set Custom CPS Host below'}</span>
                 </div>
               </div>
             </div>
@@ -603,7 +639,7 @@ export default function GlobalCpsManagerPage() {
                         type="text"
                         value={customHost}
                         onChange={e => setCustomHost(e.target.value)}
-                        placeholder={cpsBaseUrl}
+                        placeholder={cpsBaseUrl || 'https://your-cps-host — required, not configured for this BG/env'}
                         className="w-full bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-sfpurple-400 focus:ring-2 focus:ring-sfpurple-500/15 font-mono transition-all"
                       />
                     </div>
