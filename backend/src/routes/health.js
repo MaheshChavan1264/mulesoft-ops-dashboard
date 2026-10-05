@@ -27,14 +27,28 @@ const PING_PATHS = [
   '/api/ping',
   '/ping',
 ];
-const PING_TIMEOUT_MS = 10000; // 10 s per individual attempt — generous for a healthy app
+// Per-attempt axios timeout. Was 10s — too tight for apps with a slow cold
+// start / heavy downstream dependency chain behind their ping endpoint;
+// legitimate healthy apps were being reported as timed out well before they
+// actually responded. Raised to 45s so a single slow-but-working attempt
+// has room to complete; PING_OVERALL_DEADLINE_MS below still bounds the
+// TOTAL time across all phases/paths so a fully unreachable app doesn't
+// take forever to fail.
+const PING_TIMEOUT_MS = 45000; // 45 s per individual attempt
 // Hard ceiling on TOTAL wall-clock time for one /ping call, regardless of how many
 // base URLs / paths remain to try. Previously each of up to 18 candidate URLs
 // (3 bases x 6 paths) was tried strictly sequentially with a 30s timeout each,
 // so a fully unreachable app could take ~9 minutes to fail. Paths within a phase
 // are now fired in parallel (see below) and this deadline aborts everything in
 // flight once the budget is exhausted, so callers get a definitive answer fast.
-const PING_OVERALL_DEADLINE_MS = 30000; // 30 s total
+//
+// Raised from 30s to 60s alongside PING_TIMEOUT_MS above — some real apps
+// take 30-45s+ to respond (cold start, slow downstream call inside their own
+// ping flow), and the old 30s ceiling could abort an in-flight, eventually-
+// successful first-phase attempt before it ever got the chance to finish.
+// Still comfortably inside PingTestPanel.jsx's 95s client-side safety
+// timeout — keep that margin if either value changes again.
+const PING_OVERALL_DEADLINE_MS = 60000; // 60 s total
 
 /**
  * Returns a domain-qualifier segment to insert between the env slug and

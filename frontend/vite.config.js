@@ -34,10 +34,14 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
-        // Extend proxy timeout to handle long-running ping tests
-        // (worst case: 12 paths × 30s each = 6 min; plus client 95s safety cutoff)
-        proxyTimeout: 120000,   // 2 minutes — covers 95s client timeout + backend overhead
-        timeout: 120000,
+        // Extend proxy timeout to handle long-running ping tests — backend's
+        // own overall deadline (health.js's PING_OVERALL_DEADLINE_MS) is 60s,
+        // and PingTestPanel.jsx's client-side safety cutoff is 120s. This dev
+        // proxy sits between them, so it must stay ABOVE the client timeout
+        // or it would abort the request out from under the client before the
+        // client's own 120s timer even fires.
+        proxyTimeout: 150000,   // 2.5 minutes — stays above the 120s client timeout
+        timeout: 150000,
       }
     }
   },

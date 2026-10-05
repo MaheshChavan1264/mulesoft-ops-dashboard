@@ -265,7 +265,24 @@ export default function PingTestPanel({
       ? `https://${safeName}.internalapi.sfdcbt.net`
       : `https://${safeName}.stage.internalapi.sfdcbt.net`;
   })();
-  const displayBase = isCH1 ? ch1Base : ch2IngressUrl || '(no ingress URL detected)';
+  // CH2 apps can have more than one ingress URL (ARM returns them joined by
+  // commas — see backend's buildBaseUrl() JSDoc in routes/health.js, which
+  // this mirrors). Previously `displayBase` used the raw `ch2IngressUrl`
+  // string as-is, so a dual-ingress app produced a curl command/URL display
+  // with BOTH URLs mashed together (e.g. "https://a.com,https://b.com/api/
+  // v1/ping") instead of a single valid one. Pick exactly one, same
+  // preference the backend applies when actually sending the ping: prefer
+  // an external (non-"internalapi") URL, else fall back to the first one.
+  const ch2Base = (() => {
+    if (!ch2IngressUrl) return '';
+    const candidates = ch2IngressUrl
+      .split(',')
+      .map((u) => u.trim().replace(/\/+$/, ''))
+      .filter((u) => /^https?:\/\/.+/.test(u));
+    if (candidates.length === 0) return '';
+    return candidates.find((u) => !u.includes('internalapi')) || candidates[0];
+  })();
+  const displayBase = isCH1 ? ch1Base : ch2Base || '(no ingress URL detected)';
 
   // Auto-collapse config panel when ping completes
   const runPing = async () => {
@@ -274,13 +291,16 @@ export default function PingTestPanel({
     setLoading(true); setResult(null); setError(null);
 
     // Client-side safety timeout — prevents the button staying disabled forever
-    // if the backend is slow (6 paths × 30s each = up to 3 min worst case).
-    // After 95s the frontend stops waiting and shows a timeout error.
+    // if the backend is slow. Backend's own overall deadline (health.js's
+    // PING_OVERALL_DEADLINE_MS) is 60s — this stays comfortably above that
+    // (not tied to it 1:1) so a slow-but-legitimate backend response always
+    // has the chance to arrive before the frontend gives up on it.
+    // After 120s the frontend stops waiting and shows a timeout error.
     const clientTimeout = setTimeout(() => {
-      setError('Ping timed out waiting for response (95s). The backend may still be running — try again in a moment.');
+      setError('Ping timed out waiting for response (120s). The backend may still be running — try again in a moment.');
       setLoading(false);
       setConfigOpen(false);
-    }, 95000);
+    }, 120000);
 
     try {
       const data = await pingAppRequest({
