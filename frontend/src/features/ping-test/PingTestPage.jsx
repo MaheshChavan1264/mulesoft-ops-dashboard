@@ -8,7 +8,8 @@ import {
 import { getAutoContractCreds, getAutoCredentials, getOAuth2Token, pingApp as pingAppRequest, getPingHistory, clearPingHistory } from '../../services/healthService';
 import { getCloudhub2AppDetail, getCloudhub1AppProperties } from '../../services/applicationsService';
 import { fetchCpsProperties } from '../../services/cpsService';
-import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId, downloadCsv } from '../../utils/appUtils';
+import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId } from '../../utils/appUtils';
+import { exportRowsToXlsx, timestampedFilename } from '../../utils/xlsxExport';
 import { findOAuth2Url, findApiIdInProps as findApiId, flattenCpsResponse } from '../../utils/cpsHelpers';
 import PostmanJsonViewer from '../../components/shared/PostmanJsonViewer';
 import PageHeader from '../../components/ui/PageHeader';
@@ -402,30 +403,27 @@ const SESSION_KEY = 'pingTestResults_v1';
 // ─── PingHistoryView ─────────────────────────────────────────────────────────
 
 function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
-  const exportHistoryCsv = useCallback(() => {
-    const rows = [
-      ['Timestamp', 'Application', 'Environment', 'Type', 'Status', 'HTTP Code', 'Active Endpoint', 'Latency (ms)', 'Credentials', 'Error', 'Response Payload'],
-    ];
-    globalHistory.forEach(entry => {
+  const exportHistoryXlsx = useCallback(() => {
+    const rows = globalHistory.map(entry => {
       let payloadStr = '—';
       if (entry.payload != null) {
         payloadStr = typeof entry.payload === 'string' ? entry.payload : JSON.stringify(entry.payload);
       }
-      rows.push([
-        new Date(entry.timestamp).toLocaleString(),
-        entry.appName || '—',
-        entry.env_name || '—',
-        entry.target_type || '—',
-        entry.status,
-        entry.http_status ?? '—',
-        entry.endpoint || '—',
-        entry.responseTimeMs ?? '—',
-        entry.credentials || '—',
-        entry.error || '—',
-        payloadStr
-      ]);
+      return {
+        'Timestamp': new Date(entry.timestamp).toLocaleString(),
+        'Application': entry.appName || '—',
+        'Environment': entry.env_name || '—',
+        'Type': entry.target_type || '—',
+        'Status': entry.status,
+        'HTTP Code': entry.http_status ?? '—',
+        'Active Endpoint': entry.endpoint || '—',
+        'Latency (ms)': entry.responseTimeMs ?? '—',
+        'Credentials': entry.credentials || '—',
+        'Error': entry.error || '—',
+        'Response Payload': payloadStr,
+      };
     });
-    downloadCsv(rows, `ping-history-${new Date().toISOString().slice(0, 10)}.csv`);
+    exportRowsToXlsx(rows, { sheetName: 'Ping History', filename: timestampedFilename('ping-history') });
   }, [globalHistory]);
 
   return (
@@ -448,10 +446,10 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
           actions={
             <>
               {globalHistory.length > 0 && (
-                <button onClick={exportHistoryCsv}
+                <button onClick={exportHistoryXlsx}
                   className="group/exp flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfgreen-600 dark:text-sfgreen-400 bg-white dark:bg-gray-800 hover:text-sfgreen-700 dark:hover:text-sfgreen-300 border border-gray-200 dark:border-gray-700 hover:border-sfgreen-200/70 dark:hover:border-sfgreen-400/30 shadow-sm hover:shadow-md transition-all">
                   <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfgreen-50 dark:bg-sfgreen-500/15 group-hover/exp:bg-sfgreen-100 dark:group-hover/exp:bg-sfgreen-500/25 text-sfgreen-600 dark:text-sfgreen-400 flex-shrink-0 transition-colors"><Download size={11} /></span>
-                  Export CSV
+                  Export XLSX
                 </button>
               )}
               {globalHistory.length > 0 && (
@@ -921,11 +919,8 @@ export default function PingTestPage() {
 
   // ─── Export CSV ─────────────────────────────────────────────────────────────
 
-  const exportCsv = useCallback(() => {
-    const rows = [
-      ['Application', 'Environment', 'Type', 'Status', 'HTTP Code', 'Active Endpoint', 'Latency (ms)', 'Credentials', 'Error', 'Response Payload'],
-    ];
-    testedApps.forEach(app => {
+  const exportXlsx = useCallback(() => {
+    const rows = testedApps.map(app => {
       const result = results[app.id];
       const auto = autoResolvedMap[app.id];
       const isCH1 = app.deploymentType !== 'CloudHub 2.0';
@@ -934,13 +929,22 @@ export default function PingTestPage() {
       let payloadStr = '—';
       if (result?.payload != null) {
         payloadStr = typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload);
-        // No truncation — full response is exported; downloadCsv handles quoting/escaping
+        // No truncation — full response is exported
       }
-      rows.push([app.name, app.environment?.name || '—', isCH1 ? 'CH1' : 'CH2', statusLabel,
-        result?.httpStatus ?? '—', result?.activeEndpoint || '—', result?.responseTimeMs ?? '—',
-        creds, result?.error || '—', payloadStr]);
+      return {
+        'Application': app.name,
+        'Environment': app.environment?.name || '—',
+        'Type': isCH1 ? 'CH1' : 'CH2',
+        'Status': statusLabel,
+        'HTTP Code': result?.httpStatus ?? '—',
+        'Active Endpoint': result?.activeEndpoint || '—',
+        'Latency (ms)': result?.responseTimeMs ?? '—',
+        'Credentials': creds,
+        'Error': result?.error || '—',
+        'Response Payload': payloadStr,
+      };
     });
-    downloadCsv(rows, `ping-test-results-${new Date().toISOString().slice(0, 10)}.csv`);
+    exportRowsToXlsx(rows, { sheetName: 'Ping Results', filename: timestampedFilename('ping-test-results') });
   }, [testedApps, results, autoResolvedMap]);
 
   // ─── Status filter ───────────────────────────────────────────────────────
@@ -1250,10 +1254,10 @@ export default function PingTestPage() {
             Upload CSV
           </button>
           {hasResults && (
-            <button onClick={exportCsv}
+            <button onClick={exportXlsx}
               className="group/exp flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl text-sfgreen-600 dark:text-sfgreen-400 bg-white dark:bg-gray-800 hover:text-sfgreen-700 dark:hover:text-sfgreen-300 border border-gray-200 dark:border-gray-700 hover:border-sfgreen-200/70 dark:hover:border-sfgreen-400/30 shadow-sm hover:shadow-md transition-all">
               <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-sfgreen-50 dark:bg-sfgreen-500/15 group-hover/exp:bg-sfgreen-100 dark:group-hover/exp:bg-sfgreen-500/25 text-sfgreen-600 dark:text-sfgreen-400 flex-shrink-0 transition-colors"><Download size={11} /></span>
-              Export CSV
+              Export XLSX
             </button>
           )}
           {hasResults && (

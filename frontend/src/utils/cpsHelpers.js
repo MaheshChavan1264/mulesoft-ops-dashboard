@@ -10,15 +10,49 @@
 // ── ARM property extraction ───────────────────────────────────────────────────
 
 /**
- * Extract CPS connection configuration from an Anypoint Runtime Manager
- * application detail object.
- *
- * Merges properties from all ARM sources in the same priority order used
- * by the Mule application at runtime (lowest → highest priority):
+ * Merges every ARM property source for an application detail object into a
+ * single flat key→value map, in the same priority order (lowest → highest)
+ * the Mule application itself uses at runtime:
  *   app.application.properties → application.configuration.properties →
  *   deploymentSettings.runtimeProperties → top-level appDetail.properties →
  *   mule.agent.application.properties.service → deploymentSettings.properties →
  *   deploymentSettings.environmentVariables
+ *
+ * Extracted out of extractCpsConfig() below so callers that need the raw
+ * merged property map directly (e.g. GlobalSearchPage's "search ARM
+ * properties by key/value" feature and its CPS-availability pre-check) can
+ * reuse the exact same merge instead of re-deriving/duplicating it.
+ *
+ * @param {object} appDetail  Raw response from /applications/cloudhub2 or /cloudhub1
+ * @returns {Record<string, any>}
+ */
+export function mergeAppProps(appDetail) {
+  if (!appDetail) return {};
+
+  const ds       = appDetail.target?.deploymentSettings || {};
+  const appCfg   = appDetail.application?.configuration || {};
+  const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
+
+  return {
+    // Lower-priority fallback sources — only fill gaps the sources below
+    // don't already cover.
+    ...(appDetail.application?.properties || {}),
+    ...(appCfg.properties || {}),
+    ...(ds.runtimeProperties || {}),
+    // Original canonical sources (unchanged priority/order).
+    ...appDetail.properties,
+    ...(propsSvc.properties || {}),
+    ...(ds.properties || {}),
+    ...(ds.environmentVariables || ds.environmentVars || {}),
+  };
+}
+
+/**
+ * Extract CPS connection configuration from an Anypoint Runtime Manager
+ * application detail object.
+ *
+ * Merges properties from all ARM sources via mergeAppProps() above (same
+ * priority order used by the Mule application at runtime).
  *
  * Also tries several known historical key-name variants for each field and,
  * as a last resort for the base URL, scans every property for a value that
@@ -37,22 +71,7 @@
 export function extractCpsConfig(appDetail) {
   if (!appDetail) return { cpsBaseUrl: '', cpsKey: '', cpsEnv: '', cpsClientId: '' };
 
-  const ds       = appDetail.target?.deploymentSettings || {};
-  const appCfg   = appDetail.application?.configuration || {};
-  const propsSvc = appCfg['mule.agent.application.properties.service'] || {};
-
-  const rp = {
-    // Lower-priority fallback sources — only fill gaps the sources below
-    // don't already cover.
-    ...(appDetail.application?.properties || {}),
-    ...(appCfg.properties || {}),
-    ...(ds.runtimeProperties || {}),
-    // Original canonical sources (unchanged priority/order).
-    ...appDetail.properties,
-    ...(propsSvc.properties || {}),
-    ...(ds.properties || {}),
-    ...(ds.environmentVariables || ds.environmentVars || {}),
-  };
+  const rp = mergeAppProps(appDetail);
 
   let cpsBaseUrl =
     rp['cps.configServerBaseUrl'] || rp['config.server.base.url'] ||

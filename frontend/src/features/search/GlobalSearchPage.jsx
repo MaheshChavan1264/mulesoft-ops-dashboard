@@ -11,9 +11,8 @@ import {
 import { postCpsCredentialsRaw, searchCpsUsers } from '../../services/cpsService';
 import { getCached, getCachedSWR, setCached } from '../../services/apiCache';
 import { CK } from '../../services/cacheKeys';
-import { extractCpsConfig as extractCpsConfigShared } from '../../utils/cpsHelpers';
-import { downloadCsv } from '../../utils/appUtils';
-import { aoaToWorksheet, writeWorkbook, timestampedFilename } from '../../utils/xlsxExport';
+import { extractCpsConfig as extractCpsConfigShared, mergeAppProps } from '../../utils/cpsHelpers';
+import { aoaToWorksheet, writeWorkbook, exportRowsToXlsx, timestampedFilename } from '../../utils/xlsxExport';
 import { useBgEnvFilter } from '../../hooks/useBgEnvFilter';
 import PageHeader from '../../components/ui/PageHeader';
 import TableHeader from '../../components/ui/TableHeader';
@@ -767,12 +766,23 @@ export default function GlobalSearchPage() {
     setLoading(false);
   };
 
-  const exportCsv = () => {
+  const exportXlsx = () => {
     if (!results || !results.length) return;
     // Feature 13: include Business Group as first column
-    const H = ['Business Group', 'Cloudhub Environment', 'Cloudhub Version', 'Integration Name', 'Status', 'Non-Secure Key', 'CPS Prefix', 'Secure Key', 'Found In Property Key', 'API User', 'Password'];
-    const rows = results.map(r => [r.bgName || '—', r.chEnv, r.chVersion, r.appName, r.status || '—', r.nsKey, r.cpsPrefix, r.secureKey, r.propKey, r.apiUser, r.password]);
-    downloadCsv([H, ...rows], timestampedFilename('global-search', 'csv', { time: true }));
+    const rows = results.map(r => ({
+      'Business Group': r.bgName || '—',
+      'Cloudhub Environment': r.chEnv,
+      'Cloudhub Version': r.chVersion,
+      'Integration Name': r.appName,
+      'Status': r.status || '—',
+      'Non-Secure Key': r.nsKey,
+      'CPS Prefix': r.cpsPrefix,
+      'Secure Key': r.secureKey,
+      'Found In Property Key': r.propKey,
+      'API User': r.apiUser,
+      'Password': r.password,
+    }));
+    exportRowsToXlsx(rows, { sheetName: 'Search Results', filename: timestampedFilename('global-search', 'xlsx', { time: true }) });
   };
 
   /**
@@ -1346,9 +1356,10 @@ export default function GlobalSearchPage() {
                 <Hash size={11} /> {groupByTerm ? 'Grouped by Term' : 'Group by Term'}
               </button>
               {results.length > 0 && (
-                <button onClick={exportCsv}
+                <button onClick={exportXlsx}
+                  title="Export the flat results list as a single-sheet XLSX"
                   className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-400/30 rounded-xl shadow-sm hover:shadow-md transition-all">
-                  <Download size={13} /> Export CSV
+                  <Download size={13} /> Export Results
                 </button>
               )}
               {results.length > 0 && (
@@ -1362,8 +1373,9 @@ export default function GlobalSearchPage() {
               {exportTermGroups && (
                 <button
                   onClick={() => exportGroupedXlsx(exportTermGroups, null, activeTerms, searchMode)}
+                  title="Export grouped by search term as a multi-sheet XLSX (one sheet per term)"
                   className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-sfpurple-700 dark:text-sfpurple-300 hover:text-sfpurple-800 dark:hover:text-sfpurple-200 bg-sfpurple-50 dark:bg-sfpurple-500/10 border border-sfpurple-200/70 dark:border-sfpurple-400/30 rounded-xl shadow-sm hover:shadow-md transition-all">
-                  <Download size={13} /> Export XLSX
+                  <Download size={13} /> Export Grouped
                 </button>
               )}
             </div>
