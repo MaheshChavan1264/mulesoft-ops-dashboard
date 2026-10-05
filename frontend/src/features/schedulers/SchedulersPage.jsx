@@ -144,8 +144,8 @@ async function _fetchAndCacheSchedulers(bgId, bgIds, envIds, cacheKey, onBgSettl
  * so React.memo's shallow prop comparison actually skips re-renders.
  */
 const SchedulerRow = React.memo(function SchedulerRow({
-  s, rowKeyStr, isChecked, isTriggering, isToggling, envType, resolveVersion,
-  onToggleSelect, onRequestToggle, onRequestTrigger, onNavigateToApp, onOpenApp,
+  s, rowKeyStr, isChecked, isTriggering, isToggling, isResolving, envType, resolveVersion,
+  onToggleSelect, onRequestToggle, onRequestTrigger, onResolveRow, onOpenApp,
 }) {
   const active = s.enabled !== false;
   // If the user already resolved this exact app+scheduler's CPS placeholder(s)
@@ -237,10 +237,12 @@ const SchedulerRow = React.memo(function SchedulerRow({
             {decodedCron && <p className="text-[11px] text-gray-600 dark:text-gray-300">{decodedCron}</p>}
             {(unresolvedPlaceholder || unresolvedTzPlaceholder) && (
               <button
-                onClick={() => onNavigateToApp(s._bgId, s.envId, s.appId)}
-                title="Open this app's Infrastructure tab to resolve the cron/timezone value from CPS properties"
-                className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:underline">
-                <Key size={9} /> Resolve from CPS →
+                onClick={() => onResolveRow(s)}
+                disabled={isResolving}
+                title="Resolve this scheduler's cron/timezone value from this app's CPS properties, right here"
+                className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-wait">
+                {isResolving ? <RefreshCw size={9} className="animate-spin" /> : <Key size={9} />}
+                {isResolving ? 'Resolving…' : 'Resolve from CPS'}
               </button>
             )}
           </div>
@@ -318,6 +320,11 @@ export default function SchedulersPage() {
   }, [filterEnv]);
   const [filterStatus, setFilterStatus] = useState(''); // enabled/disabled
   const [filterType, setFilterType] = useState(''); // CloudHub 1.0 / 2.0
+  // Toggle filter — narrows the table down to schedulers whose cron and/or
+  // timezone is still a raw `${cps.property}` placeholder that hasn't been
+  // resolved yet (per-row "Resolve from CPS", the bulk "Resolve CPS Crons"
+  // button, or the Infrastructure tab). See the `filtered` useMemo below.
+  const [filterUnresolved, setFilterUnresolved] = useState(false);
 
   const { bgFilterVersion, envFilterVersion, visibleEnvIds } = useBgEnvFilter();
 
@@ -358,20 +365,36 @@ export default function SchedulersPage() {
 
   const keepFreshKeyRef = useRef(null);
   const isMounted = useRef(true);
-  useEffect(() => () => {
-    isMounted.current = false;
-    // Unlike ApplicationsPage/_fetchAndCacheApps (cheap: a handful of
-    // summary calls), this page's keepFresh job re-runs the FULL per-app
-    // scheduler fan-out — one HTTP call per app, no bulk endpoint exists on
-    // the Anypoint side — which for a large account can take 30-90+
-    // seconds. Leaving that registered forever (the pattern other pages
-    // use, to keep navigating back instantly fresh) means it silently
-    // re-fires every ~3 min in the background for as long as the app stays
-    // open, long after the user has left this page, competing for the same
-    // connection pool as every other request. Stop it on unmount instead —
-    // the cost of one cold re-fetch next time this page opens is far
-    // cheaper than an unbounded recurring multi-thousand-app crawl.
-    if (keepFreshKeyRef.current) stopKeepingFresh(keepFreshKeyRef.current);
+  useEffect(() => {
+    // React 18 StrictMode (dev only) double-invokes effects — mount, then
+    // immediately simulate an unmount by running the cleanup below, then
+    // mount again — to help surface effects that aren't idempotent. With a
+    // mount body that did nothing (just `() => () => {...}`), that fake
+    // "unmount" cleanup set isMounted.current = false and nothing ever set
+    // it back to true on the real second mount, leaving every `if
+    // (!isMounted.current) return;` guard in this file (toast display,
+    // post-await setState after Resolve CPS Crons / toggle / trigger /
+    // bulk actions) permanently short-circuited for the rest of the
+    // component's actual lifetime in dev — the user-visible symptom being
+    // that nothing appeared to refresh after any action finished. Setting
+    // it back to true here on every mount (including the StrictMode replay)
+    // fixes that while still correctly ending up false after a REAL unmount.
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      // Unlike ApplicationsPage/_fetchAndCacheApps (cheap: a handful of
+      // summary calls), this page's keepFresh job re-runs the FULL per-app
+      // scheduler fan-out — one HTTP call per app, no bulk endpoint exists on
+      // the Anypoint side — which for a large account can take 30-90+
+      // seconds. Leaving that registered forever (the pattern other pages
+      // use, to keep navigating back instantly fresh) means it silently
+      // re-fires every ~3 min in the background for as long as the app stays
+      // open, long after the user has left this page, competing for the same
+      // connection pool as every other request. Stop it on unmount instead —
+      // the cost of one cold re-fetch next time this page opens is far
+      // cheaper than an unbounded recurring multi-thousand-app crawl.
+      if (keepFreshKeyRef.current) stopKeepingFresh(keepFreshKeyRef.current);
+    };
   }, []);
 
   // Single coordinated toast timer — every action handler used to schedule
@@ -582,7 +605,12 @@ export default function SchedulersPage() {
   useEffect(() => { setSelectedKeys(new Set()); }, [selectedBg]);
 
   /* ── Filtering ──────────────────────────────────────── */
-  const filtered = useMemo(() => {
+  // Search/env/status/type filters only — kept separate from the
+  // "Unresolved CPS" toggle below so unresolvedCount (used for both the
+  // toggle button's own count badge and the "Resolve CPS Crons" badge) can
+  // reflect "how many WOULD show if the toggle were on" regardless of its
+  // current state, instead of collapsing to its own filtered.length once hit.
+  const baseFiltered = useMemo(() => {
     const visEnvIds = new Set(applyEnvFilter(environments).map((e) => e.id));
     const envModalActive = environments.length > 0 && visEnvIds.size < environments.length;
 
@@ -600,23 +628,39 @@ export default function SchedulersPage() {
     });
   }, [schedulers, environments, debouncedSearch, filterEnv, filterStatus, filterType, envFilterVersion]);
 
-  const { enabledCount, disabledCount } = useMemo(() => {
-    const enabled = filtered.filter((s) => s.enabled !== false).length;
-    return { enabledCount: enabled, disabledCount: filtered.length - enabled };
-  }, [filtered]);
   // Still-unresolved count — re-derived whenever cpsResolveVersion bumps so
-  // the "Resolve CPS Crons" button's badge/disabled-state reflects rows the
+  // the "Resolve CPS Crons" / "Unresolved CPS" badges reflect rows the
   // resolution cache has already filled in, not just the static
   // server-computed `unresolvedPlaceholder`/`unresolvedTzPlaceholder` flags
   // (which never change). Counts a row as unresolved if EITHER its cron or
   // its timezone is still a raw placeholder and hasn't been cached yet.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Based on `baseFiltered` (NOT the final `filtered` below) so it stays
+  // meaningful even while the "Unresolved CPS" toggle itself is active.
   const unresolvedCount = useMemo(
-    () => filtered.filter((s) =>
+    () => baseFiltered.filter((s) =>
       (s.unresolvedPlaceholder || s.unresolvedTzPlaceholder) && !getResolvedSchedule(s.appId, s.schedulerKey)
     ).length,
-    [filtered, cpsResolveVersion]
+    [baseFiltered, cpsResolveVersion]
   );
+
+  // "Unresolved CPS" filter toggle — narrows the table (and, as a side
+  // effect, what the bulk "Resolve CPS Crons" button processes, since that
+  // button scopes to `filtered` too) down to schedulers whose cron and/or
+  // timezone is still a raw `${cps.property}` placeholder that hasn't been
+  // resolved yet. Re-evaluated on cpsResolveVersion so a row that gets
+  // resolved (per-row or in bulk) drops out of this view immediately
+  // instead of staying listed until the next full refetch.
+  const filtered = useMemo(() => {
+    if (!filterUnresolved) return baseFiltered;
+    return baseFiltered.filter((s) =>
+      (s.unresolvedPlaceholder || s.unresolvedTzPlaceholder) && !getResolvedSchedule(s.appId, s.schedulerKey)
+    );
+  }, [baseFiltered, filterUnresolved, cpsResolveVersion]);
+
+  const { enabledCount, disabledCount } = useMemo(() => {
+    const enabled = filtered.filter((s) => s.enabled !== false).length;
+    return { enabledCount: enabled, disabledCount: filtered.length - enabled };
+  }, [filtered]);
 
   // Reset to page 1 on an actual user-driven filter/search/BG change —
   // deliberately NOT keyed on `filtered.length`, which also changes on
@@ -625,7 +669,7 @@ export default function SchedulersPage() {
   // back to page 1 mid-session with no interaction from them.
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterEnv, filterStatus, filterType, selectedBg]);
+  }, [search, filterEnv, filterStatus, filterType, filterUnresolved, selectedBg]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   // Correction (not a user-facing "reset"): clamp down if a background
@@ -638,19 +682,74 @@ export default function SchedulersPage() {
   // Precomputed so SchedulerRow gets a stable primitive (env type string)
   // instead of the whole `environments` array + an inline .find() per row.
   const envTypeById = useMemo(() => new Map(environments.map((e) => [e.id, e.type])), [environments]);
-  const onNavigateToApp = useCallback((bgId, envId, appId) => {
-    // location.state tells ApplicationDetailPage to land directly on the
-    // Infrastructure tab — the user clicked this link specifically to
-    // resolve a CPS cron placeholder, so skip making them click "Schedulers"
-    // (that tab's label) themselves after arriving on the Overview tab.
-    navigate(`/applications/${bgId}/${envId}/${appId}`, { state: { openInfrastructureTab: true } });
-  }, [navigate]);
   // Plain "open this app" navigation (e.g. clicking the app name) — lands on
-  // the normal default (Overview) tab, unlike onNavigateToApp above which is
-  // specifically for the "Resolve from CPS →" link.
+  // the normal default (Overview) tab.
   const onOpenApp = useCallback((bgId, envId, appId) => {
     navigate(`/applications/${bgId}/${envId}/${appId}`);
   }, [navigate]);
+
+  // Per-row "Resolve from CPS" (table's own placeholder-resolve link) —
+  // tracked by appId (not rowKey/schedulerKey) because resolving one app's
+  // CPS properties resolves EVERY unresolved scheduler belonging to that
+  // app in one shot, same as the bulk "Resolve CPS Crons" button does per
+  // app internally. A Set (not a single appId) supports resolving several
+  // different apps' rows concurrently without one click blocking another.
+  const [resolvingAppIds, setResolvingAppIds] = useState(new Set());
+  // Lets resolveAppCpsCrons read the latest scheduler list without needing
+  // `schedulers` in its own dependency array — `schedulers` changes on
+  // every keepFresh background refresh, which would otherwise churn this
+  // callback's identity constantly and defeat SchedulerRow's React.memo.
+  const schedulersRef = useRef(schedulers);
+  useEffect(() => { schedulersRef.current = schedulers; }, [schedulers]);
+
+  /**
+   * Resolves CPS cron/timezone placeholders for ONE app, right here on the
+   * Schedulers dashboard — previously this instead navigated the user away
+   * to that app's Infrastructure tab to do the same resolution there. Reuses
+   * the same per-app CPS fetch + resolvePlaceholder logic as the bulk
+   * "Resolve CPS Crons" button (resolveCpsCrons below), just scoped to a
+   * single app instead of every unresolved app currently visible.
+   */
+  const resolveAppCpsCrons = useCallback(async (s) => {
+    const { appId, envId, _bgId: bgId, deploymentType, appName } = s;
+    setResolvingAppIds((prev) => new Set(prev).add(appId));
+    try {
+      const propsByApp = await resolveSchedulerCpsPropsForApps(
+        [{ appId, envId, bgId, deploymentType }],
+        { hasCredentials, getSecret, getAllCredentials }
+      );
+      const entry = propsByApp.get(appId);
+      if (!entry || entry.error) {
+        showToast({ success: false, message: `✗ Failed to resolve CPS properties for ${appName}: ${entry?.error || 'unknown error'}` });
+        return;
+      }
+      let resolvedCount = 0;
+      schedulersRef.current.forEach((row) => {
+        if (row.appId !== appId) return;
+        if (!row.unresolvedPlaceholder && !row.unresolvedTzPlaceholder) return;
+        const { resolved: cron, wasResolved: cronResolved } = resolvePlaceholder(row.cron, entry.props);
+        const { resolved: timeZone, wasResolved: tzResolved } = resolvePlaceholder(row.timeZone, entry.props);
+        if (cronResolved || tzResolved) {
+          rememberResolvedSchedule(row.appId, row.schedulerKey, { cron, timeZone });
+          resolvedCount++;
+        }
+      });
+      if (!isMounted.current) return;
+      setCpsResolveVersion((v) => v + 1); // force rows to re-check the resolution cache
+      showToast({
+        success: true,
+        message: resolvedCount > 0
+          ? `✓ Resolved ${resolvedCount} scheduler${resolvedCount !== 1 ? 's' : ''} on ${appName} from CPS`
+          : `No crons could be resolved for ${appName} — property not found in CPS`,
+      });
+    } catch (e) {
+      showToast({ success: false, message: `✗ Failed to resolve CPS crons for ${appName}: ${getErrorMessage(e)}` });
+    } finally {
+      if (isMounted.current) {
+        setResolvingAppIds((prev) => { const n = new Set(prev); n.delete(appId); return n; });
+      }
+    }
+  }, [hasCredentials, getSecret, getAllCredentials, showToast]);
 
   const visibleKeys = useMemo(() => filtered.map(rowKey), [filtered, rowKey]);
   // O(1) lookup map instead of findRow's old `schedulers.find(...)` — called
@@ -1051,7 +1150,7 @@ export default function SchedulersPage() {
       )}
 
       {/* Filters row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
         <div className="sm:col-span-2 lg:col-span-1">
           <div className="relative group">
             <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 group-focus-within:text-sf-500 pointer-events-none transition-colors" />
@@ -1069,7 +1168,7 @@ export default function SchedulersPage() {
         <div className="lg:col-span-1">
           <Select
             value={selectedBg}
-            onChange={(v) => { setSelectedBg(v); setSearch(''); setFilterEnv(''); setFilterStatus(''); setFilterType(''); }}
+            onChange={(v) => { setSelectedBg(v); setSearch(''); setFilterEnv(''); setFilterStatus(''); setFilterType(''); setFilterUnresolved(false); }}
             options={bgOptions}
             placeholder="All Organizations…"
             searchable={visibleGroups.length > 5}
@@ -1084,6 +1183,19 @@ export default function SchedulersPage() {
         <div><Select value={filterEnv} onChange={setFilterEnv} options={envOptions} placeholder="All Environments" searchable /></div>
         <div><Select value={filterStatus} onChange={setFilterStatus} options={statusOptions} placeholder="All Schedulers" /></div>
         <div><Select value={filterType} onChange={setFilterType} options={typeOptions} placeholder="All Types" /></div>
+        <div>
+          <button
+            onClick={() => setFilterUnresolved((v) => !v)}
+            title="Show only schedulers whose cron and/or timezone is still a raw ${cps.property} placeholder that hasn't been resolved from CPS yet"
+            aria-pressed={filterUnresolved}
+            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-semibold rounded-xl border transition-all ${
+              filterUnresolved
+                ? 'bg-gradient-to-b from-amber-500 to-amber-600 border-amber-500 text-white shadow-sm shadow-amber-500/30'
+                : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:text-amber-600 dark:hover:text-amber-400 hover:border-amber-300 dark:hover:border-amber-400/40 shadow-sm'
+            }`}>
+            <Key size={13} /> Unresolved CPS{unresolvedCount > 0 ? ` (${unresolvedCount})` : ''}
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -1143,12 +1255,13 @@ export default function SchedulersPage() {
                     isChecked={selectedKeys.has(key)}
                     isTriggering={triggerLoadingSet.has(key)}
                     isToggling={toggleLoadingSet.has(key)}
+                    isResolving={resolvingAppIds.has(s.appId)}
                     envType={envTypeById.get(s.envId)}
                     resolveVersion={cpsResolveVersion}
                     onToggleSelect={toggleSelectOne}
                     onRequestToggle={setSchedulerToggleConfirm}
                     onRequestTrigger={setSchedulerConfirmKey}
-                    onNavigateToApp={onNavigateToApp}
+                    onResolveRow={resolveAppCpsCrons}
                     onOpenApp={onOpenApp}
                   />
                 );

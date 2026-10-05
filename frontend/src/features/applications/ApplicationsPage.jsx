@@ -304,6 +304,16 @@ export default function ApplicationsPage() {
   // We intentionally do NOT stop keepFresh on unmount so the cache stays warm globally.
   const isMounted = useRef(true);
   useEffect(() => {
+    // React 18 StrictMode (dev only) double-invokes effects (mount → simulate
+    // unmount via cleanup → mount again) to surface non-idempotent effects.
+    // A mount body that did nothing left isMounted.current permanently false
+    // after that simulated unmount, since nothing reset it to true on the
+    // real second mount — silently short-circuiting every post-await
+    // `if (isMounted.current)` guard for the rest of the component's actual
+    // lifetime in dev. Resetting it to true here on every mount (including
+    // the StrictMode replay) fixes that while still correctly ending up
+    // false after a REAL unmount.
+    isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
 
