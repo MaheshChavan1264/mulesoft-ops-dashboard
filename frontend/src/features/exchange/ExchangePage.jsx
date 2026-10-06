@@ -5,13 +5,14 @@ import { useLocation } from 'react-router-dom';
 import {
   Search, Package, RefreshCw, ExternalLink, ChevronLeft, ChevronRight,
   Globe, FileText, Tag, User, Link2, SlidersHorizontal,
-  Code2, AlertTriangle, X,
+  Code2, X,
 } from 'lucide-react';
 import Select from '../../components/ui/Select';
 import CopyBtn from '../../components/shared/CopyBtn';
 import BgFilterModal, { applyBgFilter } from '../../components/shared/BgFilterModal';
+import ApiSpecPanel from '../../components/shared/ApiSpecPanel';
 import { getBusinessGroups } from '../../services/applicationsService';
-import { searchExchangeAssets, getExchangeAssetDetail } from '../../services/exchangeService';
+import { searchExchangeAssets, getExchangeAssetDetail, getExchangePingSpec } from '../../services/exchangeService';
 import { useBgEnvFilter } from '../../hooks/useBgEnvFilter';
 import PageHeader from '../../components/ui/PageHeader';
 import { SkeletonListRows } from '../../components/ui/SkeletonTable';
@@ -38,14 +39,6 @@ const typeColor = (type) => ({
   template:            'bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400',
   example:             'bg-pink-100 dark:bg-pink-500/15 text-pink-600 dark:text-pink-400',
 }[type] || 'bg-gray-100 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400');
-
-const METHOD_COLOR = {
-  GET:    'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/70 dark:border-sf-400/30',
-  POST:   'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/70 dark:border-emerald-400/30',
-  PUT:    'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200/70 dark:border-amber-400/30',
-  DELETE: 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200/70 dark:border-red-400/30',
-  PATCH:  'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-200/70 dark:border-orange-400/30',
-};
 
 const LIMIT = 100;
 
@@ -77,6 +70,7 @@ export default function ExchangePage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [pingSpec, setPingSpec] = useState(null);
   const [pingSpecLoading, setPingSpecLoading] = useState(false);
+  const [pingSpecError, setPingSpecError] = useState(null);
 
   // For navigation from AppDetailPage
   const [pendingAssetId, setPendingAssetId] = useState(null);
@@ -134,13 +128,14 @@ export default function ExchangePage() {
     setDetailTab('overview');
     setAssetDetail(null);
     setPingSpec(null);
+    setPingSpecError(null);
 
     // Fetch full asset details
     setDetailLoading(true);
     try {
       const r = await getExchangeAssetDetail(asset.groupId, asset.assetId, asset.version);
       setAssetDetail(r.data);
-    } catch {}
+    } catch (e) { console.warn('[ExchangePage] asset detail fetch failed:', e.message); }
     setDetailLoading(false);
 
     // Fetch API spec for REST/HTTP APIs
@@ -150,7 +145,10 @@ export default function ExchangePage() {
         const r = await getExchangePingSpec({ groupId: asset.groupId, assetId: asset.assetId,
           version: asset.version, orgId: asset.groupId, appName: asset.name || asset.assetId });
         setPingSpec(r.data);
-      } catch {}
+      } catch (e) {
+        console.warn('[ExchangePage] ping-spec fetch failed:', e.message);
+        setPingSpecError(e.response?.data?.error || e.message || 'Failed to fetch API spec');
+      }
       setPingSpecLoading(false);
     }
   }, []);
@@ -493,71 +491,19 @@ export default function ExchangePage() {
 
               {/* ── API SPEC tab ─────────────────────────────── */}
               {detailTab === 'api' && (
-                <div className="overflow-y-auto flex-1 p-5 space-y-4">
-                  {pingSpecLoading && (
-                    <div className="flex items-center justify-center py-10 text-gray-400 dark:text-gray-500">
-                      <RefreshCw size={16} className="animate-spin mr-2" /> Fetching API spec…
-                    </div>
-                  )}
-
-                  {!pingSpecLoading && pingSpec && (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-gray-900 dark:text-gray-100 text-sm font-semibold">{pingSpec.assetName}</p>
-                          <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">
-                            {pingSpec.specType?.toUpperCase()} · {pingSpec.allEndpoints?.length ?? 0} endpoints
-                            {pingSpec.pingEndpoints?.length > 0 && (
-                              <span className="ml-2 text-emerald-600 dark:text-emerald-400 font-semibold">· {pingSpec.pingEndpoints.length} ping/health endpoints</span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-
-                      {pingSpec.allEndpoints?.length > 0 ? (
-                        <div className="space-y-1.5">
-                          {pingSpec.allEndpoints.map((ep, i) => {
-                            const isPing = pingSpec.pingEndpoints?.some(p => p.path === ep.path && p.method === ep.method);
-                            return (
-                              <div key={i} className={`rounded-xl border px-3.5 py-2.5 ${isPing ? 'bg-emerald-50/60 dark:bg-emerald-500/5 border-emerald-200/60 dark:border-emerald-400/20' : 'bg-gray-50 dark:bg-gray-900/40 border-gray-200/70 dark:border-white/[0.06]'}`}>
-                                <div className="flex items-center gap-2.5 flex-wrap">
-                                  <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold border ${METHOD_COLOR[ep.method] || 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600/40'}`}>
-                                    {ep.method}
-                                  </span>
-                                  <span className={`font-mono text-xs ${isPing ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-700 dark:text-gray-300'}`}>{ep.path}</span>
-                                  {isPing && <span className="text-[9px] text-emerald-500 dark:text-emerald-400 font-semibold">● health</span>}
-                                  {ep.description && <span className="text-gray-400 dark:text-gray-500 text-[10px] ml-auto truncate max-w-xs">{ep.description}</span>}
-                                </div>
-                                {ep.queryParams?.length > 0 && (
-                                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                                    <span className="text-[9px] text-gray-400 dark:text-gray-500 uppercase font-bold">Query:</span>
-                                    {ep.queryParams.map(p => (
-                                      <span key={p.name} title={p.description}
-                                        className={`text-[9px] px-1.5 py-0.5 rounded-md border font-mono ${
-                                          p.required ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-200/70 dark:border-orange-400/30'
-                                                     : 'bg-gray-100 dark:bg-gray-700/60 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600/40'
-                                        }`}>
-                                        {p.name}{p.required ? '*' : ''}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : !pingSpecLoading && (
-                        <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200/80 dark:border-amber-400/30 rounded-xl px-4 py-3">
-                          <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                          <p className="text-amber-700 dark:text-amber-300 text-xs">
-                            No endpoints found in spec. The backend server may need to be restarted to apply the latest spec parsing fixes.
-                          </p>
-                        </div>
-                      )}
-                    </>
-                  )}
+                <div className="overflow-y-auto flex-1 p-5">
+                  <ApiSpecPanel
+                    pingSpec={pingSpec}
+                    pingSpecLoading={pingSpecLoading}
+                    pingSpecError={pingSpecError}
+                    showStatTiles={false}
+                    showHeader={false}
+                    emptyTitle="No endpoints found in spec"
+                    emptyHint="This asset may not have an OAS/RAML spec file linked in Exchange."
+                  />
                 </div>
               )}
+
 
               {/* ── FILES tab ────────────────────────────────── */}
               {detailTab === 'files' && (
