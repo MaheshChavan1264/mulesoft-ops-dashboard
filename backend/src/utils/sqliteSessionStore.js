@@ -72,6 +72,42 @@ class SQLiteSessionStore extends Store {
       const expired = session.cookie && session.cookie.expires
         ? new Date(session.cookie.expires).getTime()
         : Date.now() + this.ttl;
+
+      // Merge-on-write for `cpsCreds` — closes a lost-update race. Each
+      // Express request loads the whole session via get() at request start,
+      // mutates its own in-memory copy, and (since this is the only place
+      // express-session persists it) calls set() with that copy once the
+      // response finishes. Several CPS features POST credentials for many
+      // apps in parallel (bulk export, GlobalSearchPage fan-out, bulk ping,
+      // etc.) against the SAME session cookie, so two requests' get() calls
+      // can both load the session before either has written anything back —
+      // whichever request's set() lands last would normally overwrite the
+      // other's newly-added cpsCreds entries wholesale, because the naive
+      // blind-overwrite below has no idea what the other request wrote in
+      // the meantime. To fix this without a global lock: right before
+      // writing, re-read the row's CURRENT cpsCreds from the DB (reflecting
+      // any sibling request that already saved) and union it with this
+      // request's cpsCreds, letting this request's own keys win for any
+      // overlap. cpsCreds is purely additive per key (setCred adds/replaces
+      // one key), EXCEPT deleteCred, which removes a key — a plain union
+      // would otherwise resurrect that key from the DB's copy, so
+      // `_cpsCredsRemoved` (set by cpsCredStore.deleteCred) explicitly lists
+      // keys this request intentionally deleted; those are stripped from
+      // the merged result even if the DB's current copy still has them.
+      if (session && session.cpsCreds) {
+        try {
+          const row = this.db.prepare('SELECT sess FROM sessions WHERE sid = ?').get(sid);
+          const currentCpsCreds = row ? JSON.parse(row.sess)?.cpsCreds : null;
+          if (currentCpsCreds) {
+            const merged = { ...currentCpsCreds, ...session.cpsCreds };
+            for (const removedKey of session._cpsCredsRemoved || []) delete merged[removedKey];
+            session.cpsCreds = merged;
+          }
+        } catch { /* fall through to a plain overwrite if the merge itself fails */ }
+      }
+      // Transient marker only — never persisted (see cpsCredStore.deleteCred).
+      delete session._cpsCredsRemoved;
+
       this.db.prepare(`
         INSERT INTO sessions (sid, sess, expired) VALUES (?, ?, ?)
         ON CONFLICT(sid) DO UPDATE SET sess = excluded.sess, expired = excluded.expired

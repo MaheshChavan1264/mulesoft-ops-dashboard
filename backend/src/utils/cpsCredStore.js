@@ -60,11 +60,22 @@ function getAllCreds(session) {
 /**
  * Remove a stored credential pair.
  *
+ * Also records the removed key in `session._cpsCredsRemoved` — a transient
+ * marker (stripped before persistence, see sqliteSessionStore.js `set()`)
+ * that tells the session store's merge-on-write logic this key was
+ * deliberately deleted by THIS request, not merely untouched by it. Without
+ * this, the store's additive merge (which exists to stop concurrent
+ * credential POSTs from clobbering each other — see sqliteSessionStore.js)
+ * would otherwise re-introduce a just-deleted key by merging it back in
+ * from whatever the DB currently holds.
+ *
  * @param {import('express-session').Session} session
  * @param {string} key
  */
 function deleteCred(session, key) {
   if (session.cpsCreds) delete session.cpsCreds[key];
+  if (!session._cpsCredsRemoved) session._cpsCredsRemoved = [];
+  session._cpsCredsRemoved.push(key);
 }
 
 module.exports = { setCred, getCred, getAllCreds, deleteCred };

@@ -167,6 +167,30 @@ function normalisePropsArray(raw, appKey) {
  */
 const isMasked = (v) => !v || /^\*+$/.test(String(v).trim());
 
+// ── Credential-POST mutex ──────────────────────────────────────────────────
+// postCpsCredentialsRaw() writes into the backend's Express session (see
+// backend/src/utils/cpsCredStore.js), and the session store does a full
+// read-at-request-start / overwrite-whole-blob-at-request-end cycle with no
+// merge (backend/src/utils/sqliteSessionStore.js `set()` — plain
+// `INSERT ... ON CONFLICT DO UPDATE SET sess = excluded.sess`). Apps here are
+// processed in parallel batches (see `batchSize` below), so without this
+// queue two apps' concurrent `POST /cps/credentials` calls can race: both
+// load the same session, write different `cpsCreds` keys in memory, and
+// whichever response finishes last overwrites the stored row — silently
+// discarding the other app's just-posted credential. That app's subsequent
+// `GET /cps/fetch` then fails with "CPS credentials not configured" even
+// though the right CPS URL and credentials were posted correctly moments
+// earlier. Serializing the POST calls through this queue closes the race
+// completely while every GET call (ARM detail, schedulers, CPS property
+// fetches) stays fully parallel — only this cheap, infrequent write is
+// single-filed.
+let credPostQueue = Promise.resolve();
+function postCredentialsSerialized(payload) {
+  const run = credPostQueue.then(() => postCpsCredentialsRaw(payload));
+  credPostQueue = run.catch(() => {});
+  return run;
+}
+
 async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials, needsCpsFetch = true) {
   const isCh2 = app.deploymentType === 'CloudHub 2.0';
   const depType = isCh2 ? 'ch2' : 'ch1';
@@ -253,92 +277,112 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   // cps.projectName is the authoritative CPS key — NOT the app name or app.id
   const cpsKey = allProps['cps.projectName'] || allProps['cloudhub.api.name'] || app.name;
 
-  const effectiveCpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
-  if (!effectiveCpsBaseUrl) throw new Error(`No CPS URL in runtime properties for "${app.name}"`);
+  // Everything below this point talks to the CPS config server, which is a
+  // separate, independently-flaky dependency from the ARM/Runtime Manager
+  // calls above. A failure here (missing CPS URL, unreachable server, empty
+  // response, etc.) must NOT discard the ARM/runtime data already fetched —
+  // schedulers, static IPs and allProps (which is what the Splunk Details
+  // sheet reads from) are gathered above and are independently valid even
+  // when CPS itself fails. So this whole block is wrapped and, on failure,
+  // we return normally with `cpsError` set instead of throwing — the caller
+  // uses `cpsError` to blank only the CPS-backed sheets (AllPropertiesCatalog /
+  // Host_APIUsersCatalog), leaving ScheduleCatalog / StaticIPsCatalog /
+  // SplunkDetails populated from the already-fetched ARM data.
+  try {
+    const effectiveCpsBaseUrl = allProps['cps.configServerBaseUrl'] || allProps['config.server.base.url'];
+    if (!effectiveCpsBaseUrl) throw new Error(`No CPS URL in runtime properties for "${app.name}"`);
 
-  const normUrl = normaliseCpsUrl(effectiveCpsBaseUrl);
+    const normUrl = normaliseCpsUrl(effectiveCpsBaseUrl);
 
-  // ── Per-app credential resolution ────────────────────────────────────────
-  // Strategy 1: get the specific cps.clientId from ARM props → look up secret in CSV
-  // Strategy 2 (fallback): masked / not in CSV → post all CSV creds as url::clientId entries
-  const cpsClientId = allProps['cps.clientId'] || allProps['cps.client_id'] ||
-                      allProps['cps.client.id'] || allProps['cps.apiClientId'] || '';
+    // ── Per-app credential resolution ────────────────────────────────────────
+    // Strategy 1: get the specific cps.clientId from ARM props → look up secret in CSV
+    // Strategy 2 (fallback): masked / not in CSV → post all CSV creds as url::clientId entries
+    const cpsClientId = allProps['cps.clientId'] || allProps['cps.client_id'] ||
+                        allProps['cps.client.id'] || allProps['cps.apiClientId'] || '';
 
-  // Post every loaded CSV credential pair as a `${normUrl}::${clientId}` fallback
-  // entry — shared by both the "specific clientId not in CSV" and the
-  // "clientId masked/absent" branches below (previously duplicated verbatim).
-  const postAllCredentialsFallback = async () => {
-    if (!getAllCredentials) return;
-    const allCreds = getAllCredentials();
-    if (!allCreds.length) return;
-    const credMap = {};
-    for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
-    try { await postCpsCredentialsRaw({ credentials: credMap }); } catch { /* non-fatal */ }
-  };
+    // Post every loaded CSV credential pair as a `${normUrl}::${clientId}` fallback
+    // entry — shared by both the "specific clientId not in CSV" and the
+    // "clientId masked/absent" branches below (previously duplicated verbatim).
+    const postAllCredentialsFallback = async () => {
+      if (!getAllCredentials) return;
+      const allCreds = getAllCredentials();
+      if (!allCreds.length) return;
+      const credMap = {};
+      for (const { clientId, clientSecret } of allCreds) credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
+      try { await postCredentialsSerialized({ credentials: credMap }); } catch { /* non-fatal */ }
+    };
 
-  if (cpsClientId && !isMasked(cpsClientId) && getCredential) {
-    const secret = getCredential(cpsClientId);
-    if (secret) {
-      const credMap = {
-        [`${normUrl}::${effectiveBgOrgId}`]: { clientId: cpsClientId, clientSecret: secret },
-        [normUrl]: { clientId: cpsClientId, clientSecret: secret },
-      };
-      if (getAllCredentials) {
-        const allCreds = getAllCredentials();
-        for (const { clientId, clientSecret } of allCreds) {
-          if (clientId !== cpsClientId) {
-            credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
+    if (cpsClientId && !isMasked(cpsClientId) && getCredential) {
+      const secret = getCredential(cpsClientId);
+      if (secret) {
+        const credMap = {
+          [`${normUrl}::${effectiveBgOrgId}`]: { clientId: cpsClientId, clientSecret: secret },
+          [normUrl]: { clientId: cpsClientId, clientSecret: secret },
+        };
+        if (getAllCredentials) {
+          const allCreds = getAllCredentials();
+          for (const { clientId, clientSecret } of allCreds) {
+            if (clientId !== cpsClientId) {
+              credMap[`${normUrl}::${clientId}`] = { clientId, clientSecret };
+            }
           }
         }
+        try { await postCredentialsSerialized({ credentials: credMap }); } catch { /* non-fatal */ }
+      } else {
+        // Specific clientId not in CSV — fall back to all credentials
+        await postAllCredentialsFallback();
       }
-      try { await postCpsCredentialsRaw({ credentials: credMap }); } catch { /* non-fatal */ }
     } else {
-      // Specific clientId not in CSV — fall back to all credentials
+      // clientId is masked or absent — post all as url::clientId fallback entries
       await postAllCredentialsFallback();
     }
-  } else {
-    // clientId is masked or absent — post all as url::clientId fallback entries
-    await postAllCredentialsFallback();
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Fetch non-secure — throw on error so the caller can record it in the export
+    const nsRaw = await fetchCpsProperties({
+      baseUrl: normUrl, type: 'non-secure', environment: cpsEnv,
+      keys: cpsKey, deploymentType: depType, bgOrgId: effectiveBgOrgId
+    });
+
+    const flatNs = flattenCpsResponse(nsRaw, cpsKey);
+
+    // If flatNs is empty, the response structure is unexpected — store raw response for debugging
+    if (Object.keys(flatNs).length === 0) {
+      throw new Error(`Empty properties for "${cpsKey}". Raw response: ${JSON.stringify(nsRaw).substring(0, 300)}`);
+    }
+
+    const secureKeyStr = flatNs['cps.secure.properties'] || '';
+    const secureKeys = secureKeyStr.split(',').map(s => s.trim()).filter(Boolean);
+
+    // Fetch secure groups
+    const secureGroups = [];
+    if (secureKeys.length > 0) {
+      try {
+        const raw = await fetchCpsProperties({
+          baseUrl: normUrl, type: 'secure', environment: cpsEnv,
+          keys: secureKeyStr, deploymentType: depType, bgOrgId: effectiveBgOrgId
+        });
+        const arr = normalisePropsArray(raw, secureKeys[0]);
+        for (const entry of arr) {
+          secureGroups.push({ key: entry.key, properties: entry.properties || {} });
+        }
+      } catch { /* secure fetch failed */ }
+    }
+
+    return { flatNs, secureGroups, cpsEnv, cpsKey, schedulers, allProps, staticIPList };
+  } catch (cpsError) {
+    return { flatNs: {}, secureGroups: [], cpsEnv, cpsKey, schedulers, allProps, staticIPList, cpsError };
   }
-  // ─────────────────────────────────────────────────────────────────────────
-
-  // Fetch non-secure — throw on error so the caller can record it in the export
-  const nsRaw = await fetchCpsProperties({
-    baseUrl: normUrl, type: 'non-secure', environment: cpsEnv,
-    keys: cpsKey, deploymentType: depType, bgOrgId: effectiveBgOrgId
-  });
-
-  const flatNs = flattenCpsResponse(nsRaw, cpsKey);
-
-  // If flatNs is empty, the response structure is unexpected — store raw response for debugging
-  if (Object.keys(flatNs).length === 0) {
-    throw new Error(`Empty properties for "${cpsKey}". Raw response: ${JSON.stringify(nsRaw).substring(0, 300)}`);
-  }
-
-  const secureKeyStr = flatNs['cps.secure.properties'] || '';
-  const secureKeys = secureKeyStr.split(',').map(s => s.trim()).filter(Boolean);
-
-  // Fetch secure groups
-  const secureGroups = [];
-  if (secureKeys.length > 0) {
-    try {
-      const raw = await fetchCpsProperties({
-        baseUrl: normUrl, type: 'secure', environment: cpsEnv,
-        keys: secureKeyStr, deploymentType: depType, bgOrgId: effectiveBgOrgId
-      });
-      const arr = normalisePropsArray(raw, secureKeys[0]);
-      for (const entry of arr) {
-        secureGroups.push({ key: entry.key, properties: entry.properties || {} });
-      }
-    } catch { /* secure fetch failed */ }
-  }
-
-  return { flatNs, secureGroups, cpsEnv, cpsKey, schedulers, allProps, staticIPList };
 }
 
 // ── Row builder (shared between sequential and batch paths) ─────────────
 function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, staticIPsRows, splunkRows) {
-  const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps, staticIPList: fetchedStaticIPs } = fetchResult;
+  const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps, staticIPList: fetchedStaticIPs, cpsError } = fetchResult;
+  // cpsError means the CPS config-server calls failed for this app (bad/missing
+  // CPS URL, unreachable server, empty response, etc.) — see fetchAppCps().
+  // The ARM-sourced sheets below are unaffected; only the CPS-backed columns
+  // (allPropsRows.properties / hostApiRows.notAccessible) show the failure.
+  const cpsErrorMsg = cpsError ? `ERROR: ${getErrorMessage(cpsError)}` : '';
   const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
   const staticIPs = fetchedStaticIPs?.length > 0 ? fetchedStaticIPs.join(', ') : '—';
   const cloudhubVersion = app.deploymentType === 'CloudHub 2.0' ? 'CloudHub 2.0' : 'CloudHub 1.0';
@@ -395,8 +439,8 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
   const splunkAccessKeyId = fetchedAllProps?.['splunk.aws.firehose.accessKeyId'] || '';
 
   if (secureGroups.length === 0) {
-    allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', properties: '', splunkAccessKeyId });
-    hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', hostsSecure: '', apiUsers: '', notAccessible: '' });
+    allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', properties: cpsErrorMsg, splunkAccessKeyId });
+    hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure, cpsSecureKey: flatNs['cps.secure.properties'] || '', hostsSecure: '', apiUsers: '', notAccessible: cpsErrorMsg });
   } else {
     for (const group of secureGroups) {
       const maskedSec = maskSecrets(group.properties);
