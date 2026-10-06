@@ -10,6 +10,13 @@ import { useGlobalCpsCredentialStore } from './GlobalCpsCredentialStoreContext';
 
 const AuthContext = createContext(null);
 
+// Read once by Layout.jsx right after mount to decide whether to show the
+// post-login "upload your Ping/CPS credentials" modal — set here (not in
+// Layout) so it only fires on an actual login action, never on checkSession's
+// background revalidation (tab focus, page refresh) which would otherwise
+// re-show the modal on every reload.
+const JUST_LOGGED_IN_KEY = 'mule_dashboard_just_logged_in';
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [orgId, setOrgId] = useState(null);
@@ -76,6 +83,7 @@ export const AuthProvider = ({ children }) => {
     setUser(data.user);
     setOrgId(data.orgId);
     setOrgName(data.orgName);
+    sessionStorage.setItem(JUST_LOGGED_IN_KEY, '1');
   }, []);
 
   const login = useCallback(async (username, password) => {
@@ -104,6 +112,7 @@ export const AuthProvider = ({ children }) => {
     setUser(MOCK_USER);
     setOrgId('demo-org-001');
     setOrgName('Demo Organization');
+    sessionStorage.setItem(JUST_LOGGED_IN_KEY, '1');
   }, []);
 
   const logout = useCallback(async () => {
@@ -113,6 +122,7 @@ export const AuthProvider = ({ children }) => {
     clearAppCreds();       // CredentialStoreContext — RAM-only ping-test CSV creds
     clearCpsCreds();        // CpsCredentialStoreContext — RAM-only per-app CPS CSV creds
     clearGlobalCpsCreds();  // GlobalCpsCredentialStoreContext — RAM-only Global CPS matrix
+    sessionStorage.removeItem(JUST_LOGGED_IN_KEY);
     setUser(null);
     setOrgId(null);
     setOrgName(null);
@@ -131,3 +141,15 @@ export const AuthProvider = ({ children }) => {
 };
 
 export const useAuth = () => useContext(AuthContext);
+
+/**
+ * Consume (read-then-clear) the "just logged in" flag set by a real login
+ * action (login/tokenLogin/connectedAppLogin/demoLogin). Called once by
+ * Layout.jsx on mount — returns true at most once per actual login, never
+ * on a page refresh or tab-focus session revalidation.
+ */
+export function consumeJustLoggedIn() {
+  const flag = sessionStorage.getItem(JUST_LOGGED_IN_KEY);
+  if (flag) sessionStorage.removeItem(JUST_LOGGED_IN_KEY);
+  return !!flag;
+}
