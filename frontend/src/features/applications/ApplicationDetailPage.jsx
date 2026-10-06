@@ -1328,6 +1328,7 @@ export default function ApplicationDetailPage() {
       {tab==='infrastructure' && (
         <InfrastructureTab
           appId={appId}
+          isCH1={isCH1}
           allSchedulers={allSchedulers}
           schedulers={schedulers}
           isRunning={isRunning}

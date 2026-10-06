@@ -766,11 +766,16 @@ function normalizeSchedulerRow(raw, app, i) {
   const frequency = firstPresent(raw.frequency, schedule.frequency, schedule.period > 0 ? schedule.period : null);
   const timeUnit = raw.timeUnit || schedule.timeUnit || null;
   const flowName = raw.flowName || raw.flow || raw.name || `scheduler-${i}`;
-  // Per Mulesoft's AMC API docs, the identifier the PUT/POST/DELETE
-  // scheduler endpoints expect in the URL path is `flowName` — prioritize
-  // it over the speculative `name`/`schedulerName`/`flow` fallbacks (kept
-  // only for CH1 schedules / older response shapes that may not use it).
-  const schedulerKey = raw.flowName || raw.name || raw.schedulerName || raw.flow || `scheduler-${i}`;
+  // CH1's `/cloudhub/api/applications/{domain}/schedules` returns a stable
+  // `id` (job id) that its own `/schedules/{id}/run` and `/schedules/{id}`
+  // PUT endpoints require — `name`/`flow` are just display labels there and
+  // 404 when sent as the path param (that's the "CH1 schedule trigger
+  // failed ... 404" bug). CH2's AMC API has no such `id` field and instead
+  // expects `flowName` as the real identifier. Branch on deploymentType so
+  // each platform gets the identifier its own run/toggle endpoint expects.
+  const schedulerKey = app.deploymentType === 'CloudHub 1.0'
+    ? (raw.id || raw.name || raw.flow || `scheduler-${i}`)
+    : (raw.flowName || raw.name || raw.schedulerName || raw.flow || `scheduler-${i}`);
   const lastRunCandidates = [
     raw.lastRun, schedule.lastRun, status.lastRun,
     raw.lastRunAt, schedule.lastRunAt, status.lastRunAt,

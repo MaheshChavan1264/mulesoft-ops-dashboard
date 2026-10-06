@@ -13,7 +13,7 @@ import { GlassCard, StatTile, PulseDot, MetaTag, getNextCronRun } from '../share
  * FRONTEND_ARCHITECTURE_REVIEW.md §4 "god component" finding.
  */
 export default function InfrastructureTab({
-  appId,
+  appId, isCH1,
   allSchedulers, schedulers, isRunning, rStatus,
   cpsSchedulerProps, setCpsSchedulerProps, cpsBaseUrl, cpsClientId, effectiveCpsKey, effectiveCpsEnv, orgId,
   cpsSecureSchedulerLoading, setCpsSecureSchedulerLoading,
@@ -29,14 +29,19 @@ export default function InfrastructureTab({
   const enabledCount = allSchedulers.filter(s => s.enabled !== false).length;
   const disabledCount = allSchedulers.length - enabledCount;
 
-  // Best-effort Anypoint identifier — falls back to flow name when the API
-  // omits a dedicated `name`/`schedulerName` field. Two distinct schedulers
-  // CAN legitimately share this (e.g. the same flow scheduled twice), so it
+  // Best-effort Anypoint identifier. Two distinct schedulers CAN
+  // legitimately share this (e.g. the same flow scheduled twice), so it
   // must never be used alone as a React key or Set-selection identity.
-  // Per Mulesoft's AMC API docs, `flowName` is the real identifier the
-  // PUT/POST/DELETE scheduler endpoints expect — prioritize it over the
-  // speculative `name`/`schedulerName`/`flow` fallbacks.
-  const schedulerKeyOf = (s, i) => s.flowName || s.name || s.schedulerName || s.flow || `scheduler-${i}`;
+  // CH1's `/cloudhub/api/applications/{domain}/schedules` returns a stable
+  // `id` (job id) that its own `/schedules/{id}/run` and PUT endpoints
+  // require — `name`/`flow` are just display labels there and 404 when sent
+  // as the path param (the "CH1 schedule trigger failed ... 404" bug). CH2's
+  // AMC API has no such `id` field and expects `flowName` as the real
+  // identifier instead — see backend's normalizeSchedulerRow for the mirror
+  // of this same branch used by the aggregate Schedulers dashboard.
+  const schedulerKeyOf = (s, i) => isCH1
+    ? (s.id || s.name || s.flow || `scheduler-${i}`)
+    : (s.flowName || s.name || s.schedulerName || s.flow || `scheduler-${i}`);
 
   // Computed over the full unfiltered list (not the search-filtered
   // `schedulers`) — a real collision between two schedulers in this app
