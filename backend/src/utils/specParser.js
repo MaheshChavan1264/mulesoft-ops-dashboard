@@ -343,6 +343,18 @@ function parseRamlText(content) {
  * it. Deliberately narrow — this only needs to pull one small text file out
  * of a ZIP, not be a general-purpose archive reader.
  *
+ * Exchange's "fat" archives for a MODULARIZED OAS/RAML spec contain the
+ * root document PLUS many `$ref`'d fragment files (components/, paths/,
+ * examples/...). The old version returned whichever file matched an
+ * extension FIRST in ZIP central-directory order — for a modularized spec
+ * that's often a tiny fragment (e.g. just an `info`/`components` snippet),
+ * which parses fine as valid JSON/YAML but has an empty `paths`/`resources`
+ * section, silently producing "0 endpoints" even though the asset has a
+ * real spec. Instead, rank all plausible candidates and prefer the one
+ * that actually looks like a root document (declares `openapi`/`swagger`/
+ * RAML header, or has a non-empty `paths:`/`resources:`), falling back to
+ * the old first-match behaviour only if none of them look like a root.
+ *
  * @param {Buffer} buf
  * @returns {string|null}  the extracted file's text content, or null on any failure
  */
@@ -366,21 +378,53 @@ function extractSpecFileFromZip(buf) {
         pos++;
       }
     }
-    const specEntry = cdEntries.find((e) => e.fn === 'api.json')
-      || cdEntries.find((e) => e.fn.endsWith('.json') && e.fn !== 'exchange.json')
-      || cdEntries.find((e) => e.fn.endsWith('.yaml') || e.fn.endsWith('.yml'))
-      || cdEntries.find((e) => e.fn.endsWith('.raml') && e.fn !== 'exchange.json');
-    if (!specEntry) return null;
 
-    const lh = specEntry.localOffset;
-    const lfnLen = buf.readUInt16LE(lh + 26);
-    const lextraLen = buf.readUInt16LE(lh + 28);
-    const dataStart = lh + 30 + lfnLen + lextraLen;
-    const compressed = buf.slice(dataStart, dataStart + specEntry.compSize);
-    const raw = specEntry.compMethod === 8
-      ? zlib.inflateRawSync(compressed)
-      : compressed;
-    return raw.toString('utf8');
+    const inflateEntry = (e) => {
+      const lh = e.localOffset;
+      const lfnLen = buf.readUInt16LE(lh + 26);
+      const lextraLen = buf.readUInt16LE(lh + 28);
+      const dataStart = lh + 30 + lfnLen + lextraLen;
+      const compressed = buf.slice(dataStart, dataStart + e.compSize);
+      const raw = e.compMethod === 8 ? zlib.inflateRawSync(compressed) : compressed;
+      return raw.toString('utf8');
+    };
+
+    // Root documents are conventionally at the archive's top level;
+    // fragments live under subfolders (components/, paths/, types/...).
+    const isRootLevel = (fn) => !fn.includes('/') && !fn.includes('\\');
+    const jsonCandidates = cdEntries.filter((e) => e.fn.endsWith('.json') && e.fn !== 'exchange.json');
+    const yamlCandidates = cdEntries.filter((e) => e.fn.endsWith('.yaml') || e.fn.endsWith('.yml'));
+    const ramlCandidates = cdEntries.filter((e) => e.fn.endsWith('.raml') && e.fn !== 'exchange.json');
+
+    // Old priority (json > yaml > raml) preserved, but within each type
+    // root-level files are tried before nested fragments.
+    const ranked = [
+      ...jsonCandidates.filter((e) => e.fn === 'api.json'),
+      ...jsonCandidates.filter((e) => isRootLevel(e.fn) && e.fn !== 'api.json'),
+      ...yamlCandidates.filter((e) => isRootLevel(e.fn)),
+      ...ramlCandidates.filter((e) => isRootLevel(e.fn)),
+      ...jsonCandidates.filter((e) => !isRootLevel(e.fn)),
+      ...yamlCandidates.filter((e) => !isRootLevel(e.fn)),
+      ...ramlCandidates.filter((e) => !isRootLevel(e.fn)),
+    ];
+    if (ranked.length === 0) return null;
+
+    const looksLikeRootDoc = (text) =>
+      /^\s*(openapi|swagger)\s*:/im.test(text) ||
+      /"(openapi|swagger)"\s*:/.test(text) ||
+      /^#%RAML/m.test(text) ||
+      /^\s*paths\s*:/m.test(text) ||
+      /"paths"\s*:\s*\{/.test(text) ||
+      /^\s*resources\s*:/m.test(text);
+
+    let fallbackContent = null;
+    for (const entry of ranked) {
+      let text;
+      try { text = inflateEntry(entry); } catch { continue; }
+      if (fallbackContent === null) fallbackContent = text; // guaranteed non-null fallback
+      if (looksLikeRootDoc(text)) return text;
+    }
+    return fallbackContent;
   } catch {
     return null;
   }
