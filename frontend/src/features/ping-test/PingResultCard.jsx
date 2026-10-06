@@ -1,6 +1,7 @@
 import { memo, useState, useEffect } from 'react';
-import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight, RefreshCw, Globe, Lock } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight, RefreshCw, Globe, Lock, Hash } from 'lucide-react';
 import { ENV_BADGE, PING_STATUS_CONFIG, latencyColor } from '../../utils/appUtils';
+import CopyBtn from '../../components/shared/CopyBtn';
 import AttemptLog from './AttemptLog';
 
 // PingResultCard uses icon-enhanced status config — build it from the shared base
@@ -27,7 +28,7 @@ const STATUS_CONFIG = {
  *
  * Props:
  *   app      { name, deploymentType, environment } — app metadata
- *   result   { status, activeEndpoint, responseTimeMs, httpStatus, payload, error, attempts }
+ *   result   { status, activeEndpoint, responseTimeMs, httpStatus, payload, error, attempts, transactionId }
  *   loading  {boolean} — true while this app is being pinged
  *   selected {boolean} — whether this card is selected for ping
  *   onToggle {function} — callback to toggle selection
@@ -100,6 +101,17 @@ function PingResultCard({ app, result, loading, selected, onToggle, autoResolved
       {/* Detail rows — only when result exists */}
       {result && (
         <div className="px-4 py-3 space-y-2.5 text-sm">
+          {/* Transaction ID — the x-transaction-id header value sent with this ping,
+              surfaced here so it can be correlated against downstream/CloudHub logs */}
+          {result.transactionId && (
+            <div className="flex items-start gap-2 group">
+              <Hash size={13} className="text-gray-500 flex-shrink-0 mt-0.5" />
+              <span className="text-gray-500 w-28 flex-shrink-0 font-medium">Transaction ID</span>
+              <span className="font-mono text-xs break-all leading-relaxed text-gray-700">{result.transactionId}</span>
+              <CopyBtn text={result.transactionId} size={11} />
+            </div>
+          )}
+
           {/* Active endpoint */}
           <div className="flex items-start gap-2">
             <Globe size={13} className="text-gray-500 flex-shrink-0 mt-0.5" />

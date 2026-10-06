@@ -302,6 +302,11 @@ export default function GlobalSearchPage() {
   // Feature 8: search mode — 'value' | 'key'
   const [searchMode, setSearchMode] = useState(() => sessionStorage.getItem('userSearch_mode') || 'value');
   const [exactMatch, setExactMatch] = useState(() => sessionStorage.getItem('userSearch_exactMatch') === 'true');
+  // Search scope — which data source(s) to search:
+  //   'all' — CPS properties (server-side) + ARM/Runtime properties (client-side), same as original behavior
+  //   'arm' — ARM/Runtime properties ONLY — skips the CPS backend fan-out entirely (faster, no CPS creds needed)
+  //   'cps' — CPS properties ONLY — skips the local ARM property scan
+  const [searchScope, setSearchScope] = useState(() => sessionStorage.getItem('userSearch_scope') || 'all');
   // Feature 2: group by app toggle
   const [groupByApp, setGroupByApp] = useState(() => sessionStorage.getItem('userSearch_groupApp') === 'true');
   const [expandedApps, setExpandedApps] = useState(() => {
@@ -322,6 +327,7 @@ export default function GlobalSearchPage() {
   useEffect(() => { try { sessionStorage.setItem('userSearch_results', JSON.stringify(results)); } catch (e) {} }, [results]);
   useEffect(() => { sessionStorage.setItem('userSearch_mode', searchMode); }, [searchMode]);
   useEffect(() => { sessionStorage.setItem('userSearch_exactMatch', exactMatch); }, [exactMatch]);
+  useEffect(() => { sessionStorage.setItem('userSearch_scope', searchScope); }, [searchScope]);
   useEffect(() => { sessionStorage.setItem('userSearch_groupApp', groupByApp); }, [groupByApp]);
   useEffect(() => { try { sessionStorage.setItem('userSearch_expandedApps', JSON.stringify([...expandedApps])); } catch {} }, [expandedApps]);
   useEffect(() => { sessionStorage.setItem('userSearch_groupTerm', groupByTerm); }, [groupByTerm]);
@@ -342,10 +348,21 @@ export default function GlobalSearchPage() {
   // credential when the primary one returns 401.
   // Previously only ONE credential was stored per URL+BG, so if that credential
   // didn't have access, ALL retries failed (nothing to retry with).
+  //
+  // IMPORTANT: this returns the inner postCpsCredentialsRaw promise (callers
+  // in runSearch now `await` it) instead of firing-and-forgetting it. It used
+  // to kick off the session-seeding POST without returning its promise at
+  // all, so a caller writing `await postCreds(...)` would actually await
+  // `undefined` and race ahead into the CPS search fan-out — if that POST
+  // hadn't landed on the backend yet, the search found zero credentials and
+  // silently returned no matches. Users could "fix" it by just trying again
+  // a moment later (any edit — a comma, a space — gave the POST enough time
+  // to finish), which looked like a comma-dependent bug but was actually
+  // this race.
   const postCreds = useCallback((entries) => {
-    if (!hasCpsCreds) return;
+    if (!hasCpsCreds) return Promise.resolve();
     const allCreds = getAllCredentials();
-    if (!allCreds.length) return;
+    if (!allCreds.length) return Promise.resolve();
 
     // Collect unique normalised CPS base URLs from this batch of entries
     const uniqueNorms = new Set();
@@ -364,7 +381,7 @@ export default function GlobalSearchPage() {
       }
     }
 
-    if (!uniqueNorms.size) return;
+    if (!uniqueNorms.size) return Promise.resolve();
 
     // Build credential map to post to the session:
     //   {norm}::{bgOrgId}    → app-specific primary (from cpsClientId in ARM properties)
@@ -384,8 +401,9 @@ export default function GlobalSearchPage() {
       credMap[norm] = { clientId: allCreds[0].clientId, clientSecret: allCreds[0].clientSecret };
     }
 
-    // Fire without await — credentials are stored in session for the backend
-    postCpsCredentialsRaw({ credentials: credMap }).catch(() => {});
+    // Return the promise so callers can `await` session-seeding to actually
+    // finish before firing the CPS search fan-out — see the header comment.
+    return postCpsCredentialsRaw({ credentials: credMap }).catch(() => {});
   }, [hasCpsCreds, getAllCredentials, getSecret]);
 
   const fetchAppsForEnv = useCallback(async (bgId, envId, envName) => {
@@ -542,9 +560,24 @@ export default function GlobalSearchPage() {
 
     // Feature 9: multi-term — split by comma
     const terms = query.trim().split(',').map(t => t.trim()).filter(Boolean);
+    if (!terms.length) {
+      // Degenerate input (e.g. just commas/whitespace) — bail out before any
+      // async work starts. Without this guard, the old `terms[0]` dead-read
+      // below would throw synchronously inside this async function, and
+      // since setLoading(true) already ran above, the UI would get stuck
+      // showing the loading spinner forever with no error message.
+      setError('Enter a search term.');
+      setLoading(false);
+      return;
+    }
+
+    // Search scope gates — 'arm' skips the CPS backend fan-out entirely,
+    // 'cps' skips the local ARM/deployment-property scan, 'all' runs both
+    // (original behavior).
+    const includeArm = searchScope !== 'cps';
+    const includeCps = searchScope !== 'arm';
 
     // ── Phase 1: Fetch all envs in PARALLEL ───────────────────────────────
-    const searchTermLo = terms[0].toLowerCase(); // primary term for ARM scan
     const armRows = []; // direct ARM/deployment property matches (no CPS)
 
     const envResults = await Promise.allSettled(
@@ -579,38 +612,45 @@ export default function GlobalSearchPage() {
           : [];
         const allEnvEntries = [...entries, ...inferredEntries];
 
-        // Fire-and-forget credentials (no await)
-        if (allEnvEntries.length) postCreds(allEnvEntries);
+        // Seed CPS credentials into the backend session and WAIT for it to
+        // land before Phase 3 fires the search fan-out — see postCreds'
+        // header comment for why this must be awaited, not fire-and-forget.
+        // Only needed when CPS search is actually part of this scope;
+        // posting creds for an ARM-only search would be pointless network
+        // traffic.
+        if (includeCps && allEnvEntries.length) await postCreds(allEnvEntries);
 
         // ── Also scan ARM deployment properties directly ───────────────
-        for (const a of apps) {
-          if (ctl.signal.aborted) break;
-          const p = mergeAppProps(a);
-          // Feature 8: key mode searches property keys; value mode searches values
-          // Feature 8: key mode searches property keys; value mode searches values
-          const hits = Object.entries(p).filter(([k, v]) => {
-            const target = searchMode === 'key' ? k : (typeof v === 'string' ? v : '');
-            if (!target) return false;
-            return terms.some(t => exactMatch ? target.toLowerCase() === t.toLowerCase() : target.toLowerCase().includes(t.toLowerCase()));
-          });
-          if (hits.length > 0) {
-            armRows.push({
-              bgName: sel.bgName,
-              chEnv: a.environment?.name || sel.envName,
-              chVersion: chLabel(a._type === 'ch1' ? 'ch1' : 'ch2'),
-              appName: a.name,
-              appId: a.id || a.name,
-              bgOrgId: sel.bgId,
-              envId: sel.envId,
-              status: a.status || '',
-              nsKey: '(ARM props)',
-              cpsPrefix: '—',
-              secureKey: '',
-              propKey: hits.map(([k]) => k).join(', '),
-              apiUser: hits[0][1],
-              password: '—',
-              source: 'arm-props',
+        // Gated on includeArm so a 'cps'-scoped search skips this entirely.
+        if (includeArm) {
+          for (const a of apps) {
+            if (ctl.signal.aborted) break;
+            const p = mergeAppProps(a);
+            // Feature 8: key mode searches property keys; value mode searches values
+            const hits = Object.entries(p).filter(([k, v]) => {
+              const target = searchMode === 'key' ? k : (typeof v === 'string' ? v : '');
+              if (!target) return false;
+              return terms.some(t => exactMatch ? target.toLowerCase() === t.toLowerCase() : target.toLowerCase().includes(t.toLowerCase()));
             });
+            if (hits.length > 0) {
+              armRows.push({
+                bgName: sel.bgName,
+                chEnv: a.environment?.name || sel.envName,
+                chVersion: chLabel(a._type === 'ch1' ? 'ch1' : 'ch2'),
+                appName: a.name,
+                appId: a.id || a.name,
+                bgOrgId: sel.bgId,
+                envId: sel.envId,
+                status: a.status || '',
+                nsKey: '(ARM props)',
+                cpsPrefix: '—',
+                secureKey: '',
+                propKey: hits.map(([k]) => k).join(', '),
+                apiUser: hits[0][1],
+                password: '—',
+                source: 'arm-props',
+              });
+            }
           }
         }
 
@@ -657,24 +697,37 @@ export default function GlobalSearchPage() {
     const cachedUnreachable = (() => {
       try { return new Set(JSON.parse(sessionStorage.getItem('cpsUnreachableUrls') || '[]')); } catch { return new Set(); }
     })();
-    const entriesToSearch = cachedUnreachable.size > 0
-      ? allEntries.filter(e => !cachedUnreachable.has(normCpsUrl(e.cpsBaseUrl)))
-      : allEntries;
+    const entriesToSearch = includeCps
+      ? (cachedUnreachable.size > 0
+          ? allEntries.filter(e => !cachedUnreachable.has(normCpsUrl(e.cpsBaseUrl)))
+          : allEntries)
+      : [];
     const preFilteredCount = allEntries.length - entriesToSearch.length;
 
     setProgress(p => ({ ...p, appsN: entriesToSearch.length }));
 
-    if (!entriesToSearch.length) {
+    // An 'arm'-scoped search has no CPS entries by design (includeCps is
+    // false, so entriesToSearch is always empty) — only treat an empty
+    // list as an error when CPS search was actually requested.
+    if (includeCps && !entriesToSearch.length) {
       const msg = preFilteredCount > 0
         ? `All ${allEntries.length} CPS-configured app(s) skipped — their CPS server(s) were unreachable in a previous search. Clear browser sessionStorage or restart to retry.`
         : 'No apps with CPS config found — check that apps have cps.configServerBaseUrl set';
       setError(msg);
-      setResults([]); setLoading(false); return;
+      // Still show any ARM-scope hits already collected ('all' scope with
+      // zero CPS-eligible apps) instead of discarding them.
+      setResults(armRows.length ? armRows : []);
+      setLoading(false);
+      return;
     }
 
     if (ctl.signal.aborted) { setLoading(false); return; }
 
     // ── Phase 3: Backend CPS fan-out search ───────────────────────────────
+    // Gated on includeCps — an 'arm'-scoped search skips this entirely
+    // (entriesToSearch is already empty in that case, but skip the whole
+    // block rather than relying on the loop trivially doing nothing).
+    if (includeCps && entriesToSearch.length) {
     // Feature 4: show incremental results as each batch arrives
     const BACKEND_BATCH = 100;
     const totalBatches = Math.ceil(entriesToSearch.length / BACKEND_BATCH);
@@ -762,6 +815,11 @@ export default function GlobalSearchPage() {
       if (batchFailed > 0 && batchFailed === totalBatches) {
         setError(`Search failed — all ${totalBatches} batch(es) returned errors. Check backend logs.`);
       }
+    }
+    } else if (!ctl.signal.aborted) {
+      // 'arm'-only scope — no backend fan-out happened, so just surface the
+      // ARM rows collected during Phase 1 directly.
+      setResults(armRows);
     }
     setLoading(false);
   };
@@ -1209,6 +1267,23 @@ export default function GlobalSearchPage() {
               </button>
             ))}
           </div>
+          {/* Search scope — which data source(s) to search. 'arm' searches ONLY
+              the integration's ARM/Runtime properties (client-side, no CPS
+              creds/backend call needed); 'cps' searches ONLY CPS properties;
+              'all' runs both (original behavior). */}
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl p-0.5">
+            {[['all','All Properties'], ['arm','ARM / Runtime Only'], ['cps','CPS Only']].map(([scope, label]) => (
+              <button key={scope} onClick={() => setSearchScope(scope)}
+                title={
+                  scope === 'arm' ? 'Search only an integration\'s ARM/Runtime deployment properties — no CPS credentials needed'
+                  : scope === 'cps' ? 'Search only Configuration Property Server (CPS) non-secure/secure properties'
+                  : 'Search both ARM/Runtime properties and CPS properties'
+                }
+                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-semibold transition-all ${searchScope === scope ? 'bg-white dark:bg-sf-500/20 text-sf-700 dark:text-sf-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl p-0.5">
             <button onClick={() => setExactMatch(!exactMatch)}
               className={`text-[10px] px-2.5 py-1.5 rounded-lg font-semibold transition-all ${exactMatch ? 'bg-white dark:bg-sf-500/20 text-sf-700 dark:text-sf-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'}`}>
@@ -1216,14 +1291,16 @@ export default function GlobalSearchPage() {
             </button>
           </div>
           <p className="text-[10px] text-gray-400 dark:text-gray-500">
-            {searchMode === 'value'
+            {searchScope === 'arm'
+              ? 'ARM/Runtime only: no CPS credentials needed — searches deployment properties and environment variables directly.'
+              : searchMode === 'value'
               ? 'Tip: separate multiple terms with commas — e.g. john.doe, jane.smith'
               : 'Key mode: finds apps that have this property key configured (any value)'}
           </p>
         </div>
       </div>
 
-      {!hasCpsCreds && (
+      {!hasCpsCreds && searchScope !== 'arm' && (
         <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200/80 dark:border-amber-400/30 rounded-2xl px-4 py-3 text-amber-700 dark:text-amber-300 text-xs shadow-sm">
           <AlertTriangle size={13} className="flex-shrink-0" />
           No CPS credentials imported — use the <strong className="text-amber-800 dark:text-amber-200 font-semibold">CPS CSV import</strong> in the header to also search secure properties.
@@ -1241,7 +1318,7 @@ export default function GlobalSearchPage() {
               <h3 className="text-gray-900 dark:text-gray-100 text-sm font-semibold">How Global Search works</h3>
               <p className="text-gray-500 dark:text-gray-400 text-xs mt-1 leading-relaxed">
                 Searches for a username or email substring across <strong className="text-gray-700 dark:text-gray-300 font-semibold">CPS non-secure and secure properties</strong> for every app in the selected environments.
-                Also scans ARM deployment properties (CloudHub environment variables) as a fallback.
+                Also scans ARM deployment properties (CloudHub environment variables). Use the <strong className="text-gray-700 dark:text-gray-300 font-semibold">search scope</strong> toggle above to search only one of these — "ARM / Runtime Only" needs no CPS credentials at all.
               </p>
             </div>
           </div>

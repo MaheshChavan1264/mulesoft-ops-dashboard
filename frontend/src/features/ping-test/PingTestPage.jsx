@@ -418,6 +418,7 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
         'HTTP Code': entry.http_status ?? '—',
         'Active Endpoint': entry.endpoint || '—',
         'Latency (ms)': entry.responseTimeMs ?? '—',
+        'Transaction ID': entry.transactionId || '—',
         'Credentials': entry.credentials || '—',
         'Error': entry.error || '—',
         'Response Payload': payloadStr,
@@ -485,6 +486,7 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                 <tr className="bg-gray-50/95 dark:bg-gray-900/90 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider backdrop-blur-sm">
                   <th className="px-4 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 w-44 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Timestamp</th>
                   <th className="px-4 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Application</th>
+                  <th className="px-3 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Transaction ID</th>
                   <th className="px-3 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Environment</th>
                   <th className="px-3 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Type</th>
                   <th className="px-3 py-3 font-semibold text-left sticky top-0 bg-gray-50/95 dark:bg-gray-900/90 z-10 shadow-[0_2px_4px_rgba(0,0,0,0.1)]">Status</th>
@@ -509,6 +511,9 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                         </td>
                         <td className="px-4 py-3 font-semibold text-gray-800 dark:text-gray-200">
                           {entry.appName || '—'}
+                        </td>
+                        <td className="px-3 py-3 font-mono text-[10px] text-gray-500 dark:text-gray-400 truncate max-w-[140px]" title={entry.transactionId}>
+                          {entry.transactionId || '—'}
                         </td>
                         <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">
                           {entry.env_name || '—'}
@@ -551,7 +556,7 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                       </tr>
                       {(entry.error || entry.payload) && (
                         <tr className="bg-gray-50/40 dark:bg-gray-900/20">
-                          <td colSpan={9} className="px-4 py-2 pb-4">
+                          <td colSpan={10} className="px-4 py-2 pb-4">
                             <div className="pl-4 border-l-2 border-sf-200 dark:border-sf-500/30 space-y-2">
                               {entry.error && <p className="text-xs text-sfred-600 dark:text-sfred-400">{entry.error}</p>}
                               {entry.payload && (

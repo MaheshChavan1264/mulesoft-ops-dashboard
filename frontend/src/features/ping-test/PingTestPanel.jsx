@@ -606,6 +606,7 @@ export default function PingTestPanel({
               <tbody>
                 {[
                   ['Active Endpoint', result.activeEndpoint ? <span className="font-mono text-xs text-sfteal-700 dark:text-sfteal-300 break-all">{result.activeEndpoint}</span> : <span className="text-gray-400 dark:text-gray-600">—</span>],
+                  ['Transaction ID', result.transactionId ? <span className="font-mono text-xs text-gray-600 dark:text-gray-300 break-all">{result.transactionId}</span> : <span className="text-gray-400 dark:text-gray-600">—</span>],
                   ['HTTP Status', result.httpStatus != null ? <span className={`font-mono text-sm font-bold ${result.httpStatus < 300 ? 'text-emerald-600 dark:text-emerald-400' : result.httpStatus < 500 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>{result.httpStatus}</span> : <span className="text-gray-400 dark:text-gray-600">—</span>],
                   ['Response Time', result.responseTimeMs != null ? <span className={`font-mono font-bold ${latencyColor(result.responseTimeMs)}`}>{result.responseTimeMs}ms</span> : <span className="text-gray-400 dark:text-gray-600">—</span>],
                   ['Target Type', <span className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${isCH1 ? 'bg-sfpurple-50 dark:bg-sfpurple-500/10 text-sfpurple-700 dark:text-sfpurple-300 border-sfpurple-200/60 dark:border-sfpurple-400/20' : 'bg-sf-50 dark:bg-sf-500/10 text-sf-700 dark:text-sf-300 border-sf-200/60 dark:border-sf-400/20'}`}>{isCH1 ? 'CloudHub 1.0' : 'CloudHub 2.0'}</span>],
@@ -770,6 +771,11 @@ function PingHistoryItem({ entry }) {
 
       {expanded && (
         <div className="px-4 py-3 border-t border-gray-200/60 dark:border-gray-700/60 bg-gray-50 dark:bg-gray-800/40">
+          {entry.transactionId && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 font-mono">
+              <span className="font-sans text-gray-400 dark:text-gray-500">Transaction ID: </span>{entry.transactionId}
+            </p>
+          )}
           {entry.error && <p className="text-xs text-red-600 dark:text-red-400 mb-2">{entry.error}</p>}
           {entry.payload && (
             <div>

@@ -402,13 +402,13 @@ router.post('/ping', authMiddleware, async (req, res) => {
   clearTimeout(deadlineTimer);
 
   if (finalResult) {
-    const result = { ...finalResult, attempts };
+    const result = { ...finalResult, transactionId, attempts };
 
     if (orgId && envId) {
       logger.debug(`[Ping DB] Saving ${finalResult.status} for ${appName} org=${orgId} env=${envId}`);
       db.run(
-        `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload, env_name, target_type, credentials, http_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.sessionID, orgId, envId, appName, Date.now(), finalResult.status, finalResult.responseTimeMs, finalResult.activeEndpoint, JSON.stringify(finalResult.payload), envName, targetType, credentialsLabel, finalResult.httpStatus || null],
+        `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, response_time_ms, endpoint, payload, env_name, target_type, credentials, http_status, transaction_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.sessionID, orgId, envId, appName, Date.now(), finalResult.status, finalResult.responseTimeMs, finalResult.activeEndpoint, JSON.stringify(finalResult.payload), envName, targetType, credentialsLabel, finalResult.httpStatus || null, transactionId],
         (err) => { if (err) logger.error({ err }, '[ping] Error saving history'); }
       );
     } else {
@@ -444,14 +444,15 @@ router.post('/ping', authMiddleware, async (req, res) => {
     payload: null,
     attempts,
     error: summary,
+    transactionId,
   };
 
   // Save failed ping to DB
   if (orgId && envId) {
     logger.debug(`[Ping DB] Saving FAILED for ${appName} org=${orgId} env=${envId}`);
     db.run(
-      `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, error, env_name, target_type, credentials) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [req.sessionID, orgId, envId, appName, Date.now(), 'FAILED', summary, envName, targetType, credentialsLabel],
+      `INSERT INTO ping_history (session_id, org_id, env_id, app_name, timestamp, status, error, env_name, target_type, credentials, transaction_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.sessionID, orgId, envId, appName, Date.now(), 'FAILED', summary, envName, targetType, credentialsLabel, transactionId],
       (err) => { if (err) logger.error({ err }, '[ping] Error saving history FAILED'); }
     );
   } else {
@@ -497,7 +498,8 @@ router.get('/ping/history', authMiddleware, (req, res) => {
         env_name: r.env_name,
         target_type: r.target_type,
         credentials: r.credentials,
-        http_status: r.http_status
+        http_status: r.http_status,
+        transactionId: r.transaction_id
       };
     });
     return res.json(history);

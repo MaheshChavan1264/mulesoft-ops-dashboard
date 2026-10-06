@@ -126,6 +126,7 @@ db.serialize(() => {
   addColumnIfMissing('target_type', 'TEXT');
   addColumnIfMissing('credentials', 'TEXT');
   addColumnIfMissing('http_status', 'INTEGER');
+  addColumnIfMissing('transaction_id', 'TEXT');
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_ping_history_session_app ON ping_history(session_id, org_id, env_id, app_name)`);
 
