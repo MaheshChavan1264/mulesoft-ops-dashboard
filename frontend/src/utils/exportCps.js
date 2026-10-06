@@ -167,7 +167,7 @@ function normalisePropsArray(raw, appKey) {
  */
 const isMasked = (v) => !v || /^\*+$/.test(String(v).trim());
 
-async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials) {
+async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials, needsCpsFetch = true) {
   const isCh2 = app.deploymentType === 'CloudHub 2.0';
   const depType = isCh2 ? 'ch2' : 'ch1';
 
@@ -238,6 +238,14 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
   } catch { /* fall back to summary data */ }
 
   const allProps = { ...runtimeProps, ...(app.runtimeProps || {}), ...(app.properties || {}) };
+
+  // Sheets like Splunk Details / Schedule Catalog / Static IPs Catalog are
+  // sourced entirely from the ARM/Runtime Manager calls above — when none of
+  // the selected sheets need actual CPS property values, skip the CPS
+  // credential posting and property fetches below entirely.
+  if (!needsCpsFetch) {
+    return { flatNs: {}, secureGroups: [], cpsEnv: '', cpsKey: '', schedulers, allProps, staticIPList };
+  }
 
   // CPS URL and env always come from the app's own ARM runtime properties.
   // The modal's URL/env fields are NOT used — they are for display only.
@@ -479,11 +487,14 @@ const DEFAULT_SHEET_IDS = CPS_EXPORT_SHEETS.map((s) => s.id);
  * @param {number}   batchSize        - parallel concurrency per batch (default 10)
  * @param {string[]} sheetIds         - which sheets to include in the output workbook
  *                                      (ids from CPS_EXPORT_SHEETS) — defaults to all of them.
- *                                      Data for every sheet is still gathered during the
- *                                      per-app fetch regardless of this filter (fetching is
- *                                      the expensive/slow part; building a worksheet from
- *                                      already-fetched rows is cheap), so toggling this only
- *                                      changes which sheets end up in the final .xlsx.
+ *                                      ARM-only sheets (ScheduleCatalog, StaticIPsCatalog,
+ *                                      SplunkDetails) are always built from the ARM/Runtime
+ *                                      Manager calls regardless of this filter. CPS-backed
+ *                                      sheets (AllPropertiesCatalog, Host_APIUsersCatalog)
+ *                                      additionally require CPS credential posting + property
+ *                                      fetches — those calls are skipped entirely when neither
+ *                                      of those two sheets is selected, so an export limited to
+ *                                      e.g. just "Splunk Details" only hits ARM, never CPS.
  */
 export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsBaseUrl, cpsEnvOverride, onProgress, getCredential, getAllCredentials, batchSize = 10, sheetIds = DEFAULT_SHEET_IDS }) {
   const allPropsRows = [];
@@ -491,6 +502,14 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
   const scheduleRows = [];
   const staticIPsRows = [];
   const splunkRows = [];
+
+  // AllPropertiesCatalog / Host_APIUsersCatalog are the only sheets that need
+  // actual CPS property values (secure + non-secure). ScheduleCatalog,
+  // StaticIPsCatalog and SplunkDetails are built entirely from ARM/Runtime
+  // Manager data already fetched per-app — when only those are selected,
+  // skip the CPS credential posting + property fetch calls entirely.
+  const selectedIds = new Set(sheetIds?.length ? sheetIds : DEFAULT_SHEET_IDS);
+  const needsCpsFetch = selectedIds.has('AllPropertiesCatalog') || selectedIds.has('Host_APIUsersCatalog');
 
   const total = apps.length;
   const totalBatches = Math.ceil(total / batchSize);
@@ -505,7 +524,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
     const batchNum = Math.floor(i / batchSize) + 1;
 
     const settled = await Promise.allSettled(
-      batchApps.map(app => fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials))
+      batchApps.map(app => fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredential, getAllCredentials, needsCpsFetch))
     );
 
     settled.forEach((outcome, j) => {
@@ -537,7 +556,7 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
   }
 
   // ── Export as Excel (.xlsx) — only the sheets selected via `sheetIds` ──
-  const selected = new Set(sheetIds?.length ? sheetIds : DEFAULT_SHEET_IDS);
+  const selected = selectedIds;
   const allSheets = [
     {
       id: 'AllPropertiesCatalog',
