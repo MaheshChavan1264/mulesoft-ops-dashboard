@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Download, RefreshCw, CheckCircle, AlertTriangle, FileSpreadsheet, Globe, ChevronRight, Building2, Layers, Key, Zap, Search, FileJson } from 'lucide-react';
-import { exportCpsProperties } from '../../utils/exportCps';
+import { exportCpsProperties, CPS_EXPORT_SHEETS } from '../../utils/exportCps';
 import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
 import { applyBgFilter } from '../../components/shared/BgFilterModal';
 import { getBusinessGroups, getEnvironments, getApplicationsSummary, getCloudhub2AppDetail, getCloudhub1AppDetail } from '../../services/applicationsService';
@@ -219,6 +219,15 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
   const [bgEnvSelections, setBgEnvSelections] = useState([]);
   // Export format: 'excel' | 'json'
   const [exportFormat, setExportFormat] = useState('excel');
+  // Which Excel sheets to include — defaults to all, user can deselect any.
+  const [selectedSheetIds, setSelectedSheetIds] = useState(() => new Set(CPS_EXPORT_SHEETS.map(s => s.id)));
+  const toggleSheet = (id) => {
+    setSelectedSheetIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
   // Whether to use the pre-passed apps (selected from Applications page) or BG/Env selector
   const hasPreselected = passedApps?.length > 0;
@@ -429,6 +438,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
           onProgress: (current, total, label) => setProgress({ current, total, label }),
           getCredential: hasCpsCreds ? getSecret : null,
           getAllCredentials: hasCpsCreds ? getAllCredentials : null,
+          sheetIds: [...selectedSheetIds],
         });
         setStatus('done');
       } catch (e) {
@@ -461,6 +471,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
             },
             getCredential: hasCpsCreds ? getSecret : null,
             getAllCredentials: hasCpsCreds ? getAllCredentials : null,
+            sheetIds: [...selectedSheetIds],
           });
           totalProcessed += envApps.length;
           if (ei < envEntries.length - 1) await new Promise(r => setTimeout(r, 200));
@@ -474,7 +485,8 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
   };
 
   const progressPct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
-  const canExport = usePreselected ? passedApps?.length > 0 : bgEnvSelections.length > 0;
+  const hasAppSelection = usePreselected ? passedApps?.length > 0 : bgEnvSelections.length > 0;
+  const canExport = hasAppSelection && (exportFormat !== 'excel' || selectedSheetIds.size > 0);
 
   return (
     <Modal
@@ -603,7 +615,7 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
                       : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:border-gray-300 dark:hover:border-gray-600'
                   }`}>
                   <FileSpreadsheet size={14} /> Excel (.xlsx)
-                  <span className="ml-auto text-[9px] opacity-60 font-medium">4 sheets</span>
+                  <span className="ml-auto text-[9px] opacity-60 font-medium">{selectedSheetIds.size}/{CPS_EXPORT_SHEETS.length} sheets</span>
                 </button>
                 <button
                   onClick={() => setExportFormat('json')}
@@ -617,14 +629,34 @@ export default function CpsExportModal({ apps: passedApps, bgOrgId, bgName, envN
                 </button>
               </div>
               {exportFormat === 'excel' && (
-                <div className="space-y-1 mt-1">
-                  {['AllPropertiesCatalog', 'Host_APIUsersCatalog', 'ScheduleCatalog', 'StaticIPsCatalog'].map(s => (
-                    <div key={s} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700/50 rounded-lg px-3 py-1.5">
-                      <ChevronRight size={10} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
-                      <span className="text-gray-600 dark:text-gray-300 text-xs font-mono">{s}</span>
+                <div className="space-y-1.5 mt-1">
+                  <div className="flex items-center justify-between">
+                    <p className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider">Sheets to include</p>
+                    <div className="flex items-center gap-2 text-[10px] font-semibold">
+                      <button type="button" onClick={() => setSelectedSheetIds(new Set(CPS_EXPORT_SHEETS.map(s => s.id)))}
+                        className="text-emerald-600 dark:text-emerald-400 hover:underline">All</button>
+                      <span className="text-gray-300 dark:text-gray-600">·</span>
+                      <button type="button" onClick={() => setSelectedSheetIds(new Set())}
+                        className="text-gray-400 dark:text-gray-500 hover:underline">None</button>
                     </div>
-                  ))}
-                  <p className="text-gray-400 dark:text-gray-500 text-[10px]">⚠ Sensitive values masked as <code>****</code></p>
+                  </div>
+                  {CPS_EXPORT_SHEETS.map(({ id, label }) => {
+                    const checked = selectedSheetIds.has(id);
+                    return (
+                      <div key={id} role="checkbox" aria-checked={checked} tabIndex={0}
+                        onClick={() => toggleSheet(id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheet(id); } }}
+                        className="flex items-center gap-2.5 bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700/50 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-800/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50">
+                        <CheckboxTile checked={checked} accent="emerald" size="sm" />
+                        <span className={`text-xs font-mono ${checked ? 'text-gray-700 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'}`}>{id}</span>
+                        <span className="text-gray-400 dark:text-gray-500 text-[10px] ml-auto">{label}</span>
+                      </div>
+                    );
+                  })}
+                  {selectedSheetIds.size === 0 && (
+                    <p className="text-amber-600 dark:text-amber-400 text-[10px] font-medium">⚠ Select at least one sheet to export.</p>
+                  )}
+                  <p className="text-gray-400 dark:text-gray-500 text-[10px]">⚠ CPS secure values masked as <code>****</code> — Splunk Details sheet shows raw ARM/runtime property values, unmasked.</p>
                 </div>
               )}
               {exportFormat === 'json' && (

@@ -68,6 +68,90 @@ function extractHostsSecure(props) {
   return hostPairs.join(',');
 }
 
+/**
+ * The exact ARM/runtime property keys Splunk integration uses in this org's
+ * deployed apps (confirmed list — not inferred/pattern-guessed). Looked up
+ * case-insensitively since ARM property casing can vary slightly between
+ * deployments/teams.
+ */
+const SPLUNK_PROP_KEYS = {
+  accessKeyId: 'splunk.aws.firehose.accessKeyId',
+  bufferSize: 'splunk.aws.firehose.bufferSize',
+  deliveryStream: 'splunk.aws.firehose.deliveryStream',
+  maxPutRecordDelay: 'splunk.aws.firehose.maxPutRecordDelay',
+  maxRetries: 'splunk.aws.firehose.maxRetries',
+  region: 'splunk.aws.firehose.region',
+  secretKey: 'splunk.aws.firehose.secretKey',
+  index: 'splunk.index',
+  indexTrace: 'splunk.index.trace',
+};
+
+/**
+ * Extract the known Splunk ARM/runtime properties for one app — the exact
+ * 9 keys in SPLUNK_PROP_KEYS above — plus a catch-all `other` map for any
+ * additional `splunk.*` key that isn't one of those 9, so a deployment
+ * using an unexpected/extra Splunk key still shows up somewhere instead of
+ * being silently dropped.
+ *
+ * Unlike every other secret in this export, Splunk values are NEVER masked
+ * here (not even accessKeyId/secretKey) — this sheet is meant to show
+ * exactly what's configured in each app's ARM/runtime properties as-is.
+ *
+ * @param {Record<string, any>} allProps  merged ARM/runtime properties for one app
+ * @returns {{
+ *   accessKeyId: string, secretKey: string, deliveryStream: string,
+ *   bufferSize: string, maxPutRecordDelay: string, maxRetries: string,
+ *   region: string, index: string, indexTrace: string,
+ *   other: Record<string,string>, hasAny: boolean
+ * }}
+ */
+function extractSplunkProps(allProps) {
+  const props = allProps || {};
+
+  // Case-insensitive key lookup — ARM properties for the same logical key
+  // can differ in case across deployments (same rationale as resolveProp()
+  // elsewhere in this file).
+  const lookup = (key) => {
+    if (props[key] != null && props[key] !== '') return props[key];
+    const lower = key.toLowerCase();
+    for (const [k, v] of Object.entries(props)) {
+      if (k.toLowerCase() === lower && v != null && v !== '') return v;
+    }
+    return '';
+  };
+
+  const raw = {};
+  for (const [field, key] of Object.entries(SPLUNK_PROP_KEYS)) {
+    raw[field] = lookup(key);
+  }
+
+  const knownKeysLower = new Set(Object.values(SPLUNK_PROP_KEYS).map((k) => k.toLowerCase()));
+  const other = {};
+  for (const [k, v] of Object.entries(props)) {
+    if (!/splunk/i.test(k)) continue;
+    if (knownKeysLower.has(k.toLowerCase())) continue; // already captured above
+    if (v == null || v === '') continue;
+    other[k] = String(v);
+  }
+
+  const hasAny = Object.values(raw).some((v) => v !== '' && v != null) || Object.keys(other).length > 0;
+
+  return {
+    accessKeyId: raw.accessKeyId !== '' ? String(raw.accessKeyId) : '',
+    secretKey: raw.secretKey !== '' ? String(raw.secretKey) : '',
+    deliveryStream: raw.deliveryStream !== '' ? String(raw.deliveryStream) : '',
+    bufferSize: raw.bufferSize !== '' ? String(raw.bufferSize) : '',
+    maxPutRecordDelay: raw.maxPutRecordDelay !== '' ? String(raw.maxPutRecordDelay) : '',
+    maxRetries: raw.maxRetries !== '' ? String(raw.maxRetries) : '',
+    region: raw.region !== '' ? String(raw.region) : '',
+    index: raw.index !== '' ? String(raw.index) : '',
+    indexTrace: raw.indexTrace !== '' ? String(raw.indexTrace) : '',
+    other,
+    hasAny,
+  };
+}
+
+
 function normalisePropsArray(raw, appKey) {
   const arr = extractCpsResponseEntries(raw);
   if (arr) return arr;
@@ -245,7 +329,7 @@ async function fetchAppCps(app, cpsBaseUrl, bgOrgId, cpsEnvOverride, getCredenti
 }
 
 // ── Row builder (shared between sequential and batch paths) ─────────────
-function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, staticIPsRows) {
+function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, staticIPsRows, splunkRows) {
   const { flatNs, secureGroups, schedulers: fetchedSchedulers, allProps: fetchedAllProps, staticIPList: fetchedStaticIPs } = fetchResult;
   const staticIPsEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
   const staticIPs = fetchedStaticIPs?.length > 0 ? fetchedStaticIPs.join(', ') : '—';
@@ -323,16 +407,65 @@ function buildRows(app, fetchResult, allPropsRows, hostApiRows, scheduleRows, st
       staticIPs,
     });
   }
+
+  // One row per app in the dedicated Splunk Details sheet — scanned from the
+  // same ARM/runtime properties already fetched for the catalogs above
+  // (no extra network call). See extractSplunkProps() for the exact 9
+  // property keys read; `otherSplunkProperties` catches any additional
+  // splunk.* key outside that known set.
+  if (splunkRows) {
+    const sp = extractSplunkProps(fetchedAllProps);
+    splunkRows.push({
+      environment,
+      apiName: app.name,
+      cloudhubVersion,
+      appStatus,
+      splunkConfigured: sp.hasAny ? 'Yes' : 'No',
+      accessKeyId: sp.accessKeyId,
+      secretKey: sp.secretKey,
+      deliveryStream: sp.deliveryStream,
+      bufferSize: sp.bufferSize,
+      maxPutRecordDelay: sp.maxPutRecordDelay,
+      maxRetries: sp.maxRetries,
+      region: sp.region,
+      index: sp.index,
+      indexTrace: sp.indexTrace,
+      otherSplunkProperties: propsToString(sp.other),
+    });
+  }
 }
 
-function buildErrorRow(app, e, allPropsRows, hostApiRows) {
+function buildErrorRow(app, e, allPropsRows, hostApiRows, splunkRows) {
   const environment = app._envName || app.environment?.name || '—';
   const cloudhubVersion = app.deploymentType === 'CloudHub 2.0' ? 'CloudHub 2.0' : 'CloudHub 1.0';
   const appStatus = app.status || '—';
   const msg = `ERROR: ${getErrorMessage(e)}`;
   allPropsRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', properties: msg, splunkAccessKeyId: '' });
   hostApiRows.push({ environment, apiName: app.name, cloudhubVersion, appStatus, hostsNonSecure: '', cpsSecureKey: '', hostsSecure: '', apiUsers: '', notAccessible: msg });
+  if (splunkRows) {
+    splunkRows.push({
+      environment, apiName: app.name, cloudhubVersion, appStatus, splunkConfigured: '—',
+      accessKeyId: '', secretKey: '', deliveryStream: '', bufferSize: '', maxPutRecordDelay: '',
+      maxRetries: '', region: '', index: '', indexTrace: '',
+      otherSplunkProperties: msg,
+    });
+  }
 }
+
+/**
+ * Canonical list of exportable sheets, shared with the UI (CpsExportModal)
+ * so the sheet-selection checkboxes and the actual export logic can never
+ * drift out of sync with each other. `id` is also the sheet name written
+ * to the workbook.
+ */
+export const CPS_EXPORT_SHEETS = [
+  { id: 'AllPropertiesCatalog', label: 'All Properties Catalog' },
+  { id: 'Host_APIUsersCatalog', label: 'Host / API Users Catalog' },
+  { id: 'ScheduleCatalog', label: 'Schedule Catalog' },
+  { id: 'StaticIPsCatalog', label: 'Static IPs Catalog' },
+  { id: 'SplunkDetails', label: 'Splunk Details' },
+];
+const DEFAULT_SHEET_IDS = CPS_EXPORT_SHEETS.map((s) => s.id);
 
 /**
  * Main export function — processes apps in parallel batches for speed.
@@ -344,12 +477,20 @@ function buildErrorRow(app, e, allPropsRows, hostApiRows) {
  * @param {Function} getCredential    - (clientId) => secret | null
  * @param {Function} getAllCredentials - () => [{clientId, clientSecret}]
  * @param {number}   batchSize        - parallel concurrency per batch (default 10)
+ * @param {string[]} sheetIds         - which sheets to include in the output workbook
+ *                                      (ids from CPS_EXPORT_SHEETS) — defaults to all of them.
+ *                                      Data for every sheet is still gathered during the
+ *                                      per-app fetch regardless of this filter (fetching is
+ *                                      the expensive/slow part; building a worksheet from
+ *                                      already-fetched rows is cheap), so toggling this only
+ *                                      changes which sheets end up in the final .xlsx.
  */
-export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsBaseUrl, cpsEnvOverride, onProgress, getCredential, getAllCredentials, batchSize = 10 }) {
+export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsBaseUrl, cpsEnvOverride, onProgress, getCredential, getAllCredentials, batchSize = 10, sheetIds = DEFAULT_SHEET_IDS }) {
   const allPropsRows = [];
   const hostApiRows = [];
   const scheduleRows = [];
   const staticIPsRows = [];
+  const splunkRows = [];
 
   const total = apps.length;
   const totalBatches = Math.ceil(total / batchSize);
@@ -380,53 +521,63 @@ export async function exportCpsProperties({ apps, bgOrgId, bgName, envName, cpsB
     if (!app) continue;
     if (outcome.status === 'fulfilled') {
       try {
-        buildRows(app, outcome.value, allPropsRows, hostApiRows, scheduleRows, staticIPsRows);
+        buildRows(app, outcome.value, allPropsRows, hostApiRows, scheduleRows, staticIPsRows, splunkRows);
       } catch (e) {
-        buildErrorRow(app, e, allPropsRows, hostApiRows);
+        buildErrorRow(app, e, allPropsRows, hostApiRows, splunkRows);
         const siEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
         const siVer = app.deploymentType === 'CloudHub 2.0' ? 'CloudHub 2.0' : 'CloudHub 1.0';
         staticIPsRows.push({ apiName: app.name, environment: app._envName || app.environment?.name || '—', cloudhubVersion: siVer, appStatus: app.status || '—', staticIPsEnabled: siEnabled, staticIPs: '—' });
       }
     } else {
-      buildErrorRow(app, outcome.reason, allPropsRows, hostApiRows);
+      buildErrorRow(app, outcome.reason, allPropsRows, hostApiRows, splunkRows);
       const siEnabled = app.staticIPsEnabled != null ? (app.staticIPsEnabled ? 'Yes' : 'No') : '—';
       const siVer = app.deploymentType === 'CloudHub 2.0' ? 'CloudHub 2.0' : 'CloudHub 1.0';
       staticIPsRows.push({ apiName: app.name, environment: app._envName || app.environment?.name || '—', cloudhubVersion: siVer, appStatus: app.status || '—', staticIPsEnabled: siEnabled, staticIPs: '—' });
     }
   }
 
-  // ── Export as Excel (.xlsx) with 4 sheets ─────────────────────────────
-  const sheets = [
+  // ── Export as Excel (.xlsx) — only the sheets selected via `sheetIds` ──
+  const selected = new Set(sheetIds?.length ? sheetIds : DEFAULT_SHEET_IDS);
+  const allSheets = [
     {
-      name: 'AllPropertiesCatalog',
+      id: 'AllPropertiesCatalog',
       worksheet: rowsToWorksheet(allPropsRows, {
         headers: ['environment', 'apiName', 'cloudhubVersion', 'splunkAccessKeyId', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'properties'],
         colWidths: undefined,
       }),
     },
     {
-      name: 'Host_APIUsersCatalog',
+      id: 'Host_APIUsersCatalog',
       worksheet: rowsToWorksheet(hostApiRows, {
         headers: ['environment', 'apiName', 'cloudhubVersion', 'appStatus', 'hostsNonSecure', 'cpsSecureKey', 'hostsSecure', 'apiUsers', 'notAccessible'],
         colWidths: undefined,
       }),
     },
     {
-      name: 'ScheduleCatalog',
+      id: 'ScheduleCatalog',
       worksheet: rowsToWorksheet(scheduleRows, {
         headers: ['environment', 'apiDomainName', 'scheduleName', 'enabled', 'scheduleCronExpression', 'decodedCronExpression', 'scheduleTimeZone', 'scheduleTimeUnit', 'schedulePeriod'],
         colWidths: undefined,
       }),
     },
-    // Sheet 4: StaticIPsCatalog — one row per app, includes env + CloudHub version + status
     {
-      name: 'StaticIPsCatalog',
+      id: 'StaticIPsCatalog',
       worksheet: rowsToWorksheet(staticIPsRows, {
         headers: ['apiName', 'environment', 'cloudhubVersion', 'appStatus', 'staticIPsEnabled', 'staticIPs'],
         colWidths: undefined,
       }),
     },
+    {
+      id: 'SplunkDetails',
+      worksheet: rowsToWorksheet(splunkRows, {
+        headers: ['environment', 'apiName', 'cloudhubVersion', 'appStatus', 'splunkConfigured', 'accessKeyId', 'secretKey', 'deliveryStream', 'bufferSize', 'maxPutRecordDelay', 'maxRetries', 'region', 'index', 'indexTrace', 'otherSplunkProperties'],
+        colWidths: undefined,
+      }),
+    },
   ];
+  const sheets = allSheets
+    .filter((s) => selected.has(s.id))
+    .map((s) => ({ name: s.id, worksheet: s.worksheet }));
 
   const date = new Date().toISOString().split('T')[0];
   const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
