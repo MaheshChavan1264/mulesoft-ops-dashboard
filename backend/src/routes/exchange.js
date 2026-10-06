@@ -16,6 +16,98 @@ const {
 } = require('../utils/specParser');
 const logger = require('../utils/logger');
 
+/**
+ * Download and parse an asset's attached spec file (fat-oas/fat-raml),
+ * independent of whether the Portal Model API already succeeded. Shared by
+ * two call sites in `/ping-spec`:
+ *   - Step 2 fallback, when the Portal Model API has nothing at all.
+ *   - The AMF enrichment pass, when the Portal Model API DID return an
+ *     endpoint list (via the AMF JSON-LD branch) but that branch only ever
+ *     extracted query/header params — no request/response schemas or
+ *     `components.schemas` — because confidently mapping AMF's JSON-LD
+ *     vocabulary for payloads/security would require guessing at URIs this
+ *     codebase has no way to validate against a live sample. Re-parsing the
+ *     asset's own OAS/RAML file is a deterministic, well-understood format
+ *     and gives the richer detail Exchange's own Reference tab shows.
+ *
+ * @returns {Promise<{specType: string, assetName: string, allEndpoints: Array, schemas: object, securitySchemes: object, info: object, servers: Array} | null>}
+ *   null if no spec file is attached or it couldn't be downloaded/parsed.
+ */
+async function downloadAndParseSpecFile(client, anypointToken, groupId, assetId, version, assetIdFallback) {
+  const assetRes = await client.get(`/exchange/api/v2/assets/${groupId}/${assetId}/${version}`);
+  const asset = assetRes.data;
+  const assetName = asset.name || assetIdFallback;
+  const files = asset.files || [];
+
+  const findFile = (...classifiers) => {
+    for (const c of classifiers) {
+      const f = files.find(fi => fi.classifier === c);
+      if (f) return f;
+    }
+    return null;
+  };
+  const oasFile = findFile('fat-oas', 'oas');
+  const ramlFile = findFile('fat-raml', 'raml');
+  const specFile = oasFile || ramlFile;
+  if (!specFile?.externalLink) return null;
+
+  const isS3 = specFile.externalLink.includes('s3.amazonaws.com');
+  const dlRes = await axios.get(specFile.externalLink, {
+    headers: isS3 ? {} : { Authorization: `Bearer ${anypointToken}` },
+    responseType: 'arraybuffer',
+    timeout: 20000,
+  });
+  const buf = Buffer.from(dlRes.data);
+  const isZip = buf[0] === 0x50 && buf[1] === 0x4b;
+  const content = isZip ? extractSpecFileFromZip(buf) : buf.toString('utf8');
+  if (isZip) logger.debug(`[ping-spec] ZIP extracted: ${content ? `${content.length} chars` : 'FAILED'}`);
+  if (!content) throw new Error('Could not extract spec content from file');
+
+  if (oasFile) {
+    let spec = null;
+    try { spec = JSON.parse(content); } catch {
+      try {
+        spec = require('js-yaml').load(content);
+        logger.debug('[ping-spec] OAS spec parsed as YAML');
+      } catch (yamlErr) {
+        logger.warn(`[ping-spec] YAML parse failed: ${yamlErr.message}`);
+      }
+    }
+    if (!spec?.paths) {
+      if (spec) logger.warn(`[ping-spec] OAS spec parsed but has no "paths". Top-level keys: ${Object.keys(spec).slice(0, 10).join(', ')}`);
+      return null;
+    }
+    logger.debug(`[ping-spec] OAS ${spec.openapi || spec.swagger || '?'}: ${Object.keys(spec.paths).length} path(s)`);
+    const parsed = parseOasSpecFile(spec);
+    return { specType: 'oas', assetName, allEndpoints: parsed.endpoints, schemas: parsed.schemas, securitySchemes: parsed.securitySchemes, info: parsed.info, servers: parsed.servers };
+  }
+  if (ramlFile) {
+    const parsed = parseRamlText(content);
+    return { specType: 'raml', assetName, allEndpoints: parsed.endpoints, schemas: parsed.schemas || {}, securitySchemes: {}, info: {}, servers: [] };
+  }
+  return null;
+}
+
+/**
+ * Merge the AMF-sourced endpoint list's `queryParams`/`headers` (already
+ * battle-tested for ping-path detection) with the richer per-operation
+ * fields a spec-file re-parse produced (requestBody/responses/tags/
+ * deprecated/operationId/security/pathParams), matched by path+method.
+ * Endpoints only the file-parse found (e.g. AMF dropped one) are appended
+ * as-is; endpoints only AMF found are kept unchanged.
+ */
+function mergeEndpointDetail(amfEndpoints, fileEndpoints) {
+  const fileByKey = new Map(fileEndpoints.map((e) => [`${e.method} ${e.path}`, e]));
+  const merged = amfEndpoints.map((e) => {
+    const rich = fileByKey.get(`${e.method} ${e.path}`);
+    if (!rich) return e;
+    fileByKey.delete(`${e.method} ${e.path}`);
+    return { ...rich, queryParams: e.queryParams, headers: e.headers };
+  });
+  return [...merged, ...fileByKey.values()];
+}
+
+
 // Search Exchange assets
 router.get('/search', authMiddleware, proxyHandler('Failed to search Exchange', async (req, res) => {
   const client = createClient(req.anypointToken);
@@ -247,6 +339,7 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
       assetName = assetId;
       specType = 'unknown';
       allEndpoints = [];
+      let schemas = {}, securitySchemes = {}, info = {}, servers = [];
       let modelParsed = false;
 
       // ── Step 1: Try the Exchange Portal Model API ──────────────────────
@@ -266,72 +359,50 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
         specType = parsed.specType;
         assetName = parsed.assetName;
         allEndpoints = parsed.endpoints;
+        schemas = parsed.schemas || {};
+        securitySchemes = parsed.securitySchemes || {};
+        info = parsed.info || {};
+        servers = parsed.servers || [];
         modelParsed = allEndpoints.length > 0;
       } catch (modelErr) {
         logger.warn(`[ping-spec] Portal model API failed (${modelErr.response?.status || modelErr.message}), falling back to asset file download`);
       }
 
-      // ── Step 2: Fallback — download and parse the spec file ─────────────
+      // ── Step 2: Fallback — download and parse the spec file (when the
+      // Portal Model API had nothing at all) ──────────────────────────────
       if (!modelParsed) {
         try {
-          const assetRes = await client.get(`/exchange/api/v2/assets/${groupId}/${assetId}/${version}`);
-          const asset = assetRes.data;
-          assetName = asset.name || assetId;
-          const files = asset.files || [];
-
-          const findFile = (...classifiers) => {
-            for (const c of classifiers) {
-              const f = files.find(fi => fi.classifier === c);
-              if (f) return f;
-            }
-            return null;
-          };
-          const oasFile = findFile('fat-oas', 'oas');
-          const ramlFile = findFile('fat-raml', 'raml');
-          const specFile = oasFile || ramlFile;
-
-          if (specFile?.externalLink) {
-            const isS3 = specFile.externalLink.includes('s3.amazonaws.com');
-            const dlRes = await axios.get(specFile.externalLink, {
-              headers: isS3 ? {} : { Authorization: `Bearer ${req.anypointToken}` },
-              responseType: 'arraybuffer',
-              timeout: 20000,
-            });
-            const buf = Buffer.from(dlRes.data);
-            const isZip = buf[0] === 0x50 && buf[1] === 0x4b;
-            let content;
-            if (isZip) {
-              content = extractSpecFileFromZip(buf);
-              logger.debug(`[ping-spec] ZIP extracted: ${content ? `${content.length} chars` : 'FAILED'}`);
-            } else {
-              content = buf.toString('utf8');
-            }
-            if (!content) throw new Error('Could not extract spec content from file');
-
-            if (oasFile) {
-              specType = 'oas';
-              let spec = null;
-              try { spec = JSON.parse(content); } catch {
-                try {
-                  spec = require('js-yaml').load(content);
-                  logger.debug('[ping-spec] OAS spec parsed as YAML');
-                } catch (yamlErr) {
-                  logger.warn(`[ping-spec] YAML parse failed: ${yamlErr.message}`);
-                }
-              }
-              if (spec?.paths) {
-                logger.debug(`[ping-spec] OAS ${spec.openapi || spec.swagger || '?'}: ${Object.keys(spec.paths).length} path(s)`);
-                allEndpoints = parseOasSpecFile(spec).endpoints;
-              } else if (spec) {
-                logger.warn(`[ping-spec] OAS spec parsed but has no "paths". Top-level keys: ${Object.keys(spec).slice(0, 10).join(', ')}`);
-              }
-            } else if (ramlFile) {
-              specType = 'raml';
-              allEndpoints = parseRamlText(content).endpoints;
-            }
+          const fileResult = await downloadAndParseSpecFile(client, req.anypointToken, groupId, assetId, version, assetId);
+          if (fileResult) {
+            specType = fileResult.specType;
+            assetName = fileResult.assetName;
+            allEndpoints = fileResult.allEndpoints;
+            schemas = fileResult.schemas;
+            securitySchemes = fileResult.securitySchemes;
+            info = fileResult.info;
+            servers = fileResult.servers;
           }
         } catch (fbErr) {
           logger.warn(`[ping-spec] Fallback file download also failed: ${fbErr.message}`);
+        }
+      } else if (specType === 'amf-jsonld') {
+        // ── Step 1b: AMF enrichment pass — the Portal Model's AMF JSON-LD
+        // branch only extracts query/header params, no schemas/request/
+        // response bodies (see downloadAndParseSpecFile's header comment).
+        // Re-parse the asset's own spec file (if attached) to fill those in,
+        // without discarding the already-working AMF param extraction.
+        try {
+          const fileResult = await downloadAndParseSpecFile(client, req.anypointToken, groupId, assetId, version, assetId);
+          if (fileResult?.allEndpoints?.length) {
+            allEndpoints = mergeEndpointDetail(allEndpoints, fileResult.allEndpoints);
+            schemas = fileResult.schemas;
+            securitySchemes = fileResult.securitySchemes;
+            info = fileResult.info;
+            servers = fileResult.servers;
+            logger.debug(`[ping-spec] AMF enrichment: merged schema/body detail from ${fileResult.specType} file for ${groupId}/${assetId}/${version}`);
+          }
+        } catch (enrichErr) {
+          logger.debug(`[ping-spec] AMF enrichment skipped (no spec file or parse failed): ${enrichErr.message}`);
         }
       }
 
@@ -339,7 +410,7 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
       const pingEndpoints = allEndpoints.filter(e => isPingPath(e.path));
       logger.info(`[ping-spec] ${groupId}/${assetId}/${version} (${specType}): ${allEndpoints.length} endpoints, ${pingEndpoints.length} ping path(s)`);
       if (allEndpoints.length > 0) {
-        return res.json({ specType, assetName, pingEndpoints, allEndpoints });
+        return res.json({ specType, assetName, info, servers, schemas, securitySchemes, pingEndpoints, allEndpoints });
       }
       if (assetCandidates.length > 1) {
         logger.info(`[ping-spec] 0 endpoints for ${assetId}/${version}, trying next candidate…`);
@@ -348,13 +419,14 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
 
     // All candidates exhausted with 0 endpoints
     logger.info('[ping-spec] All candidates exhausted — returning empty spec');
-    return res.json({ specType: 'unknown', assetName, pingEndpoints: [], allEndpoints: [] });
+    return res.json({ specType: 'unknown', assetName, info: {}, servers: [], schemas: {}, securitySchemes: {}, pingEndpoints: [], allEndpoints: [] });
 
   } catch (error) {
     logger.error({ err: error.response?.data || error.message }, '[ping-spec] Error');
     res.status(error.response?.status || 500).json({
       error: extractAnypointErrorMessage(error, 'Failed to fetch ping spec'),
       specType: 'unknown',
+      info: {}, servers: [], schemas: {}, securitySchemes: {},
       pingEndpoints: [],
       allEndpoints: [],
     });

@@ -64,10 +64,10 @@ function walkResources(resources = [], parentPath = '', out = [], useDisplayName
 }
 
 /**
- * Extract query or header params from an OAS parameters array.
+ * Extract query/header/path params from an OAS parameters array.
  *
  * @param {Array}  params    OAS parameters array (path-level + operation-level merged)
- * @param {string} inFilter  'query' or 'header'
+ * @param {string} inFilter  'query', 'header', or 'path'
  */
 const extractOasParams = (params = [], inFilter) =>
   params
@@ -83,7 +83,106 @@ const extractOasParams = (params = [], inFilter) =>
           : p.schema?.example != null
           ? String(p.schema.example)
           : '',
+      enum: p.schema?.enum || p.enum || undefined,
     }));
+
+/**
+ * Recursively shorten `$ref` pointers from the full JSON-pointer form
+ * (`#/components/schemas/Order`) down to just the schema name (`Order`),
+ * walking into every place a schema can nest (properties, items, additional-
+ * Properties, oneOf/anyOf/allOf/not). Kept as a cheap string rewrite rather
+ * than fully resolving/inlining the referenced schema here — the frontend's
+ * SchemaTree component resolves `$ref`s on demand against the `schemas`
+ * dict this module also returns, with its own cycle guard. Doing the
+ * resolution client-side avoids duplicating (and potentially infinitely
+ * expanding, for self-referencing schemas) the same nested schema under
+ * every property that references it.
+ *
+ * @param {any} node
+ * @returns {any}  a new, ref-shortened structure (does not mutate `node`)
+ */
+function shortenSchemaRefs(node) {
+  if (Array.isArray(node)) return node.map(shortenSchemaRefs);
+  if (node && typeof node === 'object') {
+    if (typeof node.$ref === 'string') {
+      const name = node.$ref.replace(/^#\/(components\/schemas|definitions)\//, '');
+      return { ...shortenSchemaRefs({ ...node, $ref: undefined }), $ref: name };
+    }
+    const out = {};
+    for (const [k, v] of Object.entries(node)) {
+      if (v === undefined) continue;
+      out[k] = shortenSchemaRefs(v);
+    }
+    return out;
+  }
+  return node;
+}
+
+/**
+ * Build a `requestBody.content` map for a single operation, normalizing
+ * both OAS 3.x (`requestBody.content`) and Swagger 2.0 (a `body`-location
+ * parameter with its own `.schema`) into the same shape so the frontend
+ * only needs to handle one.
+ *
+ * @returns {{ required: boolean, content: Record<string, { schema: any }> } | null}
+ */
+function extractRequestBody(op, allParams) {
+  if (op.requestBody?.content) {
+    const content = {};
+    for (const [mt, mediaObj] of Object.entries(op.requestBody.content)) {
+      content[mt] = { schema: shortenSchemaRefs(mediaObj.schema || {}) };
+    }
+    return { required: !!op.requestBody.required, content };
+  }
+  const bodyParam = allParams.find((p) => p.in === 'body');
+  if (bodyParam?.schema) {
+    return { required: !!bodyParam.required, content: { 'application/json': { schema: shortenSchemaRefs(bodyParam.schema) } } };
+  }
+  return null;
+}
+
+/**
+ * Build a `{ statusCode: { description, content, headers } }` responses map
+ * for a single operation, normalizing OAS 3.x (`content` per media type) and
+ * Swagger 2.0 (a single `.schema` per response) into the same shape.
+ */
+function extractResponses(op) {
+  const responses = {};
+  for (const [status, resp] of Object.entries(op.responses || {})) {
+    const content = {};
+    if (resp.content) {
+      for (const [mt, mediaObj] of Object.entries(resp.content)) {
+        content[mt] = { schema: shortenSchemaRefs(mediaObj.schema || {}) };
+      }
+    } else if (resp.schema) {
+      content['application/json'] = { schema: shortenSchemaRefs(resp.schema) };
+    }
+    responses[status] = {
+      description: resp.description || '',
+      content,
+      headers: Object.entries(resp.headers || {}).map(([name, h]) => ({
+        name,
+        description: h.description || '',
+        type: h.schema?.type || h.type || 'string',
+      })),
+    };
+  }
+  return responses;
+}
+
+/**
+ * Resolve an operation's effective security requirements per OAS semantics:
+ * an explicit (even empty) `security` array on the operation overrides the
+ * document-level default; an absent one inherits the global `security`.
+ *
+ * @returns {Array<{ name: string, scopes: string[] }>}
+ */
+function extractSecurity(op, globalSecurity) {
+  const sec = op.security !== undefined ? op.security : (globalSecurity || []);
+  return sec.flatMap((req) =>
+    Object.entries(req || {}).map(([name, scopes]) => ({ name, scopes: scopes || [] }))
+  );
+}
 
 /** Parse an OAS `paths` object (with optional basePath/servers) into endpoints. */
 function parseOasPaths(spec) {
@@ -106,13 +205,55 @@ function parseOasPaths(spec) {
       endpoints.push({
         path: (bp + normalizedPath).replace(/\/\//g, '/'),
         method: meth.toUpperCase(),
+        summary: op.summary || '',
         description: op.summary || op.description || '',
+        operationId: op.operationId || '',
+        tags: op.tags || [],
+        deprecated: !!op.deprecated,
+        pathParams: extractOasParams(params, 'path'),
         queryParams: extractOasParams(params, 'query'),
         headers: extractOasParams(params, 'header'),
+        requestBody: extractRequestBody(op, params),
+        responses: extractResponses(op),
+        security: extractSecurity(op, spec.security),
       });
     }
   }
-  return { endpoints, basePath: bp };
+
+  const schemas = {};
+  const schemaSource = spec.components?.schemas || spec.definitions || {};
+  for (const [name, schema] of Object.entries(schemaSource)) {
+    schemas[name] = shortenSchemaRefs(schema);
+  }
+
+  const securitySchemes = {};
+  const schemeSource = spec.components?.securitySchemes || spec.securityDefinitions || {};
+  for (const [name, scheme] of Object.entries(schemeSource)) {
+    securitySchemes[name] = {
+      type: scheme.type || '',
+      scheme: scheme.scheme || '',
+      bearerFormat: scheme.bearerFormat || '',
+      in: scheme.in || '',
+      name: scheme.name || '',
+      flows: scheme.flows ? Object.keys(scheme.flows) : (scheme.flow ? [scheme.flow] : []),
+      description: scheme.description || '',
+    };
+  }
+
+  return {
+    endpoints,
+    basePath: bp,
+    schemas,
+    securitySchemes,
+    info: {
+      title: spec.info?.title || '',
+      version: spec.info?.version || '',
+      description: spec.info?.description || '',
+    },
+    servers: spec.servers?.length
+      ? spec.servers.map((s) => ({ url: s.url || '', description: s.description || '' }))
+      : (spec.host ? [{ url: `${(spec.schemes || ['https'])[0]}://${spec.host}${spec.basePath || ''}`, description: '' }] : []),
+  };
 }
 
 // ── AMF JSON-LD graph parsing ─────────────────────────────────────────────────
@@ -250,7 +391,7 @@ function parsePortalModel(model, assetIdFallback) {
   // Shape A: AMF JSON-LD graph
   const amf = parseAmfJsonLd(model);
   if (amf && amf.endpoints.length > 0) {
-    return { specType: 'amf-jsonld', assetName: amf.assetName || assetIdFallback, endpoints: amf.endpoints };
+    return { specType: 'amf-jsonld', assetName: amf.assetName || assetIdFallback, endpoints: amf.endpoints, schemas: {}, securitySchemes: {}, info: {}, servers: [] };
   }
 
   // Shape B: RAML-style plain object with `resources` array, or OAS plain object with `paths`
@@ -260,13 +401,13 @@ function parsePortalModel(model, assetIdFallback) {
     if (model.resources) {
       const endpoints = walkResources(model.resources, '', [], true);
       if (endpoints.length > 0) {
-        return { specType: model.specType || 'raml', assetName, endpoints };
+        return { specType: model.specType || 'raml', assetName, endpoints, schemas: {}, securitySchemes: {}, info: {}, servers: [] };
       }
     }
     if (model.paths) {
-      const { endpoints } = parseOasPaths(model);
+      const { endpoints, schemas, securitySchemes, info, servers } = parseOasPaths(model);
       if (endpoints.length > 0) {
-        return { specType: 'oas', assetName, endpoints };
+        return { specType: 'oas', assetName, endpoints, schemas, securitySchemes, info, servers };
       }
     }
   }
@@ -275,11 +416,11 @@ function parsePortalModel(model, assetIdFallback) {
   if (Array.isArray(model) && model[0]?.relativeUri) {
     const endpoints = walkResources(model, '', [], false);
     if (endpoints.length > 0) {
-      return { specType: 'raml', assetName: assetIdFallback, endpoints };
+      return { specType: 'raml', assetName: assetIdFallback, endpoints, schemas: {}, securitySchemes: {}, info: {}, servers: [] };
     }
   }
 
-  return { specType: 'unknown', assetName: assetIdFallback, endpoints: [] };
+  return { specType: 'unknown', assetName: assetIdFallback, endpoints: [], schemas: {}, securitySchemes: {}, info: {}, servers: [] };
 }
 
 // ── Raw spec-file parsing (fallback when the portal model API has nothing) ───
@@ -291,6 +432,61 @@ function parseOasSpecFile(spec) {
 }
 
 /**
+ * Best-effort extraction of a RAML `types:` block into the same
+ * `{ name: { type, properties: { name: {type,required,description,example} } } }`
+ * shape used for OAS `components.schemas`, so the frontend's SchemaTree can
+ * render both uniformly. Deliberately shallow (one level of properties, no
+ * nested object/array expansion, no `oneOf`-equivalent union handling) —
+ * RAML's indentation-based type system would need a real YAML/RAML parser
+ * to represent faithfully, which is out of scope for this regex-based
+ * fallback (only used when neither the portal model API nor a structured
+ * RAML object is available).
+ */
+function parseRamlTypes(content) {
+  const schemas = {};
+  const lines = content.split('\n');
+  let inTypes = false;
+  let curType = null, curProp = null;
+  for (const line of lines) {
+    if (/^types:\s*$/.test(line)) { inTypes = true; continue; }
+    if (!inTypes) continue;
+    if (/^\S/.test(line)) { inTypes = false; continue; } // dedent out of types:
+    const typeM = line.match(/^ {2}([\w.-]+):\s*$/);
+    if (typeM) {
+      curType = typeM[1];
+      schemas[curType] = { type: 'object', properties: {} };
+      curProp = null;
+      continue;
+    }
+    if (!curType) continue;
+    const propsHeaderM = line.match(/^ {4}properties:\s*$/);
+    if (propsHeaderM) { curProp = null; continue; }
+    const propM = line.match(/^ {6}([\w-]+)(\??):\s*(.*)$/);
+    if (propM) {
+      curProp = propM[1];
+      const inlineType = propM[3].trim();
+      schemas[curType].properties[curProp] = {
+        type: inlineType || 'string',
+        required: propM[2] !== '?',
+        description: '',
+        example: '',
+      };
+      continue;
+    }
+    const fieldM = line.match(/^ {8}(type|description|example|required):\s*(.+)$/);
+    if (fieldM && curProp && schemas[curType]?.properties[curProp]) {
+      const v = fieldM[2].trim().replace(/^["']|["']$/g, '');
+      const p = schemas[curType].properties[curProp];
+      if (fieldM[1] === 'type') p.type = v;
+      else if (fieldM[1] === 'description') p.description = v;
+      else if (fieldM[1] === 'example') p.example = v;
+      else if (fieldM[1] === 'required') p.required = v === 'true';
+    }
+  }
+  return schemas;
+}
+
+/**
  * Best-effort regex parser for raw RAML text — used only when the asset's
  * RAML file couldn't be parsed any other way. Deliberately simple: it only
  * needs to find ping/health paths and their query/header params, not fully
@@ -299,18 +495,36 @@ function parseOasSpecFile(spec) {
 function parseRamlText(content) {
   const endpoints = [];
   const lines = content.split('\n');
-  let curPath = '', curEp = null, inQp = false, inHdr = false, curParam = '';
+  let curPath = '', curEp = null, inQp = false, inHdr = false, inBody = false, inResponses = false;
+  let curParam = '', curStatus = null;
   for (const line of lines) {
     const pm = line.match(/^(\/[\w\-/{}]*):\s*$/);
-    if (pm) { curPath = pm[1]; curEp = null; inQp = false; inHdr = false; continue; }
+    if (pm) { curPath = pm[1]; curEp = null; inQp = false; inHdr = false; inBody = false; inResponses = false; continue; }
     const mm = line.match(/^ {2}(get|post|put|delete|patch):\s*$/);
     if (mm && curPath) {
-      curEp = { path: curPath, method: mm[1].toUpperCase(), description: '', queryParams: [], headers: [] };
-      endpoints.push(curEp); inQp = false; inHdr = false; continue;
+      curEp = {
+        path: curPath, method: mm[1].toUpperCase(), summary: '', description: '',
+        tags: [], deprecated: false, operationId: '',
+        pathParams: [], queryParams: [], headers: [],
+        requestBody: null, responses: {}, security: [],
+      };
+      endpoints.push(curEp); inQp = false; inHdr = false; inBody = false; inResponses = false; continue;
     }
     if (curEp) {
-      if (/^ {4}queryParameters:\s*$/.test(line)) { inQp = true; inHdr = false; continue; }
-      if (/^ {4}headers:\s*$/.test(line)) { inHdr = true; inQp = false; continue; }
+      const descM = line.match(/^ {4}description:\s*(.+)$/);
+      if (descM) { curEp.description = descM[1].trim().replace(/^["']|["']$/g, ''); continue; }
+      if (/^ {4}queryParameters:\s*$/.test(line)) { inQp = true; inHdr = false; inBody = false; inResponses = false; continue; }
+      if (/^ {4}headers:\s*$/.test(line)) { inHdr = true; inQp = false; inBody = false; inResponses = false; continue; }
+      if (/^ {4}body:\s*$/.test(line)) { inBody = true; inQp = false; inHdr = false; inResponses = false; continue; }
+      if (/^ {4}responses:\s*$/.test(line)) { inResponses = true; inQp = false; inHdr = false; inBody = false; continue; }
+      if (inBody) {
+        const mtM = line.match(/^ {6}([\w./+-]+):\s*$/);
+        if (mtM) { curEp.requestBody = curEp.requestBody || { required: true, content: {} }; curEp.requestBody.content[mtM[1]] = { schema: { type: 'object' } }; continue; }
+      }
+      if (inResponses) {
+        const statusM = line.match(/^ {6}(\d{3}):\s*$/);
+        if (statusM) { curStatus = statusM[1]; curEp.responses[curStatus] = { description: '', content: {}, headers: [] }; continue; }
+      }
       const paramM = line.match(/^ {6}([\w-]+):\s*$/);
       if (paramM && (inQp || inHdr)) {
         curParam = paramM[1];
@@ -319,7 +533,7 @@ function parseRamlText(content) {
         continue;
       }
       const propM = line.match(/^ {8}(type|description|example|required):\s*(.+)$/);
-      if (propM && curParam) {
+      if (propM && curParam && (inQp || inHdr)) {
         const arr = inQp ? curEp.queryParams : curEp.headers;
         const p = arr.find((x) => x.name === curParam);
         if (p) {
@@ -332,7 +546,7 @@ function parseRamlText(content) {
       }
     }
   }
-  return { endpoints };
+  return { endpoints, schemas: parseRamlTypes(content) };
 }
 
 // ── ZIP extraction (Exchange "fat" asset archives) ────────────────────────────
@@ -436,9 +650,11 @@ module.exports = {
   toArr,
   walkResources,
   extractOasParams,
+  shortenSchemaRefs,
   parseOasPaths,
   parsePortalModel,
   parseOasSpecFile,
   parseRamlText,
+  parseRamlTypes,
   extractSpecFileFromZip,
 };
