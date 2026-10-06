@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import WelcomeCredentialsModal from './WelcomeCredentialsModal';
-import { consumeJustLoggedIn } from '../../context/AuthContext';
+import { peekJustLoggedIn, clearJustLoggedInFlag } from '../../context/AuthContext';
 import { useCredentialStore } from '../../context/CredentialStoreContext';
 import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
 
@@ -23,11 +23,23 @@ export default function Layout() {
   // fires the welcome modal exactly once per login, not on every route
   // navigation or page refresh. Also gated on both stores already being
   // empty, in case this ever remounts with credentials already in memory.
+  //
+  // IMPORTANT: the flag is only PEEKED here (read-only) — it must NOT be
+  // cleared inside this lazy initializer. React 18 StrictMode double-
+  // invokes initializers in dev to catch impure renders; clearing the flag
+  // as a side effect of the read meant the discarded first invocation
+  // silently consumed it, so the modal never showed. The actual clear
+  // happens below in a useEffect, which is safe to double-fire since
+  // clearJustLoggedInFlag() is idempotent.
   const { hasCredentials: hasPingCreds } = useCredentialStore();
   const { hasCredentials: hasCpsCreds } = useCpsCredentialStore();
   const [showWelcomeModal, setShowWelcomeModal] = useState(
-    () => consumeJustLoggedIn() && !hasPingCreds && !hasCpsCreds
+    () => peekJustLoggedIn() && !hasPingCreds && !hasCpsCreds
   );
+
+  useEffect(() => {
+    clearJustLoggedInFlag();
+  }, []);
 
   const toggleSidebar = () => {
     setSidebarOpen(v => {

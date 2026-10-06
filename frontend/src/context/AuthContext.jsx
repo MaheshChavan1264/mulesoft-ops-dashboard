@@ -143,13 +143,25 @@ export const AuthProvider = ({ children }) => {
 export const useAuth = () => useContext(AuthContext);
 
 /**
- * Consume (read-then-clear) the "just logged in" flag set by a real login
- * action (login/tokenLogin/connectedAppLogin/demoLogin). Called once by
- * Layout.jsx on mount — returns true at most once per actual login, never
- * on a page refresh or tab-focus session revalidation.
+ * Peek (read-only) at the "just logged in" flag set by a real login action
+ * (login/tokenLogin/connectedAppLogin/demoLogin). Deliberately side-effect
+ * free so it's safe to call from a useState lazy initializer — React 18's
+ * StrictMode double-invokes those in dev to surface impure renders, and an
+ * earlier version of this function cleared the flag as part of the read,
+ * which meant the discarded first invocation silently consumed it and the
+ * second (committed) invocation always saw it already gone — the modal
+ * then never showed. Pair with clearJustLoggedInFlag() in a useEffect
+ * instead of clearing here.
  */
-export function consumeJustLoggedIn() {
-  const flag = sessionStorage.getItem(JUST_LOGGED_IN_KEY);
-  if (flag) sessionStorage.removeItem(JUST_LOGGED_IN_KEY);
-  return !!flag;
+export function peekJustLoggedIn() {
+  return sessionStorage.getItem(JUST_LOGGED_IN_KEY) === '1';
+}
+
+/**
+ * Clear the "just logged in" flag. Call from a useEffect (not a render/
+ * initializer) — effects also double-fire under StrictMode, but
+ * sessionStorage.removeItem is idempotent so that's harmless here.
+ */
+export function clearJustLoggedInFlag() {
+  sessionStorage.removeItem(JUST_LOGGED_IN_KEY);
 }

@@ -12,8 +12,9 @@ const SAMPLE_ROWS = [['client_id', 'client_secret']];
  * WelcomeCredentialsModal
  *
  * One-time, skippable prompt shown right after a real login (see
- * AuthContext.consumeJustLoggedIn — never re-shown on page refresh or tab-
- * focus session revalidation) asking the user to upload their Ping Test
+ * AuthContext.peekJustLoggedIn/clearJustLoggedInFlag, consumed by
+ * Layout.jsx — never re-shown on page refresh or tab-focus session
+ * revalidation) asking the user to upload their Ping Test
  * and CPS credential CSVs up front, instead of discovering the scattered
  * import buttons (Header / ApplicationsPage / BulkPingModal / CpsManagerPage
  * / CpsComparisonPage) only after a feature silently has nothing to work
