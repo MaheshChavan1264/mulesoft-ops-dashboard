@@ -108,4 +108,32 @@ export function findJwtInValue(value, path = '', depth = 0) {
   return null;
 }
 
+/**
+ * Does this ping result look like it needs a JWT Bearer token?
+ *
+ * Deliberately NOT gated on `result.status` — the backend only derives
+ * status from the HTTP status code (any 2xx is "SUCCESS"), so an app can
+ * return HTTP 200 with a body/error that still says "JWT token required"
+ * (e.g. an app-level auth check happening after the transport-level ping
+ * succeeds). We scan the raw payload/error text for that case too, not just
+ * PARTIAL/FAILED pings with 401/403/400.
+ *
+ * @param {{ status?: string, httpStatus?: number, payload?: *, error?: string }} result
+ * @returns {boolean}
+ */
+export function looksLikeJwtRequired(result) {
+  if (!result) return false;
+  // Hard auth-rejection codes always qualify, regardless of response body wording.
+  if ([401, 403].includes(result.httpStatus)) return true;
+
+  const bodyText = (() => {
+    try { return typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload ?? ''); }
+    catch { return ''; }
+  })();
+  const text = `${bodyText} ${result.error || ''}`.toLowerCase();
+  const mentionsAuth = /(jwt|bearer|access[\s_]?token|authoriz(e|ation))/.test(text);
+  const looksRequired = /unauthoriz|unauthenticated|invalid[\s_-]?token|missing[\s_-]?token|token[\s_-]?(required|missing|expired)|no\s+auth/.test(text);
+  return mentionsAuth && looksRequired;
+}
+
 export { CLAIM_TIME_FIELDS };

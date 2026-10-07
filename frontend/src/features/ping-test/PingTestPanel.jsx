@@ -11,7 +11,7 @@ import JwtDetails from '../../components/shared/JwtDetails';
 import { buildPingUrl, latencyColor } from '../../utils/appUtils';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { getErrorMessage } from '../../services/http';
-import { findJwtInValue } from '../../utils/jwtUtils';
+import { findJwtInValue, looksLikeJwtRequired } from '../../utils/jwtUtils';
 export default function PingTestPanel({
   appName, isCH1, ch2IngressUrl, orgId, envId,
   defaultClientId = '', defaultClientSecret = '',
@@ -395,26 +395,14 @@ export default function PingTestPanel({
   // header/claims rather than leaving it buried in the raw JSON viewer.
   const foundJwt = useMemo(() => findJwtInValue(result?.payload), [result]);
 
-  // Detect "this endpoint needs a JWT Bearer token" failures (401/403, or a
-  // 400 whose body/error explicitly complains about auth/token), so we can
-  // offer a one-click "fetch JWT from CPS & retry" action right next to the
-  // result instead of making the user hunt for the (collapsed) config panel.
-  const jwtRequiredHint = useMemo(() => {
-    if (!result || !['PARTIAL', 'FAILED'].includes(result.status)) return null;
-    if (authMode === 'bearer-token') return null; // already tried a bearer token and it still failed
-    if ([401, 403].includes(result.httpStatus)) return true;
-    if (result.httpStatus === 400 || result.status === 'FAILED') {
-      const bodyText = (() => {
-        try { return typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload || ''); }
-        catch { return ''; }
-      })();
-      const text = `${bodyText} ${result.error || ''}`.toLowerCase();
-      const mentionsAuth = /(jwt|bearer|access[\s_]?token|authoriz(e|ation))/.test(text);
-      const looksRequired = /unauthoriz|unauthenticated|invalid[\s_-]?token|missing[\s_-]?token|token[\s_-]?(required|missing|expired)|no\s+auth/.test(text);
-      return mentionsAuth && looksRequired;
-    }
-    return false;
-  }, [result, authMode]);
+  // Detect "this endpoint needs a JWT Bearer token" responses. Checked
+  // regardless of result.status/httpStatus — an app can return HTTP 200
+  // ("SUCCESS") with a body that still says the JWT token is required
+  // (app-level auth check beyond the transport-level ping) — see
+  // looksLikeJwtRequired's doc comment for the full rationale. Still shown
+  // even when a bearer token was already tried, since that token may be the
+  // one that's missing/expired.
+  const jwtRequiredHint = useMemo(() => looksLikeJwtRequired(result), [result]);
 
   const badgeConfig = {
     SUCCESS: { icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />, label: 'Healthy / Reachable', cls: 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-400', ping: true },

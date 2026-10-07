@@ -18,7 +18,7 @@ import { useCredentialStore } from '../../context/CredentialStoreContext';
 import { getErrorMessage } from '../../services/http';
 import { parseCsvAppNames, matchAppsByCsvNames } from '../../hooks/useCsvAppMatcher';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
-import { findJwtInValue } from '../../utils/jwtUtils';
+import { findJwtInValue, looksLikeJwtRequired } from '../../utils/jwtUtils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -60,6 +60,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
   const [copiedCurl, copyCurl] = useCopyToClipboard(2000);
   const foundJwt = useMemo(() => findJwtInValue(result?.payload), [result]);
+  const jwtRequiredHint = useMemo(() => looksLikeJwtRequired(result), [result]);
 
   const buildRowCurl = () => {
     const url = result?.activeEndpoint;
@@ -158,8 +159,11 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                   <Lock size={8} /> JWT auto
                 </span>
               )}
-              {/* JWT may be needed hint */}
-              {result.status === 'PARTIAL' && !result._jwtUsed && (result.httpStatus === 401 || result.httpStatus === 400) && (
+              {/* JWT may be needed hint — checked regardless of status/httpStatus;
+                  an app can return HTTP 200 ("SUCCESS") with a body that still
+                  says a JWT token is required (app-level auth check beyond the
+                  transport-level ping) */}
+              {!result._jwtUsed && jwtRequiredHint && (
                 <span className="inline-flex items-center gap-0.5 text-[9px] text-sfpurple-500/70 dark:text-sfpurple-400/70">
                   <Lock size={8} /> may need JWT
                 </span>
@@ -229,9 +233,10 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 <RefreshCw size={10} /> Ping
               </button>
             )}
-            {/* Get JWT button for PARTIAL results with 401/403 */}
-            {result && result.status === 'PARTIAL' && !result._jwtUsed && !retrying &&
-              (result.httpStatus === 401 || result.httpStatus === 403 || result.httpStatus === 400) && (
+            {/* Get JWT button — shown whenever the response looks like it needs a
+                JWT, regardless of overall status (covers HTTP 200 "SUCCESS"
+                pings whose body still says the token is required) */}
+            {result && !result._jwtUsed && !retrying && jwtRequiredHint && (
               <button
                 onClick={() => onGetJwt(app)}
                 disabled={jwtLoading}
