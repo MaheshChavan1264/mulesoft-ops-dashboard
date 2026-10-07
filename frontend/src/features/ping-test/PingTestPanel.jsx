@@ -378,7 +378,15 @@ export default function PingTestPanel({
   // looksLikeJwtRequired's doc comment for the full rationale. Still shown
   // even when a bearer token was already tried, since that token may be the
   // one that's missing/expired.
-  const jwtRequiredHint = useMemo(() => looksLikeJwtRequired(result), [result]);
+  // Suppressed whenever missingParamHint already identified a concrete
+  // required query param — that's a single, already-explained cause, so
+  // don't also suggest an unrelated "fetch a JWT" fix for the same failure
+  // (e.g. an app returning 401 purely because a required query param, not
+  // an auth token, was left out).
+  const jwtRequiredHint = useMemo(
+    () => (missingParamHint?.missing?.length > 0 ? false : looksLikeJwtRequired(result)),
+    [result, missingParamHint]
+  );
 
   const badgeConfig = {
     SUCCESS: { icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />, label: 'Healthy / Reachable', cls: 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-400', ping: true },

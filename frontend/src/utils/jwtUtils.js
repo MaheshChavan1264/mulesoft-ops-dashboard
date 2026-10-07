@@ -123,8 +123,6 @@ export function findJwtInValue(value, path = '', depth = 0) {
  */
 export function looksLikeJwtRequired(result) {
   if (!result) return false;
-  // Hard auth-rejection codes always qualify, regardless of response body wording.
-  if ([401, 403].includes(result.httpStatus)) return true;
 
   const bodyText = (() => {
     try { return typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload ?? ''); }
@@ -132,6 +130,19 @@ export function looksLikeJwtRequired(result) {
   })();
   const text = `${bodyText} ${result.error || ''}`.toLowerCase();
   const mentionsAuth = /(jwt|bearer|access[\s_]?token|authoriz(e|ation))/.test(text);
+
+  // Some apps return 401/403 for *any* missing/invalid input, including a
+  // plain missing required query parameter that has nothing to do with
+  // auth. If the body clearly blames a query parameter and never mentions
+  // auth/JWT/bearer at all, trust the body over the status code — otherwise
+  // every such 401 would misleadingly suggest "fetch a JWT and retry" when
+  // the real fix is adding the missing query param.
+  const mentionsQueryParam = /(query\s*param|parameter|\bparam\b)/.test(text);
+  if (mentionsQueryParam && !mentionsAuth) return false;
+
+  // Hard auth-rejection codes qualify when the body doesn't contradict them.
+  if ([401, 403].includes(result.httpStatus)) return true;
+
   const looksRequired = /unauthoriz|unauthenticated|invalid[\s_-]?token|missing[\s_-]?token|token[\s_-]?(required|missing|expired)|no\s+auth/.test(text);
   return mentionsAuth && looksRequired;
 }

@@ -62,13 +62,20 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
   const [copiedCurl, copyCurl] = useCopyToClipboard(2000);
   const foundJwt = useMemo(() => findJwtInValue(result?.payload), [result]);
-  const jwtRequiredHint = useMemo(() => looksLikeJwtRequired(result), [result]);
   // detectMissingRequiredParams needs pingSpec, which is only fetched
   // on-demand (see effect below) — until it arrives this stays null even if
   // the result text looks like a missing-param failure.
   const missingParamHint = useMemo(
     () => detectMissingRequiredParams(result, pingSpec, queryParams),
     [result, pingSpec, queryParams]
+  );
+  // Suppressed whenever missingParamHint already identified a concrete
+  // required query param (same single-cause-explained-twice rationale as
+  // PingTestPanel.jsx) — e.g. an app returning 401 purely because a
+  // required query param, not an auth token, was left out.
+  const jwtRequiredHint = useMemo(
+    () => (missingParamHint?.missing?.length > 0 ? false : looksLikeJwtRequired(result)),
+    [result, missingParamHint]
   );
   // As soon as the result/body *looks* like a missing-param failure
   // (cheap text-only check, no spec needed), kick off the lazy Exchange
