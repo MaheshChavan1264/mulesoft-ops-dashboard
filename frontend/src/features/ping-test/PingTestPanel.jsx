@@ -156,7 +156,12 @@ export default function PingTestPanel({
     finally { setFetchingToken(false); }
   };
 
-  // ── One-click: scan CPS → fetch JWT → switch to Bearer mode ─────────────
+  // ── One-click: scan CPS → fetch JWT → switch to Bearer mode → re-ping ───
+  // Previously this only fetched the token and left the user to manually
+  // click "Run Ping Test" again. Now it immediately retries with the fresh
+  // token (passed via runPing's override, since setAuthMode/setBearerToken
+  // wouldn't be visible to runPing's closure until the next render) —
+  // mirrors PingTestPage's getJwtAndRetry batch flow.
   const getJwtToken = async () => {
     if (!clientId || !clientSecret) {
       setJwtError('Auto-fill credentials from API Manager first, then click Get JWT Token');
@@ -213,6 +218,10 @@ export default function PingTestPanel({
       setBearerToken(data.access_token);
       setTokenExpiresIn(data.expires_in || null);
       setAuthMode('bearer-token');
+      setGettingJwt(false);
+      setConfigOpen(true);
+      await runPing({ bearerToken: data.access_token });
+      return;
 
     } catch (err) {
       setJwtError(getErrorMessage(err, 'Failed to get JWT token'));
@@ -287,11 +296,12 @@ export default function PingTestPanel({
   const displayBase = isCH1 ? ch1Base : ch2Base || '(no ingress URL detected)';
 
   // Auto-collapse config panel when ping completes
-  // `overrideQueryParams`, when passed, is used instead of the current
-  // `queryParams` state — needed by the "missing required param" auto-fill
-  // retry button, which updates state and re-runs in the same tick (state
-  // updates aren't visible to this closure until the next render).
-  const runPing = async (overrideQueryParams) => {
+  // `overrides.queryParams` / `overrides.bearerToken`, when passed, are used
+  // instead of the current state — needed by the "missing required param"
+  // and "fetch JWT" auto-retry buttons, which update state and re-run in the
+  // same tick (state updates aren't visible to this closure until the next
+  // render).
+  const runPing = async (overrides = {}) => {
     const txId = generateTxId();
     setTransactionId(txId); // update field + curl command with the generated UUID
     setLoading(true); setResult(null); setError(null);
@@ -308,18 +318,21 @@ export default function PingTestPanel({
       setConfigOpen(false);
     }, 120000);
 
+    const effectiveBearerToken = overrides.bearerToken ?? bearerToken;
+    const useBearer = overrides.bearerToken != null || authMode === 'bearer-token';
+
     try {
       const data = await pingAppRequest({
         targetType, appName, orgId, envId,
         ch2IngressUrl: isCH1 ? undefined : ch2IngressUrl,
         envType: isCH1 ? envType : undefined,
         envName: isCH1 ? envName : undefined,  // full name — backend injects .fin. for FINANCIALS envs
-        ...(authMode === 'bearer-token'
-          ? { bearerToken: bearerToken.trim() || undefined }
+        ...(useBearer
+          ? { bearerToken: effectiveBearerToken.trim() || undefined }
           : { clientId: clientId.trim() || undefined, clientSecret: clientSecret.trim() || undefined }),
         transactionId: txId,
-        queryParams: (overrideQueryParams ?? queryParams).trim() || undefined,
-        credentialsLabel: authMode === 'bearer-token' ? 'Manual / Token' : (clientId ? 'Manual / Client ID' : 'Manual / None'),
+        queryParams: (overrides.queryParams ?? queryParams).trim() || undefined,
+        credentialsLabel: useBearer ? 'Manual / Token' : (clientId ? 'Manual / Client ID' : 'Manual / None'),
       });
       clearTimeout(clientTimeout);
       setResult(data);
@@ -374,13 +387,34 @@ export default function PingTestPanel({
     const newQp = [queryParams.trim(), missingParamHint.qpToAdd].filter(Boolean).join('&');
     setQueryParams(newQp);
     setConfigOpen(true);
-    runPing(newQp);
+    runPing({ queryParams: newQp });
   };
 
   // Some apps echo back a JWT in their ping response (e.g. the token they
   // just validated, or a freshly minted one) — surface it as decoded
   // header/claims rather than leaving it buried in the raw JSON viewer.
   const foundJwt = useMemo(() => findJwtInValue(result?.payload), [result]);
+
+  // Detect "this endpoint needs a JWT Bearer token" failures (401/403, or a
+  // 400 whose body/error explicitly complains about auth/token), so we can
+  // offer a one-click "fetch JWT from CPS & retry" action right next to the
+  // result instead of making the user hunt for the (collapsed) config panel.
+  const jwtRequiredHint = useMemo(() => {
+    if (!result || !['PARTIAL', 'FAILED'].includes(result.status)) return null;
+    if (authMode === 'bearer-token') return null; // already tried a bearer token and it still failed
+    if ([401, 403].includes(result.httpStatus)) return true;
+    if (result.httpStatus === 400 || result.status === 'FAILED') {
+      const bodyText = (() => {
+        try { return typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload || ''); }
+        catch { return ''; }
+      })();
+      const text = `${bodyText} ${result.error || ''}`.toLowerCase();
+      const mentionsAuth = /(jwt|bearer|access[\s_]?token|authoriz(e|ation))/.test(text);
+      const looksRequired = /unauthoriz|unauthenticated|invalid[\s_-]?token|missing[\s_-]?token|token[\s_-]?(required|missing|expired)|no\s+auth/.test(text);
+      return mentionsAuth && looksRequired;
+    }
+    return false;
+  }, [result, authMode]);
 
   const badgeConfig = {
     SUCCESS: { icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />, label: 'Healthy / Reachable', cls: 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-400', ping: true },
@@ -434,7 +468,7 @@ export default function PingTestPanel({
                 {copiedCurl ? <><Check size={12} className="text-emerald-600 dark:text-emerald-400" /> Copied!</> : <><Terminal size={12} /> Copy cURL</>}
               </button>
             )}
-            <button onClick={runPing} disabled={loading || (!isCH1 && !ch2IngressUrl)}
+            <button onClick={() => runPing()} disabled={loading || (!isCH1 && !ch2IngressUrl)}
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-b from-sfteal-500 to-sfteal-600 hover:from-sfteal-400 hover:to-sfteal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl shadow-md shadow-sfteal-500/30 hover:shadow-lg hover:shadow-sfteal-500/40 ring-1 ring-inset ring-white/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
               {loading ? <><RefreshCw size={14} className="animate-spin" /> Pinging…</> : <><Wifi size={14} /> Run Ping Test</>}
             </button>
@@ -673,6 +707,25 @@ export default function PingTestPanel({
                     className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-gray-800 border border-sforange-300/60 dark:border-sforange-400/25 rounded-lg text-xs font-semibold text-sforange-700 dark:text-sforange-300 hover:bg-sforange-600 hover:text-white hover:border-sforange-600 transition-all">
                     <Wand2 size={11} /> Add `{missingParamHint.qpToAdd}` &amp; retry
                   </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {jwtRequiredHint && (
+            <div className="flex items-start gap-3 bg-indigo-50 dark:bg-indigo-500/5 border border-indigo-200/60 dark:border-indigo-400/15 rounded-xl px-4 py-3 text-indigo-700 dark:text-indigo-300 text-sm">
+              <Lock size={15} className="flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <p>This endpoint looks like it requires a JWT Bearer token{result.httpStatus != null ? ` (HTTP ${result.httpStatus})` : ''}.</p>
+                {jwtError && <p className="text-red-600 dark:text-red-400 text-xs">{jwtError}</p>}
+                {cpsBaseUrl ? (
+                  <button onClick={getJwtToken} disabled={gettingJwt || loading || !clientId || !clientSecret}
+                    title={!clientId || !clientSecret ? 'Auto-fill credentials from API Manager first' : 'Scan CPS for OAuth2 token URL, fetch a JWT, and retry the ping'}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-gray-800 border border-indigo-300/60 dark:border-indigo-400/25 rounded-lg text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all disabled:opacity-50">
+                    {gettingJwt ? <><RefreshCw size={11} className="animate-spin" /> Getting JWT…</> : <><Lock size={11} /> Get JWT Token &amp; Retry</>}
+                  </button>
+                ) : (
+                  <p className="text-indigo-600/80 dark:text-indigo-400/80 text-xs">No CPS config detected for this app — paste a Bearer token manually in the config panel above.</p>
                 )}
               </div>
             </div>
