@@ -86,6 +86,19 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
     if (looksLikeMissingParamText(result)) onFetchPingSpec(app);
   }, [result, app, onFetchPingSpec]);
 
+  // Editable query-param text the user can type/adjust themselves before
+  // retrying — pre-filled once from the spec-derived suggestion (if any) the
+  // first time one becomes available, but never overwritten afterwards so
+  // the user's own edits always win.
+  const [paramInput, setParamInput] = useState(queryParams || '');
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    if (!prefilledRef.current && !paramInput && missingParamHint?.qpToAdd) {
+      setParamInput(missingParamHint.qpToAdd);
+      prefilledRef.current = true;
+    }
+  }, [missingParamHint?.qpToAdd, paramInput]);
+
   const buildRowCurl = () => {
     const url = result?.activeEndpoint;
     if (!url) return null;
@@ -137,6 +150,11 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 )}
               </div>
               <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{app.environment?.name}</p>
+              {result?.transactionId && (
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono mt-0.5 truncate max-w-[180px]" title={result.transactionId}>
+                  txn: {result.transactionId}
+                </p>
+              )}
               {result?._jwtError && (
                 <p className="text-[10px] text-sfred-600/80 dark:text-sfred-400/80 mt-0.5">{result._jwtError}</p>
               )}
@@ -346,16 +364,23 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                       <p>
                         Looks like the app expects a required query param{missingParamHint.missing.length > 1 ? 's' : ''}:{' '}
                         <span className="font-mono font-semibold">{missingParamHint.missing.map((p) => p.name).join(', ')}</span>.
+                        {' '}Enter the value(s) below and retry.
                       </p>
                     ) : (
-                      <p>The response suggests a required query parameter is missing, but it isn't declared in the Exchange spec — check the response body below.</p>
+                      <p>The response suggests a required query parameter is missing, but it isn't declared in the Exchange spec. Enter it manually below and retry.</p>
                     )}
-                    {missingParamHint?.qpToAdd && (
-                      <button onClick={() => onApplyMissingParamHint(app, missingParamHint.qpToAdd)} disabled={retrying}
-                        className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-gray-800 border border-sforange-300/60 dark:border-sforange-400/25 rounded-lg text-[11px] font-semibold text-sforange-700 dark:text-sforange-300 hover:bg-sforange-600 hover:text-white hover:border-sforange-600 transition-all disabled:opacity-50">
-                        <RefreshCw size={10} /> Add `{missingParamHint.qpToAdd}` &amp; retry
+                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <input
+                        value={paramInput}
+                        onChange={(e) => setParamInput(e.target.value)}
+                        placeholder="e.g. checkDb=true&type=health"
+                        className="flex-1 min-w-0 bg-white dark:bg-gray-900 border border-sforange-300/60 dark:border-sforange-400/25 rounded-lg px-2 py-1.5 text-[11px] font-mono text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-sforange-500/20"
+                      />
+                      <button onClick={() => onApplyMissingParamHint(app, paramInput)} disabled={retrying || !paramInput.trim()}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-sforange-300/60 dark:border-sforange-400/25 rounded-lg text-[11px] font-semibold text-sforange-700 dark:text-sforange-300 hover:bg-sforange-600 hover:text-white hover:border-sforange-600 transition-all disabled:opacity-50 flex-shrink-0">
+                        <RefreshCw size={10} className={retrying ? 'animate-spin' : ''} /> Retry
                       </button>
-                    )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -869,12 +894,15 @@ export default function PingTestPage() {
     }
   }, [pingSpecMap, pingSpecLoadingIds]);
 
-  const applyMissingParamHint = useCallback((app, qpToAdd) => {
+  // Applies the user-typed (or spec-suggested, if left untouched) query
+  // param string from the missing-param banner's input and retries. Takes
+  // the full raw string as-is — the input already shows/edits the complete
+  // value, so this no longer appends to any prior queryParamsMap entry.
+  const applyMissingParamHint = useCallback((app, rawQueryParams) => {
     const appId = app.id;
-    const newQp = [(queryParamsMap[appId] || '').trim(), qpToAdd].filter(Boolean).join('&');
-    setQueryParamsMap(prev => ({ ...prev, [appId]: newQp }));
-    retryApp(app, newQp);
-  }, [queryParamsMap, retryApp]);
+    setQueryParamsMap(prev => ({ ...prev, [appId]: rawQueryParams }));
+    retryApp(app, rawQueryParams);
+  }, [retryApp]);
 
   // ─── Get JWT Token and retry ping ────────────────────────────────────────
   // Full flow: app detail → CPS scan (apiId + OAuth2 URL) → credentials → JWT → ping
