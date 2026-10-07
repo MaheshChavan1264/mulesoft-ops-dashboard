@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { getAutoContractCreds, getAutoCredentials, getOAuth2Token, pingApp as pingAppRequest, getPingHistory, clearPingHistory } from '../../services/healthService';
 import { getCloudhub2AppDetail, getCloudhub1AppProperties } from '../../services/applicationsService';
+import { getExchangePingSpec } from '../../services/exchangeService';
 import { fetchCpsProperties } from '../../services/cpsService';
 import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateTxId } from '../../utils/appUtils';
 import { exportRowsToXlsx, timestampedFilename } from '../../utils/xlsxExport';
@@ -19,6 +20,7 @@ import { getErrorMessage } from '../../services/http';
 import { parseCsvAppNames, matchAppsByCsvNames } from '../../hooks/useCsvAppMatcher';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { findJwtInValue, looksLikeJwtRequired } from '../../utils/jwtUtils';
+import { detectMissingRequiredParams, looksLikeMissingParamText } from '../../utils/pingDiagnostics';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -54,13 +56,28 @@ const STATUS_PILL = {
 // useCallback-wrapped and setExpandedId/navigate are stable, so memo
 // actually skips re-renders for unrelated rows — see
 // FRONTEND_ARCHITECTURE_REVIEW.md §8 Performance Review, finding #4.
-function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRetry, onCheckContract, checkingContract, retrying, onGetJwt, jwtLoading, navigate, rowNum }) {
+function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRetry, onCheckContract, checkingContract, retrying, onGetJwt, jwtLoading, navigate, rowNum, queryParams, pingSpec, pingSpecLoading, onFetchPingSpec, onApplyMissingParamHint }) {
   const rowKey = `${app.id}|${app.environment?.id}`;
   const isExpanded = expandedId === rowKey;
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
   const [copiedCurl, copyCurl] = useCopyToClipboard(2000);
   const foundJwt = useMemo(() => findJwtInValue(result?.payload), [result]);
   const jwtRequiredHint = useMemo(() => looksLikeJwtRequired(result), [result]);
+  // detectMissingRequiredParams needs pingSpec, which is only fetched
+  // on-demand (see effect below) — until it arrives this stays null even if
+  // the result text looks like a missing-param failure.
+  const missingParamHint = useMemo(
+    () => detectMissingRequiredParams(result, pingSpec, queryParams),
+    [result, pingSpec, queryParams]
+  );
+  // As soon as the result/body *looks* like a missing-param failure
+  // (cheap text-only check, no spec needed), kick off the lazy Exchange
+  // spec fetch so missingParamHint can resolve to the real required-param
+  // names on the next render — avoids a spec fetch for every row in a
+  // batch, only the ones that actually need it.
+  useEffect(() => {
+    if (looksLikeMissingParamText(result)) onFetchPingSpec(app);
+  }, [result, app, onFetchPingSpec]);
 
   const buildRowCurl = () => {
     const url = result?.activeEndpoint;
@@ -172,6 +189,12 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               {foundJwt && (
                 <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-300/40 dark:border-indigo-400/20 text-indigo-600 dark:text-indigo-400 rounded-full">
                   <Lock size={8} /> JWT in response
+                </span>
+              )}
+              {/* Required query param missing hint — click row to expand for the fix */}
+              {looksLikeMissingParamText(result) && (
+                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 bg-sforange-50 dark:bg-sforange-500/10 border border-sforange-300/40 dark:border-sforange-400/20 text-sforange-600 dark:text-sforange-400 rounded-full">
+                  <AlertCircle size={8} /> missing param?
                 </span>
               )}
             </div>
@@ -306,6 +329,29 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                   <p className="font-mono text-xs text-sf-700 dark:text-sf-400 break-all mt-0.5">{result.activeEndpoint || '—'}</p>
                 </div>
               </div>
+              {looksLikeMissingParamText(result) && (
+                <div className="flex items-start gap-3 bg-sforange-50/60 dark:bg-sforange-500/10 border border-sforange-200/50 dark:border-sforange-400/20 rounded-lg px-3 py-2 text-sforange-700 dark:text-sforange-300 text-xs">
+                  <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    {pingSpecLoading ? (
+                      <p className="flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin" /> Checking Exchange spec for required query params…</p>
+                    ) : missingParamHint?.missing.length > 0 ? (
+                      <p>
+                        Looks like the app expects a required query param{missingParamHint.missing.length > 1 ? 's' : ''}:{' '}
+                        <span className="font-mono font-semibold">{missingParamHint.missing.map((p) => p.name).join(', ')}</span>.
+                      </p>
+                    ) : (
+                      <p>The response suggests a required query parameter is missing, but it isn't declared in the Exchange spec — check the response body below.</p>
+                    )}
+                    {missingParamHint?.qpToAdd && (
+                      <button onClick={() => onApplyMissingParamHint(app, missingParamHint.qpToAdd)} disabled={retrying}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-gray-800 border border-sforange-300/60 dark:border-sforange-400/25 rounded-lg text-[11px] font-semibold text-sforange-700 dark:text-sforange-300 hover:bg-sforange-600 hover:text-white hover:border-sforange-600 transition-all disabled:opacity-50">
+                        <RefreshCw size={10} /> Add `{missingParamHint.qpToAdd}` &amp; retry
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               {result.error && (
                 <div className="flex items-start gap-3">
                   <span className={`flex items-center justify-center w-6 h-6 rounded-lg flex-shrink-0 ${contractApproved ? 'bg-sfgreen-50 dark:bg-sfgreen-500/15 text-sfgreen-600 dark:text-sfgreen-400' : 'bg-sfred-50 dark:bg-sfred-500/15 text-sfred-600 dark:text-sfred-400'}`}>
@@ -617,6 +663,16 @@ export default function PingTestPage() {
   // Feature 1.8: timestamp when the last batch was tested
   const [testedAt, setTestedAt] = useState(null);
 
+  // "Missing required query param" auto-fill/retry support (mirrors
+  // PingTestPanel.jsx) — per-app since this page pings many apps at once.
+  // queryParamsMap: appId -> "key=val&key2=val2" string currently applied.
+  // pingSpecMap: appId -> Exchange ping-spec response, fetched lazily only
+  // once a result looks like it's missing a required param (avoids an
+  // extra Exchange call per app on every batch run).
+  const [queryParamsMap, setQueryParamsMap] = useState({});
+  const [pingSpecMap, setPingSpecMap] = useState({});
+  const [pingSpecLoadingIds, setPingSpecLoadingIds] = useState(new Set());
+
   // Feature 1: per-app retry state
   const { hasCredentials, resolveFromCandidates } = useCredentialStore();
   const [retryingIds, setRetryingIds] = useState(new Set());
@@ -741,10 +797,15 @@ export default function PingTestPage() {
   }, [results]);
 
   // ─── Retry ping (uses already-resolved credentials from autoResolvedMap) ──
-
-  const retryApp = useCallback(async (app) => {
+  // `overrideQueryParams`, when passed, is used instead of queryParamsMap[appId]
+  // — needed by the "missing required param" auto-fill button, which updates
+  // state and retries in the same tick (state updates aren't visible to this
+  // closure until the next render). Also persists the override into
+  // queryParamsMap so subsequent plain retries keep using it.
+  const retryApp = useCallback(async (app, overrideQueryParams) => {
     const appId = app.id;
     const auto = autoResolvedMap[appId];
+    const qp = overrideQueryParams ?? queryParamsMap[appId] ?? '';
     setRetryingIds(prev => new Set([...prev, appId]));
     try {
       const isCH1 = app.deploymentType !== 'CloudHub 2.0';
@@ -773,6 +834,7 @@ export default function PingTestPage() {
         envName: app.environment?.name || '',
         orgId: app._bgId,
         envId: app.environment?.id,
+        queryParams: qp.trim() || undefined,
         credentialsLabel: auto ? `Auto (${auto.contractApp})` : 'Manual / None',
       });
       setResults(prev => ({ ...prev, [appId]: data }));
@@ -781,7 +843,31 @@ export default function PingTestPage() {
     } finally {
       setRetryingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
     }
-  }, [autoResolvedMap]);
+  }, [autoResolvedMap, queryParamsMap]);
+
+  // Lazily fetch the Exchange ping spec for one app — only called once a
+  // result looks like it's missing a required query param, so apps that
+  // never hit this case never pay for the extra Exchange call.
+  const fetchPingSpecForApp = useCallback(async (app) => {
+    const appId = app.id;
+    if (pingSpecMap[appId] || pingSpecLoadingIds.has(appId)) return;
+    setPingSpecLoadingIds(prev => new Set([...prev, appId]));
+    try {
+      const r = await getExchangePingSpec({ orgId: app._bgId, appName: app.name });
+      setPingSpecMap(prev => ({ ...prev, [appId]: r.data }));
+    } catch {
+      setPingSpecMap(prev => ({ ...prev, [appId]: null }));
+    } finally {
+      setPingSpecLoadingIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
+    }
+  }, [pingSpecMap, pingSpecLoadingIds]);
+
+  const applyMissingParamHint = useCallback((app, qpToAdd) => {
+    const appId = app.id;
+    const newQp = [(queryParamsMap[appId] || '').trim(), qpToAdd].filter(Boolean).join('&');
+    setQueryParamsMap(prev => ({ ...prev, [appId]: newQp }));
+    retryApp(app, newQp);
+  }, [queryParamsMap, retryApp]);
 
   // ─── Get JWT Token and retry ping ────────────────────────────────────────
   // Full flow: app detail → CPS scan (apiId + OAuth2 URL) → credentials → JWT → ping
@@ -1414,6 +1500,11 @@ export default function PingTestPage() {
                   jwtLoading={jwtLoadingIds.has(app.id)}
                   navigate={navigate}
                   rowNum={idx + 1}
+                  queryParams={queryParamsMap[app.id] || ''}
+                  pingSpec={pingSpecMap[app.id]}
+                  pingSpecLoading={pingSpecLoadingIds.has(app.id)}
+                  onFetchPingSpec={fetchPingSpecForApp}
+                  onApplyMissingParamHint={applyMissingParamHint}
                 />
               ))}
             </tbody>

@@ -12,6 +12,7 @@ import { buildPingUrl, latencyColor } from '../../utils/appUtils';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { getErrorMessage } from '../../services/http';
 import { findJwtInValue, looksLikeJwtRequired } from '../../utils/jwtUtils';
+import { detectMissingRequiredParams } from '../../utils/pingDiagnostics';
 export default function PingTestPanel({
   appName, isCH1, ch2IngressUrl, orgId, envId,
   defaultClientId = '', defaultClientSecret = '',
@@ -351,36 +352,11 @@ export default function PingTestPanel({
   // -reference the Exchange spec's required query params for the endpoint
   // that was actually hit. Lets us surface a precise "add `type=health` and
   // retry" hint instead of making the user dig through the raw JSON viewer.
-  const missingParamHint = useMemo(() => {
-    if (!result || !['PARTIAL', 'FAILED'].includes(result.status)) return null;
-    if (result.status === 'PARTIAL' && result.httpStatus != null && result.httpStatus !== 400 && result.httpStatus !== 422) return null;
-
-    const bodyText = (() => {
-      try { return typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload || ''); }
-      catch { return ''; }
-    })();
-    const text = `${bodyText} ${result.error || ''}`.toLowerCase();
-    const mentionsParam = /(query\s*param|parameter|\bparam\b)/.test(text);
-    const looksLikeMissingParam = mentionsParam && (/required/.test(text) || /missing/.test(text) || /not\s+provided/.test(text));
-    if (!looksLikeMissingParam) return null;
-
-    const currentNames = new Set(
-      queryParams.split('&').map((kv) => kv.split('=')[0].trim()).filter(Boolean)
-    );
-
-    // Match the endpoint that was actually hit against spec-declared ones, so
-    // the auto-fill only suggests params relevant to that specific path.
-    const hitPath = result.activeEndpoint
-      ? (() => { try { return new URL(result.activeEndpoint).pathname; } catch { return result.activeEndpoint; } })()
-      : null;
-    const specEndpoints = pingSpec?.pingEndpoints || [];
-    const matchedEndpoint = (hitPath && specEndpoints.find((ep) => hitPath.endsWith(ep.path))) || specEndpoints[0] || null;
-
-    const requiredQp = (matchedEndpoint?.queryParams || []).filter((p) => p.required);
-    const missing = requiredQp.filter((p) => !currentNames.has(p.name));
-    const qpToAdd = missing.map((p) => `${p.name}=${p.example || p.type || ''}`).join('&');
-    return { missing, qpToAdd };
-  }, [result, pingSpec, queryParams]);
+  // Shared with PingTestPage.jsx via utils/pingDiagnostics.js.
+  const missingParamHint = useMemo(
+    () => detectMissingRequiredParams(result, pingSpec, queryParams),
+    [result, pingSpec, queryParams]
+  );
 
   const applyMissingParamHint = () => {
     if (!missingParamHint?.qpToAdd) return;
