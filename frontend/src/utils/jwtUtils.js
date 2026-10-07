@@ -143,8 +143,15 @@ export function looksLikeJwtRequired(result) {
   // Hard auth-rejection codes qualify when the body doesn't contradict them.
   if ([401, 403].includes(result.httpStatus)) return true;
 
-  const looksRequired = /unauthoriz|unauthenticated|invalid[\s_-]?token|missing[\s_-]?token|token[\s_-]?(required|missing|expired)|no\s+auth/.test(text);
-  return mentionsAuth && looksRequired;
+  // Once the text is confirmed to mention JWT/bearer/auth at all, don't
+  // additionally require a specific adjacent phrase like "token required" —
+  // real-world wording varies too much ("JWT token is required", "the JWT
+  // has expired", "missing bearer credentials", etc.) and a strict adjacent
+  // regex (e.g. token[\s_-]?required) misses anything with a word in
+  // between ("token IS required"). Any generic failure/required wording
+  // alongside an auth keyword is enough.
+  const looksLikeFailure = /required|missing|expired|invalid|unauthoriz|unauthenticated|denied|forbidden|no\s+auth/.test(text);
+  return mentionsAuth && looksLikeFailure;
 }
 
 export { CLAIM_TIME_FIELDS };
