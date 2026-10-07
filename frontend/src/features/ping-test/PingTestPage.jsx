@@ -150,16 +150,20 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                 )}
               </div>
               <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{app.environment?.name}</p>
-              {result?.transactionId && (
-                <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono mt-0.5 truncate max-w-[180px]" title={result.transactionId}>
-                  txn: {result.transactionId}
-                </p>
-              )}
               {result?._jwtError && (
                 <p className="text-[10px] text-sfred-600/80 dark:text-sfred-400/80 mt-0.5">{result._jwtError}</p>
               )}
             </div>
           </div>
+        </td>
+
+        {/* Transaction ID */}
+        <td className="px-3 py-3">
+          {result?.transactionId ? (
+            <span className="font-mono text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-[160px] inline-block" title={result.transactionId}>
+              {result.transactionId}
+            </span>
+          ) : <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>}
         </td>
 
         {/* Type */}
@@ -326,7 +330,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
       {/* Expanded detail */}
       {isExpanded && result && (
         <tr className="border-t border-gray-100 dark:border-gray-700/50 bg-gray-50/60 dark:bg-gray-900/30">
-          <td colSpan={8} className="px-6 py-5">
+          <td colSpan={9} className="px-6 py-5">
             <div className="space-y-4 text-sm rounded-xl border border-gray-200/70 dark:border-gray-700/50 bg-white/80 dark:bg-gray-800/50 backdrop-blur-sm p-4 shadow-sm">
               {result._jwtUsed && (
                 <div className="flex items-center gap-2 bg-sfpurple-50/60 dark:bg-sfpurple-500/10 border border-sfpurple-200/50 dark:border-sfpurple-400/20 rounded-lg px-3 py-2 text-sfpurple-700 dark:text-sfpurple-300 text-xs">
@@ -1510,6 +1514,7 @@ export default function PingTestPage() {
               <tr className="bg-gray-50/95 dark:bg-gray-900/90 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider backdrop-blur-sm">
                 <th className="px-3 py-3 font-semibold text-center w-8 sticky left-0 z-20 bg-gray-50/95 dark:bg-gray-900/90">#</th>
                 <th className="text-left px-4 py-3 font-semibold sticky left-8 z-20 bg-gray-50/95 dark:bg-gray-900/90 shadow-[2px_0_8px_rgba(0,0,0,0.08)]">Application</th>
+                <th className="text-left px-3 py-3 font-semibold">Transaction ID</th>
                 <th className="text-left px-3 py-3 font-semibold">Type</th>
                 <th className="text-left px-3 py-3 font-semibold sticky left-64 z-20 bg-gray-50/95 dark:bg-gray-900/90 shadow-[2px_0_8px_rgba(0,0,0,0.06)]">Status</th>
                 <th className="text-left px-3 py-3 font-semibold">Active Endpoint</th>

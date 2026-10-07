@@ -14,6 +14,7 @@ const {
   parseRamlText,
   extractSpecFileFromZip,
 } = require('../utils/specParser');
+const { getCachedSpec, setCachedSpec } = require('../utils/specCache');
 const logger = require('../utils/logger');
 
 /**
@@ -181,9 +182,28 @@ router.get('/:groupId/:assetId/:version', authMiddleware, proxyHandler('Failed t
  *     pingEndpoints: [{ path, method, description, queryParams, headers }],
  *     allEndpoints: [...]
  *   }
+ *
+ * Results are cached in SQLite (see utils/specCache.js) keyed by however the
+ * caller identified the asset — pass `refresh=true` to force a live
+ * Exchange re-fetch and overwrite the cached row (wired to the frontend's
+ * manual "Refresh" button).
  */
 router.get('/ping-spec', authMiddleware, async (req, res) => {
   let { groupId, assetId, version, orgId, appName } = req.query;
+
+  const forceRefresh = req.query.refresh === 'true' || req.query.refresh === '1';
+  const requestedByCoords = !!(req.query.groupId && req.query.assetId && req.query.version);
+  const cacheKey = requestedByCoords
+    ? `coords:${req.query.groupId}:${req.query.assetId}:${req.query.version}`
+    : (orgId && appName ? `app:${orgId}:${appName}` : null);
+
+  if (cacheKey && !forceRefresh) {
+    const cached = await getCachedSpec(cacheKey);
+    if (cached) {
+      logger.info(`[ping-spec] Cache hit for ${cacheKey} (age=${Math.round(cached.ageMs / 1000)}s)`);
+      return res.json(cached.data);
+    }
+  }
 
   // If groupId/assetId/version not provided but appName is, search Exchange.
   // Use stripDeploymentSuffix (shared with health.js) to normalise the name.
@@ -410,7 +430,9 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
       const pingEndpoints = allEndpoints.filter(e => isPingPath(e.path));
       logger.info(`[ping-spec] ${groupId}/${assetId}/${version} (${specType}): ${allEndpoints.length} endpoints, ${pingEndpoints.length} ping path(s)`);
       if (allEndpoints.length > 0) {
-        return res.json({ specType, assetName, info, servers, schemas, securitySchemes, pingEndpoints, allEndpoints });
+        const responseBody = { specType, assetName, info, servers, schemas, securitySchemes, pingEndpoints, allEndpoints };
+        if (cacheKey) setCachedSpec(cacheKey, responseBody, { orgId, appName, groupId, assetId, version });
+        return res.json(responseBody);
       }
       if (assetCandidates.length > 1) {
         logger.info(`[ping-spec] 0 endpoints for ${assetId}/${version}, trying next candidate…`);
@@ -419,7 +441,9 @@ router.get('/ping-spec', authMiddleware, async (req, res) => {
 
     // All candidates exhausted with 0 endpoints
     logger.info('[ping-spec] All candidates exhausted — returning empty spec');
-    return res.json({ specType: 'unknown', assetName, info: {}, servers: [], schemas: {}, securitySchemes: {}, pingEndpoints: [], allEndpoints: [] });
+    const emptyBody = { specType: 'unknown', assetName, info: {}, servers: [], schemas: {}, securitySchemes: {}, pingEndpoints: [], allEndpoints: [] };
+    if (cacheKey) setCachedSpec(cacheKey, emptyBody, { orgId, appName, groupId, assetId, version });
+    return res.json(emptyBody);
 
   } catch (error) {
     logger.error({ err: error.response?.data || error.message }, '[ping-spec] Error');

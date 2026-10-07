@@ -152,6 +152,28 @@ db.serialize(() => {
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_cps_audit_log_time ON cps_audit_log(timestamp)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_cps_audit_log_project ON cps_audit_log(cps_base_url, project_key)`);
+
+  // ── Exchange API spec cache ────────────────────────────────────────────
+  // GET /exchange/ping-spec resolves + downloads + parses an Exchange asset
+  // spec (portal model fetch, possible raw OAS/RAML file download, AMF
+  // enrichment) — several Anypoint API round-trips per call. Specs change
+  // rarely (new asset version, not every deploy), so persist the parsed
+  // result keyed by how it was resolved and skip Anypoint entirely while
+  // the cached row is still within TTL. Durable (survives server restart),
+  // unlike the frontend's in-memory SWR cache which clears on page reload.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS exchange_spec_cache (
+      cache_key TEXT PRIMARY KEY,
+      org_id TEXT,
+      app_name TEXT,
+      group_id TEXT,
+      asset_id TEXT,
+      version TEXT,
+      data TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL
+    )
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_exchange_spec_cache_org_app ON exchange_spec_cache(org_id, app_name)`);
 });
 
 module.exports = db;

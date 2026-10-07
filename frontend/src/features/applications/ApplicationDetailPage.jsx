@@ -627,6 +627,11 @@ export default function ApplicationDetailPage() {
   // (e.g. job-ldp-ripjar-bulk-clear-ch2-api/1.0.0). Always use appName so the
   // backend can run its name-normalisation + variant-probing to find the correct
   // API spec asset, regardless of what ref.artifactId points to.
+  //
+  // forceRefresh bypasses BOTH this frontend SWR cache AND the backend's
+  // durable SQLite spec cache (via `refresh: true`) — specs rarely change,
+  // so the backend cache's TTL is long (hours), and only an explicit
+  // "Refresh" click should pay for a fresh Exchange round-trip.
   const fetchPingSpec = useCallback((currentApp, forceRefresh = false) => {
     const a = currentApp || app;
     if (!a) return;
@@ -651,6 +656,7 @@ export default function ApplicationDetailPage() {
     getExchangePingSpec({
       orgId,
       appName: a.name,   // backend always searches Exchange by name
+      ...(forceRefresh && { refresh: true }),
     }).then(r => {
       setCached(cacheKey, r.data, PING_SPEC_STALE_MS);
       setPingSpec(r.data);
