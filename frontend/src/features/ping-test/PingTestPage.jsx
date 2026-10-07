@@ -69,14 +69,15 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
     () => detectMissingRequiredParams(result, pingSpec, queryParams),
     [result, pingSpec, queryParams]
   );
-  // Suppressed whenever missingParamHint already identified a concrete
-  // required query param (same single-cause-explained-twice rationale as
-  // PingTestPanel.jsx) — e.g. an app returning 401 purely because a
-  // required query param, not an auth token, was left out.
-  const jwtRequiredHint = useMemo(
-    () => (missingParamHint?.missing?.length > 0 ? false : looksLikeJwtRequired(result)),
-    [result, missingParamHint]
-  );
+  // NOTE: deliberately NOT also suppressed by missingParamHint — see
+  // PingTestPanel.jsx's matching comment. missingParamHint is derived from
+  // the Exchange spec's *declared* required query params, independent of
+  // what the response text actually says, so tying JWT suppression to it
+  // caused false negatives (hid this hint for genuine auth/JWT failures
+  // whenever the app also happened to have some unrelated spec-declared
+  // required query param left blank). looksLikeJwtRequired already
+  // resolves the real mutual exclusivity itself, from the response text.
+  const jwtRequiredHint = useMemo(() => looksLikeJwtRequired(result), [result]);
   // As soon as the result/body *looks* like a missing-param failure
   // (cheap text-only check, no spec needed), kick off the lazy Exchange
   // spec fetch so missingParamHint can resolve to the real required-param
