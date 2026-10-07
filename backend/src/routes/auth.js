@@ -4,6 +4,7 @@ const router = express.Router();
 
 const { ANYPOINT_URL } = require('../utils/anypointClient');
 const { mapOrgShape } = require('../utils/orgHelpers');
+const { encrypt } = require('../utils/secretCrypto');
 const logger = require('../utils/logger');
 
 // Helper: fetch user profile and store session
@@ -24,7 +25,7 @@ async function storeSession(req, token) {
   const rootOrgId = rootOrg.id;
   const rootOrgName = rootOrg.name;
 
-  req.session.token = token;
+  req.session.token = encrypt(token);
   req.session.orgId = rootOrgId;
   req.session.orgName = rootOrgName;
   req.session.username = user.username;
