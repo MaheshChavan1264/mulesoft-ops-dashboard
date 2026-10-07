@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X, Copy, Check, Terminal, History, Trash2 } from 'lucide-react';
 import { getPingHistory, clearPingHistory, getAutoCredentials, getAutoContractCreds, getOAuth2Token, pingApp as pingAppRequest } from '../../services/healthService';
 import { postCpsCredentialsRaw, fetchCpsProperties } from '../../services/cpsService';
@@ -7,9 +7,11 @@ import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
 import { findOAuth2Url, flattenCpsResponse, normaliseCpsUrl } from '../../utils/cpsHelpers';
 import AttemptLog from './AttemptLog';
 import PostmanJsonViewer from '../../components/shared/PostmanJsonViewer';
+import JwtDetails from '../../components/shared/JwtDetails';
 import { buildPingUrl, latencyColor } from '../../utils/appUtils';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { getErrorMessage } from '../../services/http';
+import { findJwtInValue } from '../../utils/jwtUtils';
 export default function PingTestPanel({
   appName, isCH1, ch2IngressUrl, orgId, envId,
   defaultClientId = '', defaultClientSecret = '',
@@ -285,7 +287,11 @@ export default function PingTestPanel({
   const displayBase = isCH1 ? ch1Base : ch2Base || '(no ingress URL detected)';
 
   // Auto-collapse config panel when ping completes
-  const runPing = async () => {
+  // `overrideQueryParams`, when passed, is used instead of the current
+  // `queryParams` state — needed by the "missing required param" auto-fill
+  // retry button, which updates state and re-runs in the same tick (state
+  // updates aren't visible to this closure until the next render).
+  const runPing = async (overrideQueryParams) => {
     const txId = generateTxId();
     setTransactionId(txId); // update field + curl command with the generated UUID
     setLoading(true); setResult(null); setError(null);
@@ -312,7 +318,7 @@ export default function PingTestPanel({
           ? { bearerToken: bearerToken.trim() || undefined }
           : { clientId: clientId.trim() || undefined, clientSecret: clientSecret.trim() || undefined }),
         transactionId: txId,
-        queryParams: queryParams.trim() || undefined,
+        queryParams: (overrideQueryParams ?? queryParams).trim() || undefined,
         credentialsLabel: authMode === 'bearer-token' ? 'Manual / Token' : (clientId ? 'Manual / Client ID' : 'Manual / None'),
       });
       clearTimeout(clientTimeout);
@@ -326,6 +332,55 @@ export default function PingTestPanel({
       setConfigOpen(false); // collapse config after ping completes
     }
   };
+
+  // Heuristic: after a non-2xx/failed ping, scan the response body/error text
+  // for signals that a *required query parameter* was missing, and cross
+  // -reference the Exchange spec's required query params for the endpoint
+  // that was actually hit. Lets us surface a precise "add `type=health` and
+  // retry" hint instead of making the user dig through the raw JSON viewer.
+  const missingParamHint = useMemo(() => {
+    if (!result || !['PARTIAL', 'FAILED'].includes(result.status)) return null;
+    if (result.status === 'PARTIAL' && result.httpStatus != null && result.httpStatus !== 400 && result.httpStatus !== 422) return null;
+
+    const bodyText = (() => {
+      try { return typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload || ''); }
+      catch { return ''; }
+    })();
+    const text = `${bodyText} ${result.error || ''}`.toLowerCase();
+    const mentionsParam = /(query\s*param|parameter|\bparam\b)/.test(text);
+    const looksLikeMissingParam = mentionsParam && (/required/.test(text) || /missing/.test(text) || /not\s+provided/.test(text));
+    if (!looksLikeMissingParam) return null;
+
+    const currentNames = new Set(
+      queryParams.split('&').map((kv) => kv.split('=')[0].trim()).filter(Boolean)
+    );
+
+    // Match the endpoint that was actually hit against spec-declared ones, so
+    // the auto-fill only suggests params relevant to that specific path.
+    const hitPath = result.activeEndpoint
+      ? (() => { try { return new URL(result.activeEndpoint).pathname; } catch { return result.activeEndpoint; } })()
+      : null;
+    const specEndpoints = pingSpec?.pingEndpoints || [];
+    const matchedEndpoint = (hitPath && specEndpoints.find((ep) => hitPath.endsWith(ep.path))) || specEndpoints[0] || null;
+
+    const requiredQp = (matchedEndpoint?.queryParams || []).filter((p) => p.required);
+    const missing = requiredQp.filter((p) => !currentNames.has(p.name));
+    const qpToAdd = missing.map((p) => `${p.name}=${p.example || p.type || ''}`).join('&');
+    return { missing, qpToAdd };
+  }, [result, pingSpec, queryParams]);
+
+  const applyMissingParamHint = () => {
+    if (!missingParamHint?.qpToAdd) return;
+    const newQp = [queryParams.trim(), missingParamHint.qpToAdd].filter(Boolean).join('&');
+    setQueryParams(newQp);
+    setConfigOpen(true);
+    runPing(newQp);
+  };
+
+  // Some apps echo back a JWT in their ping response (e.g. the token they
+  // just validated, or a freshly minted one) — surface it as decoded
+  // header/claims rather than leaving it buried in the raw JSON viewer.
+  const foundJwt = useMemo(() => findJwtInValue(result?.payload), [result]);
 
   const badgeConfig = {
     SUCCESS: { icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />, label: 'Healthy / Reachable', cls: 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200/60 dark:border-emerald-400/20 text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-400', ping: true },
@@ -601,6 +656,28 @@ export default function PingTestPanel({
             {result.responseTimeMs != null && <span className={`font-mono text-sm font-bold ${latencyColor(result.responseTimeMs)}`}>{result.responseTimeMs}ms</span>}
           </div>
 
+          {missingParamHint && (
+            <div className="flex items-start gap-3 bg-sforange-50 dark:bg-sforange-500/5 border border-sforange-200/60 dark:border-sforange-400/15 rounded-xl px-4 py-3 text-sforange-700 dark:text-sforange-300 text-sm">
+              <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0 space-y-1.5">
+                {missingParamHint.missing.length > 0 ? (
+                  <p>
+                    Looks like the app expects a required query param{missingParamHint.missing.length > 1 ? 's' : ''}:{' '}
+                    <span className="font-mono font-semibold">{missingParamHint.missing.map((p) => p.name).join(', ')}</span>.
+                  </p>
+                ) : (
+                  <p>The response suggests a required query parameter is missing, but it isn't declared in the Exchange spec — check the response body below.</p>
+                )}
+                {missingParamHint.qpToAdd && (
+                  <button onClick={applyMissingParamHint} disabled={loading}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-gray-800 border border-sforange-300/60 dark:border-sforange-400/25 rounded-lg text-xs font-semibold text-sforange-700 dark:text-sforange-300 hover:bg-sforange-600 hover:text-white hover:border-sforange-600 transition-all">
+                    <Wand2 size={11} /> Add `{missingParamHint.qpToAdd}` &amp; retry
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="bg-white/70 dark:bg-gray-900/50 border border-gray-200/70 dark:border-gray-700/60 rounded-2xl overflow-hidden shadow-sm">
             <table className="w-full text-sm">
               <tbody>
@@ -672,6 +749,7 @@ export default function PingTestPanel({
               );
             })()}
             {result.error && <div className="border-t border-gray-100 dark:border-gray-800 px-5 py-3 flex items-center gap-2 text-red-600 dark:text-red-400 text-xs"><XCircle size={12} className="flex-shrink-0" />{result.error}</div>}
+            {foundJwt && <JwtDetails token={foundJwt.token} path={foundJwt.path} />}
           </div>
           {Array.isArray(result.attempts) && result.attempts.length > 0 && (
             <AttemptLog
@@ -737,6 +815,7 @@ function PingHistoryItem({ entry }) {
 
   const isOk = entry.status === 'SUCCESS';
   const isPartial = entry.status === 'PARTIAL';
+  const historyJwt = useMemo(() => findJwtInValue(entry.payload), [entry.payload]);
 
   const badgeCls = isOk ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-400/20' :
                    isPartial ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-400/20' :
@@ -783,6 +862,7 @@ function PingHistoryItem({ entry }) {
               <PostmanJsonViewer data={entry.payload} maxHeight="240px" />
             </div>
           )}
+          {historyJwt && <JwtDetails token={historyJwt.token} path={historyJwt.path} />}
         </div>
       )}
     </div>

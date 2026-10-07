@@ -12,11 +12,13 @@ import { ENV_BADGE, PING_STATUS_CONFIG as STATUS_CONFIG, latencyColor, generateT
 import { exportRowsToXlsx, timestampedFilename } from '../../utils/xlsxExport';
 import { findOAuth2Url, findApiIdInProps as findApiId, flattenCpsResponse } from '../../utils/cpsHelpers';
 import PostmanJsonViewer from '../../components/shared/PostmanJsonViewer';
+import JwtDetails from '../../components/shared/JwtDetails';
 import PageHeader from '../../components/ui/PageHeader';
 import { useCredentialStore } from '../../context/CredentialStoreContext';
 import { getErrorMessage } from '../../services/http';
 import { parseCsvAppNames, matchAppsByCsvNames } from '../../hooks/useCsvAppMatcher';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
+import { findJwtInValue } from '../../utils/jwtUtils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -57,6 +59,7 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
   const isExpanded = expandedId === rowKey;
   const isCH1 = app.deploymentType !== 'CloudHub 2.0';
   const [copiedCurl, copyCurl] = useCopyToClipboard(2000);
+  const foundJwt = useMemo(() => findJwtInValue(result?.payload), [result]);
 
   const buildRowCurl = () => {
     const url = result?.activeEndpoint;
@@ -159,6 +162,12 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
               {result.status === 'PARTIAL' && !result._jwtUsed && (result.httpStatus === 401 || result.httpStatus === 400) && (
                 <span className="inline-flex items-center gap-0.5 text-[9px] text-sfpurple-500/70 dark:text-sfpurple-400/70">
                   <Lock size={8} /> may need JWT
+                </span>
+              )}
+              {/* JWT found inside the app's own response body */}
+              {foundJwt && (
+                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-300/40 dark:border-indigo-400/20 text-indigo-600 dark:text-indigo-400 rounded-full">
+                  <Lock size={8} /> JWT in response
                 </span>
               )}
             </div>
@@ -357,6 +366,9 @@ function ResultRow({ app, result, autoResolved, expandedId, setExpandedId, onRet
                   </div>
                 );
               })()}
+              {foundJwt && (
+                <JwtDetails token={foundJwt.token} path={foundJwt.path} className="border-t border-gray-200/60 dark:border-gray-700/50 pt-3 space-y-2" />
+              )}
               {result.attempts?.length > 0 && (
                 <div>
                   <span className="text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-wider block mb-1.5">
@@ -502,6 +514,7 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                   const isPartial = entry.status === 'PARTIAL';
                   const statusConfig = STATUS_PILL[entry.status] || { Icon: XCircle, cls: 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700' };
                   const statusLabel = (STATUS_CONFIG[entry.status] || {}).label || entry.status;
+                  const historyJwt = entry.payload ? findJwtInValue(entry.payload) : null;
 
                   return (
                     <React.Fragment key={entry.id || i}>
@@ -564,6 +577,9 @@ function PingHistoryView({ globalHistory, onClose, onClear, historyLoading }) {
                                   <span className="text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase block mb-1">Response</span>
                                   <PostmanJsonViewer data={entry.payload} maxHeight="160px" />
                                 </div>
+                              )}
+                              {historyJwt && (
+                                <JwtDetails token={historyJwt.token} path={historyJwt.path} className="pt-1 space-y-2" />
                               )}
                             </div>
                           </td>
