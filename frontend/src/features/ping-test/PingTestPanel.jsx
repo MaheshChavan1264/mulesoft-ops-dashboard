@@ -718,7 +718,13 @@ export default function PingTestPanel({
                     {gettingJwt ? <><RefreshCw size={11} className="animate-spin" /> Getting JWT…</> : <><Lock size={11} /> Get JWT Token &amp; Retry</>}
                   </button>
                 ) : (
-                  <p className="text-indigo-600/80 dark:text-indigo-400/80 text-xs">No CPS config detected for this app — paste a Bearer token manually in the config panel above.</p>
+                  <div className="space-y-1.5">
+                    <p className="text-indigo-600/80 dark:text-indigo-400/80 text-xs">No CPS config detected for this app — switch to Bearer Token mode and paste one manually, or fetch one from an OAuth2 endpoint.</p>
+                    <button onClick={() => { setAuthMode('bearer-token'); setConfigOpen(true); setShowTokenHelper(true); }}
+                      className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-gray-800 border border-indigo-300/60 dark:border-indigo-400/25 rounded-lg text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all">
+                      <Lock size={11} /> Switch to Bearer Token mode
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
