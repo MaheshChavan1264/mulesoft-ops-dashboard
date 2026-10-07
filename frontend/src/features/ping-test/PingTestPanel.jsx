@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Activity, RefreshCw, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Globe, Wifi, WifiOff, Key, Eye, EyeOff, ShieldCheck, Wand2, Lock, Zap, X, Copy, Check, Terminal, History, Trash2 } from 'lucide-react';
 import { getPingHistory, clearPingHistory, getAutoCredentials, getAutoContractCreds, getOAuth2Token, pingApp as pingAppRequest } from '../../services/healthService';
 import { postCpsCredentialsRaw, fetchCpsProperties } from '../../services/cpsService';
@@ -358,12 +358,21 @@ export default function PingTestPanel({
     [result, pingSpec, queryParams]
   );
 
-  const applyMissingParamHint = () => {
-    if (!missingParamHint?.qpToAdd) return;
-    const newQp = [queryParams.trim(), missingParamHint.qpToAdd].filter(Boolean).join('&');
-    setQueryParams(newQp);
-    setConfigOpen(true);
-    runPing({ queryParams: newQp });
+  // Pre-fill the (shared) query-params field once from the spec-derived
+  // suggestion, the first time one becomes available for this result — but
+  // never overwrite it again afterwards, so the user's own edits always
+  // win. Mirrors PingTestPage.jsx's per-row paramInput pre-fill behavior.
+  const prefilledParamHintRef = useRef(false);
+  useEffect(() => { prefilledParamHintRef.current = false; }, [result]);
+  useEffect(() => {
+    if (!prefilledParamHintRef.current && !queryParams.trim() && missingParamHint?.qpToAdd) {
+      setQueryParams(missingParamHint.qpToAdd);
+      prefilledParamHintRef.current = true;
+    }
+  }, [missingParamHint, queryParams]);
+
+  const retryWithQueryParams = () => {
+    runPing({ queryParams });
   };
 
   // Some apps echo back a JWT in their ping response (e.g. the token they
@@ -608,8 +617,13 @@ export default function PingTestPanel({
                     </button>
                   </>
                 )}
-                {/* Get JWT Token — appears after ping returns PARTIAL (JWT required) */}
-                {result?.status === 'PARTIAL' && cpsBaseUrl && (
+                {/* Get JWT Token — appears when the response actually looks
+                    like it needs a JWT (same jwtRequiredHint used by the
+                    banner below the result, which already excludes cases
+                    where a missing query param — not auth — is the real
+                    cause). Previously gated only on status === 'PARTIAL',
+                    so it showed even for plain missing-query-param 400s. */}
+                {jwtRequiredHint && cpsBaseUrl && (
                   <button onClick={getJwtToken}
                     disabled={gettingJwt || !clientId || !clientSecret}
                     title={!clientId || !clientSecret ? 'Auto-fill credentials first, then click to get JWT' : 'Scan CPS for OAuth2 token URL and fetch JWT Bearer token'}
@@ -670,16 +684,23 @@ export default function PingTestPanel({
                   <p>
                     Looks like the app expects a required query param{missingParamHint.missing.length > 1 ? 's' : ''}:{' '}
                     <span className="font-mono font-semibold">{missingParamHint.missing.map((p) => p.name).join(', ')}</span>.
+                    {' '}Edit the value(s) below and retry.
                   </p>
                 ) : (
-                  <p>The response suggests a required query parameter is missing, but it isn't declared in the Exchange spec — check the response body below.</p>
+                  <p>The response suggests a required query parameter is missing, but it isn't declared in the Exchange spec. Enter it manually below and retry.</p>
                 )}
-                {missingParamHint.qpToAdd && (
-                  <button onClick={applyMissingParamHint} disabled={loading}
-                    className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-gray-800 border border-sforange-300/60 dark:border-sforange-400/25 rounded-lg text-xs font-semibold text-sforange-700 dark:text-sforange-300 hover:bg-sforange-600 hover:text-white hover:border-sforange-600 transition-all">
-                    <Wand2 size={11} /> Add `{missingParamHint.qpToAdd}` &amp; retry
+                <div className="flex items-center gap-2">
+                  <input
+                    value={queryParams}
+                    onChange={(e) => setQueryParams(e.target.value)}
+                    placeholder="e.g. checkDb=true&type=health"
+                    className="flex-1 min-w-0 bg-white dark:bg-gray-900 border border-sforange-300/60 dark:border-sforange-400/25 rounded-lg px-2.5 py-1.5 text-xs font-mono text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-sforange-500/20"
+                  />
+                  <button onClick={retryWithQueryParams} disabled={loading || !queryParams.trim()}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-sforange-300/60 dark:border-sforange-400/25 rounded-lg text-xs font-semibold text-sforange-700 dark:text-sforange-300 hover:bg-sforange-600 hover:text-white hover:border-sforange-600 transition-all disabled:opacity-50 flex-shrink-0">
+                    <RefreshCw size={11} className={loading ? 'animate-spin' : ''} /> Retry
                   </button>
-                )}
+                </div>
               </div>
             </div>
           )}
