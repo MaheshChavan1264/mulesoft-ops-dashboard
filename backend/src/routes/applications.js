@@ -173,16 +173,30 @@ router.get('/cloudhub2/:orgId/:envId/:deploymentId', authMiddleware, async (req,
 
     const fetchFn = async () => {
       // Fetch main deployment detail
-      const response = await client.get(
-        `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`
+      // Wrapped in withRetry — this route is also hit by the Schedulers
+      // dashboard's CPS-resolution pipeline (resolveSchedulerCpsPropsForApps),
+      // which fires its own concurrent wave of per-app detail calls RIGHT
+      // after the page's own scheduler fan-out already consumed part of
+      // Anypoint's rate-limit budget. Without this, a transient 429 here
+      // permanently failed that one app's CPS resolution for the whole
+      // click, which is exactly what made "Resolve CPS Crons" look like it
+      // needed to be clicked multiple times to pick up the stragglers.
+      const response = await withRetry(
+        () => client.get(
+          `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`
+        ),
+        { label: `ch2-detail:${deploymentId}` }
       );
       const deployment = response.data;
 
       // Try to fetch application properties from dedicated endpoint
       let extraProps = null;
       try {
-        const propsRes = await client.get(
-          `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/settings`
+        const propsRes = await withRetry(
+          () => client.get(
+            `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/settings`
+          ),
+          { label: `ch2-detail-settings:${deploymentId}` }
         );
         extraProps = propsRes.data;
       } catch { /* not all apps have this endpoint */ }
@@ -292,9 +306,12 @@ router.get('/cloudhub1/:envId/:appName', authMiddleware, async (req, res) => {
   try {
     const client = createClient(req.anypointToken);
     const fetchFn = async () => {
-      const response = await client.get(`/cloudhub/api/applications/${appName}`, {
-        headers: makeCh1Headers(envId, orgId),
-      });
+      const response = await withRetry(
+        () => client.get(`/cloudhub/api/applications/${appName}`, {
+          headers: makeCh1Headers(envId, orgId),
+        }),
+        { label: `ch1-detail:${appName}` }
+      );
       return response.data;
     };
     const data = await swrFetch({

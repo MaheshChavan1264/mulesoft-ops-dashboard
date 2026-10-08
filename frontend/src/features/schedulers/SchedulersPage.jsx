@@ -30,6 +30,30 @@ import { StatTile, MetaTag, PulseDot, getNextCronRun, getNextRunTzLabel, Schedul
 // (150 — see anypointClient.js) alongside the per-org fan-out below.
 const BG_FAN_OUT_CONCURRENCY = 6;
 
+// ── Automatic background CPS-placeholder resolution ─────────────────────
+// Previously the ONLY way a scheduler's `${cps.property}` cron/timezone
+// placeholder resolved on this page was: (a) an explicit "Resolve CPS
+// Crons"/"Resolve from CPS" click, or (b) incidentally, if the user had
+// ever opened that app's Infrastructure tab elsewhere (which auto-resolves
+// non-secure placeholders as a side effect — see ApplicationDetailPage's
+// loadCh2Schedulers). That made resolution look random/inconsistent (some
+// apps "just worked", others never did) purely based on browsing history.
+//
+// This mirrors that same non-secure-only auto-resolve here, directly, for
+// whatever page of rows is currently visible — but deliberately bounded:
+// - non-secure properties ONLY (no secrets fetched automatically — secure
+//   properties still require the explicit button/link, same as before)
+// - capped batch size per trigger, so a page packed with unresolved rows
+//   doesn't silently fire a huge wave of per-app Anypoint calls in the
+//   background; above the cap, the user falls back to the explicit bulk
+//   button (which has no such cap and gives visible progress/toast)
+// - low concurrency, debounced, and attempted at most once per app per
+//   page session (failures aren't retried automatically — the manual
+//   button remains the authoritative fallback for anything this misses)
+const AUTO_RESOLVE_CONCURRENCY = 3;
+const AUTO_RESOLVE_MAX_APPS_PER_BATCH = 12;
+const AUTO_RESOLVE_DEBOUNCE_MS = 500;
+
 // ── Cache TTL constants ──────────────────────────────────────────────────
 // Mirrors ApplicationsPage's APP_STALE_MS reasoning — FRESH_MS (3 min) is
 // fixed inside apiCache.js; this is the hard eviction window.
@@ -709,6 +733,95 @@ export default function SchedulersPage() {
   const schedulersRef = useRef(schedulers);
   useEffect(() => { schedulersRef.current = schedulers; }, [schedulers]);
 
+  // Tracks appIds already attempted by the auto-resolve effect below (this
+  // page session only — cleared on full reload). A ref (not state) because
+  // marking an attempt must NOT itself trigger a re-render; the effect only
+  // needs to re-run when the set of VISIBLE unresolved+unattempted appIds
+  // actually changes, which `visibleUnresolvedAppIdsKey` below already
+  // captures. Prevents endlessly retrying an app whose CPS fetch failed
+  // (no credentials configured, CPS server unreachable, etc.) on every
+  // background keepFresh refresh — one silent attempt per app per page
+  // visit is the deliberate ceiling; the manual button is the fallback for
+  // anything that needs a real retry.
+  const autoResolveAttemptedRef = useRef(new Set());
+
+  // Stable string key (not the row objects themselves) so this only
+  // recomputes when the actual set of candidate appIds changes — rows
+  // churn on every background `keepFresh` refresh (new array identity even
+  // when nothing meaningful changed), which would otherwise re-trigger the
+  // auto-resolve effect below on every poll.
+  const visibleUnresolvedAppIdsKey = useMemo(() => {
+    const ids = new Set();
+    paginatedItems.forEach((s) => {
+      if (!(s.unresolvedPlaceholder || s.unresolvedTzPlaceholder)) return;
+      if (getResolvedSchedule(s.appId, s.schedulerKey)) return;
+      if (autoResolveAttemptedRef.current.has(s.appId)) return;
+      ids.add(s.appId);
+    });
+    return [...ids].sort().join(',');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paginatedItems, cpsResolveVersion]);
+
+  /**
+   * Automatically resolves non-secure CPS placeholders for whatever page of
+   * rows is currently visible — no click required. This is what makes
+   * resolution behave consistently instead of depending on whether the
+   * user happened to have opened that app's Infrastructure tab before (see
+   * the constants block above for the full rationale and the bounds that
+   * keep this cheap/safe to run unattended).
+   *
+   * Secure placeholders are intentionally NOT included here — see
+   * resolveSchedulerCpsPropsForApps's `{ secure: false }` option.
+   */
+  useEffect(() => {
+    if (!visibleUnresolvedAppIdsKey) return;
+    const appIds = visibleUnresolvedAppIdsKey.split(',');
+    if (appIds.length > AUTO_RESOLVE_MAX_APPS_PER_BATCH) {
+      // Too many to auto-resolve safely in the background — leave them for
+      // the explicit "Resolve CPS Crons" button, which has no such cap and
+      // gives the user visible progress/feedback for a large batch.
+      return;
+    }
+
+    const candidates = appIds
+      .map((appId) => schedulersRef.current.find((s) => s.appId === appId))
+      .filter(Boolean)
+      .map((s) => ({ appId: s.appId, envId: s.envId, bgId: s._bgId, deploymentType: s.deploymentType }));
+    if (candidates.length === 0) return;
+
+    const timer = setTimeout(() => {
+      candidates.forEach((c) => autoResolveAttemptedRef.current.add(c.appId));
+      resolveSchedulerCpsPropsForApps(
+        candidates,
+        { hasCredentials, getSecret, getAllCredentials },
+        AUTO_RESOLVE_CONCURRENCY,
+        { secure: false }
+      )
+        .then((propsByApp) => {
+          if (!isMounted.current) return;
+          let resolvedCount = 0;
+          schedulersRef.current.forEach((row) => {
+            const entry = propsByApp.get(row.appId);
+            if (!entry || entry.error) return;
+            if (!row.unresolvedPlaceholder && !row.unresolvedTzPlaceholder) return;
+            const { resolved: cron, wasResolved: cronResolved } = resolvePlaceholder(row.cron, entry.props);
+            const { resolved: timeZone, wasResolved: tzResolved } = resolvePlaceholder(row.timeZone, entry.props);
+            if (cronResolved || tzResolved) {
+              rememberResolvedSchedule(row.appId, row.schedulerKey, { cron, timeZone });
+              resolvedCount++;
+            }
+          });
+          if (resolvedCount > 0 && isMounted.current) setCpsResolveVersion((v) => v + 1);
+        })
+        // Silent on failure — this is a best-effort optimization, not a
+        // user-initiated action; no toast, no error surfaced. The row(s)
+        // simply keep showing "Resolve from CPS" for the user to trigger
+        // manually, exactly as if auto-resolve didn't exist.
+        .catch(() => {});
+    }, AUTO_RESOLVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [visibleUnresolvedAppIdsKey, hasCredentials, getSecret, getAllCredentials]);
+
   /**
    * Resolves CPS cron/timezone placeholders for ONE app, right here on the
    * Schedulers dashboard — previously this instead navigated the user away
@@ -948,7 +1061,14 @@ export default function SchedulersPage() {
       // app with a fully-resolved cron but a still-placeholder timezone
       // was previously skipped entirely here, so its timezone could never
       // get resolved by this button.
-      if ((s.unresolvedPlaceholder || s.unresolvedTzPlaceholder) && !unresolvedApps.has(s.appId)) {
+      // Also skip apps the resolution cache already has an answer for —
+      // e.g. resolved by the background auto-resolve effect, a prior click
+      // of this same button, a per-row "Resolve from CPS", or a visit to
+      // the Infrastructure tab. Without this check, this button re-fetched
+      // CPS properties (full non-secure + secure) for an app EVERY time it
+      // was clicked, even for apps that had already resolved — the exact
+      // kind of redundant Anypoint/CPS traffic this feature should avoid.
+      if ((s.unresolvedPlaceholder || s.unresolvedTzPlaceholder) && !getResolvedSchedule(s.appId, s.schedulerKey) && !unresolvedApps.has(s.appId)) {
         unresolvedApps.set(s.appId, { appId: s.appId, envId: s.envId, bgId: s._bgId, deploymentType: s.deploymentType });
       }
     });

@@ -14,11 +14,15 @@ import { mapWithConcurrency } from './concurrencyPool';
  * to run across every app that has an unresolved placeholder visible on the
  * Schedulers dashboard at once.
  *
- * Deliberately NOT run automatically on page load — this fetches CPS
- * secure properties (needs credentials) for potentially many apps, which is
- * exactly the cost the aggregate `/applications/schedulers/:orgId` endpoint
- * avoids by design (see backend's normalizeSchedulerRow comment). This is
- * only invoked by an explicit user click.
+ * By default fetches BOTH non-secure and secure properties (full manual-
+ * resolve behavior, used by the "Resolve CPS Crons" button and the per-row
+ * "Resolve from CPS" link). Pass `{ secure: false }` for the lightweight,
+ * automatic background variant (see SchedulersPage.jsx's auto-resolve
+ * effect) that only fetches non-secure properties — cheap enough (one app-
+ * detail call + one non-secure CPS call per app, no secret-bearing fetch)
+ * to run unattended for a small, bounded batch of currently-visible rows
+ * without the cost/security concerns a full automatic secure-property
+ * fetch across the whole dashboard would raise.
  *
  * @param {Array<{appId:string, envId:string, bgId:string, deploymentType:string}>} apps
  *   One entry per unique app (already deduped by the caller).
@@ -27,10 +31,13 @@ import { mapWithConcurrency } from './concurrencyPool';
  * @param {(clientId:string) => string|undefined} creds.getSecret
  * @param {() => Array<{clientId:string, clientSecret:string}>} creds.getAllCredentials
  * @param {number} [concurrency=5]
+ * @param {object} [opts]
+ * @param {boolean} [opts.secure=true]  fetch secure CPS properties too
  * @returns {Promise<Map<string, {props: Record<string,string>, error?: string}>>}
  *   Keyed by appId.
  */
-export async function resolveSchedulerCpsPropsForApps(apps, { hasCredentials, getSecret, getAllCredentials }, concurrency = 5) {
+export async function resolveSchedulerCpsPropsForApps(apps, { hasCredentials, getSecret, getAllCredentials }, concurrency = 5, opts = {}) {
+  const { secure = true } = opts;
   const results = await mapWithConcurrency(apps, concurrency, async (app) => {
     const isCh2 = app.deploymentType === 'CloudHub 2.0';
     const detailRes = isCh2
@@ -60,7 +67,7 @@ export async function resolveSchedulerCpsPropsForApps(apps, { hasCredentials, ge
 
     const secureKeyStr = flatNs['cps.secure.properties'] || '';
     let flatSecure = {};
-    if (secureKeyStr) {
+    if (secure && secureKeyStr) {
       try {
         const secureRaw = await fetchCpsProperties({ baseUrl: cpsBaseUrl, type: 'secure', keys: secureKeyStr, environment: cpsEnv, bgOrgId: app.bgId });
         const groups = Array.isArray(secureRaw?.responses) ? secureRaw.responses
