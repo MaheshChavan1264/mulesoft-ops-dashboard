@@ -1015,11 +1015,11 @@ export default function ApplicationDetailPage() {
   // Feature 14: tab badges with live counts
   const tabs = [
     { id:'overview', label:'Overview' },
-    { id:'properties', label:'Properties', badge: Object.keys(allProps).length },
+    { id:'properties', label:'Properties', badge: Object.keys(allProps).length > 0 ? Object.keys(allProps).length : undefined },
     ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config', badge: cpsData ? (cpsError ? '⚠' : '✓') : undefined, badgeErr: !!cpsError }] : []),
     { id:'infrastructure', label:'Schedulers', badge: allSchedulers.length > 0 ? allSchedulers.length : undefined },
     { id:'dependencies', label:'Dependencies' },
-    { id:'contracts', label:'Contracts', badge: contracts !== null && !contractsError ? contracts.length : undefined },
+    { id:'contracts', label:'Contracts', badge: contracts !== null && !contractsError && contracts.length > 0 ? contracts.length : undefined },
     { id:'apispec', label:'API Spec', badge: pingSpec?.allEndpoints?.length > 0 ? pingSpec.allEndpoints.length : undefined },
     { id:'ping', label:'Ping Test', badge: pingSpec?.pingEndpoints?.length > 0 ? pingSpec.pingEndpoints.length : undefined },
     { id:'raw', label:'Raw JSON' },
