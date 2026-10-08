@@ -2,7 +2,7 @@ import {
   getCloudhub2AppDetail, getCloudhub1AppDetail,
 } from '../services/applicationsService';
 import { fetchCpsProperties, resolveAndPostCpsCredentials } from '../services/cpsService';
-import { extractCpsConfig, flattenCpsResponse } from './cpsHelpers';
+import { extractCpsConfig, flattenCpsResponse, mergeAppProps, guessCpsEnvFromAppEnvironment } from './cpsHelpers';
 import { mapWithConcurrency } from './concurrencyPool';
 
 /**
@@ -37,8 +37,16 @@ export async function resolveSchedulerCpsPropsForApps(apps, { hasCredentials, ge
       ? await getCloudhub2AppDetail(app.bgId, app.envId, app.appId)
       : await getCloudhub1AppDetail(app.envId, app.appId, app.bgId);
 
-    const { cpsBaseUrl, cpsKey, cpsEnv, cpsClientId } = extractCpsConfig(detailRes.data);
+    const { cpsBaseUrl, cpsKey, cpsEnv: rawCpsEnv, cpsClientId } = extractCpsConfig(detailRes.data);
     if (!cpsBaseUrl) throw new Error('No CPS URL configured for this app');
+    // Same fallback ApplicationDetailPage/InfrastructureTab rely on
+    // (derived.cpsEnv) — many apps never set an explicit cps.prefix/
+    // cps.environment ARM property, so without this the CPS fetch below
+    // silently queried with an empty `environment` and got back whichever
+    // environment's bucket the CPS server defaults to (often not the one
+    // this app's placeholders actually live in), making resolution look
+    // like it "never finds" a property that genuinely is in CPS.
+    const cpsEnv = rawCpsEnv || guessCpsEnvFromAppEnvironment(detailRes.data?.environment?.name, detailRes.data?.environment?.type);
 
     if (hasCredentials) {
       await resolveAndPostCpsCredentials({
@@ -62,7 +70,12 @@ export async function resolveSchedulerCpsPropsForApps(apps, { hasCredentials, ge
       } catch { /* secure fetch failed — non-secure props still useful */ }
     }
 
-    return { ...flatNs, ...flatSecure };
+    // ARM runtime properties as the lowest-priority fallback — mirrors
+    // exportCps.js's `fetchedAllProps` and InfrastructureTab's `allProps`
+    // source, so a placeholder resolvable from the app's own deployment
+    // properties (not pushed into CPS at all) still resolves here instead
+    // of only working on the per-app Infrastructure tab.
+    return { ...mergeAppProps(detailRes.data), ...flatNs, ...flatSecure };
   });
 
   const byAppId = new Map();
