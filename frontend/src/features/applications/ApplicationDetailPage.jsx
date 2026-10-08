@@ -1016,7 +1016,12 @@ export default function ApplicationDetailPage() {
   const tabs = [
     { id:'overview', label:'Overview' },
     { id:'properties', label:'Properties', badge: Object.keys(allProps).length > 0 ? Object.keys(allProps).length : undefined },
-    ...(cpsBaseUrl ? [{ id:'cps', label:'CPS Config', badge: cpsData ? (cpsError ? '⚠' : '✓') : undefined, badgeErr: !!cpsError }] : []),
+    // Always shown (even with no CPS configured) — previously hidden
+    // entirely via `...(cpsBaseUrl ? [...] : [])`, which gave no indication
+    // CPS was even checked for this app. Now the tab itself explains why
+    // (see CpsConfigTab's "not configured" state) instead of silently
+    // disappearing.
+    { id:'cps', label:'CPS Config', badge: !cpsBaseUrl ? '—' : cpsData ? (cpsError ? '⚠' : '✓') : undefined, badgeErr: !!cpsError },
     { id:'infrastructure', label:'Schedulers', badge: allSchedulers.length > 0 ? allSchedulers.length : undefined },
     { id:'dependencies', label:'Dependencies' },
     { id:'contracts', label:'Contracts', badge: contracts !== null && !contractsError && contracts.length > 0 ? contracts.length : undefined },
@@ -1366,7 +1371,7 @@ export default function ApplicationDetailPage() {
       )}
 
       {/* ── CPS CONFIG ──────────────────────────────── */}
-      {tab==='cps' && cpsBaseUrl && (
+      {tab==='cps' && (
         <CpsConfigTab
           cpsData={cpsData}
           setCpsData={setCpsData}

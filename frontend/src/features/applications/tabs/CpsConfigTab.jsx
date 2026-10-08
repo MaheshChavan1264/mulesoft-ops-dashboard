@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Key, Package, Database, Check, Copy, RefreshCw, AlertTriangle, Search } from 'lucide-react';
+import { Settings, Key, Package, Database, Check, Copy, RefreshCw, AlertTriangle, Search, Info } from 'lucide-react';
 import { postCpsCredentialsRaw, fetchCpsProperties } from '../../../services/cpsService';
 import { getErrorMessage } from '../../../services/http';
 import TableHeader from '../../../components/ui/TableHeader';
@@ -21,6 +21,33 @@ export default function CpsConfigTab({
   cpsSearch, setCpsSearch, secureLoading, setSecureLoading,
   getAllCredentials, cpsDepType, appEnvName, orgId, isCH1,
 }) {
+  // No CPS base URL could be discovered from this app's ARM properties at
+  // all (see utils/cpsHelpers.js's extractCpsConfig) — this app simply
+  // isn't wired up to a Config Property Server, as opposed to CPS being
+  // configured but failing to load (cpsError, handled further below). The
+  // tab used to be hidden entirely in this case (ApplicationDetailPage's
+  // tabs array), which left no way to tell "not configured" apart from
+  // "tab not loaded yet" — show an explicit info message instead so the
+  // absence is a deliberate, visible answer rather than a missing tab.
+  if (!cpsBaseUrl) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-4 bg-white/50 dark:bg-gray-900/30 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl">
+        <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gray-100 dark:bg-gray-800">
+          <Info size={24} className="text-gray-400 dark:text-gray-500" />
+        </div>
+        <div className="text-center space-y-1 max-w-md px-4">
+          <p className="text-gray-600 dark:text-gray-300 text-sm font-semibold">CPS not configured for this application</p>
+          <p className="text-gray-400 dark:text-gray-500 text-xs">
+            No Config Property Server URL could be found in this app's runtime/ARM properties
+            (e.g. <code className="text-gray-500 dark:text-gray-400">cps.configServerBaseUrl</code>,{' '}
+            <code className="text-gray-500 dark:text-gray-400">cps.baseUrl</code>). This application
+            likely doesn't use CPS, or its properties use a non-standard key name.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const nsCount = cpsData ? Object.keys(cpsData.nonSecure).length : 0;
   const secCount = cpsData ? cpsData.secureGroups.reduce((sum, g) => sum + (g.properties && typeof g.properties === 'object' ? Object.keys(g.properties).length : 0), 0) : 0;
   const binCount = cpsData?.binaryKeys ? cpsData.binaryKeys.split(',').map(f => f.trim()).filter(Boolean).length : 0;
@@ -197,6 +224,26 @@ export default function CpsConfigTab({
       {/* CPS data loaded */}
       {cpsData && (
         <div className="space-y-5">
+          {/* Loaded successfully but CPS has nothing for this key/env —
+              distinct from "not configured" (no cpsBaseUrl at all, handled
+              above) and from "error" (handled above too). Every section
+              below independently gates on its own count being > 0, so
+              without this the tab would otherwise just render an empty
+              search box with nothing underneath and no explanation. */}
+          {nsCount === 0 && secCount === 0 && binCount === 0 && !cpsData.secureKeys && (
+            <div className="flex flex-col items-center justify-center py-14 gap-3 bg-white/50 dark:bg-gray-900/30 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl text-center">
+              <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-800">
+                <Database size={20} className="text-gray-400 dark:text-gray-500" />
+              </div>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">No properties found in CPS for this key/environment</p>
+              <p className="text-gray-400 dark:text-gray-500 text-xs max-w-sm px-4">
+                Fetched <code className="text-gray-500 dark:text-gray-400">{cpsData.useEnv || effectiveCpsEnv}</code>{' '}
+                for key <code className="text-gray-500 dark:text-gray-400">{cpsKeyOverride || effectiveCpsKey}</code> — the
+                CPS server returned no properties. Double-check the <strong>Env</strong>/<strong>Key</strong> fields above.
+              </p>
+            </div>
+          )}
+
           {/* Search */}
           <div className="relative">
             <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />

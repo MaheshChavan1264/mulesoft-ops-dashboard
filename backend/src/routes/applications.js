@@ -99,6 +99,7 @@ async function swrFetch({ cache, inflight, key, freshMs, forceRefresh, fetchFn, 
   const isFresh = ageMs < freshMs;
 
   if (!forceRefresh && cached && isFresh) {
+    logger.debug(`[${label}] Cache HIT (fresh) for ${key} (age: ${Math.round(ageMs / 1000)}s)`);
     return cached.data; // instant — zero network
   }
 
@@ -106,22 +107,36 @@ async function swrFetch({ cache, inflight, key, freshMs, forceRefresh, fetchFn, 
     // Stale-but-usable (NodeCache hasn't evicted it yet) — serve instantly,
     // kick off exactly one background refresh per key.
     if (!inflight.has(key)) {
+      logger.debug(`[${label}] Cache HIT (stale) for ${key} (age: ${Math.round(ageMs / 1000)}s) — BG refresh started`);
+      const startedAt = Date.now();
       const p = fetchFn()
-        .then((data) => { cache.set(key, { data, ts: Date.now() }); return data; })
+        .then((data) => {
+          cache.set(key, { data, ts: Date.now() });
+          logger.debug(`[${label}] BG refresh completed for ${key} in ${Date.now() - startedAt}ms`);
+          return data;
+        })
         .catch((err) => logger.warn({ err }, `[${label}] BG refresh failed for ${key}`))
         .finally(() => inflight.delete(key));
       inflight.set(key, p);
+    } else {
+      logger.debug(`[${label}] Cache HIT (stale) for ${key} — BG refresh already in flight, not duplicating`);
     }
     return cached.data;
   }
 
   // Cache miss / forceRefresh
   if (!forceRefresh && inflight.has(key)) {
+    logger.debug(`[${label}] Piggybacking on in-flight fetch for ${key}`);
     return inflight.get(key); // piggyback on the in-flight fetch
   }
 
+  logger.debug(`[${label}] Cache MISS for ${key} (forceRefresh: ${!!forceRefresh})`);
   const p = fetchFn()
-    .then((data) => { cache.set(key, { data, ts: Date.now() }); return data; })
+    .then((data) => {
+      cache.set(key, { data, ts: Date.now() });
+      logger.debug(`[${label}] Cache SET for ${key}`);
+      return data;
+    })
     .finally(() => inflight.delete(key));
   if (!forceRefresh) inflight.set(key, p);
   return p;
@@ -661,10 +676,17 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
       // Only start a background refresh if one isn't already running for this org
       if (!inflightSummary.has(targetOrgId)) {
+        const startedAt = Date.now();
         const p = _fetchSummary(client, targetOrgId)
+          .then((data) => {
+            logger.debug(`[Summary] BG refresh completed for org ${targetOrgId} in ${Date.now() - startedAt}ms`);
+            return data;
+          })
           .catch((err) => logger.warn({ err }, `[Summary] BG refresh failed for org ${targetOrgId}`))
           .finally(() => inflightSummary.delete(targetOrgId));
         inflightSummary.set(targetOrgId, p);
+      } else {
+        logger.debug(`[Summary] BG refresh already in flight for org ${targetOrgId} — not duplicating`);
       }
       return;
     }
@@ -859,6 +881,7 @@ async function _fetchSchedulersSummary(client, targetOrgId, envIds) {
 
   let summaryData;
   if (cachedSummary && isFresh) {
+    logger.debug(`[SchedulersSummary] App roster cache HIT (fresh) for org ${targetOrgId} (age: ${Math.round(ageMs / 1000)}s)`);
     summaryData = cachedSummary.data;
   } else if (cachedSummary) {
     // Stale-but-usable — serve it now (an app roster up to a few minutes
@@ -870,15 +893,28 @@ async function _fetchSchedulersSummary(client, targetOrgId, envIds) {
     // just piggybacks instead of firing a second redundant fan-out.
     summaryData = cachedSummary.data;
     if (!inflightSummary.has(targetOrgId)) {
+      logger.debug(`[SchedulersSummary] App roster cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs / 1000)}s) — BG summary refresh started`);
+      const startedAt = Date.now();
       const p = _fetchSummary(client, targetOrgId)
+        .then((data) => {
+          logger.debug(`[SchedulersSummary] BG summary refresh completed for org ${targetOrgId} in ${Date.now() - startedAt}ms`);
+          return data;
+        })
         .catch((err) => logger.warn({ err }, `[SchedulersSummary] BG summary refresh failed for org ${targetOrgId}`))
         .finally(() => inflightSummary.delete(targetOrgId));
       inflightSummary.set(targetOrgId, p);
+    } else {
+      logger.debug(`[SchedulersSummary] App roster cache HIT (stale) for org ${targetOrgId} — BG summary refresh already in flight, not duplicating`);
     }
   } else {
     // Cold cache — no choice but to fetch synchronously. Piggyback on an
     // in-flight fetch if the /summary/:orgId route (or another concurrent
     // scheduler-summary request) already started one for this org.
+    if (inflightSummary.has(targetOrgId)) {
+      logger.debug(`[SchedulersSummary] App roster cache MISS for org ${targetOrgId} — piggybacking on in-flight fetch`);
+    } else {
+      logger.debug(`[SchedulersSummary] App roster cache MISS for org ${targetOrgId} — fetching synchronously`);
+    }
     summaryData = inflightSummary.has(targetOrgId)
       ? await inflightSummary.get(targetOrgId)
       : await (() => {
