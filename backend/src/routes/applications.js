@@ -12,6 +12,7 @@ const {
 const { sendProxyError, extractAnypointErrorMessage } = require('../utils/responseHelpers');
 const { tryStrategies, runWithRestartFallback } = require('../utils/retryStrategies');
 const { mapWithConcurrency } = require('../utils/concurrencyPool');
+const { withRetry } = require('../utils/retry');
 const logger = require('../utils/logger');
 
 // ── Application-summary in-memory cache ──────────────────────────────────────
@@ -535,9 +536,12 @@ async function _fetchSummary(client, targetOrgId) {
     let ch1Accessible = false;
 
     try {
-      const ch2Response = await client.get(
-        `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${env.id}/deployments`,
-        { params: { limit: 500 } }
+      const ch2Response = await withRetry(
+        () => client.get(
+          `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${env.id}/deployments`,
+          { params: { limit: 500 } }
+        ),
+        { label: `summary-ch2:${env.name}` }
       );
       ch2Accessible = true;
       const apps = parseCH2Apps(ch2Response.data);
@@ -564,9 +568,12 @@ async function _fetchSummary(client, targetOrgId) {
     }
 
     try {
-      const ch1Response = await client.get('/cloudhub/api/applications', {
-        headers: makeCh1Headers(env.id, targetOrgId),
-      });
+      const ch1Response = await withRetry(
+        () => client.get('/cloudhub/api/applications', {
+          headers: makeCh1Headers(env.id, targetOrgId),
+        }),
+        { label: `summary-ch1:${env.name}` }
+      );
       ch1Accessible = true;
       const raw = ch1Response.data;
       const ch1Apps = Array.isArray(raw) ? raw : (raw.applications || raw.data || []);
@@ -893,9 +900,19 @@ async function _fetchSchedulersSummary(client, targetOrgId, envIds) {
   }
 
   const fanOutResults = await mapWithConcurrency(apps, SCHEDULERS_FAN_OUT_CONCURRENCY, async (app) => {
+    // Each per-app call is individually retried on 429/502/503/504 with
+    // backoff (see utils/retry.js) — "All Organizations" can fan out
+    // hundreds of these concurrently across every BG, and Anypoint's own
+    // rate limiting can trip even within the SCHEDULERS_FAN_OUT_CONCURRENCY
+    // cap below. Without this, a transient 429 permanently dropped that
+    // app from the dashboard (surfaced as a "failed to load" error) instead
+    // of just slowing down and succeeding a moment later.
     if (app.deploymentType === 'CloudHub 2.0') {
-      const response = await client.get(
-        `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${app.environment.id}/deployments/${app.id}/schedulers`
+      const response = await withRetry(
+        () => client.get(
+          `/amc/application-manager/api/v2/organizations/${targetOrgId}/environments/${app.environment.id}/deployments/${app.id}/schedulers`
+        ),
+        { label: `schedulers:${app.name}` }
       );
       // Per Mulesoft's AMC Application Manager API, GET .../schedulers
       // returns { total, items: [...] } — NOT { schedulers: [...] }. The
@@ -906,9 +923,12 @@ async function _fetchSchedulersSummary(client, targetOrgId, envIds) {
       const list = Array.isArray(response.data) ? response.data : (response.data?.items || response.data?.schedulers || []);
       return markAmbiguousSchedulerKeys(list.map((s, i) => normalizeSchedulerRow(s, app, i)));
     }
-    const response = await client.get(
-      `/cloudhub/api/applications/${app.id}/schedules`,
-      { headers: makeCh1Headers(app.environment.id, targetOrgId) }
+    const response = await withRetry(
+      () => client.get(
+        `/cloudhub/api/applications/${app.id}/schedules`,
+        { headers: makeCh1Headers(app.environment.id, targetOrgId) }
+      ),
+      { label: `schedules:${app.name}` }
     );
     const raw = response.data;
     const list = Array.isArray(raw) ? raw : (raw?.data || raw?.schedules || []);
