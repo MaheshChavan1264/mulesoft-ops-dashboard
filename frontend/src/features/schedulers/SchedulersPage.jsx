@@ -19,7 +19,7 @@ import { mapWithConcurrency } from '../../utils/concurrencyPool';
 import { getResolvedSchedule, rememberResolvedSchedule } from '../../services/cpsCronResolutionCache';
 import { resolveSchedulerCpsPropsForApps, resolvePlaceholder } from '../../utils/resolveSchedulerCpsCrons';
 import { useCpsCredentialStore } from '../../context/CpsCredentialStoreContext';
-import { StatTile, MetaTag, PulseDot, getNextCronRun, SchedulerConfirmModal, SchedulerToggleConfirmModal, BulkSchedulerToggleConfirmModal, BulkSchedulerRunConfirmModal } from '../applications/shared';
+import { StatTile, MetaTag, PulseDot, getNextCronRun, getNextRunTzLabel, SchedulerConfirmModal, SchedulerToggleConfirmModal, BulkSchedulerToggleConfirmModal, BulkSchedulerRunConfirmModal } from '../applications/shared';
 
 // Caps concurrent /applications/schedulers/{orgId} requests when "All
 // Organizations" fans out across many BGs. Each of those backend requests
@@ -172,8 +172,13 @@ const SchedulerRow = React.memo(function SchedulerRow({
     if (!cron || unresolvedPlaceholder) return { decodedCron: '', computedNextRun: null };
     let decoded = '';
     try { decoded = cronstrue.toString(cron, { throwExceptionOnParseError: true }); } catch { /* ignore */ }
-    return { decodedCron: decoded, computedNextRun: active ? getNextCronRun(cron) : null };
-  }, [cron, unresolvedPlaceholder, active]);
+    // Only pass a REAL (resolved) timezone through — an unresolved
+    // `${cps.property}` placeholder string would otherwise fail Intl's zone
+    // lookup and silently fall back to the IST default anyway, but passing
+    // `undefined` here makes that fallback explicit instead of incidental.
+    const tzForCalc = unresolvedTzPlaceholder ? undefined : timeZone;
+    return { decodedCron: decoded, computedNextRun: active ? getNextCronRun(cron, tzForCalc) : null };
+  }, [cron, unresolvedPlaceholder, active, timeZone, unresolvedTzPlaceholder]);
   // appStatus always comes through backend's normalizeStatus() (see
   // appHelpers.js), which already canonicalizes STARTED -> RUNNING before
   // this ever reaches the frontend — no need to check both.
@@ -254,7 +259,9 @@ const SchedulerRow = React.memo(function SchedulerRow({
         {computedNextRun ? (
           <>
             <span className="text-sfpurple-700 dark:text-sfpurple-300 font-mono font-semibold">{computedNextRun.toLocaleDateString()}</span>
-            <p className="text-sfpurple-500 dark:text-sfpurple-400 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
+            <p className="text-sfpurple-500 dark:text-sfpurple-400 text-[10px] font-mono">
+              {computedNextRun.toLocaleTimeString()} {getNextRunTzLabel(unresolvedTzPlaceholder ? undefined : timeZone)}
+            </p>
           </>
         ) : <span className="text-gray-400 dark:text-gray-600">—</span>}
       </td>

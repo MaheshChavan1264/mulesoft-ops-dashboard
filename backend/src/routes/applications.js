@@ -106,20 +106,26 @@ async function swrFetch({ cache, inflight, key, freshMs, forceRefresh, fetchFn, 
   if (!forceRefresh && cached) {
     // Stale-but-usable (NodeCache hasn't evicted it yet) — serve instantly,
     // kick off exactly one background refresh per key.
+    //
+    // Logged at `info` (not `debug`) deliberately — this project's own
+    // SOP_SETUP.md documents `LOG_LEVEL=info` as the standard default, so a
+    // `debug`-only log here would silently never appear for anyone running
+    // with the documented default, making the whole SWR background-refresh
+    // mechanism look "broken"/invisible even though it's working correctly.
     if (!inflight.has(key)) {
-      logger.debug(`[${label}] Cache HIT (stale) for ${key} (age: ${Math.round(ageMs / 1000)}s) — BG refresh started`);
+      logger.info(`[${label}] Cache HIT (stale) for ${key} (age: ${Math.round(ageMs / 1000)}s) — BG refresh started`);
       const startedAt = Date.now();
       const p = fetchFn()
         .then((data) => {
           cache.set(key, { data, ts: Date.now() });
-          logger.debug(`[${label}] BG refresh completed for ${key} in ${Date.now() - startedAt}ms`);
+          logger.info(`[${label}] BG refresh completed for ${key} in ${Date.now() - startedAt}ms`);
           return data;
         })
         .catch((err) => logger.warn({ err }, `[${label}] BG refresh failed for ${key}`))
         .finally(() => inflight.delete(key));
       inflight.set(key, p);
     } else {
-      logger.debug(`[${label}] Cache HIT (stale) for ${key} — BG refresh already in flight, not duplicating`);
+      logger.info(`[${label}] Cache HIT (stale) for ${key} — BG refresh already in flight, not duplicating`);
     }
     return cached.data;
   }
@@ -671,7 +677,10 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
 
     if (!forceRefresh && isUsable) {
       // ── Stale-but-usable — respond instantly, refresh in background ──────
-      logger.debug(`[Summary] Cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s) — BG refresh started`);
+      // `info` level — see swrFetch's comment above for why this specific
+      // lifecycle event must survive the project's documented default
+      // LOG_LEVEL=info instead of being filtered out at `debug`.
+      logger.info(`[Summary] Cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs/1000)}s) — BG refresh started`);
       res.json(cached.data);
 
       // Only start a background refresh if one isn't already running for this org
@@ -679,14 +688,14 @@ router.get('/summary/:orgId', authMiddleware, async (req, res) => {
         const startedAt = Date.now();
         const p = _fetchSummary(client, targetOrgId)
           .then((data) => {
-            logger.debug(`[Summary] BG refresh completed for org ${targetOrgId} in ${Date.now() - startedAt}ms`);
+            logger.info(`[Summary] BG refresh completed for org ${targetOrgId} in ${Date.now() - startedAt}ms`);
             return data;
           })
           .catch((err) => logger.warn({ err }, `[Summary] BG refresh failed for org ${targetOrgId}`))
           .finally(() => inflightSummary.delete(targetOrgId));
         inflightSummary.set(targetOrgId, p);
       } else {
-        logger.debug(`[Summary] BG refresh already in flight for org ${targetOrgId} — not duplicating`);
+        logger.info(`[Summary] BG refresh already in flight for org ${targetOrgId} — not duplicating`);
       }
       return;
     }
@@ -893,18 +902,18 @@ async function _fetchSchedulersSummary(client, targetOrgId, envIds) {
     // just piggybacks instead of firing a second redundant fan-out.
     summaryData = cachedSummary.data;
     if (!inflightSummary.has(targetOrgId)) {
-      logger.debug(`[SchedulersSummary] App roster cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs / 1000)}s) — BG summary refresh started`);
+      logger.info(`[SchedulersSummary] App roster cache HIT (stale) for org ${targetOrgId} (age: ${Math.round(ageMs / 1000)}s) — BG summary refresh started`);
       const startedAt = Date.now();
       const p = _fetchSummary(client, targetOrgId)
         .then((data) => {
-          logger.debug(`[SchedulersSummary] BG summary refresh completed for org ${targetOrgId} in ${Date.now() - startedAt}ms`);
+          logger.info(`[SchedulersSummary] BG summary refresh completed for org ${targetOrgId} in ${Date.now() - startedAt}ms`);
           return data;
         })
         .catch((err) => logger.warn({ err }, `[SchedulersSummary] BG summary refresh failed for org ${targetOrgId}`))
         .finally(() => inflightSummary.delete(targetOrgId));
       inflightSummary.set(targetOrgId, p);
     } else {
-      logger.debug(`[SchedulersSummary] App roster cache HIT (stale) for org ${targetOrgId} — BG summary refresh already in flight, not duplicating`);
+      logger.info(`[SchedulersSummary] App roster cache HIT (stale) for org ${targetOrgId} — BG summary refresh already in flight, not duplicating`);
     }
   } else {
     // Cold cache — no choice but to fetch synchronously. Piggyback on an

@@ -4,7 +4,7 @@ import cronstrue from 'cronstrue';
 import { fetchCpsProperties, resolveAndPostCpsCredentials } from '../../../services/cpsService';
 import { rememberResolvedSchedule } from '../../../services/cpsCronResolutionCache';
 import { useCpsCredentialStore } from '../../../context/CpsCredentialStoreContext';
-import { GlassCard, StatTile, PulseDot, MetaTag, getNextCronRun } from '../shared';
+import { GlassCard, StatTile, PulseDot, MetaTag, getNextCronRun, getNextRunTzLabel } from '../shared';
 
 /**
  * InfrastructureTab — ApplicationDetailPage's "Schedulers" (Infrastructure) tab.
@@ -146,7 +146,13 @@ export default function InfrastructureTab({
     // the Anypoint Platform schedulers API does not return nextRun reliably).
     // Only compute for ENABLED schedulers — a disabled scheduler has no next run.
     const active = s.enabled!==false;
-    const computedNextRun = (cron && !isUnresolvedPlaceholder && active) ? getNextCronRun(cron) : null;
+    // Pass the scheduler's own (resolved) timezone through so the cron
+    // fields are interpreted as wall-clock time in ITS zone, not whatever
+    // timezone the viewer's browser happens to be in — falls back to the
+    // IST org default (see shared.jsx's DEFAULT_SCHEDULER_TZ) when absent
+    // or still an unresolved `${cps.property}` placeholder.
+    const tzForCalc = isTzUnresolvedPlaceholder ? undefined : schedulerTz;
+    const computedNextRun = (cron && !isUnresolvedPlaceholder && active) ? getNextCronRun(cron, tzForCalc) : null;
     // CH2 fixed-frequency: s.schedule.frequency; CH1: s.frequency or s.schedule.period.
     // Checked with ?? (not ||) so a legitimate frequency of 0 isn't
     // treated as absent and skipped in favor of the next fallback.
@@ -549,7 +555,9 @@ export default function InfrastructureTab({
                         {computedNextRun ? (
                           <>
                             <span className="text-sfpurple-700 dark:text-sfpurple-300 text-xs font-mono font-semibold">{computedNextRun.toLocaleDateString()}</span>
-                            <p className="text-sfpurple-500 dark:text-sfpurple-400 text-[10px] font-mono">{computedNextRun.toLocaleTimeString()}</p>
+                            <p className="text-sfpurple-500 dark:text-sfpurple-400 text-[10px] font-mono">
+                              {computedNextRun.toLocaleTimeString()} {getNextRunTzLabel(isTzUnresolvedPlaceholder ? undefined : schedulerTz)}
+                            </p>
                           </>
                         ) : freq ? (
                           <span className="text-gray-400 dark:text-gray-600 text-xs" title="Fixed-frequency scheduler — next run not calculable from frequency alone">—</span>

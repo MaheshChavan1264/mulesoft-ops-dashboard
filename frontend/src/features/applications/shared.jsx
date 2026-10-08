@@ -15,15 +15,84 @@ import { ACTION_CONFIG } from '../../utils/appUtils';
  */
 
 /* ── Cron next-run calculator ──────────────────────────── */
+
+// Anypoint scheduler `timeZone` values are often short/non-IANA strings
+// (e.g. "IST") that `Intl`/`Date` can't resolve directly — map the ones
+// actually seen in this org's CPS/ARM properties to a real IANA zone id.
+const TZ_ALIASES = {
+  IST: 'Asia/Kolkata',
+  'INDIA STANDARD TIME': 'Asia/Kolkata',
+};
+
+// Org default: schedulers here are run against India Standard Time even
+// when no explicit `timeZone` is configured on the scheduler itself (CH1
+// schedules in particular often omit it entirely) — defaulting the next-run
+// calculation to the browser's own timezone in that case silently showed
+// the wrong "next run" for every viewer not physically in IST.
+export const DEFAULT_SCHEDULER_TZ = 'Asia/Kolkata'; // IST
+
+/** Resolves a scheduler's raw `timeZone` string to a real IANA zone id Intl can use, falling back to the IST org default. */
+function resolveIanaTimeZone(timeZone) {
+  if (!timeZone) return DEFAULT_SCHEDULER_TZ;
+  const alias = TZ_ALIASES[timeZone.trim().toUpperCase()];
+  if (alias) return alias;
+  try {
+    // eslint-disable-next-line no-new
+    new Intl.DateTimeFormat(undefined, { timeZone }); // throws RangeError if not a real IANA zone
+    return timeZone;
+  } catch {
+    return DEFAULT_SCHEDULER_TZ;
+  }
+}
+
+/**
+ * Short, user-facing label for the timezone a next-run date was computed
+ * in — "IST" for the Kolkata zone (whether that came from an explicit
+ * scheduler `timeZone` of "IST"/"Asia/Kolkata" or from the org default
+ * above), otherwise the resolved IANA id itself.
+ */
+export function getNextRunTzLabel(timeZone) {
+  return resolveIanaTimeZone(timeZone) === 'Asia/Kolkata' ? 'IST' : resolveIanaTimeZone(timeZone);
+}
+
+/**
+ * Returns a Date whose local getters (getHours/getMinutes/getDate/getDay/…)
+ * reflect the current wall-clock time IN `ianaTimeZone` — not the
+ * browser/server's own timezone. Uses the standard Intl round-trip trick
+ * (render "now" as a locale string already shifted into that zone, then
+ * re-parse it as if it were a plain local-time string) instead of pulling
+ * in date-fns-tz/luxon for what is otherwise a single lookup; this also
+ * gets DST transitions right for free wherever Intl has zone data for it.
+ */
+function zonedNow(ianaTimeZone) {
+  try {
+    const now = new Date();
+    const zoned = new Date(now.toLocaleString('en-US', { timeZone: ianaTimeZone }));
+    if (!isNaN(zoned.getTime())) return zoned;
+  } catch { /* fall through to system time below */ }
+  return new Date();
+}
+
 /**
  * Computes the next scheduled run date from a cron expression.
  * Supports:
  *   5-field Unix cron  : min hr dom mon dow
  *   6-field Quartz cron: sec min hr dom mon dow
  *   7-field Quartz cron: sec min hr dom mon dow year
+ *
+ * `timeZone` is the scheduler's own configured zone (its raw string, e.g.
+ * "IST"/"Asia/Kolkata"/anything Intl accepts) — the cron fields are
+ * interpreted as wall-clock time IN that zone (falling back to the IST org
+ * default, see DEFAULT_SCHEDULER_TZ, when omitted/unresolvable), NOT the
+ * viewer's browser timezone. The returned Date's local getters already
+ * carry that zone's wall-clock values (see zonedNow above), so rendering it
+ * with the default (no explicit `timeZone` option) `toLocaleDateString`/
+ * `toLocaleTimeString` shows the correct time for schedulers' own zone
+ * without the caller needing to re-apply any timezone math.
+ *
  * Returns a Date object, or null if the expression cannot be parsed / matched.
  */
-export function getNextCronRun(cronExpr) {
+export function getNextCronRun(cronExpr, timeZone) {
   if (!cronExpr || typeof cronExpr !== 'string') return null;
   try {
     const parts = cronExpr.trim().replace(/\s+/g, ' ').split(' ');
@@ -105,7 +174,7 @@ export function getNextCronRun(cronExpr) {
     const hasSpecialToken = (f) => /[L#]/i.test(f) || /(^|[^A-Za-z])W([^A-Za-z]|$)/i.test(f);
     if (hasSpecialToken(domRaw) || hasSpecialToken(dowRaw)) return null;
 
-    const d = new Date();
+    const d = zonedNow(resolveIanaTimeZone(timeZone));
     d.setMilliseconds(0);
     d.setSeconds(d.getSeconds() + 1); // start searching from the next second
 
