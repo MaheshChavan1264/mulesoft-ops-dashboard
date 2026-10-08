@@ -172,6 +172,12 @@ const SchedulerRow = React.memo(function SchedulerRow({
   onToggleSelect, onRequestToggle, onRequestTrigger, onResolveRow, onOpenApp,
 }) {
   const active = s.enabled !== false;
+  // appStatus always comes through backend's normalizeStatus() (see
+  // appHelpers.js), which already canonicalizes STARTED -> RUNNING before
+  // this ever reaches the frontend — no need to check both. Computed here
+  // (rather than only further below) because it's now also used for the
+  // app-name PulseDot, not just the Run Now button's disabled state.
+  const appRunning = (s.appStatus || '').toUpperCase() === 'RUNNING';
   // If the user already resolved this exact app+scheduler's CPS placeholder(s)
   // on the Infrastructure tab (via "Resolve from CPS →") or via this page's
   // own "Resolve CPS Crons" button, show the real value(s) instead of the raw
@@ -203,10 +209,6 @@ const SchedulerRow = React.memo(function SchedulerRow({
     const tzForCalc = unresolvedTzPlaceholder ? undefined : timeZone;
     return { decodedCron: decoded, computedNextRun: active ? getNextCronRun(cron, tzForCalc) : null };
   }, [cron, unresolvedPlaceholder, active, timeZone, unresolvedTzPlaceholder]);
-  // appStatus always comes through backend's normalizeStatus() (see
-  // appHelpers.js), which already canonicalizes STARTED -> RUNNING before
-  // this ever reaches the frontend — no need to check both.
-  const appRunning = (s.appStatus || '').toUpperCase() === 'RUNNING';
 
   return (
     <tr className={`group hover:bg-sfpurple-50/40 dark:hover:bg-sfpurple-500/[0.08] transition-colors ${isChecked ? 'bg-sfpurple-50/60 dark:bg-sfpurple-500/[0.12]' : ''}`}>
@@ -217,7 +219,15 @@ const SchedulerRow = React.memo(function SchedulerRow({
       </td>
       <td className="px-4 py-3.5">
         <div className="flex items-center gap-2">
-          <PulseDot active={active} />
+          {/* Reflects the APPLICATION's running state (not the scheduler's
+              enabled/disabled state — see the "Enabled"/"Disabled" badge
+              in the Flow column for that). Previously this dot was wired to
+              `active` (scheduler enabled), which made a running app with a
+              disabled scheduler render a grey dot right next to its name —
+              easily misread as "this app isn't running" when it actually
+              was. `appRunning` already comes through the backend's
+              normalizeStatus() (STARTED -> RUNNING canonicalization). */}
+          <PulseDot active={appRunning} title={appRunning ? 'Application running' : `Application ${s.appStatus || 'status unknown'}`} />
           <div className="min-w-0">
             <button
               onClick={(e) => { e.stopPropagation(); onOpenApp(s._bgId, s.envId, s.appId); }}

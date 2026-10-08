@@ -279,8 +279,8 @@ export const NS_DOT_COLORS = {
   red: 'bg-red-400 dark:bg-red-500',
 };
 
-export const PulseDot = ({ active }) => (
-  <span className="relative flex h-2 w-2 flex-shrink-0">
+export const PulseDot = ({ active, title }) => (
+  <span className="relative flex h-2 w-2 flex-shrink-0" title={title}>
     {active && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"/>}
     <span className={`relative inline-flex rounded-full h-2 w-2 ${active ? 'bg-emerald-400' : 'bg-gray-300 dark:bg-gray-600'}`}/>
   </span>
