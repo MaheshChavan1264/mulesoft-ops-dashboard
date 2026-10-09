@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { RefreshCw, ShieldCheck, Search, SlidersHorizontal, FileText, ChevronRight, Globe, X } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Search, SlidersHorizontal, FileText, ChevronRight, Globe, X, AlertCircle } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Select from '../../components/ui/Select';
 import BgFilterModal, { applyBgFilter } from '../../components/shared/BgFilterModal';
