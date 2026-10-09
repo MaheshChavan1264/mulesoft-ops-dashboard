@@ -85,6 +85,74 @@ async function fetchAllApisForEnv(client, oId, eId, filterAssetId) {
 }
 
 /**
+ * Fetch ALL pages of API Manager instances for org+env, returning a response
+ * shaped exactly like Anypoint's own single-page response (`{ assets: [...] }`
+ * / `{ apis: [...] }` / `{ data: [...] }` / a bare array) so existing callers
+ * (frontend's ApiManagerPage.jsx) need no changes to their parsing logic —
+ * only now every page's items are concatenated under that same top-level key
+ * instead of silently truncating at whatever the default/requested page size
+ * happens to be.
+ *
+ * Previously `routes/apis.js`'s `GET /:orgId/:envId` made exactly ONE call
+ * with `limit=50,offset=0` (see utils/pagination.js's clampPagination
+ * defaults) and forwarded that single page verbatim — any org+env with more
+ * than 50 registered API instances silently lost the 51st+ with no warning
+ * anywhere in the UI. `fetchAllApisForEnv` above already solved this exact
+ * problem for routes/health.js's auto-credentials matcher by flattening
+ * every page's nested asset→instances structure as it goes — reused here
+ * (not duplicated) purely for its page-continuation decision (comparing the
+ * FLATTENED instance count against Anypoint's own `total`, exactly as that
+ * route already does), while this function additionally preserves each
+ * page's original raw (unflattened) shape for the response body, since the
+ * frontend does its own asset→instances flattening (see
+ * ApiManagerPage.jsx's loadApisInternal) and expects that structure intact.
+ *
+ * @param {import('axios').AxiosInstance} client
+ * @param {string} oId
+ * @param {string} eId
+ * @returns {Promise<object|Array>}
+ */
+async function fetchAllApiInstancesRaw(client, oId, eId) {
+  const PAGE = 100;
+  let offset = 0;
+  let combinedKey = null; // 'assets' | 'apis' | 'data' | 'array' — whichever shape the FIRST page used
+  let combinedRaw = [];
+  let flatCount = 0;
+
+  for (;;) {
+    const response = await client.get(
+      `/apimanager/api/v1/organizations/${oId}/environments/${eId}/apis`,
+      { params: { limit: PAGE, offset } }
+    );
+    const data = response.data;
+
+    let pageRaw;
+    if (Array.isArray(data?.assets)) { combinedKey = combinedKey || 'assets'; pageRaw = data.assets; }
+    else if (Array.isArray(data?.apis)) { combinedKey = combinedKey || 'apis'; pageRaw = data.apis; }
+    else if (Array.isArray(data?.data)) { combinedKey = combinedKey || 'data'; pageRaw = data.data; }
+    else if (Array.isArray(data)) { combinedKey = combinedKey || 'array'; pageRaw = data; }
+    else { pageRaw = []; }
+
+    combinedRaw = combinedRaw.concat(pageRaw);
+
+    // Same continuation check fetchAllApisForEnv already uses: compare the
+    // FLATTENED instance count (handles the assets→nested-apis grouping)
+    // against Anypoint's own `total`, falling back to "this page came back
+    // short, so it must be the last one" when `total` is absent.
+    const pageFlatCount = flattenApiResponse(data).length;
+    flatCount += pageFlatCount;
+    const total = data?.total ?? flatCount;
+    if (flatCount >= total || pageFlatCount < PAGE || pageRaw.length === 0) break;
+    offset += PAGE;
+  }
+
+  if (combinedKey === 'assets') return { assets: combinedRaw, total: flatCount };
+  if (combinedKey === 'apis') return { apis: combinedRaw, total: flatCount };
+  if (combinedKey === 'data') return { data: combinedRaw, total: flatCount };
+  return combinedRaw;
+}
+
+/**
  * Fetch approved contracts for one API instance and return normalized rows.
  *
  * @param {import('axios').AxiosInstance} client
@@ -185,6 +253,7 @@ module.exports = {
   isMatch,
   flattenApiResponse,
   fetchAllApisForEnv,
+  fetchAllApiInstancesRaw,
   extractContractClientIds,
   collectCandidates,
   fuzzyMatchApis,

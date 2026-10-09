@@ -5,7 +5,7 @@ const { createClient } = require('../utils/anypointClient');
 const { fetchExchangeAppCreds } = require('../utils/exchangeHelpers');
 const { extractAnypointErrorMessage } = require('../utils/responseHelpers');
 const { proxyHandler } = require('../utils/asyncHandler');
-const { clampPagination } = require('../utils/pagination');
+const { fetchAllApiInstancesRaw } = require('../utils/apiManagerHelpers');
 const logger = require('../utils/logger');
 
 // Fetch a client application's clientId from Exchange by numeric appId.
@@ -40,15 +40,15 @@ router.get('/app-client-id/:appId', authMiddleware, async (req, res) => {
   res.json({ id: appId, name: null, clientId: null });
 });
 
-// Get all API instances for an environment
+// Get all API instances for an environment — fetches EVERY page (not just
+// the first) so orgs/envs with more than one page's worth of registered API
+// instances don't silently lose the overflow. See fetchAllApiInstancesRaw's
+// doc comment in utils/apiManagerHelpers.js for the full history of why this
+// was previously truncated.
 router.get('/:orgId/:envId', authMiddleware, proxyHandler('Failed to fetch API instances', async (req, res) => {
   const client = createClient(req.anypointToken);
-  const { limit, offset } = clampPagination(req.query);
-  const response = await client.get(
-    `/apimanager/api/v1/organizations/${req.params.orgId}/environments/${req.params.envId}/apis`,
-    { params: { limit, offset } }
-  );
-  res.json(response.data);
+  const data = await fetchAllApiInstancesRaw(client, req.params.orgId, req.params.envId);
+  res.json(data);
 }));
 
 // Get a specific API instance
